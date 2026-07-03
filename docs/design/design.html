@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>autoedit 設計書</title>
+<link rel="stylesheet" href="design.css">
+</head>
+<body>
+<header class="site-header">
+    <h1>自動編集パイプライン 設計書</h1>
+    <p class="subtitle">フルテロップ動画編集 1クリック自動化 / 最終更新: 2026-05-31</p>
+</header>
+
+<nav class="toc">
+    <h2>目次</h2>
+    <ol>
+        <li><a href="#overview">システム概要</a></li>
+        <li><a href="#flow">処理フロー図</a></li>
+        <li><a href="#modules">モジュール構成図</a></li>
+        <li><a href="#classes">クラス構成</a></li>
+        <li><a href="#functions">関数一覧</a></li>
+        <li><a href="#settings">setting.json 定義</a></li>
+        <li><a href="#error">エラー処理方針</a></li>
+        <li><a href="#log">ログ出力方針</a></li>
+        <li><a href="#future">将来拡張方針</a></li>
+        <li><a href="#unknown">不明点</a></li>
+        <li><a href="#proposal">追加提案</a></li>
+    </ol>
+</nav>
+
+<main>
+
+<section id="overview">
+    <h2>1. システム概要</h2>
+    <p>入力動画 1 本に対し、無音カット → フルテロップ生成 → OP/ED 結合 → 出力 を 1 クリックで自動実行する。</p>
+    <div class="card-grid">
+        <div class="card"><h3>OS</h3><p>Windows 11</p></div>
+        <div class="card"><h3>Python</h3><p>3.14</p></div>
+        <div class="card"><h3>GUI</h3><p>PySide6</p></div>
+        <div class="card"><h3>外部ツール</h3><p>FFmpeg</p></div>
+    </div>
+</section>
+
+<section id="flow">
+    <h2>2. 処理フロー図</h2>
+    <div class="flowchart">
+        <div class="node start">開始</div>
+        <div class="arrow">▼</div>
+        <div class="node">[1] 設定読込 (setting.json)</div>
+        <div class="arrow">▼</div>
+        <div class="node">[2] 入力動画選択 / 取得</div>
+        <div class="arrow">▼</div>
+        <div class="node process">[3] 無音カット<br><small>silence_cutter</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[4] フルテロップ生成<br><small>subtitle_generator: 音声認識→ASS生成→焼き込み (ON/OFF対応)</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[5] オープニング結合<br><small>未設定時スキップ</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[6] エンディング結合<br><small>未設定時スキップ</small></div>
+        <div class="arrow">▼</div>
+        <div class="node">[7] 動画出力 (output_writer)</div>
+        <div class="arrow">▼</div>
+        <div class="node end">終了</div>
+    </div>
+    <p class="note">各 FFmpeg 工程は <code>run_ffmpeg_progress</code> 経由で進捗を通知。</p>
+</section>
+
+<section id="modules">
+    <h2>3. モジュール構成図</h2>
+    <div class="module-diagram">
+        <div class="layer">
+            <h3>エントリ層</h3>
+            <div class="module">src/main.py</div>
+            <div class="module">settings_window.py</div>
+        </div>
+        <div class="layer">
+            <h3>パイプライン層</h3>
+            <div class="module new">pipeline/pipeline_runner.py</div>
+            <div class="module new">pipeline/pipeline_context.py</div>
+        </div>
+        <div class="layer">
+            <h3>処理モジュール層</h3>
+            <div class="module new">modules/silence_cutter.py</div>
+            <div class="module new">modules/subtitle_generator.py</div>
+            <div class="module new">modules/concat_processor.py</div>
+            <div class="module new">modules/output_writer.py</div>
+            <div class="module new">modules/ffmpeg_runner.py</div>
+        </div>
+        <div class="layer">
+            <h3>共通基盤層</h3>
+            <div class="module new">utils/logger.py</div>
+            <div class="module new">utils/progress.py</div>
+            <div class="module">settings/setting.json</div>
+        </div>
+    </div>
+    <p class="legend"><span class="badge new">new</span> = 新規追加 / <span class="badge">既存</span> = 既存維持</p>
+</section>
+
+<section id="classes">
+    <h2>4. クラス構成</h2>
+    <pre class="code-block">PipelineRunner
+ ├─ uses → SilenceCutter
+ ├─ uses → SubtitleGenerator
+ ├─ uses → ConcatProcessor
+ ├─ uses → OutputWriter
+ ├─ uses → FFmpegRunner
+ └─ holds → PipelineContext
+
+PipelineContext
+ ├─ input_path : str
+ ├─ working_dir : str
+ ├─ intermediate_paths : dict
+ ├─ output_path : str
+ ├─ settings : dict
+ └─ progress_callback : Callable
+
+SubtitleGenerator
+ ├─ TextSource (抽象)
+ │   └─ WhisperTextSource (faster-whisper 音声認識)
+ ├─ FontProfile (フォント差替吸収)
+ └─ run(context) -> str
+       音声認識 → ASS 生成 → ASS 焼き込み</pre>
+</section>
+
+<section id="functions">
+    <h2>5. 関数一覧 (抜粋)</h2>
+    <table>
+        <thead><tr><th>モジュール</th><th>関数</th><th>役割</th></tr></thead>
+        <tbody>
+            <tr><td>pipeline_runner</td><td>run_pipeline</td><td>1クリック実行の本体</td></tr>
+            <tr><td>silence_cutter</td><td>detect_silence</td><td>FFmpeg silencedetect をパース</td></tr>
+            <tr><td>silence_cutter</td><td>cut_and_concat</td><td>有音区間を抽出して結合</td></tr>
+            <tr><td>subtitle_generator</td><td>WhisperTextSource.extract</td><td>faster-whisper で音声認識しタイムライン生成</td></tr>
+            <tr><td>subtitle_generator</td><td>build_subtitle_file</td><td>認識結果から ASS 字幕ファイル生成</td></tr>
+            <tr><td>subtitle_generator</td><td>burn_subtitle</td><td>FFmpeg subtitles フィルタで ASS を焼き込み</td></tr>
+            <tr><td>concat_processor</td><td>concat</td><td>FFmpeg concat demuxer 実行</td></tr>
+            <tr><td>ffmpeg_runner</td><td>execute</td><td>FFmpeg 実行 + 進捗通知</td></tr>
+            <tr><td>utils/logger</td><td>get_logger</td><td>ロガー取得</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="settings">
+    <h2>6. setting.json 定義 (拡張案)</h2>
+    <table>
+        <thead><tr><th>セクション</th><th>キー</th><th>型</th><th>デフォルト</th><th>説明</th><th>新規/既存</th></tr></thead>
+        <tbody>
+            <tr><td rowspan="4">general</td><td>video_directory</td><td>string</td><td>""</td><td>入力動画ディレクトリ</td><td>既存</td></tr>
+            <tr><td>opening_video</td><td>string</td><td>""</td><td>OP 動画パス (空でスキップ)</td><td>既存</td></tr>
+            <tr><td>ending_video</td><td>string</td><td>""</td><td>ED 動画パス (空でスキップ)</td><td>既存</td></tr>
+            <tr><td>output_directory</td><td>string</td><td>""</td><td>最終出力ディレクトリ</td><td class="new-cell">新規</td></tr>
+
+            <tr><td rowspan="15">subtitle</td><td>language</td><td>string</td><td>"ja"</td><td>字幕言語</td><td>既存</td></tr>
+            <tr><td>broadcast_style</td><td>string</td><td>"ソロ"</td><td>配信スタイル</td><td>既存</td></tr>
+            <tr><td>threshold</td><td>string</td><td>"0.6"</td><td>発話判定しきい値</td><td>既存</td></tr>
+            <tr><td>min_speech_ignore_time</td><td>string</td><td>"0.6"</td><td>最小発話無視時間</td><td>既存</td></tr>
+            <tr><td>own_subtitle_color</td><td>string</td><td>"#ED1C24"</td><td>自分の字幕色</td><td>既存</td></tr>
+            <tr><td>enabled</td><td>bool</td><td>true</td><td>テロップ ON/OFF</td><td class="new-cell">新規</td></tr>
+            <tr><td>font_family</td><td>string</td><td>"Yu Gothic UI"</td><td>テロップフォント</td><td class="new-cell">新規</td></tr>
+            <tr><td>font_size</td><td>int</td><td>48</td><td>テロップフォントサイズ</td><td class="new-cell">新規</td></tr>
+            <tr><td>engine</td><td>string</td><td>"whisper"</td><td>音声認識エンジン ("none" でスキップ)</td><td class="new-cell">新規</td></tr>
+            <tr><td>whisper_model</td><td>string</td><td>"large-v3"</td><td>faster-whisper モデル</td><td class="new-cell">新規</td></tr>
+            <tr><td>whisper_device</td><td>string</td><td>"cpu"</td><td>推論デバイス</td><td class="new-cell">新規</td></tr>
+            <tr><td>whisper_compute_type</td><td>string</td><td>"int8"</td><td>量子化方式</td><td class="new-cell">新規</td></tr>
+            <tr><td>whisper_beam_size</td><td>int</td><td>8</td><td>ビームサーチ幅</td><td class="new-cell">新規</td></tr>
+            <tr><td>max_line_length</td><td>int</td><td>15</td><td>ASS 1 行最大文字数</td><td class="new-cell">新規</td></tr>
+            <tr><td>remove_fillers</td><td>bool</td><td>false</td><td>フィラー(口癖)除去</td><td class="new-cell">新規</td></tr>
+
+            <tr><td rowspan="4">silence_cut</td><td>noise_threshold_db</td><td>int</td><td>-30</td><td>無音判定しきい値 (dB)</td><td class="new-cell">新規</td></tr>
+            <tr><td>min_silence_duration_sec</td><td>float</td><td>0.6</td><td>最小無音時間 (秒)</td><td class="new-cell">新規</td></tr>
+            <tr><td>fade_enabled</td><td>bool</td><td>false</td><td>カット境界フェード有無</td><td class="new-cell">新規</td></tr>
+            <tr><td>fade_duration_sec</td><td>float</td><td>0.05</td><td>フェード長 (秒)</td><td class="new-cell">新規</td></tr>
+
+            <tr><td rowspan="6">ffmpeg</td><td>executable</td><td>string</td><td>"ffmpeg"</td><td>ffmpeg 実行ファイル</td><td class="new-cell">新規</td></tr>
+            <tr><td>ffprobe_executable</td><td>string</td><td>"ffprobe"</td><td>ffprobe 実行ファイル</td><td class="new-cell">新規</td></tr>
+            <tr><td>video_codec</td><td>string</td><td>"libx264"</td><td>映像コーデック</td><td class="new-cell">新規</td></tr>
+            <tr><td>audio_codec</td><td>string</td><td>"aac"</td><td>音声コーデック</td><td class="new-cell">新規</td></tr>
+            <tr><td>preset</td><td>string</td><td>"medium"</td><td>x264 プリセット</td><td class="new-cell">新規</td></tr>
+            <tr><td>crf</td><td>int</td><td>20</td><td>CRF 品質値</td><td class="new-cell">新規</td></tr>
+
+            <tr><td rowspan="2">logging</td><td>log_dir</td><td>string</td><td>"logs"</td><td>ログ出力先</td><td class="new-cell">新規</td></tr>
+            <tr><td>level</td><td>string</td><td>"INFO"</td><td>ログレベル</td><td class="new-cell">新規</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="error">
+    <h2>7. エラー処理方針</h2>
+    <ul>
+        <li>独自例外階層 <code>AutoEditError</code> 配下に <code>ConfigError / FFmpegError / InputError / SubtitleError</code> を定義</li>
+        <li>FFmpeg は exit code != 0 で例外化、コマンドと stderr 末尾をログ</li>
+        <li>OP / ED 未設定は例外でなく <strong>スキップ</strong></li>
+        <li>失敗時、中間ファイルは保持しデバッグ可能に</li>
+    </ul>
+</section>
+
+<section id="log">
+    <h2>8. ログ出力方針</h2>
+    <ul>
+        <li>Python 標準 <code>logging</code> のみ使用 (追加依存なし)</li>
+        <li>コンソール + <code>logs/autoedit_YYYYMMDD.log</code></li>
+        <li>レベルは setting.json で切替 (デフォルト INFO)</li>
+        <li>FFmpeg コマンド全文は DEBUG レベル</li>
+    </ul>
+</section>
+
+<section id="future">
+    <h2>9. 将来拡張方針</h2>
+    <ul>
+        <li><strong>フォント変更</strong>: <code>FontProfile</code> 経由で差替可能</li>
+        <li><strong>音声認識差替</strong>: 既定 <code>WhisperTextSource</code> (faster-whisper)。<code>TextSource</code> 抽象経由で Vosk 等へ差替 (<code>subtitle.engine</code> で選択)</li>
+        <li><strong>配信スタイル分岐</strong>: <code>broadcast_style</code> を参照する Strategy</li>
+        <li><strong>複数ファイル一括</strong>: <code>run_pipeline</code> を for ループで呼ぶ薄いラッパ</li>
+        <li><strong>クラウド出力</strong>: <code>OutputWriter</code> 抽象化</li>
+    </ul>
+</section>
+
+<section id="unknown">
+    <h2>10. 不明点 (要ユーザ確認)</h2>
+    <table>
+        <thead><tr><th>#</th><th>項目</th><th>状況</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td><code>run_ffmpeg_progress</code> の実体</td><td>参照先 <code>../StreamPipeline/dev</code> がローカルに無く、仕様未確認</td></tr>
+            <tr><td>2</td><td><s>テロップのテキスト取得方法</s></td><td><strong>解決済 (2026-05-31)</strong>: claude.md ② により音声認識で ASS を生成し焼き込む。エンジンは参照元と同じ faster-whisper を既定採用し <code>WhisperTextSource</code> として実装済</td></tr>
+            <tr><td>3</td><td>配信スタイル「ソロ/複数人」の動作差</td><td>既存仕様未確認</td></tr>
+            <tr><td>4</td><td>出力ファイル命名規約</td><td>暫定: <code>&lt;original&gt;_edited.mp4</code></td></tr>
+            <tr><td>5</td><td>一時ファイル配置</td><td>暫定: OS 一時領域</td></tr>
+            <tr><td>6</td><td>テロップ ON/OFF UI</td><td>settings_window.py への追加可否</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="proposal">
+    <h2>11. 追加提案</h2>
+    <ul>
+        <li><code>src/main.py</code> — 1クリック実行エントリ</li>
+        <li><code>src/pipeline/</code> パッケージ — パイプライン制御</li>
+        <li><code>src/utils/</code> パッケージ — ロガー / 進捗ラッパ</li>
+        <li><code>logs/</code> ディレクトリ — ログ出力先</li>
+        <li><code>tests/</code> ディレクトリ — 単体テスト (標準 unittest)</li>
+    </ul>
+    <p class="note">本設計書のレビュー後に実装着手する。</p>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <p>autoedit / design.md ベース / ダークテーマ対応</p>
+</footer>
+</body>
+</html>

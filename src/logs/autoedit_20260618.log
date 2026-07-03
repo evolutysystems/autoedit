@@ -1,0 +1,5 @@
+2026-06-18 14:05:17,925 [INFO] autoedit: 処理対象: 1 件
+2026-06-18 14:05:17,925 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream2.mp4
+2026-06-18 14:05:17,925 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-18 14:05:17,925 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream2.mp4
+2026-06-18 14:05:17,983 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False

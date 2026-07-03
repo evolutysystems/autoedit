@@ -1,0 +1,16 @@
+2026-06-27 16:20:24,481 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-27 16:20:24,482 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/daikoku.mp4
+2026-06-27 16:25:50,695 [INFO] src.modules.volume_analyzer: 測定区間を標本化: 285 → 100 区間 (長い順)
+2026-06-27 16:30:29,965 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-40 (mean, 測定 100/285 区間)
+2026-06-27 16:31:49,296 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -40 dB
+2026-06-27 16:31:49,296 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-40dB, min=0.600s, fade=False
+2026-06-27 16:37:31,104 [INFO] src.modules.silence_cutter: 検出された無音区間: 109 件
+2026-06-27 17:50:36,562 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_g629lt43\silence_cut.mp4
+2026-06-27 17:51:06,612 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=auto)
+2026-06-27 17:51:15,694 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-06-27 18:35:19,219 [INFO] src.modules.subtitle_generator: 音声認識完了 (784 セグメント)
+2026-06-27 18:35:19,430 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 784 → 784 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-06-27 21:51:15,881 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-27 21:51:15,897 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-27 21:51:16,990 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\daikoku_edited.mp4
+2026-06-27 21:51:16,990 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\daikoku_edited.mp4

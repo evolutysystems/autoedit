@@ -1,0 +1,12 @@
+2026-06-12 14:35:36,902 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-12 14:35:36,905 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input/stream2.mp4
+2026-06-12 14:35:36,925 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False
+2026-06-12 14:35:38,598 [INFO] src.modules.silence_cutter: 検出された無音区間: 6 件
+2026-06-12 14:35:53,443 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_ofi79b51\silence_cut.mp4
+2026-06-12 14:35:56,939 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-12 14:39:40,094 [INFO] src.modules.subtitle_generator: 音声認識完了 (11 セグメント)
+2026-06-12 14:39:41,317 [INFO] src.modules.subtitle_generator: 発話区間でテロップを絞り込み: 11 → 11 セグメント (閾値=-16dB, mode=trim)
+2026-06-12 14:43:11,459 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-12 14:43:11,459 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-12 14:43:11,465 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream2_edited_2.mp4
+2026-06-12 14:43:11,472 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream2_edited_2.mp4

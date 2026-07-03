@@ -1,0 +1,2 @@
+2026-05-31 15:15:33,930 [INFO] src.modules.subtitle_generator: 音声認識エンジン未使用 (subtitle.engine=none)
+2026-05-31 15:15:33,930 [WARNING] src.modules.subtitle_generator: 未対応の音声認識エンジン指定: vosk (テロップ工程をスキップ)

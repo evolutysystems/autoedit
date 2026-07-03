@@ -1,0 +1,15 @@
+2026-06-24 10:58:56,851 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-24 10:58:56,851 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/2801780212-669964096-25656c15-a0dd-48dc-a50a-bdcaae64f563.mp4
+2026-06-24 10:58:56,867 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False
+2026-06-24 11:09:59,414 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-24 11:09:59,414 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input/stream.mp4
+2026-06-24 11:09:59,437 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False
+2026-06-24 11:21:45,833 [INFO] src.modules.silence_cutter: 検出された無音区間: 1778 件
+2026-06-24 13:03:48,151 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_xk0k5wm5\silence_cut.mp4
+2026-06-24 13:04:58,572 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=auto)
+2026-06-24 15:05:18,954 [INFO] src.modules.subtitle_generator: 音声認識完了 (858 セグメント)
+2026-06-24 15:10:25,567 [INFO] src.modules.subtitle_generator: 発話区間でテロップを絞り込み: 858 → 315 セグメント (閾値=-16dB, mode=trim)
+2026-06-24 15:50:34,087 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-24 15:50:34,087 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-24 15:50:34,669 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-24 15:50:34,673 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_1.mp4

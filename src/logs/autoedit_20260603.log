@@ -1,0 +1,161 @@
+2026-06-03 10:59:34,790 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 10:59:34,790 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 10:59:34,790 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 10:59:34,790 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 10:59:34,835 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-03 10:59:40,281 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-03 10:59:53,010 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_tx4rph_b\silence_cut.mp4
+2026-06-03 11:01:15,114 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 11:01:42,183 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-03 11:01:56,621 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_tx4rph_b\subtitle.mp4
+2026-06-03 11:02:09,167 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_tx4rph_b\opening_merged.mp4
+2026-06-03 11:02:09,278 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_tx4rph_b\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-03 11:02:24,420 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_tx4rph_b\ending_merged.mp4
+2026-06-03 11:02:24,442 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:02:24,450 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:02:24,455 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:24:36,397 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 11:24:36,397 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:24:36,397 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 11:24:36,397 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:24:36,406 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-03 11:24:38,991 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-03 11:24:51,551 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_o02onp9c\silence_cut.mp4
+2026-06-03 11:24:54,317 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 11:25:23,349 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-03 11:25:37,630 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_o02onp9c\subtitle.mp4
+2026-06-03 11:25:50,137 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_o02onp9c\opening_merged.mp4
+2026-06-03 11:25:50,232 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_o02onp9c\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-03 11:26:05,447 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_o02onp9c\ending_merged.mp4
+2026-06-03 11:26:05,453 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 11:26:05,453 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 11:26:05,469 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 11:27:19,316 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 11:27:19,316 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:27:19,316 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 11:27:19,316 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:27:19,321 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-03 11:27:21,966 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-03 11:27:34,700 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_pxje4kje\silence_cut.mp4
+2026-06-03 11:27:37,455 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 11:28:06,302 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-03 11:28:20,614 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_pxje4kje\subtitle.mp4
+2026-06-03 11:28:33,106 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_pxje4kje\opening_merged.mp4
+2026-06-03 11:28:33,214 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_pxje4kje\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-03 11:28:48,491 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_pxje4kje\ending_merged.mp4
+2026-06-03 11:28:48,507 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:28:48,507 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:28:48,507 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:37:17,901 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 11:37:17,901 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:37:17,901 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 11:37:17,901 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-03 11:37:17,904 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-03 11:37:43,429 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 11:37:43,429 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 11:37:43,429 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 11:37:43,429 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 11:37:43,434 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-03 11:37:47,214 [INFO] src.modules.silence_cutter: 検出された無音区間: 1 件
+2026-06-03 11:39:22,456 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_y05ofgzj\silence_cut.mp4
+2026-06-03 11:39:25,152 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 11:40:12,097 [INFO] src.modules.subtitle_generator: 音声認識完了 (18 セグメント)
+2026-06-03 11:41:49,839 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_y05ofgzj\subtitle.mp4
+2026-06-03 11:43:03,982 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_y05ofgzj\opening_merged.mp4
+2026-06-03 11:43:04,087 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_y05ofgzj\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-03 11:44:10,490 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_y05ofgzj\ending_merged.mp4
+2026-06-03 11:44:10,538 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:44:10,538 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:44:10,585 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited.mp4
+2026-06-03 11:57:45,435 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 11:57:45,435 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 11:57:45,435 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 11:57:45,435 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 11:57:45,450 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-40dB, min=0.600s, fade=False
+2026-06-03 11:57:49,169 [INFO] src.modules.silence_cutter: 検出された無音区間: 0 件
+2026-06-03 11:59:24,924 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_6191v3yd\silence_cut.mp4
+2026-06-03 11:59:27,674 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 12:00:14,194 [INFO] src.modules.subtitle_generator: 音声認識完了 (18 セグメント)
+2026-06-03 12:01:53,400 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_6191v3yd\subtitle.mp4
+2026-06-03 12:03:07,779 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_6191v3yd\opening_merged.mp4
+2026-06-03 12:03:07,890 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_6191v3yd\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-03 12:04:15,206 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_6191v3yd\ending_merged.mp4
+2026-06-03 12:04:15,244 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 12:04:15,254 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 12:04:15,289 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_1.mp4
+2026-06-03 13:19:09,112 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 13:19:09,112 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:19:09,112 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 13:19:09,112 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:19:09,142 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-20dB, min=0.600s, fade=False
+2026-06-03 13:53:51,240 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 13:53:51,240 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:53:51,240 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 13:53:51,240 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:53:51,255 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-20dB, min=0.600s, fade=False
+2026-06-03 13:53:57,543 [INFO] src.modules.silence_cutter: 検出された無音区間: 15 件
+2026-06-03 13:54:31,550 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_f49c_jru\silence_cut.mp4
+2026-06-03 13:55:54,250 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 13:56:31,643 [INFO] src.modules.subtitle_generator: 音声認識完了 (19 セグメント)
+2026-06-03 13:57:06,715 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-03 13:57:06,715 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-03 13:57:06,731 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_2.mp4
+2026-06-03 13:57:06,731 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_2.mp4
+2026-06-03 13:57:06,731 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_2.mp4
+2026-06-03 13:57:59,264 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 13:57:59,264 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:57:59,264 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 13:57:59,264 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 13:57:59,272 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-25dB, min=0.600s, fade=False
+2026-06-03 13:58:02,991 [INFO] src.modules.silence_cutter: 検出された無音区間: 15 件
+2026-06-03 13:59:06,775 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_69h4_b9m\silence_cut.mp4
+2026-06-03 13:59:09,529 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 13:59:57,740 [INFO] src.modules.subtitle_generator: 音声認識完了 (19 セグメント)
+2026-06-03 14:01:02,703 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-03 14:01:02,703 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-03 14:01:02,750 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_3.mp4
+2026-06-03 14:01:02,750 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_3.mp4
+2026-06-03 14:01:02,766 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_3.mp4
+2026-06-03 14:42:02,419 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 14:42:02,419 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 14:42:02,419 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 14:42:02,419 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 14:42:02,429 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-28dB, min=0.600s, fade=False
+2026-06-03 14:42:06,083 [INFO] src.modules.silence_cutter: 検出された無音区間: 4 件
+2026-06-03 14:43:36,890 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_9jbw6q6m\silence_cut.mp4
+2026-06-03 14:43:39,741 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 14:44:27,899 [INFO] src.modules.subtitle_generator: 音声認識完了 (18 セグメント)
+2026-06-03 14:46:00,447 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-03 14:46:00,447 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-03 14:46:00,503 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_4.mp4
+2026-06-03 14:46:00,503 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_4.mp4
+2026-06-03 14:46:00,519 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_4.mp4
+2026-06-03 14:52:12,124 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 14:52:12,124 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 14:52:12,124 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 14:52:12,124 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 14:52:12,140 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-25dB, min=0.600s, fade=False
+2026-06-03 14:52:15,901 [INFO] src.modules.silence_cutter: 検出された無音区間: 15 件
+2026-06-03 14:53:19,340 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_xu9hi88z\silence_cut.mp4
+2026-06-03 14:53:22,193 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 14:54:13,069 [INFO] src.modules.subtitle_generator: 音声認識完了 (19 セグメント)
+2026-06-03 14:55:18,392 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-03 14:55:18,394 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-03 14:55:18,429 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_5.mp4
+2026-06-03 14:55:18,429 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_5.mp4
+2026-06-03 14:55:18,434 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_5.mp4
+2026-06-03 15:38:42,058 [INFO] autoedit: 処理対象: 1 件
+2026-06-03 15:38:42,058 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 15:38:42,058 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-03 15:38:42,058 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-03 15:38:42,065 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False
+2026-06-03 15:38:45,701 [INFO] src.modules.silence_cutter: 検出された無音区間: 14 件
+2026-06-03 15:39:54,184 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_4a4b7kpi\silence_cut.mp4
+2026-06-03 15:39:57,119 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-03 15:40:43,735 [INFO] src.modules.subtitle_generator: 音声認識完了 (16 セグメント)
+2026-06-03 15:40:48,787 [INFO] src.modules.subtitle_generator: 発話区間でテロップを絞り込み: 16 → 16 セグメント (閾値=-16dB, mode=trim)
+2026-06-03 15:41:59,366 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-03 15:41:59,366 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-03 15:41:59,413 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\stream_edited_6.mp4
+2026-06-03 15:41:59,413 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\stream_edited_6.mp4
+2026-06-03 15:41:59,413 [INFO] autoedit: 処理完了: D:/develop/autoedit/output\stream_edited_6.mp4

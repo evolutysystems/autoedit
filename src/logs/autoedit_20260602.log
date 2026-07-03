@@ -1,0 +1,145 @@
+2026-06-02 09:16:18,433 [INFO] autoedit: 処理対象: 1 件
+2026-06-02 09:16:18,433 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 09:16:18,433 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-02 09:16:18,433 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 09:16:18,458 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-02 09:16:23,562 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-02 09:16:49,232 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_4_3ii53g\silence_cut.mp4
+2026-06-02 09:17:58,482 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-02 09:18:56,294 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-02 09:19:18,703 [ERROR] src.modules.ffmpeg_runner: FFmpeg 失敗 (code=4294967274):   Duration: 00:00:13.30, start: 0.000000, bitrate: 7100 kb/s
+  Stream #1:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 2560x1440 [SAR 1:1 DAR 16:9], 6953 kb/s, 59.85 fps, 60 tbr, 15360 tbn (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc62.29.100 libx264
+  Stream #1:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 132 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 (h264) -> concat
+  Stream #0:1 (aac) -> concat
+  Stream #1:0 (h264) -> concat
+  Stream #1:1 (aac) -> concat
+  concat -> Stream #0:0 (libx264)
+  concat -> Stream #0:1 (aac)
+Press [q] to stop, [?] for help
+[Parsed_concat_0 @ 000001ad75977c80] Input link in0:v0 parameters (size 2560x1440, SAR 1:1) do not match the corresponding output link in0:v0 parameters (1920x1080, SAR 1:1)
+[Parsed_concat_0 @ 000001ad75977c80] Failed to configure output pad on Parsed_concat_0
+[fc#0 @ 000001ad75248700] Error reinitializing filters!
+[fc#0 @ 000001ad75248700] Task finished with error code: -22 (Invalid argument)
+[fc#0 @ 000001ad75248700] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/libx264 @ 000001ad75912c80] [enc:libx264 @ 000001ad754dae80] Could not open encoder before EOF
+[vost#0:0/libx264 @ 000001ad75912c80] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/libx264 @ 000001ad75912c80] Terminating thread with return code -22 (Invalid argument)
+[aost#0:1/aac @ 000001ad75e80700] [enc:aac @ 000001ad754dad00] Could not open encoder before EOF
+[aost#0:1/aac @ 000001ad75e80700] Task finished with error code: -22 (Invalid argument)
+[aost#0:1/aac @ 000001ad75e80700] Terminating thread with return code -22 (Invalid argument)
+[out#0/mp4 @ 000001ad756f0c00] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.09    
+Conversion failed!
+2026-06-02 09:19:18,704 [ERROR] src.pipeline.pipeline_runner: パイプライン中断: 既知エラー
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-06-02 09:19:18,717 [ERROR] autoedit: 処理失敗: D:/StreamPipeline/dev/input\stream.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\main.py", line 81, in main
+    output = run_pipeline(path, settings, progress_cb=_console_progress)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-06-02 09:36:33,537 [INFO] autoedit: 処理対象: 1 件
+2026-06-02 09:36:33,538 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 09:36:33,539 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-02 09:36:33,539 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 09:36:33,544 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-02 09:36:36,077 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-02 09:37:02,106 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_metgeqk7\silence_cut.mp4
+2026-06-02 09:37:10,027 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-02 09:38:08,262 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-02 09:38:30,777 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_metgeqk7\subtitle.mp4
+2026-06-02 09:38:30,949 [ERROR] src.modules.ffmpeg_runner: FFmpeg 失敗 (code=4294967274):   Duration: 00:00:13.30, start: 0.000000, bitrate: 7100 kb/s
+  Stream #1:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 2560x1440 [SAR 1:1 DAR 16:9], 6953 kb/s, 59.85 fps, 60 tbr, 15360 tbn (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc62.29.100 libx264
+  Stream #1:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 132 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 (h264) -> concat
+  Stream #0:1 (aac) -> concat
+  Stream #1:0 (h264) -> concat
+  Stream #1:1 (aac) -> concat
+  concat -> Stream #0:0 (libx264)
+  concat -> Stream #0:1 (aac)
+Press [q] to stop, [?] for help
+[Parsed_concat_0 @ 000002c3d0460c40] Input link in0:v0 parameters (size 2560x1440, SAR 1:1) do not match the corresponding output link in0:v0 parameters (1920x1080, SAR 1:1)
+[Parsed_concat_0 @ 000002c3d0460c40] Failed to configure output pad on Parsed_concat_0
+[fc#0 @ 000002c3cf6486c0] Error reinitializing filters!
+[fc#0 @ 000002c3cf6486c0] Task finished with error code: -22 (Invalid argument)
+[fc#0 @ 000002c3cf6486c0] Terminating thread with return code -22 (Invalid argument)
+[aost#0:1/aac @ 000002c3d0280480] [enc:aac @ 000002c3cf8da700] Could not open encoder before EOF
+[aost#0:1/aac @ 000002c3d0280480] Task finished with error code: -22 (Invalid argument)
+[aost#0:1/aac @ 000002c3d0280480] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/libx264 @ 000002c3cfd129c0] [enc:libx264 @ 000002c3cf8dbe40] Could not open encoder before EOF
+[vost#0:0/libx264 @ 000002c3cfd129c0] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/libx264 @ 000002c3cfd129c0] Terminating thread with return code -22 (Invalid argument)
+[out#0/mp4 @ 000002c3cfd8ae80] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.08    
+Conversion failed!
+2026-06-02 09:38:30,950 [ERROR] src.pipeline.pipeline_runner: パイプライン中断: 既知エラー
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-06-02 09:38:30,955 [ERROR] autoedit: 処理失敗: D:/StreamPipeline/dev/input\stream.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\main.py", line 81, in main
+    output = run_pipeline(path, settings, progress_cb=_console_progress)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-06-02 13:50:15,886 [INFO] autoedit: 処理対象: 1 件
+2026-06-02 13:50:15,886 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 13:50:15,886 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-02 13:50:15,886 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-06-02 13:50:15,921 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-06-02 13:50:21,238 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-06-02 13:50:46,989 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_brfnp068\silence_cut.mp4
+2026-06-02 13:52:06,685 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)
+2026-06-02 13:53:04,659 [INFO] src.modules.subtitle_generator: 音声認識完了 (10 セグメント)
+2026-06-02 13:53:26,755 [INFO] src.modules.concat_processor: オープニング結合 開始: D:/StreamPipeline/dev/assets/op.mp4 + C:\Users\evolu\AppData\Local\Temp\autoedit_brfnp068\subtitle.mp4
+2026-06-02 13:53:43,388 [INFO] src.modules.concat_processor: オープニング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_brfnp068\opening_merged.mp4
+2026-06-02 13:53:43,456 [INFO] src.modules.concat_processor: エンディング結合 開始: C:\Users\evolu\AppData\Local\Temp\autoedit_brfnp068\opening_merged.mp4 + D:/StreamPipeline/dev/assets/ed.mp4
+2026-06-02 13:54:06,606 [INFO] src.modules.concat_processor: エンディング結合 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_brfnp068\ending_merged.mp4
+2026-06-02 13:54:06,619 [INFO] src.modules.output_writer: 出力完了: D:\StreamPipeline\dev\input\stream_edited.mp4
+2026-06-02 13:54:06,620 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:\StreamPipeline\dev\input\stream_edited.mp4
+2026-06-02 13:54:06,625 [INFO] autoedit: 処理完了: D:\StreamPipeline\dev\input\stream_edited.mp4

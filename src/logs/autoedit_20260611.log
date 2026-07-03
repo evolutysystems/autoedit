@@ -1,0 +1,8 @@
+2026-06-11 10:35:00,944 [INFO] autoedit: 処理対象: 1 件
+2026-06-11 10:35:00,946 [INFO] autoedit: 処理開始: D:/develop/autoedit/input\stream.mp4
+2026-06-11 10:35:00,946 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-11 10:35:00,946 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/develop/autoedit/input\stream.mp4
+2026-06-11 10:35:00,958 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-26dB, min=0.600s, fade=False
+2026-06-11 10:52:56,967 [INFO] src.modules.silence_cutter: 検出された無音区間: 1159 件
+2026-06-11 11:33:17,773 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_960lonri\silence_cut.mp4
+2026-06-11 11:34:20,639 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu)

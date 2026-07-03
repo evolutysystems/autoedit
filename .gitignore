@@ -1,0 +1,7 @@
+# Build artifacts
+src/build/
+output/
+src/dist/
+
+# Installer packages
+*.pkg

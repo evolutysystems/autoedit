@@ -1,0 +1,28 @@
+2026-06-29 06:30:05,930 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-29 06:30:05,941 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/guntret.mp4
+2026-06-29 06:32:00,440 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 23/23 区間)
+2026-06-29 07:35:16,660 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -36 dB
+2026-06-29 07:35:16,660 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-36dB, min=0.600s, fade=False
+2026-06-29 07:36:54,020 [INFO] src.modules.silence_cutter: 検出された無音区間: 3 件
+2026-06-29 08:00:29,478 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_m4aebtq6\silence_cut.mp4
+2026-06-29 08:00:55,373 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=auto)
+2026-06-29 08:00:55,373 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-06-29 08:01:02,746 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-06-29 08:02:59,649 [INFO] src.modules.subtitle_generator: 音声認識完了 (40 セグメント)
+2026-06-29 08:02:59,837 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 40 → 40 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-06-29 08:08:52,875 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-06-29 08:08:52,877 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/guntret.mp4
+2026-06-29 08:14:45,119 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 23/23 区間)
+2026-06-29 19:04:18,275 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -39 dB
+2026-06-29 19:04:18,275 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-39dB, min=0.600s, fade=False
+2026-06-29 19:05:56,766 [INFO] src.modules.silence_cutter: 検出された無音区間: 3 件
+2026-06-29 19:34:11,019 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_g8tk0_b2\silence_cut.mp4
+2026-06-29 19:35:50,233 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=auto)
+2026-06-29 19:35:50,235 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-06-29 19:36:01,024 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-06-29 19:39:00,258 [INFO] src.modules.subtitle_generator: 音声認識完了 (40 セグメント)
+2026-06-29 19:39:00,484 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 40 → 40 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-06-29 20:12:15,404 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-06-29 20:12:15,404 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-06-29 20:12:16,143 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\guntret_edited.mp4
+2026-06-29 20:12:16,145 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\guntret_edited.mp4

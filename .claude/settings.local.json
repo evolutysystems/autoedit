@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(if \\(Test-Path \"D:\\\\develop\\\\StreamPipeline\\\\dev\"\\) { Get-ChildItem -Path \"D:\\\\develop\\\\StreamPipeline\\\\dev\" -Recurse -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer } | Select-Object FullName, Length | Format-Table -AutoSize } else { \"StreamPipeline/dev not found at D:\\\\develop\\\\StreamPipeline\\\\dev\" })",
+      "Bash(python -m py_compile src/settings/settings_window.py)"
+    ]
+  }
+}

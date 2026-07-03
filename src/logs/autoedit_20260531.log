@@ -1,0 +1,97 @@
+2026-05-31 14:28:16,345 [INFO] autoedit: 処理対象: 1 件
+2026-05-31 14:28:16,359 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-05-31 14:28:16,359 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-05-31 14:28:16,359 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-05-31 14:28:16,380 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-05-31 14:28:19,466 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-05-31 14:28:19,505 [ERROR] src.modules.ffmpeg_runner: FFmpeg 失敗 (code=4294967274): [Parsed_asetpts_3 @ 000001c8ffc34140] Media type mismatch between the 'Parsed_asetpts_3' filter output pad 0 (audio) and the 'Parsed_concat_40' filter input pad 10 (video)
+[AVFilterGraph @ 000001c8ffc24cc0] Error linking filters
+Error : Invalid argument
+2026-05-31 14:28:19,532 [ERROR] src.pipeline.pipeline_runner: パイプライン中断: 既知エラー
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 38, in run_pipeline
+    silence_cutter.run(context)
+  File "D:\develop\autoedit\src\modules\silence_cutter.py", line 188, in run
+    cut_and_concat(
+  File "D:\develop\autoedit\src\modules\silence_cutter.py", line 149, in cut_and_concat
+    ffmpeg_runner.execute(cmd, total_duration=effective_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-05-31 14:28:19,532 [ERROR] autoedit: 処理失敗: D:/StreamPipeline/dev/input\stream.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\main.py", line 81, in main
+    output = run_pipeline(path, settings, progress_cb=_console_progress)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 38, in run_pipeline
+    silence_cutter.run(context)
+  File "D:\develop\autoedit\src\modules\silence_cutter.py", line 188, in run
+    cut_and_concat(
+  File "D:\develop\autoedit\src\modules\silence_cutter.py", line 149, in cut_and_concat
+    ffmpeg_runner.execute(cmd, total_duration=effective_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-05-31 14:48:38,143 [INFO] autoedit: 処理対象: 1 件
+2026-05-31 14:48:38,143 [INFO] autoedit: 処理開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-05-31 14:48:38,143 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-05-31 14:48:38,143 [INFO] src.pipeline.pipeline_runner: パイプライン開始: D:/StreamPipeline/dev/input\stream.mp4
+2026-05-31 14:48:38,165 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-30dB, min=0.600s, fade=False
+2026-05-31 14:48:41,176 [INFO] src.modules.silence_cutter: 検出された無音区間: 10 件
+2026-05-31 14:48:54,147 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_088krot_\silence_cut.mp4
+2026-05-31 14:48:54,147 [WARNING] src.modules.subtitle_generator: テロップ用テキストソース未指定のためスキップしました (設計書 不明点 #2 参照: 音声認識エンジン要選定)
+2026-05-31 14:48:54,568 [ERROR] src.modules.ffmpeg_runner: FFmpeg 失敗 (code=4294967274):   Duration: 00:00:13.30, start: 0.000000, bitrate: 7328 kb/s
+  Stream #1:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 2560x1440 [SAR 1:1 DAR 16:9], 7181 kb/s, 59.85 fps, 60 tbr, 15360 tbn (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc62.29.100 libx264
+  Stream #1:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 134 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 (h264) -> concat
+  Stream #0:1 (aac) -> concat
+  Stream #1:0 (h264) -> concat
+  Stream #1:1 (aac) -> concat
+  concat -> Stream #0:0 (libx264)
+  concat -> Stream #0:1 (aac)
+Press [q] to stop, [?] for help
+[Parsed_concat_0 @ 000001551d6b8040] Input link in0:v0 parameters (size 2560x1440, SAR 1:1) do not match the corresponding output link in0:v0 parameters (1920x1080, SAR 1:1)
+[Parsed_concat_0 @ 000001551d6b8040] Failed to configure output pad on Parsed_concat_0
+[fc#0 @ 000001551cc48700] Error reinitializing filters!
+[fc#0 @ 000001551cc48700] Task finished with error code: -22 (Invalid argument)
+[fc#0 @ 000001551cc48700] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/libx264 @ 000001551d430180] [enc:libx264 @ 000001551d21b6c0] Could not open encoder before EOF
+[vost#0:0/libx264 @ 000001551d430180] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/libx264 @ 000001551d430180] Terminating thread with return code -22 (Invalid argument)
+[aost#0:1/aac @ 000001551dbc0ac0] [enc:aac @ 000001551d21c200] Could not open encoder before EOF
+[aost#0:1/aac @ 000001551dbc0ac0] Task finished with error code: -22 (Invalid argument)
+[aost#0:1/aac @ 000001551dbc0ac0] Terminating thread with return code -22 (Invalid argument)
+[out#0/mp4 @ 000001551d430c00] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.13    
+Conversion failed!
+2026-05-31 14:48:54,568 [ERROR] src.pipeline.pipeline_runner: パイプライン中断: 既知エラー
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
+2026-05-31 14:48:54,582 [ERROR] autoedit: 処理失敗: D:/StreamPipeline/dev/input\stream.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\main.py", line 81, in main
+    output = run_pipeline(path, settings, progress_cb=_console_progress)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\pipeline\pipeline_runner.py", line 48, in run_pipeline
+    concat_processor.run(context, "opening")
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 83, in run
+    concat(
+  File "D:\develop\autoedit\src\modules\concat_processor.py", line 50, in concat
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+  File "D:\develop\autoedit\src\modules\ffmpeg_runner.py", line 72, in execute
+    raise FFmpegError(
+src.exceptions.FFmpegError: FFmpeg 実行失敗 (returncode=4294967274)
