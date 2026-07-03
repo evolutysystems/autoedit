@@ -25,7 +25,9 @@
 
 ; GitHub Releases の配布元 (resolve8.md §4 / R5)
 #define RepoOwner        "evolutysystems"
-#define RepoName         "homepage"
+; 配布チャネル: payload を匿名DLさせるため public リポジトリ(autoedit)を使用する。
+; (homepage は private でリリースアセットの匿名取得ができないため / 2026-07)
+#define RepoName         "autoedit"
 #define ReleaseTag       "v" + MyAppVersion
 #define ReleaseBaseUrl   "https://github.com/" + RepoOwner + "/" + RepoName + "/releases/download/" + ReleaseTag
 
@@ -37,7 +39,7 @@
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    ""
+#define PayloadSHA256    "F181274AC87B6D4252349646806F8B9199A142D9D3A19829159C6C5A1166FA07"
 ; -------------------------------------------------------------------
 
 [Setup]
@@ -139,7 +141,8 @@ begin
       begin
         inStream := TFileStream.Create(Parts[i], fmOpenRead);
         try
-          outStream.CopyFrom(inStream, 0);  { 0 = ソース全体をコピー }
+          { Count=0 でソース全体、第3引数 BufferSize は Inno Setup 6.7+ で必須 (推奨 $100000) }
+          outStream.CopyFrom(inStream, 0, $100000);
         finally
           inStream.Free;
         end;
