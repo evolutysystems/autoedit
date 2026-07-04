@@ -8,6 +8,7 @@ import tempfile
 
 from ..exceptions import FFmpegError, InputError
 from ..utils.logger import get_logger
+from ..utils.proc import no_window_creationflags
 from . import ffmpeg_runner
 
 _logger = get_logger(__name__)
@@ -35,7 +36,9 @@ def detect_silence(input_path, noise_threshold_db, min_duration_sec, ffmpeg_sett
     _logger.debug("silencedetect 実行: %s", " ".join(cmd))
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            # GUI(windowed)実行時にコンソール窓を出さない (Windows のみ有効)
+            creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
         raise FFmpegError(f"FFmpeg 実行失敗: {e}") from e

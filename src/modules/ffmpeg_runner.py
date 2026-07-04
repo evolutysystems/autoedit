@@ -6,6 +6,7 @@ import subprocess
 
 from ..exceptions import FFmpegError
 from ..utils.logger import get_logger
+from ..utils.proc import no_window_creationflags
 from ..utils.progress import run_ffmpeg_progress
 
 _logger = get_logger(__name__)
@@ -59,7 +60,9 @@ def probe_duration(input_path, ffmpeg_settings):
     _logger.debug("ffprobe 実行: %s", " ".join(cmd))
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            # GUI(windowed)実行時にコンソール窓を出さない (Windows のみ有効)
+            creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
         raise FFmpegError(f"ffprobe 実行に失敗: {e}") from e

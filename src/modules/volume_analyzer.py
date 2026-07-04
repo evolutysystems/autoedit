@@ -9,6 +9,7 @@ import subprocess
 
 from ..exceptions import FFmpegError, InputError
 from ..utils.logger import get_logger
+from ..utils.proc import no_window_creationflags
 from . import ffmpeg_runner, silence_cutter
 
 _logger = get_logger(__name__)
@@ -37,7 +38,9 @@ def measure_region_volume(input_path, start, end, ffmpeg_settings):
     ]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            # GUI(windowed)実行時にコンソール窓を出さない (Windows のみ有効)
+            creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
         raise FFmpegError(f"FFmpeg 実行失敗: {e}") from e

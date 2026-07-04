@@ -9,7 +9,7 @@
     },
     "subtitle": {
         "language": "ja",
-        "own_subtitle_color": "#ED0004",
+        "own_subtitle_color": "#01D5ED",
         "enabled": true,
         "review_enabled": true,
         "review_on_empty_skip": true,
@@ -66,7 +66,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -41
+        "last_cut_db": -31
     },
     "ffmpeg": {
         "executable": "ffmpeg",

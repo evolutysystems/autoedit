@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 import sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIntValidator
@@ -25,10 +24,6 @@ from PySide6.QtWidgets import (
 # 設定ファイルパス
 SETTINGS_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "setting.json")
-
-# パイプライン起動スクリプト (src/main.py) のパス
-# SETTINGS_DIR は src/settings のため、親ディレクトリ(src)直下の main.py を指す
-MAIN_SCRIPT = os.path.join(os.path.dirname(SETTINGS_DIR), "main.py")
 
 # ウィンドウ設定
 WINDOW_TITLE = "切り抜き自動編集 設定"
@@ -289,18 +284,13 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._build_subtitle_tab(), "字幕")
         root_layout.addWidget(tabs)
 
-        # 保存ボタン / 開始ボタン (全タブ共通・タブ外に配置)
+        # 保存ボタン (全タブ共通・タブ外に配置)
         save_button = QPushButton("保存")
         save_button.setMinimumHeight(32)
         save_button.clicked.connect(self._on_save)
-        # 開始ボタン: 現在の設定を保存後、main.py(パイプライン)を実行する
-        start_button = QPushButton("開始")
-        start_button.setMinimumHeight(32)
-        start_button.clicked.connect(self._on_start)
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
-        button_layout.addWidget(start_button)
         root_layout.addLayout(button_layout)
 
     # 「一般」タブを構築する
@@ -861,37 +851,6 @@ class SettingsWindow(QWidget):
     # 保存ボタン押下処理
     def _on_save(self):
         self._save_current(show_message=True)
-
-    # 開始ボタン押下処理
-    # 現在の設定を保存してから main.py (パイプライン) を別プロセスで実行する
-    def _on_start(self):
-        # 最新の UI 値で処理されるよう、まず保存する (失敗時は中断)
-        if not self._save_current(show_message=False):
-            return
-
-        # 起動スクリプトの存在確認
-        if not os.path.exists(MAIN_SCRIPT):
-            QMessageBox.critical(
-                self, "起動エラー",
-                f"実行スクリプトが見つかりません。\n{MAIN_SCRIPT}",
-            )
-            return
-
-        try:
-            # GUI をブロックしないよう別プロセスで起動する
-            # Windows では進捗表示を確認できるよう新しいコンソールを開く
-            creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-            subprocess.Popen(
-                [sys.executable, MAIN_SCRIPT],
-                cwd=os.path.dirname(MAIN_SCRIPT),
-                creationflags=creationflags,
-            )
-            QMessageBox.information(
-                self, "実行開始",
-                "パイプラインの処理を開始しました。\n進捗は別ウィンドウ(コンソール)で確認できます。",
-            )
-        except OSError as e:
-            QMessageBox.critical(self, "起動エラー", f"処理の起動に失敗しました。\n{e}")
 
 
 # エントリーポイント

@@ -2,14 +2,16 @@
 # resolve3 §8 に対応
 # 生成テロップを一覧表示し、テキスト修正・使用可否の選択を行う。
 # 列構成: 時間(表示のみ) / 字幕(編集可) / 使用(チェックボックス・初期全チェック)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -27,6 +29,58 @@ _COLUMN_HEADERS = ["時間", "字幕", "使用"]
 # ウィンドウ既定サイズ
 _DIALOG_WIDTH = 720
 _DIALOG_HEIGHT = 520
+
+# 改行挿入に使う修飾キー (Alt / Shift + Enter で改行)
+_NEWLINE_MODIFIERS = Qt.AltModifier | Qt.ShiftModifier
+
+
+# 「字幕」セル内の複数行エディタ
+# Alt+Enter / Shift+Enter で改行を挿入し、修飾なし Enter で編集確定する。
+class _MultilineCellEdit(QPlainTextEdit):
+
+    # 修飾なし Enter で編集確定 (コミット&クローズ) を要求するシグナル
+    commit_requested = Signal()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.modifiers() & _NEWLINE_MODIFIERS:
+                # Alt / Shift + Enter → カーソル位置に改行を挿入
+                self.insertPlainText("\n")
+                return
+            # 修飾なし Enter → 編集を確定する
+            self.commit_requested.emit()
+            return
+        # それ以外のキー (Esc=破棄 等) は既定動作に委ねる
+        super().keyPressEvent(event)
+
+
+# 「字幕」列を複数行編集にするための delegate
+# 既定の単一行 QLineEdit を複数行エディタに差し替え、改行入力を可能にする。
+class _MultilineTextDelegate(QStyledItemDelegate):
+
+    # 複数行エディタを生成する
+    def createEditor(self, parent, option, index):
+        editor = _MultilineCellEdit(parent)
+        # 修飾なし Enter でコミットして閉じる
+        editor.commit_requested.connect(lambda: self._commit_and_close(editor))
+        return editor
+
+    # エディタの内容を確定し、エディタを閉じる
+    def _commit_and_close(self, editor):
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor)
+
+    # item のテキスト (既に実改行を含む) をエディタへ反映する
+    def setEditorData(self, editor, index):
+        editor.setPlainText(index.data(Qt.EditRole) or "")
+
+    # エディタのテキスト (実改行を含む) を item へ書き戻す
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+
+    # エディタをセル矩形に合わせて配置する
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
 
 
 # 開始/終了秒を「H:MM:SS.cc → H:MM:SS.cc」形式の表示文字列にする
@@ -71,6 +125,12 @@ class SubtitleEditorDialog(QDialog):
         header.setSectionResizeMode(_COL_USE, QHeaderView.ResizeToContents)
         # 行全体ではなくセル単位で編集させる
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        # 「字幕」列を複数行編集にし、Alt/Shift+Enter で改行できるようにする
+        self.table.setItemDelegateForColumn(_COL_TEXT, _MultilineTextDelegate(self.table))
+        # 明示改行を折り返し表示する
+        self.table.setWordWrap(True)
+        # 編集で改行が増減した際に行の高さを追従させる
+        self.table.itemChanged.connect(self._on_item_changed)
         root.addWidget(self.table)
 
         # 全選択 / 全解除 (利便用)
@@ -121,6 +181,10 @@ class SubtitleEditorDialog(QDialog):
             self.table.setItem(row, _COL_USE, use_item)
 
         self.table.resizeRowsToContents()
+
+    # セル編集で改行が増減した際に、その行の高さを内容へ追従させる
+    def _on_item_changed(self, item):
+        self.table.resizeRowToContents(item.row())
 
     # 全行の使用チェックを一括設定する
     def _set_all_use(self, checked):

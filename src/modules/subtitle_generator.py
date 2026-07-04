@@ -129,6 +129,27 @@ def _resolve_compute_type(configured_compute_type, device):
     return ct
 
 
+# テキストを最大文字数で改行 (ASS の \\N) する
+# 既存の \\N は「手動/強制改行」として尊重し、各区間をさらに max_line_length ごとに
+# 分割して連結する (手動改行 + 15文字自動ラップの併用)。
+def wrap_by_length(text, max_line_length):
+    if max_line_length <= 0 or not text:
+        return text
+    chunks = []
+    # 手動/既存の強制改行 (\\N) で一旦分割し、各区間を最大文字数で折る
+    for segment in text.split("\\N"):
+        if len(segment) <= max_line_length:
+            chunks.append(segment)
+            continue
+        s = segment
+        while len(s) > max_line_length:
+            chunks.append(s[:max_line_length])
+            s = s[max_line_length:]
+        if s:
+            chunks.append(s)
+    return "\\N".join(chunks)
+
+
 # faster-whisper による音声認識でテキストタイムラインを生成する TextSource 実装
 # 参照元 ../StreamPipeline/dev と同一エンジン (faster-whisper) を採用
 class WhisperTextSource(TextSource):
@@ -252,17 +273,9 @@ class WhisperTextSource(TextSource):
             text = text.replace(filler, "")
         return text.strip()
 
-    # 最大文字数で改行 (ASS の \\N) を挿入する
+    # 最大文字数で改行 (ASS の \\N) を挿入する (共通関数へ委譲)
     def _split_lines(self, text):
-        if self._max_line_length <= 0 or len(text) <= self._max_line_length:
-            return text
-        lines = []
-        while len(text) > self._max_line_length:
-            lines.append(text[: self._max_line_length])
-            text = text[self._max_line_length:]
-        if text:
-            lines.append(text)
-        return "\\N".join(lines)
+        return wrap_by_length(text, self._max_line_length)
 
 
 # subtitle.engine 設定に応じた TextSource 実装を返す
@@ -534,8 +547,10 @@ def _review_timeline(context, timeline, subtitle_cfg):
         raise PipelineCancelled("字幕編集がキャンセルされたためパイプラインを中断します")
 
     # 使用チェックされたエントリのみを残す (use キーは焼き込み前に除去)
+    # 確定時に 15文字自動改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)
+    max_len = int(subtitle_cfg.get("max_line_length", 15))
     used = [
-        {"start": e["start"], "end": e["end"], "text": e["text"]}
+        {"start": e["start"], "end": e["end"], "text": wrap_by_length(e["text"], max_len)}
         for e in edited
         if e.get("use", True)
     ]

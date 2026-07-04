@@ -24,7 +24,7 @@ else:
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -42,6 +42,11 @@ _logger = get_logger(__name__)
 
 # 動画ファイルフィルタ (settings_window と整合)
 _VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;すべてのファイル (*)"
+
+# 稼働証明スピナーのコマ (Claude Code 風の回転記号) と更新間隔
+# 表示崩れ環境向けに ASCII 版 ["|", "/", "-", "\\"] へ差し替え可能
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_SPINNER_INTERVAL_MS = 120
 
 
 # ワーカースレッドとメインスレッドの橋渡し (字幕編集画面の表示)
@@ -237,6 +242,20 @@ class MainWindow(QWidget):
         self.status_label = QLabel("待機中")
         root.addWidget(self.status_label)
 
+        # 稼働証明スピナー: 実行中のみ status_label 先頭で回転させる
+        # 進捗率が出ない工程 (音声認識等) でも「動いている」ことを示す
+        self._spinner_index = 0
+        self._spinner_message = "待機中"
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(_SPINNER_INTERVAL_MS)
+        self._spinner_timer.timeout.connect(self._tick_spinner)
+
+    # スピナーを1コマ進めて status_label を更新する (QTimer 駆動)
+    def _tick_spinner(self):
+        frame = _SPINNER_FRAMES[self._spinner_index % len(_SPINNER_FRAMES)]
+        self._spinner_index += 1
+        self.status_label.setText(f"{frame} {self._spinner_message}")
+
     # 設定画面を開く (別ウィンドウとして表示する)
     def _on_open_settings(self):
         # 既に開いている場合は前面に出すだけ
@@ -280,8 +299,8 @@ class MainWindow(QWidget):
         self._worker.cancelled.connect(self._on_cancelled)
         self._worker.failed.connect(self._on_failed)
 
+        self._spinner_message = "処理開始..."
         self._set_running(True)
-        self.status_label.setText("処理開始...")
         self._worker.start()
 
     # 実行中の UI 状態を切り替える
@@ -289,11 +308,17 @@ class MainWindow(QWidget):
         self.run_button.setEnabled(not running)
         self.browse_button.setEnabled(not running)
         self.input_edit.setEnabled(not running)
+        # 実行中のみスピナーを回す
+        if running:
+            self._spinner_timer.start()
+        else:
+            self._spinner_timer.stop()
 
     # 進捗更新 (メインスレッド)
+    # ラベルはスピナーが描画するためメッセージ更新のみ行う (ちらつき防止)
     def _on_progress(self, ratio, label):
         self.progress_bar.setValue(int(ratio * 100))
-        self.status_label.setText(label)
+        self._spinner_message = label
 
     # 正常終了
     def _on_finished_ok(self, output_path):

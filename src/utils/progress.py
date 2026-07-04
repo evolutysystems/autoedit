@@ -8,6 +8,7 @@ import time
 from collections import deque
 
 from .logger import get_logger
+from .proc import no_window_creationflags
 
 _logger = get_logger(__name__)
 
@@ -48,6 +49,8 @@ def run_ffmpeg_progress(command, total_duration=0.0, on_progress=None,
         universal_newlines=True,
         encoding="utf-8",
         errors="replace",
+        # GUI(windowed)実行時にコンソール窓を出さない (Windows のみ有効)
+        creationflags=no_window_creationflags(),
     )
 
     # stderr を専用スレッドで並行ドレインする (デッドロック対策)
