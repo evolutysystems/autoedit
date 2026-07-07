@@ -19,7 +19,7 @@
 
 ; ---- リリース毎に更新するパラメータ -------------------------------
 #define MyAppName        "AutoEdit"
-#define MyAppVersion     "1.0.2"
+#define MyAppVersion     "1.0.3"
 #define MyAppPublisher   "Evoluty Systems"
 #define MyAppExeName     "AutoEdit.exe"
 
@@ -35,11 +35,11 @@
 ;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "AutoEdit-v1.0.0.zip"
 ;  - 2GiB を超える場合は分割: "AutoEdit-v1.0.0.zip.001,AutoEdit-v1.0.0.zip.002"
 ;    (各 part は GitHub Releases の 2GiB 上限未満であること)
-#define PayloadParts     "AutoEdit-v1.0.2.zip"
+#define PayloadParts     "AutoEdit-v1.0.3.zip"
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "F15CFCDD5DA362B12C2450EB03BB9AD3E16ED7AEE2B06323384E1B8ACBDFB75B"
+#define PayloadSHA256    "A4904541EBF126E6D1FBE6F11D4B228CB1090CB25E0DA524341079B65F214DF6"
 ; -------------------------------------------------------------------
 
 [Setup]
@@ -194,10 +194,9 @@ end;
   プレースホルダ @@OUTPUT_DIR@@ でも実パスでも、現在値に関わらず置換できる。 }
 function PatchOutputDir(const SettingsFile, OutDir: String): Boolean;
 var
-  lines: TArrayOfString;
-  i, kp, r1, r2: Integer;
-  line, rest, afterQ1, jsonPath, prefix, suffix: String;
-  done: Boolean;
+  raw: AnsiString;
+  content, jsonPath, afterKey, afterQ1, prefix, suffix: String;
+  kp, r1, r2: Integer;
 begin
   Result := False;
   if not FileExists(SettingsFile) then
@@ -205,47 +204,42 @@ begin
     Log('setting.json が見つかりません: ' + SettingsFile);
     Exit;
   end;
-  if not LoadStringsFromFile(SettingsFile, lines) then
+
+  { UTF-8 を破壊しないため byte-exact に読み書きする (error 20260707)。
+    ANSI 版(LoadStringsFromFile/SaveStringsToFile)はシステムコードページ(CP932)で
+    変換し日本語を含む setting.json を壊す。AnsiString で生バイトを読み、Utf8Decode で
+    正しい Unicode へ復元し、置換後に Utf8Encode で UTF-8 バイトへ戻して書き出す。 }
+  if not LoadStringFromFile(SettingsFile, raw) then
   begin
     Log('setting.json の読み込みに失敗しました: ' + SettingsFile);
     Exit;
   end;
+  content := Utf8Decode(raw);   { UTF-8 生バイト -> Unicode(日本語を正しく保持) }
 
   { Windows パスの '\' を JSON で安全な '/' へ変換 (既存設定も '/' 区切り) }
   jsonPath := OutDir;
   StringChangeEx(jsonPath, '\', '/', True);
 
-  done := False;
-  for i := 0 to GetArrayLength(lines) - 1 do
+  { "output_directory" の値(最初の " 以降、次の " まで)を jsonPath へ置換する。
+    値はダブルクォートで囲まれた ASCII/日本語いずれも安全に差し替えられる。 }
+  kp := Pos('"output_directory"', content);
+  if kp = 0 then
   begin
-    line := lines[i];
-    kp := Pos('"output_directory"', line);
-    if kp > 0 then
-    begin
-      { キー名以降の部分を取り出し、値の開始/終了クォートを特定する }
-      rest := Copy(line, kp + Length('"output_directory"'), Length(line));
-      r1 := Pos('"', rest);                          { 値の開始クォート }
-      if r1 > 0 then
-      begin
-        afterQ1 := Copy(rest, r1 + 1, Length(rest));
-        r2 := Pos('"', afterQ1);                      { 値の終了クォート }
-        if r2 > 0 then
-        begin
-          { 開始クォートまでを前置、終了クォート以降(カンマ等)を後置として再構築 }
-          prefix := Copy(line, 1, kp + Length('"output_directory"') - 1) + Copy(rest, 1, r1);
-          suffix := Copy(afterQ1, r2, Length(afterQ1));
-          lines[i] := prefix + jsonPath + suffix;
-          done := True;
-          Break;
-        end;
-      end;
-    end;
-  end;
-
-  if done then
-    Result := SaveStringsToFile(SettingsFile, lines, False)
-  else
     Log('setting.json 内に output_directory が見つかりませんでした。');
+    Exit;
+  end;
+  afterKey := Copy(content, kp + Length('"output_directory"'), Length(content));
+  r1 := Pos('"', afterKey);                       { 値の開始クォート }
+  if r1 = 0 then Exit;
+  afterQ1 := Copy(afterKey, r1 + 1, Length(afterKey));
+  r2 := Pos('"', afterQ1);                         { 値の終了クォート }
+  if r2 = 0 then Exit;
+  prefix := Copy(content, 1, kp + Length('"output_directory"') - 1) + Copy(afterKey, 1, r1);
+  suffix := Copy(afterQ1, r2, Length(afterQ1));
+  content := prefix + jsonPath + suffix;
+
+  { Utf8Encode で UTF-8 バイトへ戻し byte-exact 保存 (日本語・パスとも UTF-8 で保存) }
+  Result := SaveStringToFile(SettingsFile, Utf8Encode(content), False);
 end;
 
 { ダウンロード進捗コールバック (UI 用) }

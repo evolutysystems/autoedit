@@ -207,6 +207,25 @@ COLUMN_LABEL_WIDTH = 100
 INPUT_FIELD_MIN_WIDTH = 160
 
 
+# setting.json を読み込み JSON(dict) を返す。読めない/壊れている場合は None。
+# UTF-8(BOM許容) を最優先し、失敗時は CP932 で回復を試みる
+# (旧インストーラが ANSI 保存した破損ファイルの救済 / error 20260707)。
+def _read_settings_file():
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            with open(SETTINGS_FILE, "r", encoding=enc) as f:
+                content = f.read().strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not content:
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 # 設定ファイルを読み込む(空またはエラーの場合はデフォルトを返す)
 # persist_new_keys=True の場合、新バージョンで増えた新規キーを補完した結果を
 # 一度だけ setting.json へ書き戻す (request_autoupdate.md §8.2)。
@@ -214,13 +233,9 @@ INPUT_FIELD_MIN_WIDTH = 160
 def load_settings(persist_new_keys=True):
     if not os.path.exists(SETTINGS_FILE):
         return DEFAULT_SETTINGS.copy()
-    try:
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-        if not content:
-            return DEFAULT_SETTINGS.copy()
-        data = json.loads(content)
-    except (json.JSONDecodeError, OSError):
+
+    data = _read_settings_file()
+    if data is None:
         return DEFAULT_SETTINGS.copy()
 
     merged = _merge_with_defaults(data)
