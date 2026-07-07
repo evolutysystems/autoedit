@@ -212,6 +212,78 @@ def wrap_by_length(text, max_line_length):
     return "\\N".join(chunks)
 
 
+# BudouX パーサの遅延初期化シングルトン (毎回ロードするコストを避ける)
+# budoux は任意依存のため、ここで import 失敗すれば呼び出し側がフォールバックする。
+_budoux_parser = None
+
+
+def _get_budoux_parser():
+    global _budoux_parser
+    if _budoux_parser is None:
+        import budoux  # 任意依存: 未導入時は ImportError -> wrap_lines でフォールバック
+        _budoux_parser = budoux.load_default_japanese_parser()
+    return _budoux_parser
+
+
+# BudouX で文節境界を求め、下限〜上限文字数を目安に改行 (ASS の \\N) する。
+# 既存の \\N は「手動/強制改行」として尊重し、各区間を文節単位で折り返す。
+# ルール:
+#   - 行が下限 (min_line_length) 未満の間は文節を足し続ける (短すぎる行を避ける)
+#   - 下限達成後、次の文節を足して上限 (max_line_length) を超える場合は文節境界で改行
+#   - 単一文節が上限を超える場合のみ、その行を wrap_by_length で文字数ハード分割 (保険)
+def wrap_by_budoux(text, min_line_length, max_line_length, parser):
+    if max_line_length <= 0 or not text:
+        return text
+    out_lines = []
+    for segment in text.split("\\N"):
+        if not segment:
+            out_lines.append(segment)
+            continue
+        phrases = parser.parse(segment)  # 文節リスト -> list[str]
+        line = ""
+        for ph in phrases:
+            if not line:
+                line = ph
+            elif len(line) < min_line_length:
+                # 下限未満: 文節を足して下限に近づける (下限優先)
+                line += ph
+            elif len(line) + len(ph) <= max_line_length:
+                # 下限達成 かつ 上限内: 同一行へ追加
+                line += ph
+            else:
+                # 下限達成 かつ 上限超過: 文節境界で改行
+                out_lines.append(line)
+                line = ph
+        if line:
+            out_lines.append(line)
+
+    # 単一文節が上限超過の行のみ、従来ロジックで文字数ハード分割 (上限保険)
+    result = []
+    for ln in out_lines:
+        if len(ln) > max_line_length:
+            result.extend(wrap_by_length(ln, max_line_length).split("\\N"))
+        else:
+            result.append(ln)
+    return "\\N".join(result)
+
+
+# 設定 (wrap_engine) に応じて改行方式を選択する。
+# BudouX 未導入/分割失敗時は文字数改行 (wrap_by_length) へ安全にフォールバックする。
+def wrap_lines(text, min_line_length, max_line_length, engine="budoux"):
+    if engine == "budoux":
+        try:
+            parser = _get_budoux_parser()
+            return wrap_by_budoux(text, min_line_length, max_line_length, parser)
+        except ImportError:
+            _logger.warning(
+                "budoux が未導入のため文字数改行にフォールバックします "
+                "(pip install budoux)。subtitle.wrap_engine を 'length' にすると警告を抑止できます。"
+            )
+        except Exception as e:  # noqa: BLE001 (分割失敗時もテロップ全損を避ける)
+            _logger.warning("BudouX 改行に失敗したため文字数改行にフォールバック: %s", e)
+    return wrap_by_length(text, max_line_length)
+
+
 # faster-whisper による音声認識でテキストタイムラインを生成する TextSource 実装
 # 参照元 ../StreamPipeline/dev と同一エンジン (faster-whisper) を採用
 class WhisperTextSource(TextSource):
@@ -223,7 +295,10 @@ class WhisperTextSource(TextSource):
         self._device_setting = subtitle_settings.get("whisper_device", "cpu")
         self._compute_type_setting = subtitle_settings.get("whisper_compute_type", "int8")
         self._beam_size = int(subtitle_settings.get("whisper_beam_size", 8))
-        self._max_line_length = int(subtitle_settings.get("max_line_length", 15))
+        # 改行設定 (request11): BudouX による文節改行を既定とし、下限〜上限で折り返す
+        self._min_line_length = int(subtitle_settings.get("min_line_length", 15))
+        self._max_line_length = int(subtitle_settings.get("max_line_length", 20))
+        self._wrap_engine = str(subtitle_settings.get("wrap_engine", "budoux")).strip().lower()
         self._remove_fillers = bool(subtitle_settings.get("remove_fillers", False))
         self._fillers = subtitle_settings.get("fillers", _DEFAULT_FILLERS)
         # ハルシネーション抑制オプション (対策A / docs/error/20260626/resolve.md)
@@ -335,9 +410,10 @@ class WhisperTextSource(TextSource):
             text = text.replace(filler, "")
         return text.strip()
 
-    # 最大文字数で改行 (ASS の \\N) を挿入する (共通関数へ委譲)
+    # 改行 (ASS の \\N) を挿入する (共通ヘルパへ委譲)
+    # wrap_engine="budoux" で文節改行、それ以外/未導入時は文字数改行へフォールバック。
     def _split_lines(self, text):
-        return wrap_by_length(text, self._max_line_length)
+        return wrap_lines(text, self._min_line_length, self._max_line_length, self._wrap_engine)
 
 
 # subtitle.engine 設定に応じた TextSource 実装を返す
@@ -624,12 +700,15 @@ def _review_timeline(context, timeline, subtitle_cfg):
         raise PipelineCancelled("字幕編集がキャンセルされたためパイプラインを中断します")
 
     # 使用チェックされたエントリのみを残す (use キーは焼き込み前に除去)
-    # 確定時に 15文字自動改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)。
+    # 確定時に改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)。
+    # wrap_engine="budoux" で文節改行、それ以外/未導入時は文字数改行 (request11)。
     # 役割 (role) は焼き込み時の色分けに使うため保持する。
-    max_len = int(subtitle_cfg.get("max_line_length", 15))
+    min_len = int(subtitle_cfg.get("min_line_length", 15))
+    max_len = int(subtitle_cfg.get("max_line_length", 20))
+    engine = str(subtitle_cfg.get("wrap_engine", "budoux")).strip().lower()
     used = [
         {"start": e["start"], "end": e["end"],
-         "text": wrap_by_length(e["text"], max_len),
+         "text": wrap_lines(e["text"], min_len, max_len, engine),
          "role": e.get("role", _DEFAULT_ROLE)}
         for e in edited
         if e.get("use", True)

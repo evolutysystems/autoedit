@@ -55,6 +55,12 @@ SPEECH_GATE_MODE_OPTIONS = [
     ("split", "発話小区間ごとに分割"),
 ]
 
+# テロップ改行方式 (request11): BudouX による文節改行 / 従来の文字数改行
+WRAP_ENGINE_OPTIONS = [
+    ("budoux", "BudouX(文節)"),
+    ("length", "文字数"),
+]
+
 # 縁取りスタイル選択肢 (value, 表示テキスト)
 BORDER_STYLE_OPTIONS = [
     (1, "縁取り + ドロップシャドウ"),
@@ -117,7 +123,10 @@ DEFAULT_SETTINGS = {
         "speech_pad_sec": 0.1,
         "font_family": "Yu Gothic UI",
         "font_size": 48,
-        "max_line_length": 15,
+        # 改行設定 (request11): BudouX による文節改行を既定とし、下限〜上限で折り返す
+        "wrap_engine": "budoux",
+        "min_line_length": 15,
+        "max_line_length": 20,
         # アウトライン色 (配信者=outline_color / sub / comment)。ASS 形式 &HAABBGGRR。
         "outline_color": "&H00000000",
         "sub_outline_color": "&H00000000",
@@ -269,6 +278,9 @@ class SettingsWindow(QWidget):
         # フォント関係ウィジェット参照
         self.font_size_edit = None
         self.font_family_combo = None
+        # 改行設定 (request11): 方式コンボ / 下限・上限文字数
+        self.wrap_engine_combo = None
+        self.min_line_length_edit = None
         self.max_line_length_edit = None
         # アウトライン色 (配信者=outline_color_edit / サブ / コメント)
         self.outline_color_edit = None
@@ -480,6 +492,18 @@ class SettingsWindow(QWidget):
         self.font_family_combo.addItems(QFontDatabase.families())
         grid.addWidget(self._make_column_label("フォント種類"), row, 0)
         grid.addWidget(self.font_family_combo, row, 1)
+        row += 1
+
+        # 改行方式 (request11): BudouX(文節) / 文字数
+        self.wrap_engine_combo = self._make_value_combo(WRAP_ENGINE_OPTIONS)
+        grid.addWidget(self._make_column_label("改行方式"), row, 0)
+        grid.addWidget(self.wrap_engine_combo, row, 1)
+        row += 1
+
+        # 1行下限文字数 (整数のみ / BudouX 時のみ有効)
+        self.min_line_length_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("1行下限文字数"), row, 0)
+        grid.addWidget(self.min_line_length_edit, row, 1)
         row += 1
 
         # 1行最大文字数 (整数のみ)
@@ -772,7 +796,10 @@ class SettingsWindow(QWidget):
         # フォント関係
         self.font_size_edit.setText(str(subtitle.get("font_size", 48)))
         self._set_font_family(subtitle.get("font_family", "Yu Gothic UI"))
-        self.max_line_length_edit.setText(str(subtitle.get("max_line_length", 15)))
+        # 改行設定 (request11)
+        self._set_combo_data(self.wrap_engine_combo, subtitle.get("wrap_engine", "budoux"))
+        self.min_line_length_edit.setText(str(subtitle.get("min_line_length", 15)))
+        self.max_line_length_edit.setText(str(subtitle.get("max_line_length", 20)))
         # アウトライン色 (配信者/サブ/コメント)
         self.outline_color_edit.setText(subtitle.get("outline_color", ""))
         self.sub_outline_color_edit.setText(subtitle.get("sub_outline_color", ""))
@@ -870,7 +897,10 @@ class SettingsWindow(QWidget):
             # フォント関係 (数値は既定値へフォールバック、色/フォントは文字列保存)
             "font_size": self._to_int(self.font_size_edit.text(), 48),
             "font_family": self.font_family_combo.currentText(),
-            "max_line_length": self._to_int(self.max_line_length_edit.text(), 15),
+            # 改行設定 (request11)
+            "wrap_engine": self.wrap_engine_combo.currentData(),
+            "min_line_length": self._to_int(self.min_line_length_edit.text(), 15),
+            "max_line_length": self._to_int(self.max_line_length_edit.text(), 20),
             # アウトライン色 (配信者/サブ/コメント)
             "outline_color": self.outline_color_edit.text().strip(),
             "sub_outline_color": self.sub_outline_color_edit.text().strip(),

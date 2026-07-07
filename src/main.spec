@@ -1,12 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=collect_data_files('budoux'),        # BudouX のモデルJSON等を同梱 (request11)
+    hiddenimports=collect_submodules('budoux'),  # BudouX 遅延 import 対策 (request11)
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

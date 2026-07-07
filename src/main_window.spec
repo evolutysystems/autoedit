@@ -9,16 +9,18 @@
 # CUDA ランタイム DLL (nvidia-*-cu12) の同梱は廃止した。これにより配布ペイロードを
 # 大幅に削減し、GitHub Releases の 1ファイル 2GiB 上限に収めやすくする。
 
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
 a = Analysis(
     ['gui/main_window.py'],          # GUI エントリポイント
     pathex=['..'],                   # 'from src.xxx' 解決のためリポジトリルートを追加
     binaries=[],                     # CUDA 同梱は廃止 (CPU 実行のため不要 / resolve8.md)
     datas=[
         ('settings/setting.json', 'src/settings'),   # 初期設定を実行時参照先へ同梱
-    ],
+    ] + collect_data_files('budoux'),   # BudouX のモデルJSON等を同梱 (request11)
     hiddenimports=[
         'faster_whisper',            # 遅延 import のため明示
-    ],
+    ] + collect_submodules('budoux'),   # BudouX 遅延 import 対策 (request11)
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
