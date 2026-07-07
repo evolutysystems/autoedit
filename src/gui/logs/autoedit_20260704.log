@@ -1,0 +1,78 @@
+2026-07-04 11:22:21,051 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-04 11:22:21,051 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kokuzoku.mp4
+2026-07-04 11:22:34,324 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 8/8 区間)
+2026-07-04 11:22:46,688 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-04 11:22:46,698 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-04 11:22:53,680 [INFO] src.modules.silence_cutter: 検出された無音区間: 12 件
+2026-07-04 11:23:18,013 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_kkimq89a\silence_cut.mp4
+2026-07-04 11:24:42,098 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-04 11:24:42,098 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-04 11:24:52,429 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-04 11:25:23,143 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-07-04 11:25:23,431 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-04 11:31:02,382 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-04 11:31:02,382 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-04 11:31:02,414 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kokuzoku_edited_1.mp4
+2026-07-04 11:31:02,423 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kokuzoku_edited_1.mp4
+2026-07-04 14:28:07,216 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-04 14:28:07,216 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kokuzoku.mp4
+2026-07-04 14:28:18,848 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 8/8 区間)
+2026-07-04 14:28:23,030 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-04 14:28:23,032 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-04 14:28:29,851 [INFO] src.modules.silence_cutter: 検出された無音区間: 12 件
+2026-07-04 14:28:54,914 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_at7nd4bb\silence_cut.mp4
+2026-07-04 14:28:59,281 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-04 14:28:59,281 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-04 14:29:06,645 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-04 14:29:36,000 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-07-04 14:29:36,190 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-04 14:31:47,327 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-04 14:31:47,327 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-04 14:31:47,327 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kokuzoku_edited.mp4
+2026-07-04 14:31:47,335 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kokuzoku_edited.mp4
+2026-07-04 15:07:11,011 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-04 15:07:11,011 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kokuzoku.mp4
+2026-07-04 15:07:22,509 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 8/8 区間)
+2026-07-04 15:07:27,042 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-04 15:07:27,045 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-04 15:07:33,836 [INFO] src.modules.silence_cutter: 検出された無音区間: 12 件
+2026-07-04 15:07:58,548 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_w7kzj4ss\silence_cut.mp4
+2026-07-04 15:08:02,391 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-04 15:08:02,393 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-04 15:08:09,940 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-04 15:08:39,302 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-07-04 15:08:39,531 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-04 15:09:05,988 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-04 15:09:05,988 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-04 15:09:06,004 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kokuzoku_edited_1.mp4
+2026-07-04 15:09:06,004 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kokuzoku_edited_1.mp4
+2026-07-04 15:37:43,053 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-04 15:37:43,053 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kokuzoku.mp4
+2026-07-04 15:37:59,670 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 8/8 区間)
+2026-07-04 15:38:02,392 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-04 15:38:02,401 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-04 15:38:10,683 [INFO] src.modules.silence_cutter: 検出された無音区間: 12 件
+2026-07-04 15:38:44,371 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_7adzgj0b\silence_cut.mp4
+2026-07-04 15:38:51,546 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-04 15:38:51,548 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-04 15:39:03,797 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-04 15:39:41,077 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-07-04 15:39:41,433 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-04 15:40:15,623 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-04 15:40:15,623 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-04 15:40:15,640 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kokuzoku_edited_2.mp4
+2026-07-04 15:40:15,640 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kokuzoku_edited_2.mp4
+2026-07-04 15:57:08,784 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-04 15:57:08,786 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/f1.mp4
+2026-07-04 16:21:27,506 [INFO] src.modules.volume_analyzer: 測定区間を標本化: 1227 → 100 区間 (長い順)
+2026-07-04 16:23:22,064 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 100/1227 区間)
+2026-07-04 16:33:30,925 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-04 16:33:30,927 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-04 16:58:33,153 [INFO] src.modules.silence_cutter: 検出された無音区間: 1378 件
+2026-07-04 18:01:19,558 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_xko6a656\silence_cut.mp4
+2026-07-04 18:01:53,062 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-04 18:01:53,062 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-04 18:02:00,821 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-04 19:48:23,876 [INFO] src.modules.subtitle_generator: 音声認識完了 (1577 セグメント)
+2026-07-04 19:48:24,640 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 1577 → 1577 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-06 01:49:58,027 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル

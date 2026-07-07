@@ -1,0 +1,17 @@
+2026-07-06 01:50:33,605 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-06 01:50:33,605 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/igirisu.mp4
+2026-07-06 02:05:20,722 [INFO] src.modules.volume_analyzer: 測定区間を標本化: 748 → 100 区間 (長い順)
+2026-07-06 02:07:11,242 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-27 (mean, 測定 100/748 区間)
+2026-07-06 02:09:51,358 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -27 dB
+2026-07-06 02:09:51,363 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-27dB, min=0.600s, fade=False
+2026-07-06 02:24:10,006 [INFO] src.modules.silence_cutter: 検出された無音区間: 817 件
+2026-07-06 02:59:48,031 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_qe9k0ebw\silence_cut.mp4
+2026-07-06 03:00:19,169 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-06 03:00:19,171 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-06 03:00:25,674 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-06 03:58:55,383 [INFO] src.modules.subtitle_generator: 音声認識完了 (995 セグメント)
+2026-07-06 03:58:55,621 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 995 → 995 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-07 02:54:44,748 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-07 02:54:44,748 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-07 02:54:45,088 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\igirisu_edited.mp4
+2026-07-07 02:54:45,088 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\igirisu_edited.mp4

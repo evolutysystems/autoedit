@@ -5,16 +5,19 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 # 既存の ASS タイムスタンプ整形を再利用し、画面・ASS で表記を揃える (§8.3)
@@ -24,7 +27,21 @@ from ..modules.subtitle_generator import _format_ass_time
 _COL_TIME = 0
 _COL_TEXT = 1
 _COL_USE = 2
-_COLUMN_HEADERS = ["時間", "字幕", "使用"]
+# テロップ役割列 (使用の右隣。1行につき1つだけ排他選択する / request10)
+_COL_STREAMER = 3
+_COL_SUB = 4
+_COL_COMMENT = 5
+_COLUMN_HEADERS = ["時間", "字幕", "使用", "配信者", "サブ", "コメント"]
+
+# 役割キー(内部識別子) と 列インデックスの対応。焼き込み時の色分けに使う。
+# (role, 列インデックス) の順。既定選択は先頭の配信者(streamer)。
+_ROLE_COLUMNS = [
+    ("streamer", _COL_STREAMER),
+    ("sub", _COL_SUB),
+    ("comment", _COL_COMMENT),
+]
+# 既定役割 (役割未指定・未選択時のフォールバック)
+_DEFAULT_ROLE = "streamer"
 
 # ウィンドウ既定サイズ
 _DIALOG_WIDTH = 720
@@ -88,8 +105,37 @@ def _format_time_range(start, end):
     return f"{_format_ass_time(start)} → {_format_ass_time(end)}"
 
 
+# ラジオボタンをセル内で中央寄せするためのコンテナウィジェットを生成する
+# (setCellWidget へ直接 QRadioButton を置くと左寄せになるため)
+def _centered_widget(inner):
+    container = QWidget()
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addStretch(1)
+    layout.addWidget(inner)
+    layout.addStretch(1)
+    return container
+
+
+# 列インデックスから役割キーを逆引きする (未選択=-1 等は既定役割へフォールバック)
+def _col_to_role(col):
+    for role, c in _ROLE_COLUMNS:
+        if c == col:
+            return role
+    return _DEFAULT_ROLE
+
+
+# 既定役割 (_DEFAULT_ROLE) に対応する列インデックスを返す
+def _role_default_column():
+    for role, c in _ROLE_COLUMNS:
+        if role == _DEFAULT_ROLE:
+            return c
+    return _ROLE_COLUMNS[0][1]
+
+
 # 字幕編集ダイアログ
-# items: [{"start": float, "end": float, "text": str, "use": bool}]
+# items: [{"start": float, "end": float, "text": str, "use": bool, "role": str}]
+#   role は "streamer"(配信者) / "sub"(サブ) / "comment"(コメント)。省略時は配信者。
 class SubtitleEditorDialog(QDialog):
 
     # 初期化 (items の use 初期値は呼び出し側で全件 True を渡す想定)
@@ -100,6 +146,8 @@ class SubtitleEditorDialog(QDialog):
 
         # start/end は編集不可のため元値を保持しておき、確定時にそのまま返す
         self._items = [dict(item) for item in items]
+        # 行ごとの役割ラジオを排他管理する QButtonGroup を保持する (result 取得用)
+        self._role_groups = []
 
         self._build_ui()
         self._populate(self._items)
@@ -111,7 +159,8 @@ class SubtitleEditorDialog(QDialog):
         # 説明ラベル
         root.addWidget(QLabel(
             "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
-            "「時間」は編集できません。チェックを外した字幕は焼き込まれません。"
+            "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
+            "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。"
         ))
 
         # 一覧テーブル
@@ -123,6 +172,9 @@ class SubtitleEditorDialog(QDialog):
         header.setSectionResizeMode(_COL_TIME, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(_COL_TEXT, QHeaderView.Stretch)
         header.setSectionResizeMode(_COL_USE, QHeaderView.ResizeToContents)
+        # 役割列 (配信者/サブ/コメント) は内容に合わせる
+        for _role, col in _ROLE_COLUMNS:
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         # 行全体ではなくセル単位で編集させる
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         # 「字幕」列を複数行編集にし、Alt/Shift+Enter で改行できるようにする
@@ -159,6 +211,7 @@ class SubtitleEditorDialog(QDialog):
     # items をテーブルへ反映する
     def _populate(self, items):
         self.table.setRowCount(len(items))
+        self._role_groups = []
         for row, item in enumerate(items):
             # 時間列: 表示のみ (編集不可)
             time_item = QTableWidgetItem(_format_time_range(item["start"], item["end"]))
@@ -180,6 +233,23 @@ class SubtitleEditorDialog(QDialog):
             use_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, _COL_USE, use_item)
 
+            # 役割列: 配信者/サブ/コメント を行内で排他選択させる
+            # (QButtonGroup を行ごとに作り、各セルへ中央寄せしたラジオを配置)
+            group = QButtonGroup(self)
+            group.setExclusive(True)
+            current_role = str(item.get("role", _DEFAULT_ROLE))
+            for role_key, col in _ROLE_COLUMNS:
+                radio = QRadioButton()
+                radio.setChecked(role_key == current_role)
+                self.table.setCellWidget(row, col, _centered_widget(radio))
+                group.addButton(radio, col)  # id=列番号 で選択列を逆引き可能に
+            # いずれも未選択(不正 role) の場合は既定役割を選択状態にする
+            if group.checkedId() < 0:
+                default_button = group.button(_role_default_column())
+                if default_button is not None:
+                    default_button.setChecked(True)
+            self._role_groups.append(group)
+
         self.table.resizeRowsToContents()
 
     # セル編集で改行が増減した際に、その行の高さを内容へ追従させる
@@ -195,7 +265,8 @@ class SubtitleEditorDialog(QDialog):
                 use_item.setCheckState(state)
 
     # 「字幕決定」確定後に編集結果を返す
-    # 戻り値: [{"start", "end", "text", "use"}] (start/end は不変、text/use は編集反映)
+    # 戻り値: [{"start", "end", "text", "use", "role"}]
+    #   start/end は不変、text/use/role は編集反映。role は焼き込み時の色分けに使う。
     def result_items(self):
         results = []
         for row, original in enumerate(self._items):
@@ -204,10 +275,14 @@ class SubtitleEditorDialog(QDialog):
             # 表示用の実改行を ASS の \N へ戻す
             text = "" if text_item is None else text_item.text().replace("\n", "\\N")
             use = use_item is not None and use_item.checkState() == Qt.Checked
+            # 選択された役割ラジオの列番号から役割キーを逆引きする
+            group = self._role_groups[row] if row < len(self._role_groups) else None
+            role = _col_to_role(group.checkedId()) if group is not None else _DEFAULT_ROLE
             results.append({
                 "start": original["start"],
                 "end": original["end"],
                 "text": text,
                 "use": use,
+                "role": role,
             })
         return results

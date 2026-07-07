@@ -46,20 +46,47 @@ def _safe_ass_color(value, default):
     return default
 
 
+# テロップ役割 (request10) の既定値。役割未指定時はこの色(=配信者色)へ寄せる。
+_DEFAULT_ROLE = "streamer"
+
+
+# HTML #RRGGBB を ASS PrimaryColour (&H00BBGGRR) へ変換する
+# 6桁でない不正値は白(&H00FFFFFF)へフォールバックする
+def _hex_to_ass_color(color_hex):
+    hex_value = str(color_hex or "").lstrip("#")
+    if len(hex_value) != 6:
+        return "&H00FFFFFF"
+    r, g, b = hex_value[0:2], hex_value[2:4], hex_value[4:6]
+    return f"&H00{b}{g}{r}".upper()
+
+
 # フォント情報を保持する値オブジェクト (将来のフォント差替に対応)
-# ASS Style 行に必要なスタイル項目を一括で保持する
+# ASS Style 行に必要なスタイル項目を一括で保持する。
+# 色 (塗り・アウトライン) はテロップ役割 (配信者/サブ/コメント) ごとに分けて保持し、
+# 色以外 (フォント/太さ/配置/余白/背景) は全役割共通 (request10 / 追加2)。
 class FontProfile:
+
+    # 役割キー → ASS Style 名。色 (塗り+アウトライン) 以外の属性は全 Style で共通とする。
+    ROLE_STYLE = {"streamer": "Streamer", "sub": "Sub", "comment": "Comment"}
 
     def __init__(self, family, size, color_hex,
                  outline_color=None, outline_width=3, back_color=None,
                  bold=False, italic=False, underline=False, strikeout=False,
                  spacing=0, angle=0, border_style=1, alignment=2,
-                 margin_l=40, margin_r=40, margin_v=60):
+                 margin_l=40, margin_r=40, margin_v=60, role_colors=None,
+                 role_outline_colors=None, comment_label="コメント："):
         self.family = family
         self.size = int(size) if size is not None else 48
+        # 配信者色 (旧来の単一色)。後方互換のため引数名/意味は据え置く。
         self.color_hex = color_hex or "#FFFFFF"
+        # 役割別・塗り色マップ (streamer/sub/comment)。欠落・省略時は配信者色へフォールバック。
+        self.role_colors = self._normalize_role_colors(role_colors)
+        # コメント役割の先頭ラベル (空文字で無効)。焼き込み時にのみ本文先頭へ付与する。
+        self.comment_label = comment_label or ""
         # アウトライン/背景色は ASS 形式文字列をそのまま保持 (不正時は既定値)
         self.outline_color = _safe_ass_color(outline_color, _DEFAULT_OUTLINE_COLOR)
+        # 役割別・アウトライン色マップ (追加2)。欠落・省略時は配信者アウトライン色へフォールバック。
+        self.role_outline_colors = self._normalize_role_outline_colors(role_outline_colors)
         self.outline_width = _to_int(outline_width, 3)
         self.back_color = _safe_ass_color(back_color, _DEFAULT_BACK_COLOR)
         # 装飾フラグ (bool で保持し、展開時に -1/0 へ変換)
@@ -75,19 +102,43 @@ class FontProfile:
         self.margin_r = _to_int(margin_r, 40)
         self.margin_v = _to_int(margin_v, 60)
 
-    # ASS の PrimaryColour は &HBBGGRR& 形式
-    def to_ass_color(self):
-        hex_value = self.color_hex.lstrip("#")
-        if len(hex_value) != 6:
-            return "&H00FFFFFF"
-        r, g, b = hex_value[0:2], hex_value[2:4], hex_value[4:6]
-        return f"&H00{b}{g}{r}".upper()
+    # 役割別・塗り色マップを正規化する
+    # streamer は配信者色(color_hex)を既定とし、sub/comment の欠落は配信者色へ寄せる
+    def _normalize_role_colors(self, role_colors):
+        rc = dict(role_colors or {})
+        streamer = rc.get("streamer") or self.color_hex
+        return {
+            "streamer": streamer,
+            "sub": rc.get("sub") or streamer,
+            "comment": rc.get("comment") or streamer,
+        }
 
-    # ASS Style 行 (Style: 以降のカンマ区切り値) を生成する
-    def to_ass_style(self):
+    # 役割別・アウトライン色マップを正規化する (追加2)
+    # streamer は配信者アウトライン色(self.outline_color)を既定とし、
+    # sub/comment の欠落は配信者アウトライン色へ寄せる。各値は _safe_ass_color で検証する。
+    def _normalize_role_outline_colors(self, role_outline_colors):
+        rc = dict(role_outline_colors or {})
+        streamer = _safe_ass_color(rc.get("streamer"), self.outline_color)
+        return {
+            "streamer": streamer,
+            "sub": _safe_ass_color(rc.get("sub"), streamer),
+            "comment": _safe_ass_color(rc.get("comment"), streamer),
+        }
+
+    # 後方互換: 配信者色の ASS PrimaryColour (&H00BBGGRR) を返す
+    def to_ass_color(self):
+        return _hex_to_ass_color(self.color_hex)
+
+    # 役割キーに対応する ASS Style 名を返す (未知の役割は配信者へフォールバック)
+    def style_for_role(self, role):
+        return self.ROLE_STYLE.get(role, self.ROLE_STYLE[_DEFAULT_ROLE])
+
+    # 指定 Style 名・塗り色 (HTML #RRGGBB)・アウトライン色 (ASS &HAABBGGRR) の
+    # ASS Style 値 (Style: 以降) を生成する。塗り=PrimaryColour / アウトライン=OutlineColour。
+    def to_ass_style_named(self, style_name, color_hex, outline_color):
         return (
-            f"Default,{self.family},{self.size},"
-            f"{self.to_ass_color()},{self.outline_color},{self.back_color},"
+            f"{style_name},{self.family},{self.size},"
+            f"{_hex_to_ass_color(color_hex)},{outline_color},{self.back_color},"
             f"{_ass_flag(self.bold)},{_ass_flag(self.italic)},"
             f"{_ass_flag(self.underline)},{_ass_flag(self.strikeout)},"
             f"{_ASS_SCALE_X},{_ASS_SCALE_Y},{self.spacing},{self.angle},"
@@ -95,6 +146,17 @@ class FontProfile:
             f"{self.alignment},{self.margin_l},{self.margin_r},{self.margin_v},"
             f"{_ASS_ENCODING}"
         )
+
+    # 全役割の Style 値を (Style名, Style値) のリストで返す
+    # 配信者→サブ→コメント の順。各役割の塗り色＋アウトライン色を差し替える (追加2)。
+    def iter_role_styles(self):
+        return [
+            (self.ROLE_STYLE[role],
+             self.to_ass_style_named(self.ROLE_STYLE[role],
+                                     self.role_colors[role],
+                                     self.role_outline_colors[role]))
+            for role in ("streamer", "sub", "comment")
+        ]
 
 
 # フィラー(口癖)除去の既定リスト (設定 subtitle.fillers で上書き可能)
@@ -298,7 +360,14 @@ def resolve_text_source(settings):
 
 
 # タイムラインから ASS 字幕ファイルを生成する
+# テロップ役割 (配信者/サブ/コメント) ごとに色違いの Style を定義し、
+# 各 Dialogue 行は entry["role"] に対応する Style を参照する (request10)。
+# role 欠落 entry は配信者(streamer) 扱い=旧来の単一色と同一挙動 (後方互換)。
 def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, video_height=1080):
+    # 役割別 Style 行 (Streamer/Sub/Comment) をまとめて出力する
+    style_lines = "\n".join(
+        f"Style: {value}" for _name, value in font_profile.iter_role_styles()
+    )
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -310,7 +379,7 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, "
         "Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: {font_profile.to_ass_style()}\n\n"
+        f"{style_lines}\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -320,7 +389,14 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         start = _format_ass_time(entry["start"])
         end = _format_ass_time(entry["end"])
         text = entry["text"].replace("\n", "\\N")
-        body_lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
+        role = entry.get("role", _DEFAULT_ROLE)
+        # コメント役割のみ先頭に「コメント：」＋改行(\N)を付与する (request10 追加要望5)。
+        # 本文は既に \N 折返し済みのため、ラベルは独立行として折返しに巻き込まれない。
+        if role == "comment" and font_profile.comment_label:
+            text = f"{font_profile.comment_label}\\N{text}"
+        # 役割に対応する Style 名で色分けする (role 未指定は配信者)
+        style_name = font_profile.style_for_role(role)
+        body_lines.append(f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}")
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(body_lines) + "\n")
@@ -534,9 +610,10 @@ def _review_timeline(context, timeline, subtitle_cfg):
         # CLI など画面を持たない実行経路: 全件使用
         return timeline
 
-    # 編集画面へ渡す入力を生成する (初期値は全件チェック=使用)
+    # 編集画面へ渡す入力を生成する (初期値は全件チェック=使用、役割は既定=配信者)
     items = [
-        {"start": e["start"], "end": e["end"], "text": e["text"], "use": True}
+        {"start": e["start"], "end": e["end"], "text": e["text"], "use": True,
+         "role": e.get("role", _DEFAULT_ROLE)}
         for e in timeline
     ]
 
@@ -547,10 +624,13 @@ def _review_timeline(context, timeline, subtitle_cfg):
         raise PipelineCancelled("字幕編集がキャンセルされたためパイプラインを中断します")
 
     # 使用チェックされたエントリのみを残す (use キーは焼き込み前に除去)
-    # 確定時に 15文字自動改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)
+    # 確定時に 15文字自動改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)。
+    # 役割 (role) は焼き込み時の色分けに使うため保持する。
     max_len = int(subtitle_cfg.get("max_line_length", 15))
     used = [
-        {"start": e["start"], "end": e["end"], "text": wrap_by_length(e["text"], max_len)}
+        {"start": e["start"], "end": e["end"],
+         "text": wrap_by_length(e["text"], max_len),
+         "role": e.get("role", _DEFAULT_ROLE)}
         for e in edited
         if e.get("use", True)
     ]
@@ -584,6 +664,20 @@ def run(context):
         family=subtitle_cfg.get("font_family", "Yu Gothic UI"),
         size=subtitle_cfg.get("font_size", 48),
         color_hex=subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
+        # テロップ役割別カラー (配信者=own / サブ / コメント)。欠落時は配信者色へ寄せる。
+        role_colors={
+            "streamer": subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
+            "sub": subtitle_cfg.get("sub_subtitle_color", ""),
+            "comment": subtitle_cfg.get("comment_subtitle_color", ""),
+        },
+        # 役割別アウトライン色 (追加2)。空文字なら配信者アウトライン色へフォールバック。
+        role_outline_colors={
+            "streamer": subtitle_cfg.get("outline_color", ""),
+            "sub": subtitle_cfg.get("sub_outline_color", ""),
+            "comment": subtitle_cfg.get("comment_outline_color", ""),
+        },
+        # コメント役割の先頭ラベル (request10 追加要望5)。空文字ならラベル無し。
+        comment_label=subtitle_cfg.get("comment_label", "コメント："),
         outline_color=subtitle_cfg.get("outline_color", _DEFAULT_OUTLINE_COLOR),
         outline_width=subtitle_cfg.get("outline_width", 3),
         back_color=subtitle_cfg.get("back_color", _DEFAULT_BACK_COLOR),

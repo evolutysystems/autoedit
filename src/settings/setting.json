@@ -9,7 +9,10 @@
     },
     "subtitle": {
         "language": "ja",
-        "own_subtitle_color": "#01D5ED",
+        "own_subtitle_color": "#ED0004",
+        "sub_subtitle_color": "#2ABCFF",
+        "comment_subtitle_color": "#FFFFFF",
+        "comment_label": "コメント：",
         "enabled": true,
         "review_enabled": true,
         "review_on_empty_skip": true,
@@ -22,6 +25,8 @@
         "font_size": 130,
         "max_line_length": 15,
         "outline_color": "&H00FFFFFF",
+        "sub_outline_color": "&H00FFFFFF",
+        "comment_outline_color": "&H00000000",
         "outline_width": 10,
         "back_color": "&H64000000",
         "bold": true,
@@ -66,7 +71,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -31
+        "last_cut_db": -27
     },
     "ffmpeg": {
         "executable": "ffmpeg",
