@@ -19,7 +19,7 @@
 
 ; ---- リリース毎に更新するパラメータ -------------------------------
 #define MyAppName        "AutoEdit"
-#define MyAppVersion     "1.0.1"
+#define MyAppVersion     "1.0.2"
 #define MyAppPublisher   "Evoluty Systems"
 #define MyAppExeName     "AutoEdit.exe"
 
@@ -35,11 +35,11 @@
 ;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "AutoEdit-v1.0.0.zip"
 ;  - 2GiB を超える場合は分割: "AutoEdit-v1.0.0.zip.001,AutoEdit-v1.0.0.zip.002"
 ;    (各 part は GitHub Releases の 2GiB 上限未満であること)
-#define PayloadParts     "AutoEdit-v1.0.1.zip"
+#define PayloadParts     "AutoEdit-v1.0.2.zip"
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "C47A1EC34BE6ABDC45935BF98C041D26DB56BE87125FC9D19D242F86C4D52B9C"
+#define PayloadSHA256    "F15CFCDD5DA362B12C2450EB03BB9AD3E16ED7AEE2B06323384E1B8ACBDFB75B"
 ; -------------------------------------------------------------------
 
 [Setup]
@@ -310,13 +310,29 @@ begin
   end;
 end;
 
-{ インストール直前: 結合→検証→展開→setting.jsonパッチ→出力先作成 を実施する (§4/§6)。
+{ 指定インストール先ディレクトリ配下の setting.json のパスを返す }
+function SettingsPathFor(const BaseDir: String): String;
+begin
+  Result := BaseDir + '\_internal\src\settings\setting.json';
+end;
+
+{ 更新インストール(既存 setting.json あり)では出力先選択ページをスキップする。
+  既存の output_directory (ユーザー値) を維持するため (request_autoupdate.md §8.1)。 }
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (OutputDirPage <> nil) and (PageID = OutputDirPage.ID) then
+    Result := FileExists(SettingsPathFor(WizardDirValue));
+end;
+
+{ インストール直前: 結合→検証→展開→(新規)出力先パッチ/(更新)設定復元 を実施する (§4/§6)。
   非空文字列を返すとインストールを中止しメッセージ表示する。 }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   parts, partPaths: TArrayOfString;
   i: Integer;
-  mergedZip, appDir, settingsPath, expectedHash, actualHash, outDir: String;
+  mergedZip, appDir, settingsPath, backupPath, expectedHash, actualHash, outDir: String;
+  isUpdate: Boolean;
 begin
   Result := '';
 
@@ -349,8 +365,19 @@ begin
   else
     Log('PayloadSHA256 が未設定のため整合性検証をスキップしました。');
 
-  { 3) インストール先へ展開 (onedir 構成をそのまま配置 / §4) }
+  { 3) 更新判定 + 既存 setting.json の退避 (展開前)。
+       更新時はユーザー設定を保持するため、展開で上書きされる前に退避する
+       (request_autoupdate.md §8.1)。 }
   appDir := ExpandConstant('{app}');
+  settingsPath := SettingsPathFor(appDir);
+  backupPath := ExpandConstant('{tmp}\setting.user.json');
+  isUpdate := FileExists(settingsPath);
+  if isUpdate then
+    if not FileCopy(settingsPath, backupPath, False) then
+      Log('既存 setting.json の退避に失敗しました。設定が既定に戻る可能性があります。');
+
+  { 4) インストール先へ展開 (onedir 構成をそのまま配置 / §4)。
+       payload の既定 setting.json でユーザー設定が上書きされる。 }
   ForceDirectories(appDir);
   if not ExtractZip(mergedZip, appDir) then
   begin
@@ -358,14 +385,23 @@ begin
     Exit;
   end;
 
-  { 4) setting.json の output_directory をユーザー選択値へパッチ (R3/§6)。
-       失敗してもインストールは継続する (既定値のまま / §10) }
-  outDir := OutputDirPage.Values[0];
-  settingsPath := appDir + '\_internal\src\settings\setting.json';
-  if not PatchOutputDir(settingsPath, outDir) then
-    Log('setting.json のパッチに失敗しました。アプリの設定画面で出力先を変更してください。');
-
-  { 5) 出力先フォルダを作成 (未存在なら) }
-  if not ForceDirectories(outDir) then
-    Log('出力先フォルダの作成に失敗しました: ' + outDir);
+  { 5) 設定の確定 }
+  if isUpdate then
+  begin
+    { 更新: 退避した既存 setting.json をそのまま復元し、既存値を一切上書きしない。
+      新バージョンで増えた新規キーはアプリ起動時に _merge_with_defaults が補完する
+      (request_autoupdate.md §8.2)。出力先パッチ・作成は行わない (既存値を維持)。 }
+    if not FileCopy(backupPath, settingsPath, False) then
+      Log('既存 setting.json の復元に失敗しました。設定が既定に戻る可能性があります。');
+  end
+  else
+  begin
+    { 新規インストール: output_directory をユーザー選択値へパッチし、出力先を作成する。
+      失敗してもインストールは継続する (既定値のまま / §10)。 }
+    outDir := OutputDirPage.Values[0];
+    if not PatchOutputDir(settingsPath, outDir) then
+      Log('setting.json のパッチに失敗しました。アプリの設定画面で出力先を変更してください。');
+    if not ForceDirectories(outDir) then
+      Log('出力先フォルダの作成に失敗しました: ' + outDir);
+  end;
 end;

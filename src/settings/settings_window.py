@@ -104,6 +104,8 @@ DEFAULT_SETTINGS = {
         "ending_video": "",
         "ending_enabled": True,
         "output_directory": "",
+        # 起動時の自動更新チェック ON/OFF (request_autoupdate.md §7)
+        "auto_update_check": True,
     },
     "subtitle": {
         "language": "ja",
@@ -206,18 +208,29 @@ INPUT_FIELD_MIN_WIDTH = 160
 
 
 # 設定ファイルを読み込む(空またはエラーの場合はデフォルトを返す)
-def load_settings():
+# persist_new_keys=True の場合、新バージョンで増えた新規キーを補完した結果を
+# 一度だけ setting.json へ書き戻す (request_autoupdate.md §8.2)。
+# 既存値は _merge_with_defaults がユーザー値優先で保持するため上書きにはならない。
+def load_settings(persist_new_keys=True):
     if not os.path.exists(SETTINGS_FILE):
         return DEFAULT_SETTINGS.copy()
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             content = f.read().strip()
-            if not content:
-                return DEFAULT_SETTINGS.copy()
-            data = json.loads(content)
-            return _merge_with_defaults(data)
+        if not content:
+            return DEFAULT_SETTINGS.copy()
+        data = json.loads(content)
     except (json.JSONDecodeError, OSError):
         return DEFAULT_SETTINGS.copy()
+
+    merged = _merge_with_defaults(data)
+    # 新規キーが増えていれば (既存値は不変) 一度だけ永続化する
+    if persist_new_keys and _has_new_keys(data, merged):
+        try:
+            save_settings(merged)
+        except OSError:
+            pass  # 保存失敗しても実行は継続 (メモリ上は補完済み)
+    return merged
 
 
 # 読み込んだデータに不足項目があればデフォルトで補完する
@@ -229,6 +242,18 @@ def _merge_with_defaults(data):
             for key, value in data[section].items():
                 merged[section][key] = value
     return merged
+
+
+# merged に data へ無い新規キー (セクション or セクション内キー) が1つでもあれば True。
+# 既存値の変更は判定に含めない (新規追加のみを永続化トリガとする)。
+def _has_new_keys(data, merged):
+    for section, values in merged.items():
+        if section not in data:
+            return True
+        if isinstance(values, dict) and isinstance(data.get(section), dict):
+            if any(key not in data[section] for key in values):
+                return True
+    return False
 
 
 # 設定をsetting.jsonに保存する
@@ -254,6 +279,8 @@ class SettingsWindow(QWidget):
         self.ending_edit = None
         self.ending_enabled_check = None
         self.output_dir_edit = None
+        # 自動更新チェック ON/OFF (request_autoupdate.md)
+        self.auto_update_check_check = None
         # 無音カット関係ウィジェット参照
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
         self.fade_enabled_check = None
@@ -359,6 +386,12 @@ class SettingsWindow(QWidget):
         self.output_dir_edit = QLineEdit()
         grid.addWidget(self._make_column_label("出力ディレクトリ"), row, 0)
         grid.addLayout(self._make_dir_picker(self.output_dir_edit), row, 1)
+        row += 1
+
+        # 自動更新チェック ON/OFF (request_autoupdate.md §7)
+        self.auto_update_check_check = QCheckBox("起動時に更新を確認する")
+        grid.addWidget(self._make_column_label("自動更新"), row, 0)
+        grid.addWidget(self.auto_update_check_check, row, 1)
         row += 1
 
         # ===== 無音カット (silence_cut) =====
@@ -761,6 +794,7 @@ class SettingsWindow(QWidget):
         self.ending_edit.setText(general.get("ending_video", ""))
         self.ending_enabled_check.setChecked(bool(general.get("ending_enabled", True)))
         self.output_dir_edit.setText(general.get("output_directory", ""))
+        self.auto_update_check_check.setChecked(bool(general.get("auto_update_check", True)))
 
         # 無音カット
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
@@ -868,6 +902,7 @@ class SettingsWindow(QWidget):
             "ending_video": self.ending_edit.text().strip(),
             "ending_enabled": self.ending_enabled_check.isChecked(),
             "output_directory": self.output_dir_edit.text().strip(),
+            "auto_update_check": self.auto_update_check_check.isChecked(),
         })
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除。
         # 既存値は base (load_settings) からそのまま引き継がれ上書きしない。

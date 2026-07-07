@@ -5,7 +5,8 @@
         "opening_enabled": false,
         "ending_video": "D:/StreamPipeline/dev/assets/ed.mp4",
         "ending_enabled": false,
-        "output_directory": "D:/develop/autoedit/output"
+        "output_directory": "D:/develop/autoedit/output",
+        "auto_update_check": true
     },
     "subtitle": {
         "language": "ja",

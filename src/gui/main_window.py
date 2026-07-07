@@ -15,12 +15,16 @@ if __package__ is None or __package__ == "":
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
     from src.pipeline.pipeline_runner import run_pipeline
     from src.settings.settings_window import SettingsWindow, load_settings
+    from src.utils import updater
     from src.utils.logger import get_logger
+    from src.version import __version__
 else:
     from ..exceptions import PipelineCancelled
     from ..pipeline.pipeline_runner import run_pipeline
     from ..settings.settings_window import SettingsWindow, load_settings
+    from ..utils import updater
     from ..utils.logger import get_logger
+    from ..version import __version__
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
@@ -33,6 +37,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -192,6 +197,56 @@ class PipelineWorker(QThread):
         self.progress.emit(float(ratio), str(label))
 
 
+# 起動時の更新チェックをワーカースレッドで行う (request_autoupdate.md §6.1)
+# UI をブロックしないよう GitHub Releases 問い合わせを別スレッドで実行する。
+class UpdateCheckWorker(QThread):
+
+    # 新版検知時のみ latest 情報 {"tag","installer_url"} を通知する
+    update_available = Signal(object)
+
+    def __init__(self, current_version, parent=None):
+        super().__init__(parent)
+        self._current_version = current_version
+
+    def run(self):
+        try:
+            latest = updater.find_update(self._current_version)
+        except Exception as e:  # noqa: BLE001 (更新チェック失敗は致命ではない)
+            _logger.info("更新チェックに失敗 (無視して続行): %s", e)
+            return
+        if latest:
+            self.update_available.emit(latest)
+
+
+# インストーラのダウンロードをワーカースレッドで行う
+class UpdateDownloadWorker(QThread):
+
+    progress = Signal(int)       # 0-100 (総サイズ不明時は -1 を通知)
+    finished_ok = Signal(str)    # DL 済みインストーラのパス
+    failed = Signal(str)
+
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self._url = url
+
+    def run(self):
+        try:
+            path = updater.download_installer(self._url, on_progress=self._on_progress)
+            self.finished_ok.emit(path)
+        except Exception as e:  # noqa: BLE001 (DL 失敗は GUI へ通知)
+            _logger.exception("更新のダウンロードに失敗")
+            self.failed.emit(str(e))
+
+    # urlretrieve の reporthook: (block_num, block_size, total_size)
+    def _on_progress(self, block_num, block_size, total_size):
+        if total_size and total_size > 0:
+            downloaded = block_num * block_size
+            percent = int(min(downloaded * 100 // total_size, 100))
+            self.progress.emit(percent)
+        else:
+            self.progress.emit(-1)  # 総サイズ不明 → 不確定表示
+
+
 # GUI ランチャ本体
 class MainWindow(QWidget):
 
@@ -205,6 +260,10 @@ class MainWindow(QWidget):
         self._volume_bridge = None
         # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ)
         self._settings_window = None
+        # 自動更新ワーカー参照 (GC 防止)
+        self._update_check_worker = None
+        self._update_download_worker = None
+        self._update_progress = None
         self._build_ui()
 
     # 画面構築
@@ -339,12 +398,91 @@ class MainWindow(QWidget):
         self.status_label.setText("エラーで停止しました")
         QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
 
+    # ===== 自動更新 (request_autoupdate.md §6) =====
+
+    # 起動時の更新チェックを開始する (設定 ON 時のみ / 非ブロッキング)
+    def start_update_check(self):
+        if not self._settings.get("general", {}).get("auto_update_check", True):
+            return
+        self._update_check_worker = UpdateCheckWorker(__version__, parent=self)
+        self._update_check_worker.update_available.connect(self._on_update_available)
+        self._update_check_worker.start()
+
+    # 新版検知: 確認ダイアログを表示し、同意時にダウンロードを開始する
+    def _on_update_available(self, latest):
+        tag = latest.get("tag", "")
+        answer = QMessageBox.question(
+            self, "更新の確認",
+            f"新しいバージョン {tag} が公開されています。\n"
+            "今すぐ更新しますか？（更新中はアプリが再起動されます）",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        # ダウンロード進捗ダイアログ (キャンセル不可: 途中中断で不整合を避ける)
+        self._update_progress = QProgressDialog(
+            "更新プログラムをダウンロードしています...", None, 0, 100, self
+        )
+        self._update_progress.setWindowTitle("更新")
+        self._update_progress.setWindowModality(Qt.WindowModal)
+        self._update_progress.setAutoClose(False)
+        self._update_progress.setValue(0)
+        self._update_progress.show()
+
+        self._update_download_worker = UpdateDownloadWorker(
+            latest["installer_url"], parent=self
+        )
+        self._update_download_worker.progress.connect(self._on_update_progress)
+        self._update_download_worker.finished_ok.connect(self._on_update_downloaded)
+        self._update_download_worker.failed.connect(self._on_update_download_failed)
+        self._update_download_worker.start()
+
+    # ダウンロード進捗 (百分率。-1 は総サイズ不明=不確定バー)
+    def _on_update_progress(self, percent):
+        if self._update_progress is None:
+            return
+        if percent < 0:
+            self._update_progress.setRange(0, 0)  # 不確定 (ビジー) 表示
+        else:
+            self._update_progress.setRange(0, 100)
+            self._update_progress.setValue(percent)
+
+    # ダウンロード完了: インストーラを起動しアプリを終了する
+    def _on_update_downloaded(self, installer_path):
+        if self._update_progress is not None:
+            self._update_progress.close()
+        QMessageBox.information(
+            self, "更新",
+            "更新プログラムを起動します。アプリを終了します。",
+        )
+        try:
+            updater.launch_installer(installer_path)
+        except Exception as e:  # noqa: BLE001 (起動失敗も GUI へ通知)
+            _logger.exception("更新プログラムの起動に失敗")
+            QMessageBox.warning(self, "更新", f"更新プログラムの起動に失敗しました。\n{e}")
+            return
+        # インストーラが本体を上書きできるよう、アプリを終了する
+        QApplication.quit()
+
+    # ダウンロード失敗: 通常起動を継続 (更新は次回に持ち越し)
+    def _on_update_download_failed(self, message):
+        if self._update_progress is not None:
+            self._update_progress.close()
+        QMessageBox.warning(
+            self, "更新",
+            f"更新のダウンロードに失敗しました。次回起動時に再試行します。\n{message}",
+        )
+
 
 # エントリーポイント
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+    # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)
+    window.start_update_check()
     sys.exit(app.exec())
 
 
