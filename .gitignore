@@ -3,5 +3,8 @@ src/build/
 output/
 src/dist/
 
+# 同梱 FFmpeg (ビルド時配置物・外部入手)。リポジトリに含めず HowToRelease §2 の手順で配置する (error 20260708)
+src/ffmpeg/
+
 # Installer packages
 *.pkg

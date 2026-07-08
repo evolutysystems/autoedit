@@ -1,0 +1,15 @@
+2026-07-07 15:45:39,870 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-07 15:45:51,220 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-07 15:45:51,220 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kokuzoku.mp4
+2026-07-07 15:46:06,397 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 8/8 区間)
+2026-07-07 15:46:09,994 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-07-07 15:46:09,994 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-31dB, min=0.600s, fade=False
+2026-07-07 15:46:20,302 [INFO] src.modules.silence_cutter: 検出された無音区間: 12 件
+2026-07-07 15:46:55,082 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_joqe4ree\silence_cut.mp4
+2026-07-07 15:46:59,223 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-07 15:46:59,223 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-07 15:47:07,112 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-07 15:47:38,679 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-07-07 15:47:38,909 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-07 15:47:56,729 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-07-07 16:00:32,209 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ

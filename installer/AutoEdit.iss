@@ -19,7 +19,7 @@
 
 ; ---- リリース毎に更新するパラメータ -------------------------------
 #define MyAppName        "AutoEdit"
-#define MyAppVersion     "1.0.3"
+#define MyAppVersion     "1.0.4"
 #define MyAppPublisher   "Evoluty Systems"
 #define MyAppExeName     "AutoEdit.exe"
 
@@ -35,11 +35,11 @@
 ;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "AutoEdit-v1.0.0.zip"
 ;  - 2GiB を超える場合は分割: "AutoEdit-v1.0.0.zip.001,AutoEdit-v1.0.0.zip.002"
 ;    (各 part は GitHub Releases の 2GiB 上限未満であること)
-#define PayloadParts     "AutoEdit-v1.0.3.zip"
+#define PayloadParts     "AutoEdit-v1.0.4.zip"
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "A4904541EBF126E6D1FBE6F11D4B228CB1090CB25E0DA524341079B65F214DF6"
+#define PayloadSHA256    "382AF4826152E6C65A428801B8F7CFB69197E6D2CC6FC630FF91283C08764604"
 ; -------------------------------------------------------------------
 
 [Setup]

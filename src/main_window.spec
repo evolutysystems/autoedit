@@ -17,6 +17,11 @@ a = Analysis(
     binaries=[],                     # CUDA 同梱は廃止 (CPU 実行のため不要 / resolve8.md)
     datas=[
         ('settings/setting.json', 'src/settings'),   # 初期設定を実行時参照先へ同梱
+        # FFmpeg/ffprobe を PATH 非依存にするため同梱する (error 20260708 / HowToRelease §3.2)。
+        # onedir では _internal/ffmpeg/ へ展開され、ffmpeg_runner._resolve_exe が sys._MEIPASS 基準で解決する。
+        # ソースは src/ffmpeg/ に配置(git 管理外・HowToRelease §2 で入手)。binaries でなく datas で純コピーする。
+        ('ffmpeg/ffmpeg.exe', 'ffmpeg'),
+        ('ffmpeg/ffprobe.exe', 'ffmpeg'),
     ] + collect_data_files('budoux'),   # BudouX のモデルJSON等を同梱 (request11)
     hiddenimports=[
         'faster_whisper',            # 遅延 import のため明示

@@ -182,8 +182,10 @@ DEFAULT_SETTINGS = {
         "last_cut_db": -28,
     },
     "ffmpeg": {
-        "executable": "ffmpeg",
-        "ffprobe_executable": "ffprobe",
+        # 同梱 FFmpeg を PATH 非依存で参照する相対パス (error 20260708)。
+        # 非凍結(開発)実行では ffmpeg_runner._resolve_exe が PATH の ffmpeg.exe を解決する。
+        "executable": "ffmpeg/ffmpeg.exe",
+        "ffprobe_executable": "ffmpeg/ffprobe.exe",
         "video_codec": "libx264",
         "audio_codec": "aac",
         "preset": "medium",

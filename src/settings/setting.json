@@ -74,11 +74,11 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -27
+        "last_cut_db": -31
     },
     "ffmpeg": {
-        "executable": "ffmpeg",
-        "ffprobe_executable": "ffprobe",
+        "executable": "ffmpeg/ffmpeg.exe",
+        "ffprobe_executable": "ffmpeg/ffprobe.exe",
         "video_codec": "libx264",
         "audio_codec": "aac",
         "preset": "medium",

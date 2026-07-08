@@ -1,8 +1,10 @@
 # FFmpeg 共通実行ラッパ
 # 設計書 5.6 ffmpeg_runner.py に対応
 import json
+import os
 import shutil
 import subprocess
+import sys
 
 from ..exceptions import FFmpegError
 from ..utils.logger import get_logger
@@ -12,14 +14,47 @@ from ..utils.progress import run_ffmpeg_progress
 _logger = get_logger(__name__)
 
 
+# 凍結配布物で同梱物を探索する基準ディレクトリ一覧を返す (error 20260708)
+# onedir では datas は _internal(=sys._MEIPASS) 配下に、手動配置は exe 直下に置かれ得るため双方を見る。
+def _bundle_base_dirs():
+    if not getattr(sys, "frozen", False):
+        return []
+    bases = []
+    meipass = getattr(sys, "_MEIPASS", None)   # PyInstaller 展開先 (onedir では _internal)
+    if meipass:
+        bases.append(meipass)
+    bases.append(os.path.dirname(sys.executable))   # exe 直下 (手動配置の同梱物)
+    return bases
+
+
+# 設定値から実行ファイルの実体パスを PATH 非依存で解決する (error 20260708)
+# 解決順: 絶対パス → 凍結配布物の同梱物(exe 隣接) → PATH(shutil.which) → 設定値そのまま。
+# 同梱 ffmpeg を確実に使わせ、PATH に FFmpeg が無いPCでの起動失敗を防ぐ。
+def _resolve_exe(configured):
+    # 1) 絶対パス指定はそのまま採用
+    if os.path.isabs(configured):
+        return configured
+    # 2) 凍結時は同梱物(相対パス)を exe 隣接基準で絶対化して優先採用
+    for base in _bundle_base_dirs():
+        candidate = os.path.normpath(os.path.join(base, configured))
+        if os.path.isfile(candidate):
+            return candidate
+    # 3) PATH 解決 (開発実行や PATH 導入環境)。相対区切りを含む値は basename でも探す
+    found = shutil.which(configured) or shutil.which(os.path.basename(configured))
+    if found:
+        return found
+    # 4) 見つからず: 設定値をそのまま返す (ensure_available が明確なエラーを出す)
+    return configured
+
+
 # FFmpeg 設定から実行ファイルパスを取得する
 def get_ffmpeg_exe(ffmpeg_settings):
-    return ffmpeg_settings.get("executable", "ffmpeg")
+    return _resolve_exe(ffmpeg_settings.get("executable", "ffmpeg/ffmpeg.exe"))
 
 
 # ffprobe 実行ファイルパスを取得する
 def get_ffprobe_exe(ffmpeg_settings):
-    return ffmpeg_settings.get("ffprobe_executable", "ffprobe")
+    return _resolve_exe(ffmpeg_settings.get("ffprobe_executable", "ffmpeg/ffprobe.exe"))
 
 
 # 無進捗タイムアウト秒数を設定から取得する (0 以下で監視無効)
@@ -40,10 +75,12 @@ def get_output_fps(ffmpeg_settings):
     return fps if fps > 0 else 60
 
 
-# 実行可能性チェック (FFmpeg/ffprobe が PATH に存在するか)
+# 実行可能性チェック (FFmpeg/ffprobe が解決可能か)
+# get_ffmpeg_exe/get_ffprobe_exe が絶対パス(同梱物)を返した場合は実在で判定し、
+# 裸の名前を返した場合は PATH 解決で判定する (error 20260708)。
 def ensure_available(ffmpeg_settings):
     for exe in (get_ffmpeg_exe(ffmpeg_settings), get_ffprobe_exe(ffmpeg_settings)):
-        if shutil.which(exe) is None:
+        if not (os.path.isfile(exe) or shutil.which(exe)):
             raise FFmpegError(f"FFmpeg 実行ファイルが見つかりません: {exe}")
 
 
