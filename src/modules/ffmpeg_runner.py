@@ -27,6 +27,17 @@ def _bundle_base_dirs():
     return bases
 
 
+# 設定値を同梱物として探索する相対パス候補へ展開する (error 20260709)
+# 裸名("ffmpeg"/"ffprobe") のレガシー設定でも同梱レイアウト ffmpeg/<name>.exe を探せるようにし、
+# setting.json の正規化が効かない環境でも同梱 FFmpeg を解決できる保険とする。
+def _bundle_relpath_candidates(configured):
+    candidates = [configured]
+    if "/" not in configured and "\\" not in configured:
+        name = configured if configured.lower().endswith(".exe") else configured + ".exe"
+        candidates.append(os.path.join("ffmpeg", name))
+    return candidates
+
+
 # 設定値から実行ファイルの実体パスを PATH 非依存で解決する (error 20260708)
 # 解決順: 絶対パス → 凍結配布物の同梱物(exe 隣接) → PATH(shutil.which) → 設定値そのまま。
 # 同梱 ffmpeg を確実に使わせ、PATH に FFmpeg が無いPCでの起動失敗を防ぐ。
@@ -34,11 +45,13 @@ def _resolve_exe(configured):
     # 1) 絶対パス指定はそのまま採用
     if os.path.isabs(configured):
         return configured
-    # 2) 凍結時は同梱物(相対パス)を exe 隣接基準で絶対化して優先採用
-    for base in _bundle_base_dirs():
-        candidate = os.path.normpath(os.path.join(base, configured))
-        if os.path.isfile(candidate):
-            return candidate
+    # 2) 凍結時は同梱物(相対パス)を exe 隣接基準で絶対化して優先採用。
+    #    裸名のレガシー値でも ffmpeg/<name>.exe を試す (error 20260709)。
+    for rel in _bundle_relpath_candidates(configured):
+        for base in _bundle_base_dirs():
+            candidate = os.path.normpath(os.path.join(base, rel))
+            if os.path.isfile(candidate):
+                return candidate
     # 3) PATH 解決 (開発実行や PATH 導入環境)。相対区切りを含む値は basename でも探す
     found = shutil.which(configured) or shutil.which(os.path.basename(configured))
     if found:

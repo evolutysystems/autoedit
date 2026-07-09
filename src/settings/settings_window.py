@@ -241,13 +241,41 @@ def load_settings(persist_new_keys=True):
         return DEFAULT_SETTINGS.copy()
 
     merged = _merge_with_defaults(data)
-    # 新規キーが増えていれば (既存値は不変) 一度だけ永続化する
-    if persist_new_keys and _has_new_keys(data, merged):
+    # 旧版から引き継いだレガシー値を現行既定へ正規化する (error 20260709)
+    migrated = _normalize_legacy_values(merged)
+    # 新規キーが増えた or レガシー値を修正したら 一度だけ永続化する
+    if persist_new_keys and (migrated or _has_new_keys(data, merged)):
         try:
             save_settings(merged)
         except OSError:
             pass  # 保存失敗しても実行は継続 (メモリ上は補完済み)
     return merged
+
+
+# 既知のレガシー FFmpeg 実行ファイル値 (20260708 の既定変更前の裸名)。
+# 小文字で比較する。
+_LEGACY_FFMPEG_EXE_VALUES = {"ffmpeg", "ffmpeg.exe", "ffprobe", "ffprobe.exe"}
+
+
+# 旧バージョンから引き継いだレガシー設定値を現行の既定値へ正規化する (error 20260709)。
+# 変更があれば True を返す。
+# 背景: 20260708 の修正で ffmpeg.executable / ffprobe_executable の既定を裸名 "ffmpeg"/"ffprobe"
+#   から同梱相対パス "ffmpeg/ffmpeg.exe"/"ffmpeg/ffprobe.exe" へ変更した。しかしアップデート時は
+#   インストーラが旧 setting.json を復元し、_merge_with_defaults は既存値を温存するため、裸名の
+#   まま残り凍結配布物の同梱 FFmpeg を解決できず「FFmpeg 実行ファイルが見つかりません: ffmpeg」
+#   となる。既知のレガシー値に限って既定へ置換し、次回起動で自己修復させる。
+def _normalize_legacy_values(merged):
+    changed = False
+    ffmpeg = merged.get("ffmpeg")
+    if isinstance(ffmpeg, dict):
+        for key in ("executable", "ffprobe_executable"):
+            value = ffmpeg.get(key)
+            if isinstance(value, str) and value.strip().lower() in _LEGACY_FFMPEG_EXE_VALUES:
+                default = DEFAULT_SETTINGS["ffmpeg"][key]
+                if value != default:
+                    ffmpeg[key] = default
+                    changed = True
+    return changed
 
 
 # 読み込んだデータに不足項目があればデフォルトで補完する
