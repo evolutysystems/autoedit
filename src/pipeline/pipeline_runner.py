@@ -106,6 +106,10 @@ def _apply_volume_analysis(context):
     settings = context.settings
     va_cfg = settings.setdefault("volume_analysis", {})
 
+    # 無音カット無効時は閾値確認自体が不要のためスキップ (resolve12)
+    if not settings.get("silence_cut", {}).get("enabled", True):
+        return
+
     # 機能無効時は何もしない (従来挙動には戻らないが解析・ダイアログをスキップ)
     if not va_cfg.get("enabled", True):
         return

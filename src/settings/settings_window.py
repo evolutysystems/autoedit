@@ -163,6 +163,8 @@ DEFAULT_SETTINGS = {
         "display_min_duration_sec": 0.5,
     },
     "silence_cut": {
+        # 無音カット ON/OFF (resolve12)。既定 True で従来挙動を維持する。
+        "enabled": True,
         "noise_threshold_db": -30,
         "min_silence_duration_sec": 0.6,
         "fade_enabled": False,
@@ -328,6 +330,8 @@ class SettingsWindow(QWidget):
         self.auto_update_check_check = None
         # 無音カット関係ウィジェット参照
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
+        # 無音カット ON/OFF (resolve12)
+        self.silence_enabled_check = None
         self.fade_enabled_check = None
         self.fade_duration_edit = None
         self.language_combo = None
@@ -442,6 +446,12 @@ class SettingsWindow(QWidget):
         # ===== 無音カット (silence_cut) =====
         # 無音音量閾値(dB)・無音最小継続時間(秒) は resolve7 により UI から削除。
         # 無音判定の閾値は音量解析で確定する単一値 (volume_analysis.last_cut_db) を使用する。
+
+        # 無音カット ON/OFF (resolve12)
+        self.silence_enabled_check = QCheckBox("無音カットを有効にする")
+        grid.addWidget(self._make_column_label("無音カット"), row, 0)
+        grid.addWidget(self.silence_enabled_check, row, 1)
+        row += 1
 
         # 境界フェード ON/OFF
         self.fade_enabled_check = QCheckBox("セグメント境界にフェードを付与する")
@@ -843,6 +853,7 @@ class SettingsWindow(QWidget):
 
         # 無音カット
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
+        self.silence_enabled_check.setChecked(bool(silence_cut.get("enabled", True)))
         self.fade_enabled_check.setChecked(bool(silence_cut.get("fade_enabled", False)))
         self.fade_duration_edit.setText(str(silence_cut.get("fade_duration_sec", 0.05)))
 
@@ -952,6 +963,7 @@ class SettingsWindow(QWidget):
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除。
         # 既存値は base (load_settings) からそのまま引き継がれ上書きしない。
         settings.setdefault("silence_cut", {}).update({
+            "enabled": self.silence_enabled_check.isChecked(),
             "fade_enabled": self.fade_enabled_check.isChecked(),
             "fade_duration_sec": self._to_float(self.fade_duration_edit.text(), 0.05),
         })

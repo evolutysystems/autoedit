@@ -398,6 +398,11 @@ def run(context):
     silence_cfg = settings.get("silence_cut", {})
     ffmpeg_cfg = settings.get("ffmpeg", {})
 
+    # 無音カット ON/OFF (resolve12)。無効時は入力をそのまま次工程へ通す。
+    if not silence_cfg.get("enabled", True):
+        _logger.info("無音カットスキップ (silence_cut.enabled=false)")
+        return context.current_video_path()
+
     # 要望(resolve7)により無効化。将来戻す可能性があるため処理を温存する。
     # 旧方式: silence_cut の無音音量閾値(dB)・無音最小継続時間(秒)を使用していた。
     # noise_threshold_db = silence_cfg.get("noise_threshold_db", -30)

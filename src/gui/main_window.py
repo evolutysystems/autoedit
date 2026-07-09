@@ -48,6 +48,9 @@ _logger = get_logger(__name__)
 # 動画ファイルフィルタ (settings_window と整合)
 _VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;すべてのファイル (*)"
 
+# ドロップ受理対象の動画拡張子 (resolve12)。_VIDEO_FILE_FILTER と整合させる。
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+
 # 稼働証明スピナーのコマ (Claude Code 風の回転記号) と更新間隔
 # 表示崩れ環境向けに ASCII 版 ["|", "/", "-", "\\"] へ差し替え可能
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -265,6 +268,8 @@ class MainWindow(QWidget):
         self._update_download_worker = None
         self._update_progress = None
         self._build_ui()
+        # ウィンドウ全体で動画ファイルのドロップを受け付ける (resolve12)
+        self.setAcceptDrops(True)
 
     # 画面構築
     def _build_ui(self):
@@ -274,10 +279,8 @@ class MainWindow(QWidget):
         input_row = QHBoxLayout()
         input_row.addWidget(QLabel("入力動画:"))
         self.input_edit = QLineEdit()
-        # 既定の入力ディレクトリがあればプレースホルダーに使う
-        video_dir = self._settings.get("general", {}).get("video_directory", "")
-        if video_dir:
-            self.input_edit.setPlaceholderText(video_dir)
+        # 動画ファイルを直接ドラッグ&ドロップできる旨を案内する (resolve12)
+        self.input_edit.setPlaceholderText("動画ファイルをここにドラッグ&ドロップ、または「参照...」")
         input_row.addWidget(self.input_edit)
         self.browse_button = QPushButton("参照...")
         self.browse_button.clicked.connect(self._on_browse)
@@ -333,6 +336,42 @@ class MainWindow(QWidget):
         )
         if path:
             self.input_edit.setText(path)
+
+    # ===== ドラッグ&ドロップによる入力動画選択 (resolve12) =====
+
+    # ドラッグされたものが単一のローカル動画ファイルのときのみ受理を通知する
+    def dragEnterEvent(self, event):
+        if self._is_acceptable_drop(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    # ドロップされた動画ファイルパスを入力欄へ設定する
+    def dropEvent(self, event):
+        path = self._dropped_video_path(event)
+        if path:
+            self.input_edit.setText(path)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    # ドロップ内容が受理可能な動画ファイルか判定する (実行中でないこと・拡張子)
+    def _is_acceptable_drop(self, event):
+        # 実行中は入力書き換えを避けるためドロップを受け付けない
+        if self._worker is not None and self._worker.isRunning():
+            return False
+        return self._dropped_video_path(event) is not None
+
+    # MIME からローカル動画ファイルパスを1件取り出す (非対応なら None)
+    def _dropped_video_path(self, event):
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return None
+        for url in mime.urls():
+            local = url.toLocalFile()
+            if local and os.path.splitext(local)[1].lower() in _VIDEO_EXTENSIONS:
+                return local
+        return None
 
     # 実行ボタン押下: パイプラインをワーカースレッドで起動する
     def _on_run(self):
