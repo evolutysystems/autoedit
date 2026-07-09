@@ -502,8 +502,16 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
     # 両者は別階層に作用するため併用が正しい (クォートだけでは ':' 分割を防げず
     # ドライブレターが original_size オプションへ流れて EINVAL になる)。
     safe_path = subtitle_path.replace("\\", "/").replace(":", "\\:")
-    # subtitles で字幕を焼いた後、setpts で映像PTSをフレーム番号から単調再構築する (破損TS対策)
-    filter_spec = f"subtitles='{safe_path}',setpts=N/FRAME_RATE/TB"
+    # 先に setpts で映像PTSをフレーム番号から単調再構築し、その後 subtitles を焼く。
+    # 【テロップ進行ズレ対策 / 順序が重要】
+    #   無音カット出力 (seek抽出→concat -c copy) は、区間ごとの微小な隙間が累積して
+    #   映像PTSが実尺より線形に膨張している (例: 実10.0s のフレームがPTS≒10.4s)。
+    #   一方 whisper のタイムスタンプは音声サンプルの連番=連続コンテンツ時刻で付くため、
+    #   subtitles を先に適用すると「膨張したPTS」に対して「連続時刻のASS」を突き合わせ、
+    #   長尺ほど字幕が前ズレする (30分で末尾≒1秒早まる)。setpts で先にPTSをフレーム番号基準
+    #   (=whisperと同じ連続時刻) へ正規化してから焼くことで、字幕位置を発話に一致させる。
+    #   (setpts 自体は従来どおり破損TS→CFR化の役割も兼ねる / resolve 20260630)
+    filter_spec = f"setpts=N/FRAME_RATE/TB,subtitles='{safe_path}'"
     fps = ffmpeg_runner.get_output_fps(ffmpeg_settings)
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
