@@ -39,7 +39,7 @@
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "382AF4826152E6C65A428801B8F7CFB69197E6D2CC6FC630FF91283C08764604"
+#define PayloadSHA256    "2E450C32F9316E7E01BCBB33136E739F1B2C812CA85557F38654DCBA0E29BED5"
 ; -------------------------------------------------------------------
 
 [Setup]
