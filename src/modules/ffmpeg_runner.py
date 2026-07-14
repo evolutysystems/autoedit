@@ -132,6 +132,73 @@ def probe_duration(input_path, ffmpeg_settings):
         raise FFmpegError(f"ffprobe 出力解析に失敗: {e}") from e
 
 
+# 映像ストリームの回転量(度)を取得する (縦横判定の表示寸法補正用 / request14)
+# スマホ撮影動画は生の width/height が横のまま rotation メタ(±90 等)で縦表示されるため、
+# 回転を加味しないと縦動画を横と誤判定する。新旧 ffmpeg の両表現に対応する:
+#   ・新: stream.side_data_list[].rotation (Display Matrix, 例 -90)
+#   ・旧: stream.tags.rotate (例 "90")
+def _extract_rotation(stream):
+    # 新形式: side_data_list の rotation を優先
+    for side in stream.get("side_data_list", []) or []:
+        if "rotation" in side:
+            try:
+                return int(round(float(side["rotation"])))
+            except (TypeError, ValueError):
+                pass
+    # 旧形式: tags.rotate
+    rotate = (stream.get("tags", {}) or {}).get("rotate")
+    if rotate is not None:
+        try:
+            return int(round(float(rotate)))
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
+# 動画の表示寸法(回転適用後の幅・高さ)を ffprobe で取得する (request14)
+# 戻り値: (width, height)。取得・解析失敗時は FFmpegError を送出する。
+def probe_dimensions(input_path, ffmpeg_settings):
+    ffprobe = get_ffprobe_exe(ffmpeg_settings)
+    cmd = [
+        ffprobe,
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_streams",
+        "-of", "json",
+        input_path,
+    ]
+    _logger.debug("ffprobe(寸法) 実行: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=no_window_creationflags(),
+        )
+    except FileNotFoundError as e:
+        raise FFmpegError(f"ffprobe 実行に失敗: {e}") from e
+
+    if result.returncode != 0:
+        raise FFmpegError(
+            "ffprobe が失敗", command=cmd,
+            stderr_tail=result.stderr, returncode=result.returncode,
+        )
+
+    try:
+        streams = json.loads(result.stdout).get("streams", [])
+        if not streams:
+            raise FFmpegError("映像ストリームが見つかりません")
+        stream = streams[0]
+        width = int(stream["width"])
+        height = int(stream["height"])
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        raise FFmpegError(f"ffprobe 出力解析に失敗: {e}") from e
+
+    # 回転(±90/±270)がある場合は表示寸法として幅・高さを入れ替える
+    rotation = _extract_rotation(stream)
+    if abs(rotation) % 180 == 90:
+        width, height = height, width
+    return width, height
+
+
 # 進捗通知付きで FFmpeg コマンドを実行する
 # 失敗時は FFmpegError を送出
 # progress_timeout_sec : 無進捗タイムアウト秒数 (0 以下で監視無効)

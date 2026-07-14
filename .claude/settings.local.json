@@ -5,7 +5,10 @@
       "Bash(python -m py_compile src/settings/settings_window.py)",
       "Bash(python -c ' *)",
       "Bash(python keytest.py)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(gh *)",
+      "PowerShell(py *)",
+      "Bash(git -C . status --short)"
     ]
   }
 }

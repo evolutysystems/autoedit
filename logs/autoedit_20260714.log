@@ -1,0 +1,6 @@
+2026-07-14 15:25:36,580 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-07-14 15:25:36,581 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-07-14 15:25:36,581 [INFO] src.modules.output_profile: 横動画と判定 (入力=1080x1080)
+2026-07-14 15:25:36,581 [INFO] src.modules.output_profile: 縦動画対応が無効 (vertical.enabled=false) のため横で処理します
+2026-07-14 15:25:36,581 [WARNING] src.modules.output_profile: 動画寸法の取得に失敗したため横として処理します: boom
+2026-07-14 15:25:36,581 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)

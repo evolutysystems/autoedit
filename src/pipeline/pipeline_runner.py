@@ -6,6 +6,7 @@ from ..exceptions import AutoEditError, InputError, PipelineCancelled
 from ..modules import (
     concat_processor,
     ffmpeg_runner,
+    output_profile,
     output_writer,
     silence_cutter,
     subtitle_generator,
@@ -42,6 +43,8 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
 
     context = _prepare_context(input_path, settings, progress_cb, subtitle_review_callback,
                                volume_analysis_callback)
+    # 出力プロファイル(縦/横)を入力動画から1回だけ解決し、以降の全工程で共有する (request14)
+    context.output_profile = output_profile.resolve_output_profile(input_path, settings)
     try:
         # （新規）音量解析・カット閾値の確認 (無音カットの前) ── resolve7
         context.progress_callback(0.0, "音量解析中…")

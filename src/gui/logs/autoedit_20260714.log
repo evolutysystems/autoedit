@@ -1,0 +1,37 @@
+2026-07-14 15:32:50,346 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-14 15:33:59,083 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-14 15:33:59,085 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/curry.mp4
+2026-07-14 15:34:00,231 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-07-14 15:34:05,678 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 7/7 区間)
+2026-07-14 15:34:07,590 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -22 dB
+2026-07-14 15:34:07,599 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-22dB, min=0.600s, fade=False
+2026-07-14 15:34:09,553 [INFO] src.modules.silence_cutter: 検出された無音区間: 8 件
+2026-07-14 15:34:19,516 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_vi99yaq9\silence_cut.mp4
+2026-07-14 15:34:19,531 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-07-14 15:35:15,754 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-14 15:35:15,754 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-14 15:35:25,695 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-14 15:35:53,918 [INFO] src.modules.subtitle_generator: 音声認識完了 (5 セグメント)
+2026-07-14 15:35:54,216 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 5 → 5 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-14 15:36:21,438 [INFO] src.modules.concat_processor: オープニング結合 スキップ (縦動画のため結合しない)
+2026-07-14 15:36:21,440 [INFO] src.modules.concat_processor: エンディング結合 スキップ (縦動画のため結合しない)
+2026-07-14 15:36:21,460 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\curry_edited.mp4
+2026-07-14 15:36:21,460 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\curry_edited.mp4
+2026-07-14 15:37:55,179 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-14 15:37:55,179 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/curry.mp4
+2026-07-14 15:37:55,331 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-07-14 15:37:59,977 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 7/7 区間)
+2026-07-14 15:38:13,628 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -23 dB
+2026-07-14 15:38:13,629 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-14 15:38:15,638 [INFO] src.modules.silence_cutter: 検出された無音区間: 8 件
+2026-07-14 15:38:25,078 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_6m0k7f89\silence_cut.mp4
+2026-07-14 15:38:25,078 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-07-14 15:38:25,078 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-14 15:38:25,078 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-14 15:38:32,301 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-14 15:38:55,449 [INFO] src.modules.subtitle_generator: 音声認識完了 (5 セグメント)
+2026-07-14 15:38:55,666 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 5 → 5 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-14 15:39:22,893 [INFO] src.modules.concat_processor: オープニング結合 スキップ (縦動画のため結合しない)
+2026-07-14 15:39:22,895 [INFO] src.modules.concat_processor: エンディング結合 スキップ (縦動画のため結合しない)
+2026-07-14 15:39:22,901 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\curry_edited.mp4
+2026-07-14 15:39:22,901 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\curry_edited.mp4

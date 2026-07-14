@@ -197,6 +197,20 @@ DEFAULT_SETTINGS = {
         "output_fps": 60,
         "audio_sample_rate": 48000,
     },
+    # 縦動画(YouTube Shorts / TikTok)対応 (request14 / resolve14)
+    # 縦検出時のみ有効。フォント/改行/配置/余白は横(subtitle)設定を上書きする。
+    "vertical": {
+        "enabled": True,
+        "output_width": 1080,
+        "output_height": 1920,
+        "font_size": 90,
+        "min_line_length": 10,
+        "max_line_length": 15,
+        "alignment": 2,
+        "margin_l": 40,
+        "margin_r": 40,
+        "margin_v": 320,
+    },
     "logging": {
         "log_dir": "logs",
         "level": "INFO",
@@ -375,6 +389,17 @@ class SettingsWindow(QWidget):
         self.margin_l_edit = None
         self.margin_r_edit = None
         self.margin_v_edit = None
+        # 縦動画(Shorts/TikTok)タブ ウィジェット参照 (request14)
+        self.vertical_enabled_check = None
+        self.vertical_output_width_edit = None
+        self.vertical_output_height_edit = None
+        self.vertical_font_size_edit = None
+        self.vertical_min_line_length_edit = None
+        self.vertical_max_line_length_edit = None
+        self.vertical_alignment_combo = None
+        self.vertical_margin_l_edit = None
+        self.vertical_margin_r_edit = None
+        self.vertical_margin_v_edit = None
 
         self._build_ui()
         self._load_to_ui()
@@ -387,6 +412,7 @@ class SettingsWindow(QWidget):
         tabs = QTabWidget()
         tabs.addTab(self._build_general_tab(), "一般")
         tabs.addTab(self._build_subtitle_tab(), "字幕")
+        tabs.addTab(self._build_vertical_tab(), "縦動画")
         root_layout.addWidget(tabs)
 
         # 保存ボタン (全タブ共通・タブ外に配置)
@@ -695,6 +721,80 @@ class SettingsWindow(QWidget):
         layout.addStretch(1)
         return page
 
+    # 「縦動画」タブを構築する (request14 / resolve14)
+    # 縦動画(YouTube Shorts / TikTok)検出時に適用する出力サイズ・フォント・改行・配置を設定する。
+    # フォント種類/色/装飾は「字幕」タブの設定を共有し、ここでは縦専用の上書き値のみを扱う。
+    def _build_vertical_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        row = 0
+
+        # 縦動画対応 ON/OFF (OFF 時は縦動画も横として処理する)
+        self.vertical_enabled_check = QCheckBox("縦動画を自動判定して縦仕様で出力する")
+        grid.addWidget(self._make_column_label("縦動画対応"), row, 0)
+        grid.addWidget(self.vertical_enabled_check, row, 1)
+        row += 1
+
+        # 出力サイズ (幅/高) — 既定 1080x1920 (9:16)
+        self.vertical_output_width_edit = self._make_int_edit()
+        self.vertical_output_height_edit = self._make_int_edit()
+        size_layout = QHBoxLayout()
+        size_layout.setContentsMargins(0, 0, 0, 0)
+        size_layout.addWidget(QLabel("幅"))
+        size_layout.addWidget(self.vertical_output_width_edit)
+        size_layout.addWidget(QLabel("高"))
+        size_layout.addWidget(self.vertical_output_height_edit)
+        grid.addWidget(self._make_column_label("出力サイズ"), row, 0)
+        grid.addLayout(size_layout, row, 1)
+        row += 1
+
+        # 縦動画用フォントの大きさ (要望3)
+        self.vertical_font_size_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("フォントの大きさ"), row, 0)
+        grid.addWidget(self.vertical_font_size_edit, row, 1)
+        row += 1
+
+        # 1行下限文字数 (縦は 10〜15 目安 / 要望4)
+        self.vertical_min_line_length_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("1行下限文字数"), row, 0)
+        grid.addWidget(self.vertical_min_line_length_edit, row, 1)
+        row += 1
+
+        # 1行最大文字数 (縦は 10〜15 目安 / 要望4)
+        self.vertical_max_line_length_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("1行最大文字数"), row, 0)
+        grid.addWidget(self.vertical_max_line_length_edit, row, 1)
+        row += 1
+
+        # 表示位置 (Shorts/TikTok の下端UIを避けるため下段中央+余白が既定 / 要望5)
+        self.vertical_alignment_combo = self._make_value_combo(ALIGNMENT_OPTIONS)
+        grid.addWidget(self._make_column_label("表示位置"), row, 0)
+        grid.addWidget(self.vertical_alignment_combo, row, 1)
+        row += 1
+
+        # 余白 (左/右/下) — 下端UI帯を避けるため下余白(下)は大きめが既定
+        self.vertical_margin_l_edit = self._make_int_edit()
+        self.vertical_margin_r_edit = self._make_int_edit()
+        self.vertical_margin_v_edit = self._make_int_edit()
+        margin_layout = QHBoxLayout()
+        margin_layout.setContentsMargins(0, 0, 0, 0)
+        margin_layout.addWidget(QLabel("左"))
+        margin_layout.addWidget(self.vertical_margin_l_edit)
+        margin_layout.addWidget(QLabel("右"))
+        margin_layout.addWidget(self.vertical_margin_r_edit)
+        margin_layout.addWidget(QLabel("下"))
+        margin_layout.addWidget(self.vertical_margin_v_edit)
+        grid.addWidget(self._make_column_label("余白"), row, 0)
+        grid.addLayout(margin_layout, row, 1)
+        row += 1
+
+        layout.addLayout(grid)
+        layout.addStretch(1)
+        return page
+
     # タイトル用ラベルを生成する
     def _make_title(self, text):
         label = QLabel(text)
@@ -842,6 +942,7 @@ class SettingsWindow(QWidget):
         general = self._loaded_settings.get("general", {})
         subtitle = self._loaded_settings.get("subtitle", {})
         silence_cut = self._loaded_settings.get("silence_cut", {})
+        vertical = self._loaded_settings.get("vertical", {})
 
         self.video_dir_edit.setText(general.get("video_directory", ""))
         self.opening_edit.setText(general.get("opening_video", ""))
@@ -907,6 +1008,18 @@ class SettingsWindow(QWidget):
         self.margin_l_edit.setText(str(subtitle.get("margin_l", 40)))
         self.margin_r_edit.setText(str(subtitle.get("margin_r", 40)))
         self.margin_v_edit.setText(str(subtitle.get("margin_v", 60)))
+
+        # 縦動画 (request14)
+        self.vertical_enabled_check.setChecked(bool(vertical.get("enabled", True)))
+        self.vertical_output_width_edit.setText(str(vertical.get("output_width", 1080)))
+        self.vertical_output_height_edit.setText(str(vertical.get("output_height", 1920)))
+        self.vertical_font_size_edit.setText(str(vertical.get("font_size", 90)))
+        self.vertical_min_line_length_edit.setText(str(vertical.get("min_line_length", 10)))
+        self.vertical_max_line_length_edit.setText(str(vertical.get("max_line_length", 15)))
+        self._set_combo_data(self.vertical_alignment_combo, vertical.get("alignment", 2))
+        self.vertical_margin_l_edit.setText(str(vertical.get("margin_l", 40)))
+        self.vertical_margin_r_edit.setText(str(vertical.get("margin_r", 40)))
+        self.vertical_margin_v_edit.setText(str(vertical.get("margin_v", 320)))
 
     # コンボボックスに値が含まれていれば選択状態にする
     def _set_combo_value(self, combo, value):
@@ -1010,6 +1123,19 @@ class SettingsWindow(QWidget):
             "margin_l": self._to_int(self.margin_l_edit.text(), 40),
             "margin_r": self._to_int(self.margin_r_edit.text(), 40),
             "margin_v": self._to_int(self.margin_v_edit.text(), 60),
+        })
+        # 縦動画 (request14)。出力サイズ・フォント・改行・配置・余白の縦専用上書き値。
+        settings.setdefault("vertical", {}).update({
+            "enabled": self.vertical_enabled_check.isChecked(),
+            "output_width": self._to_int(self.vertical_output_width_edit.text(), 1080),
+            "output_height": self._to_int(self.vertical_output_height_edit.text(), 1920),
+            "font_size": self._to_int(self.vertical_font_size_edit.text(), 90),
+            "min_line_length": self._to_int(self.vertical_min_line_length_edit.text(), 10),
+            "max_line_length": self._to_int(self.vertical_max_line_length_edit.text(), 15),
+            "alignment": self.vertical_alignment_combo.currentData(),
+            "margin_l": self._to_int(self.vertical_margin_l_edit.text(), 40),
+            "margin_r": self._to_int(self.vertical_margin_r_edit.text(), 40),
+            "margin_v": self._to_int(self.vertical_margin_v_edit.text(), 320),
         })
         return settings
 

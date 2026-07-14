@@ -75,7 +75,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -31
+        "last_cut_db": -23
     },
     "ffmpeg": {
         "executable": "ffmpeg/ffmpeg.exe",
@@ -89,6 +89,18 @@
         "output_fps": 60,
         "audio_sample_rate": 48000,
         "progress_timeout_sec": 600
+    },
+    "vertical": {
+        "enabled": true,
+        "output_width": 1080,
+        "output_height": 1920,
+        "font_size": 90,
+        "min_line_length": 10,
+        "max_line_length": 15,
+        "alignment": 5,
+        "margin_l": 40,
+        "margin_r": 40,
+        "margin_v": 320
     },
     "logging": {
         "log_dir": "logs",

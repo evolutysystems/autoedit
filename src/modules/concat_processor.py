@@ -93,6 +93,12 @@ def run(context, position):
     else:
         raise InputError(f"未知の結合位置: {position}")
 
+    # 縦動画では OP/ED を付けない (request14 §8-2)。素材/フラグに関わらずスキップする。
+    profile = getattr(context, "output_profile", None)
+    if profile and profile.get("is_portrait"):
+        _logger.info("%s スキップ (縦動画のため結合しない)", label)
+        return context.current_video_path()
+
     # 結合フラグが無効なら素材有無に関わらずスキップする
     if not enabled:
         _logger.info("%s スキップ (フラグ無効)", label)

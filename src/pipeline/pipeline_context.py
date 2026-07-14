@@ -43,6 +43,11 @@ class PipelineContext:
         self.intermediate_paths = {}
         self.output_path = None
 
+        # 出力プロファイル (縦/横の判定結果とキャンバス寸法 / request14)
+        # パイプライン開始時に resolve_output_profile で解決して設定する。
+        # 未設定(None)の場合、各工程は従来どおり横として振る舞う。
+        self.output_profile = None
+
     # 現在の処理対象動画パスを取得する
     def current_video_path(self):
         return self._current_video_path

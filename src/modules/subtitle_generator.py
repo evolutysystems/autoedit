@@ -416,10 +416,36 @@ class WhisperTextSource(TextSource):
         return wrap_lines(text, self._min_line_length, self._max_line_length, self._wrap_engine)
 
 
+# 縦動画時に字幕設定へ反映する縦用の上書きキー (request14)
+# フォントサイズ・改行文字数・表示位置・余白のみを縦タブ(vertical)値で差し替える。
+# 色/フォント種類/装飾は横設定を共有する。
+_VERTICAL_OVERRIDE_KEYS = (
+    "font_size", "min_line_length", "max_line_length",
+    "alignment", "margin_l", "margin_r", "margin_v",
+)
+
+
+# 出力プロファイルが縦のとき、字幕設定へ縦用の上書き値を反映した実効設定を返す (request14)
+# 横動画/縦無効/プロファイル未解決時は元の字幕設定をそのまま返す (挙動不変)。
+def build_effective_subtitle_cfg(subtitle_cfg, vertical_cfg, profile):
+    if not (profile and profile.get("is_portrait")):
+        return subtitle_cfg
+    if not vertical_cfg.get("enabled", True):
+        return subtitle_cfg
+    effective = dict(subtitle_cfg)
+    for key in _VERTICAL_OVERRIDE_KEYS:
+        if key in vertical_cfg:
+            effective[key] = vertical_cfg[key]
+    _logger.info("縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)")
+    return effective
+
+
 # subtitle.engine 設定に応じた TextSource 実装を返す
 # "none"/未対応/未導入 の場合は None を返し、呼び出し側でテロップ工程をスキップする
-def resolve_text_source(settings):
-    subtitle_cfg = settings.get("subtitle", {})
+# subtitle_cfg 明示時はそれを用いる (縦動画の実効設定で音声認識の改行文字数を切り替えるため)
+def resolve_text_source(settings, subtitle_cfg=None):
+    if subtitle_cfg is None:
+        subtitle_cfg = settings.get("subtitle", {})
     engine = str(subtitle_cfg.get("engine", "whisper")).strip().lower()
 
     # 明示的な無効化
@@ -495,7 +521,7 @@ def _format_ass_time(seconds):
 # これにより mux 時の "Application provided duration ... is invalid" (EINVAL=-22) と
 # vsync による大量フレーム脱落 (drop) を回避する。
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
-                  total_duration=0.0, on_progress=None):
+                  total_duration=0.0, on_progress=None, target_size=None):
     # subtitles フィルタは2段階エスケープに従う (resolve 20260630 resolve2.md 対策A):
     #   ・シングルクォートでフィルタグラフ階層(空白/カンマ)を保護し、内側の '\' を下位へ通す
     #   ・フィルタ内オプション階層では ':' がなお区切り文字のため '\:' でエスケープする
@@ -511,7 +537,18 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
     #   長尺ほど字幕が前ズレする (30分で末尾≒1秒早まる)。setpts で先にPTSをフレーム番号基準
     #   (=whisperと同じ連続時刻) へ正規化してから焼くことで、字幕位置を発話に一致させる。
     #   (setpts 自体は従来どおり破損TS→CFR化の役割も兼ねる / resolve 20260630)
-    filter_spec = f"setpts=N/FRAME_RATE/TB,subtitles='{safe_path}'"
+    # 縦動画時 (target_size 指定時) は subtitles の前に scale+pad を挟み、
+    # 本編を縦キャンバス(例 1080x1920)へ正規化してから字幕を焼く (request14)。
+    # アスペクト比を保ったまま縮小し、余白は中央寄せの黒帯で埋める。ASS の PlayRes と一致させる。
+    # 横動画 (target_size=None) では scale を挟まず従来と完全に同一の挙動とする。
+    scale_chain = ""
+    if target_size:
+        canvas_w, canvas_h = target_size
+        scale_chain = (
+            f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,"
+            f"pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+        )
+    filter_spec = f"setpts=N/FRAME_RATE/TB,{scale_chain}subtitles='{safe_path}'"
     fps = ffmpeg_runner.get_output_fps(ffmpeg_settings)
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
@@ -740,8 +777,21 @@ def run(context):
         _logger.info("テロップ生成スキップ (subtitle.enabled=false)")
         return context.current_video_path()
 
+    # 出力プロファイル(縦/横)に応じた実効字幕設定を求める (request14)
+    # 縦動画時はフォント/改行文字数/配置/余白を縦タブ(vertical)値で上書きする。
+    profile = getattr(context, "output_profile", None)
+    subtitle_cfg = build_effective_subtitle_cfg(
+        subtitle_cfg, settings.get("vertical", {}), profile
+    )
+    # 縦動画は 1080x1920 等の縦キャンバスへ正規化する。横は従来どおり scale を挟まない。
+    is_portrait = bool(profile and profile.get("is_portrait"))
+    canvas_width = int(profile["width"]) if profile else 1920
+    canvas_height = int(profile["height"]) if profile else 1080
+    target_size = (canvas_width, canvas_height) if is_portrait else None
+
     # テキストソース解決 (subtitle.engine に応じた音声認識エンジン)
-    text_source = resolve_text_source(settings)
+    # 実効字幕設定を渡し、縦動画では音声認識の改行文字数(10〜15)を反映する。
+    text_source = resolve_text_source(settings, subtitle_cfg)
     if text_source is None:
         # engine="none"/未対応/未導入 のため安全にスキップ
         _logger.info("音声認識エンジン無効のためテロップ生成をスキップ")
@@ -826,11 +876,17 @@ def run(context):
         _logger.info("使用するテロップが無いため焼き込みをスキップ")
         return context.current_video_path()
 
-    build_subtitle_file(timeline, font_profile, subtitle_path)
+    # ASS の PlayRes を出力キャンバス寸法に一致させる (縦=1080x1920 / 横=1920x1080)
+    build_subtitle_file(
+        timeline, font_profile, subtitle_path,
+        video_width=canvas_width, video_height=canvas_height,
+    )
     burn_subtitle(
         input_path, subtitle_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
         on_progress=context.progress_subcallback("フルテロップ生成"),
+        # 縦動画のみキャンバス正規化(scale+pad)を行う。横は None で従来挙動。
+        target_size=target_size,
     )
     context.set_current_video_path(output_path)
     return output_path
