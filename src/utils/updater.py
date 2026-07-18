@@ -16,7 +16,7 @@ _logger = get_logger(__name__)
 _REPO_OWNER = "evolutysystems"
 _REPO_NAME = "autoedit"
 # インストーラのアセット名 (installer/AutoEdit.iss の OutputBaseFilename に対応)
-_INSTALLER_ASSET = "AutoEditSetup.exe"
+_INSTALLER_ASSET = "StretheusSetup.exe"
 _API_LATEST = f"https://api.github.com/repos/{_REPO_OWNER}/{_REPO_NAME}/releases/latest"
 _HTTP_TIMEOUT_SEC = 5
 
@@ -53,7 +53,7 @@ def check_latest():
         return None
 
     tag = data.get("tag_name", "")
-    # アセットから AutoEditSetup.exe を探す。無ければタグからURLを組み立てる。
+    # アセットから StretheusSetup.exe を探す。無ければタグからURLを組み立てる。
     url = None
     for asset in data.get("assets", []):
         if asset.get("name") == _INSTALLER_ASSET:

@@ -24,6 +24,7 @@
         "speech_pad_sec": 0.5,
         "font_family": "Yu Gothic UI",
         "font_size": 130,
+        "custom_fonts_dir": "fonts",
         "wrap_engine": "budoux",
         "min_line_length": 15,
         "max_line_length": 20,

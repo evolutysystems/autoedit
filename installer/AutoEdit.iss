@@ -1,5 +1,5 @@
 ; =====================================================================
-;  AutoEdit インストーラー (Inno Setup スクリプト)
+;  Stretheus インストーラー (Inno Setup スクリプト)
 ;  docs/request/resolve8.md に基づくダウンローダ型インストーラー。
 ;
 ;  役割:
@@ -18,10 +18,10 @@
 ; =====================================================================
 
 ; ---- リリース毎に更新するパラメータ -------------------------------
-#define MyAppName        "AutoEdit"
-#define MyAppVersion     "1.0.7"
+#define MyAppName        "Stretheus"
+#define MyAppVersion     "1.0.8"
 #define MyAppPublisher   "Evoluty Systems"
-#define MyAppExeName     "AutoEdit.exe"
+#define MyAppExeName     "Stretheus.exe"
 
 ; GitHub Releases の配布元 (resolve8.md §4 / R5)
 #define RepoOwner        "evolutysystems"
@@ -32,14 +32,14 @@
 #define ReleaseBaseUrl   "https://github.com/" + RepoOwner + "/" + RepoName + "/releases/download/" + ReleaseTag
 
 ; 本体ペイロードのファイル名(カンマ区切り)。
-;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "AutoEdit-v1.0.0.zip"
-;  - 2GiB を超える場合は分割: "AutoEdit-v1.0.0.zip.001,AutoEdit-v1.0.0.zip.002"
+;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "Stretheus-v1.0.0.zip"
+;  - 2GiB を超える場合は分割: "Stretheus-v1.0.0.zip.001,Stretheus-v1.0.0.zip.002"
 ;    (各 part は GitHub Releases の 2GiB 上限未満であること)
-#define PayloadParts     "AutoEdit-v1.0.7.zip"
+#define PayloadParts     "Stretheus-v1.0.8.zip"
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "F907ECF2CF945DAA1187AD1BABA0D35014875766056998AB1F01BFA1159E8CAE"
+#define PayloadSHA256    "B2B368198C0F83CAB542869EFC7B229E53B6C1D3B163B6542C8B4D1BD71897DF"
 ; -------------------------------------------------------------------
 
 [Setup]
@@ -58,7 +58,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 ; 生成されるインストーラ
 OutputDir=Output
-OutputBaseFilename=AutoEditSetup
+OutputBaseFilename=StretheusSetup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -66,7 +66,10 @@ WizardStyle=modern
 Uninstallable=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
-; アイコン(gui/app.ico)は未配置のため SetupIconFile は省略 (§9-8)
+; インストーラー(Setup.exe)自身のアイコン。本体exe(app.ico埋め込み)と揃える。
+; デスクトップ/スタートメニューのショートカットは exe 埋め込みアイコンを継承するため
+; [Icons] 側の IconFilename は指定しない。
+SetupIconFile=..\src\gui\app.ico
 
 [Languages]
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
@@ -263,7 +266,7 @@ begin
     False, '');
   OutputDirPage.Add('');
   { 既定は書込可能なユーザー領域 (§9-7) }
-  OutputDirPage.Values[0] := ExpandConstant('{userdocs}\AutoEdit\output');
+  OutputDirPage.Values[0] := ExpandConstant('{userdocs}\Stretheus\output');
 
   { ペイロードのダウンロード進捗ページ }
   DownloadPage := CreateDownloadPage(
@@ -335,7 +338,7 @@ begin
   for i := 0 to GetArrayLength(parts) - 1 do
     partPaths[i] := ExpandConstant('{tmp}\') + parts[i];
 
-  mergedZip := ExpandConstant('{tmp}\AutoEdit-payload.zip');
+  mergedZip := ExpandConstant('{tmp}\Stretheus-payload.zip');
 
   { 1) 分割partを結合 (単一partでも結合関数で1ファイル化) }
   if not MergeFiles(partPaths, mergedZip) then

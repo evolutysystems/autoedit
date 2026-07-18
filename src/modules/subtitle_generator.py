@@ -6,6 +6,7 @@
 import os
 
 from ..exceptions import FFmpegError, PipelineCancelled, SubtitleError
+from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
 from . import ffmpeg_runner, silence_cutter
 
@@ -461,10 +462,25 @@ def resolve_text_source(settings, subtitle_cfg=None):
     return None
 
 
+# テロップ個別フォント/サイズの ASS インライン上書きタグを生成する (resolve16 §4.4)
+# font は ASS フォント名、font_size は実ピクセル値。空/None は該当タグを出さない。
+# 何も指定が無ければ空文字を返し、Style(役割) の値をそのまま継承する (後方互換)。
+def _inline_font_override(font, font_size):
+    override = ""
+    if font:
+        override += f"\\fn{font}"
+    if font_size not in (None, ""):
+        size = _to_int(font_size, None)
+        if size is not None:
+            override += f"\\fs{size}"
+    return "{" + override + "}" if override else ""
+
+
 # タイムラインから ASS 字幕ファイルを生成する
 # テロップ役割 (配信者/サブ/コメント) ごとに色違いの Style を定義し、
 # 各 Dialogue 行は entry["role"] に対応する Style を参照する (request10)。
 # role 欠落 entry は配信者(streamer) 扱い=旧来の単一色と同一挙動 (後方互換)。
+# entry["font"]/["font_size"] があれば ASS インライン上書きタグで個別適用する (resolve16 §4.4)。
 def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, video_height=1080):
     # 役割別 Style 行 (Streamer/Sub/Comment) をまとめて出力する
     style_lines = "\n".join(
@@ -487,6 +503,9 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
     )
 
     body_lines = []
+    # 個別フォント/サイズ指定の件数 (ログ出力用 / resolve16 §6)
+    font_override_count = 0
+    size_override_count = 0
     for entry in timeline:
         start = _format_ass_time(entry["start"])
         end = _format_ass_time(entry["end"])
@@ -496,9 +515,27 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         # 本文は既に \N 折返し済みのため、ラベルは独立行として折返しに巻き込まれない。
         if role == "comment" and font_profile.comment_label:
             text = f"{font_profile.comment_label}\\N{text}"
+        # 個別フォント/サイズの上書きタグを本文最先頭へ付与する (resolve16 §4.4)。
+        # ラベル部にも同フォントを適用するためコメントラベル付与より後に前置する (§8-5 確定)。
+        entry_font = entry.get("font", "")
+        entry_size = entry.get("font_size")
+        override = _inline_font_override(entry_font, entry_size)
+        if override:
+            text = override + text
+            if entry_font:
+                font_override_count += 1
+            if entry_size not in (None, ""):
+                size_override_count += 1
         # 役割に対応する Style 名で色分けする (role 未指定は配信者)
         style_name = font_profile.style_for_role(role)
         body_lines.append(f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}")
+
+    # 個別指定の件数を INFO 出力する (resolve16 §6)。0 件時のみ従来同様に静かに済ませる
+    if font_override_count or size_override_count:
+        _logger.info(
+            "テロップ個別指定 フォント %d 件 / サイズ %d 件",
+            font_override_count, size_override_count,
+        )
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(body_lines) + "\n")
@@ -521,7 +558,8 @@ def _format_ass_time(seconds):
 # これにより mux 時の "Application provided duration ... is invalid" (EINVAL=-22) と
 # vsync による大量フレーム脱落 (drop) を回避する。
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
-                  total_duration=0.0, on_progress=None, target_size=None):
+                  total_duration=0.0, on_progress=None, target_size=None,
+                  fonts_dir=None):
     # subtitles フィルタは2段階エスケープに従う (resolve 20260630 resolve2.md 対策A):
     #   ・シングルクォートでフィルタグラフ階層(空白/カンマ)を保護し、内側の '\' を下位へ通す
     #   ・フィルタ内オプション階層では ':' がなお区切り文字のため '\:' でエスケープする
@@ -548,7 +586,21 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
             f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,"
             f"pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
         )
-    filter_spec = f"setpts=N/FRAME_RATE/TB,{scale_chain}subtitles='{safe_path}'"
+    # 追加フォント(settings/fonts)を libass に解決させるため fontsdir を付与する (resolve16 §4.3)。
+    # 別プロセスの ffmpeg/libass は Qt の addApplicationFont を参照できないため、ここで明示する。
+    # 未作成/空なら付与せず従来と完全同一の挙動にする。
+    subtitles_opt = f"subtitles='{safe_path}'"
+    if fonts_dir and os.path.isdir(fonts_dir):
+        # subtitle_path と同一の2段階エスケープ ('\'→'/', ':'→'\:') を適用する
+        safe_fonts_dir = fonts_dir.replace("\\", "/").replace(":", "\\:")
+        subtitles_opt += f":fontsdir='{safe_fonts_dir}'"
+        # fontsdir 使用時はディレクトリと登録フォント数を INFO 出力する (resolve16 §6)
+        font_count = sum(
+            1 for name in os.listdir(fonts_dir)
+            if os.path.splitext(name)[1].lower() in (".ttf", ".otf", ".ttc")
+        )
+        _logger.info("追加フォント fontsdir を適用: %s (%d 件)", fonts_dir, font_count)
+    filter_spec = f"setpts=N/FRAME_RATE/TB,{scale_chain}{subtitles_opt}"
     fps = ffmpeg_runner.get_output_fps(ffmpeg_settings)
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
@@ -754,7 +806,10 @@ def _review_timeline(context, timeline, subtitle_cfg):
     used = [
         {"start": e["start"], "end": e["end"],
          "text": wrap_lines(e["text"], min_len, max_len, engine),
-         "role": e.get("role", _DEFAULT_ROLE)}
+         "role": e.get("role", _DEFAULT_ROLE),
+         # 個別フォント/サイズ (Blank/空欄はデフォルト=タグ非付与 / resolve16 §4.4)
+         "font": e.get("font", ""),
+         "font_size": e.get("font_size")}
         for e in edited
         if e.get("use", True)
     ]
@@ -887,6 +942,8 @@ def run(context):
         on_progress=context.progress_subcallback("フルテロップ生成"),
         # 縦動画のみキャンバス正規化(scale+pad)を行う。横は None で従来挙動。
         target_size=target_size,
+        # 追加フォント(settings/fonts)を libass に解決させる (resolve16 §4.3)
+        fonts_dir=resolve_fonts_dir(settings),
     )
     context.set_current_video_path(output_path)
     return output_path

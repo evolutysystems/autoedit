@@ -8,7 +8,8 @@
       "Bash(python *)",
       "PowerShell(gh *)",
       "PowerShell(py *)",
-      "Bash(git -C . status --short)"
+      "Bash(git -C . status --short)",
+      "Bash(gh release *)"
     ]
   }
 }

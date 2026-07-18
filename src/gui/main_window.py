@@ -14,14 +14,24 @@ if __package__ is None or __package__ == "":
     from src.gui.subtitle_editor_dialog import SubtitleEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
     from src.pipeline.pipeline_runner import run_pipeline
-    from src.settings.settings_window import SettingsWindow, load_settings
+    from src.settings.settings_window import (
+        SettingsWindow,
+        load_settings,
+        register_fonts_in_dir,
+        resolve_fonts_dir,
+    )
     from src.utils import updater
     from src.utils.logger import get_logger
     from src.version import __version__
 else:
     from ..exceptions import PipelineCancelled
     from ..pipeline.pipeline_runner import run_pipeline
-    from ..settings.settings_window import SettingsWindow, load_settings
+    from ..settings.settings_window import (
+        SettingsWindow,
+        load_settings,
+        register_fonts_in_dir,
+        resolve_fonts_dir,
+    )
     from ..utils import updater
     from ..utils.logger import get_logger
     from ..version import __version__
@@ -29,6 +39,7 @@ else:
     from .volume_threshold_dialog import VolumeThresholdDialog
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFontDatabase, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -65,9 +76,14 @@ class SubtitleReviewBridge(QObject):
     # メインスレッドへダイアログ表示を依頼するシグナル (items を渡す)
     review_requested = Signal(list)
 
-    def __init__(self, parent_window=None):
+    def __init__(self, parent_window=None, default_font="", default_size=None,
+                 font_families=None):
         super().__init__()
         self._parent_window = parent_window
+        # テロップ個別フォント/サイズの既定値・選択肢 (resolve16 §4.4)
+        self._default_font = default_font or ""
+        self._default_size = default_size
+        self._font_families = font_families
         # ワーカースレッドを待機させるためのイベントと結果共有領域
         self._event = threading.Event()
         self._result = None
@@ -88,7 +104,12 @@ class SubtitleReviewBridge(QObject):
     # メインスレッドで実行されるスロット: ダイアログを開いて結果を共有領域へ格納
     def _on_review_requested(self, items):
         try:
-            dialog = SubtitleEditorDialog(items, parent=self._parent_window)
+            dialog = SubtitleEditorDialog(
+                items, parent=self._parent_window,
+                default_font=self._default_font,
+                default_size=self._default_size,
+                font_families=self._font_families,
+            )
             if dialog.exec() == SubtitleEditorDialog.Accepted:
                 self._result = dialog.result_items()
             else:
@@ -383,8 +404,18 @@ class MainWindow(QWidget):
         # 設定を最新化 (settings_window で変更された可能性に備える)
         self._settings = load_settings()
 
+        # 追加フォント(settings/fonts)を Qt へ登録し、編集画面の一覧へ反映する (resolve16 §4.2)
+        register_fonts_in_dir(resolve_fonts_dir(self._settings))
+        subtitle_cfg = self._settings.get("subtitle", {})
+
         # 字幕編集画面フック (メインスレッドでダイアログを開く橋渡し)
-        self._bridge = SubtitleReviewBridge(parent_window=self)
+        # テロップ個別フォント/サイズの既定値・選択肢を渡す (resolve16 §4.4)
+        self._bridge = SubtitleReviewBridge(
+            parent_window=self,
+            default_font=subtitle_cfg.get("font_family", ""),
+            default_size=subtitle_cfg.get("font_size", None),
+            font_families=list(QFontDatabase.families()),
+        )
         # 音量解析・カット閾値確認フック (resolve7)
         self._volume_bridge = VolumeThresholdBridge(parent_window=self)
 
@@ -515,9 +546,28 @@ class MainWindow(QWidget):
         )
 
 
+# アプリアイコン(app.ico)の実体パスを凍結/非凍結の双方で解決する
+# 非凍結: このファイル(src/gui/main_window.py)と同階層の app.ico。
+# 凍結(PyInstaller): datas で同梱した _internal/src/gui/app.ico を sys._MEIPASS 基準で解決する
+#   (ffmpeg 同梱と同じ sys._MEIPASS 方式 / HowToRelease §3.2)。未配置なら None を返す。
+def _resolve_app_icon_path():
+    if getattr(sys, "frozen", False):
+        base = os.path.join(getattr(sys, "_MEIPASS", ""), "src", "gui")
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(base, "app.ico")
+    return icon_path if os.path.exists(icon_path) else None
+
+
 # エントリーポイント
 def main():
     app = QApplication(sys.argv)
+    # 実行中ウィンドウ/タスクバーのアイコンを設定する (exe 埋め込みアイコンとは別管理)。
+    # QApplication へ設定すると全トップレベルウィンドウの既定アイコンになる。
+    # 未配置(None)なら従来どおり Qt 既定アイコンで起動する (後方互換)。
+    icon_path = _resolve_app_icon_path()
+    if icon_path:
+        app.setWindowIcon(QIcon(icon_path))
     window = MainWindow()
     window.show()
     # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)

@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import shutil
 import sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIntValidator
@@ -20,6 +22,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# モジュールロガー (フォント追加の INFO/WARNING 出力用 / resolve16 §6)
+# アプリ実行時は上位で構成済みハンドラへ伝播する。標準ライブラリのみ使用。
+_logger = logging.getLogger(__name__)
+
 # ===== 定数定義 =====
 # 設定ファイルパス
 SETTINGS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +42,18 @@ SUBTITLE_LANGUAGES = ["ja", "en"]
 
 # 動画ファイルフィルタ
 VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;すべてのファイル (*)"
+
+# フォントプレビュー (request15 / resolve16 §4.1)
+# ドロップダウン項目・現在値・サンプル欄をこのポイントサイズで描画する (画面表示専用)。
+# 焼き込みサイズ(subtitle.font_size)とは無関係。
+FONT_PREVIEW_POINT_SIZE = 12
+FONT_PREVIEW_SAMPLE_TEXT = "あいうえお 永 ABCabc 0123"
+
+# フォント追加 (request15 / resolve16 §4.2)
+# 対応フォントファイル拡張子 (libass 焼き込みで解決可能な形式に限定)。
+FONT_FILE_EXTENSIONS = (".ttf", ".otf", ".ttc")
+FONT_ADD_FILTER = "フォントファイル (*.ttf *.otf *.ttc)"
+FONT_ADD_NOTE = "追加できるのは .ttf / .otf / .ttc のみ"
 
 # プレースホルダー文言
 # 無音音量閾値(dB)/無音最小継続時間/発話検出閾値(dB) は resolve7 により UI から削除
@@ -125,6 +143,9 @@ DEFAULT_SETTINGS = {
         "speech_pad_sec": 0.1,
         "font_family": "Yu Gothic UI",
         "font_size": 48,
+        # 追加フォント格納ディレクトリ (resolve16 §4.5)。SETTINGS_DIR 相対で解決する。
+        # 既定 "fonts" = settings/fonts。全実行で共有する。
+        "custom_fonts_dir": "fonts",
         # 改行設定 (request11): BudouX による文節改行を既定とし、下限〜上限で折り返す
         "wrap_engine": "budoux",
         "min_line_length": 15,
@@ -324,6 +345,24 @@ def save_settings(settings):
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 
+# 追加フォント格納ディレクトリを解決する (resolve16 §4.5)
+# custom_fonts_dir は SETTINGS_DIR 相対 (既定 "fonts" = settings/fonts)。全実行で共有する。
+def resolve_fonts_dir(settings):
+    subtitle = settings.get("subtitle", {}) if isinstance(settings, dict) else {}
+    rel = subtitle.get("custom_fonts_dir", "fonts") or "fonts"
+    return os.path.join(SETTINGS_DIR, rel)
+
+
+# 格納ディレクトリ内の対応フォントを Qt へ登録する (起動時のプレビュー/一覧反映用)
+# 焼き込み側(libass)は別プロセスのため fontsdir で別途参照する (resolve16 §4.3)。
+def register_fonts_in_dir(fonts_dir):
+    if not fonts_dir or not os.path.isdir(fonts_dir):
+        return
+    for name in sorted(os.listdir(fonts_dir)):
+        if os.path.splitext(name)[1].lower() in FONT_FILE_EXTENSIONS:
+            QFontDatabase.addApplicationFont(os.path.join(fonts_dir, name))
+
+
 # 設定画面ウィンドウクラス
 class SettingsWindow(QWidget):
 
@@ -368,6 +407,8 @@ class SettingsWindow(QWidget):
         # フォント関係ウィジェット参照
         self.font_size_edit = None
         self.font_family_combo = None
+        # フォントプレビュー欄 (選択中フォントでサンプル文字を描画 / resolve16 §4.1)
+        self.font_preview_label = None
         # 改行設定 (request11): 方式コンボ / 下限・上限文字数
         self.wrap_engine_combo = None
         self.min_line_length_edit = None
@@ -400,6 +441,11 @@ class SettingsWindow(QWidget):
         self.vertical_margin_l_edit = None
         self.vertical_margin_r_edit = None
         self.vertical_margin_v_edit = None
+
+        # 追加フォント (settings/fonts) を Qt へ登録してから UI を構築する
+        # (フォント一覧・プレビューに追加フォントを反映する / resolve16 §4.2)
+        self._fonts_dir = resolve_fonts_dir(load_settings())
+        register_fonts_in_dir(self._fonts_dir)
 
         self._build_ui()
         self._load_to_ui()
@@ -599,14 +645,35 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.font_size_edit, row, 1)
         row += 1
 
-        # フォント種類 (インストール済フォント一覧から選択)
-        self.font_family_combo = QComboBox()
-        self.font_family_combo.setEditable(False)
-        self.font_family_combo.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
-        self.font_family_combo.addItems(QFontDatabase.families())
+        # フォント種類 (インストール済 + 追加フォント一覧から選択) + フォント追加ボタン
+        # 各項目はそのフォント自身で描画され、プレビュー代わりになる (resolve16 §4.1)
+        self.font_family_combo = self._make_font_family_combo()
+        add_font_button = QPushButton("追加…")
+        add_font_button.setToolTip("フォントファイル(.ttf/.otf/.ttc)を追加する")
+        add_font_button.clicked.connect(self._on_add_font)
+        font_row_layout = QHBoxLayout()
+        font_row_layout.setContentsMargins(0, 0, 0, 0)
+        font_row_layout.addWidget(self.font_family_combo)
+        font_row_layout.addWidget(add_font_button)
         grid.addWidget(self._make_column_label("フォント種類"), row, 0)
-        grid.addWidget(self.font_family_combo, row, 1)
+        grid.addLayout(font_row_layout, row, 1)
         row += 1
+
+        # フォントプレビュー (選択中フォントでサンプル文字を描画 / resolve16 §4.1)
+        self.font_preview_label = QLabel(FONT_PREVIEW_SAMPLE_TEXT)
+        grid.addWidget(self._make_column_label("プレビュー"), row, 0)
+        grid.addWidget(self.font_preview_label, row, 1)
+        row += 1
+
+        # 追加可能フォントの注意書き (同カラムに小さく記載 / resolve16 §4.2)
+        font_note_label = QLabel(FONT_ADD_NOTE)
+        font_note_label.setStyleSheet("color:#888; font-size:11px;")
+        grid.addWidget(font_note_label, row, 1)
+        row += 1
+
+        # 選択変更でプレビュー(現在値+サンプル欄)を更新する
+        self.font_family_combo.currentIndexChanged.connect(self._update_font_preview)
+        self._update_font_preview()  # 初期表示
 
         # 改行方式 (request11): BudouX(文節) / 文字数
         self.wrap_engine_combo = self._make_value_combo(WRAP_ENGINE_OPTIONS)
@@ -1042,6 +1109,81 @@ class SettingsWindow(QWidget):
             self.font_family_combo.addItem(family)
             index = self.font_family_combo.findText(family)
         self.font_family_combo.setCurrentIndex(index)
+
+    # フォント種類コンボを生成する (全項目を自フォントで描画=プレビュー / resolve16 §4.1)
+    def _make_font_family_combo(self):
+        combo = QComboBox()
+        combo.setEditable(False)
+        combo.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        self._populate_font_combo(combo)
+        return combo
+
+    # フォント一覧をコンボへ充填し、各項目をそのフォント自身で描画する
+    def _populate_font_combo(self, combo):
+        combo.clear()
+        for family in QFontDatabase.families():
+            combo.addItem(family)
+            # 各項目を自フォントで描画してプレビュー代わりにする
+            combo.setItemData(
+                combo.count() - 1, QFont(family, FONT_PREVIEW_POINT_SIZE), Qt.FontRole
+            )
+
+    # フォント追加後などに一覧を再構築し、直前の選択を復元する
+    def _reload_font_combo(self):
+        current = self.font_family_combo.currentText()
+        self._populate_font_combo(self.font_family_combo)
+        self._set_font_family(current)
+
+    # 選択中フォントでプレビュー(ドロップダウン現在値+サンプル欄)を更新する
+    def _update_font_preview(self):
+        if self.font_preview_label is None:
+            return
+        family = self.font_family_combo.currentText()
+        if not family:
+            return
+        preview_font = QFont(family, FONT_PREVIEW_POINT_SIZE)
+        self.font_family_combo.setFont(preview_font)  # 現在値プレビュー
+        self.font_preview_label.setFont(preview_font)  # サンプル文字プレビュー
+
+    # 「フォント追加」処理 (resolve16 §4.2)
+    # 対応拡張子(.ttf/.otf/.ttc)のみ受理し、settings/fonts へコピー→Qt 登録→一覧/プレビュー反映する。
+    def _on_add_font(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "フォントファイルを選択", SETTINGS_DIR, FONT_ADD_FILTER
+        )
+        if not path:
+            return
+        # 対応拡張子以外は弾く (焼き込みで解決できない形式を防ぐ)
+        if os.path.splitext(path)[1].lower() not in FONT_FILE_EXTENSIONS:
+            _logger.warning("非対応フォントを拒否: %s", path)
+            QMessageBox.warning(self, "非対応フォント", f"{FONT_ADD_NOTE}。")
+            return
+        # 格納ディレクトリ(settings/fonts)へコピーする
+        try:
+            os.makedirs(self._fonts_dir, exist_ok=True)
+            dest = os.path.join(self._fonts_dir, os.path.basename(path))
+            if os.path.abspath(dest) != os.path.abspath(path):
+                shutil.copy2(path, dest)
+        except OSError as e:
+            _logger.warning("フォントのコピーに失敗: %s -> %s (%s)", path, self._fonts_dir, e)
+            QMessageBox.warning(self, "追加失敗", f"フォントの追加に失敗しました。\n{e}")
+            return
+        # Qt へ登録し、追加フォントのファミリ名を取得する
+        font_id = QFontDatabase.addApplicationFont(dest)
+        if font_id < 0:
+            _logger.warning("フォントの Qt 登録に失敗: %s", dest)
+            QMessageBox.warning(self, "追加失敗", "フォントの読み込みに失敗しました。")
+            return
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        # 一覧を再構築し、追加フォントを選択状態にする
+        self._reload_font_combo()
+        if families:
+            self._set_font_family(families[0])
+        self._update_font_preview()
+        shown = "、".join(families) if families else os.path.basename(dest)
+        # 追加ファイル名・登録ファミリ名・格納先を INFO 出力する (resolve16 §6)
+        _logger.info("フォント追加: %s -> %s (ファミリ: %s)", os.path.basename(path), dest, shown)
+        QMessageBox.information(self, "追加完了", f"フォントを追加しました:\n{shown}")
 
     # 文字列を整数化する (空・非数値時は既定値を返す)
     def _to_int(self, text, default):

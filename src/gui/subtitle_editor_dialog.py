@@ -3,13 +3,16 @@
 # 生成テロップを一覧表示し、テキスト修正・使用可否の選択を行う。
 # 列構成: 時間(表示のみ) / 字幕(編集可) / 使用(チェックボックス・初期全チェック)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QFontDatabase, QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -31,7 +34,17 @@ _COL_USE = 2
 _COL_STREAMER = 3
 _COL_SUB = 4
 _COL_COMMENT = 5
-_COLUMN_HEADERS = ["時間", "字幕", "使用", "配信者", "サブ", "コメント"]
+# テロップ個別フォント/サイズ列 (役割の右隣 / request15 / resolve16 §4.4)
+_COL_FONT = 6
+_COL_SIZE = 7
+_COLUMN_HEADERS = ["時間", "字幕", "使用", "配信者", "サブ", "コメント", "フォント", "サイズ"]
+
+# フォント個別列のプレビュー用ポイントサイズ (画面表示専用 / resolve16 §4.1)
+_FONT_PREVIEW_POINT_SIZE = 12
+# サイズ入力欄の最大幅 (小さめのテキストボックス / 要望3)
+_SIZE_FIELD_MAX_WIDTH = 60
+# フォント列の Blank 選択 (=デフォルト使用) の userData
+_FONT_BLANK_VALUE = ""
 
 # 役割キー(内部識別子) と 列インデックスの対応。焼き込み時の色分けに使う。
 # (role, 列インデックス) の順。既定選択は先頭の配信者(streamer)。
@@ -136,10 +149,14 @@ def _role_default_column():
 # 字幕編集ダイアログ
 # items: [{"start": float, "end": float, "text": str, "use": bool, "role": str}]
 #   role は "streamer"(配信者) / "sub"(サブ) / "comment"(コメント)。省略時は配信者。
+# default_font/default_size: フォント/サイズ列の「Blank=デフォルト」時に使う既定値
+#   (設定画面の subtitle.font_family / font_size)。画面に併記する (resolve16 §4.4)。
+# font_families: フォント列の選択肢。省略時はインストール済フォント一覧を用いる。
 class SubtitleEditorDialog(QDialog):
 
     # 初期化 (items の use 初期値は呼び出し側で全件 True を渡す想定)
-    def __init__(self, items, parent=None):
+    def __init__(self, items, parent=None, default_font="", default_size=None,
+                 font_families=None):
         super().__init__(parent)
         self.setWindowTitle("字幕編集")
         self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
@@ -148,9 +165,27 @@ class SubtitleEditorDialog(QDialog):
         self._items = [dict(item) for item in items]
         # 行ごとの役割ラジオを排他管理する QButtonGroup を保持する (result 取得用)
         self._role_groups = []
+        # 行ごとのフォント/サイズウィジェット参照 (result 取得用 / resolve16 §4.4)
+        self._font_combos = []
+        self._size_edits = []
+        # 「Blank=デフォルト」時の実効値 (画面併記・戻り値の初期値には使わない)
+        self._default_font = default_font or ""
+        self._default_size = default_size
+        # フォント列の選択肢 (追加フォント含む一覧を呼び出し側から受け取れる)
+        self._font_families = (
+            list(font_families) if font_families is not None
+            else list(QFontDatabase.families())
+        )
 
         self._build_ui()
         self._populate(self._items)
+
+    # 「Blank=デフォルト」時の実効値を説明文用に整形する (resolve16 §4.4)
+    def _default_desc(self):
+        font = self._default_font or "(設定のフォント)"
+        if self._default_size in (None, ""):
+            return font
+        return f"{font} / {self._default_size}"
 
     # 画面構築
     def _build_ui(self):
@@ -160,7 +195,8 @@ class SubtitleEditorDialog(QDialog):
         root.addWidget(QLabel(
             "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
             "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
-            "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。"
+            "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
+            f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self._default_desc()})。"
         ))
 
         # 一覧テーブル
@@ -175,6 +211,9 @@ class SubtitleEditorDialog(QDialog):
         # 役割列 (配信者/サブ/コメント) は内容に合わせる
         for _role, col in _ROLE_COLUMNS:
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        # フォント/サイズ列も内容に合わせる (resolve16 §4.4)
+        header.setSectionResizeMode(_COL_FONT, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_SIZE, QHeaderView.ResizeToContents)
         # 行全体ではなくセル単位で編集させる
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         # 「字幕」列を複数行編集にし、Alt/Shift+Enter で改行できるようにする
@@ -212,6 +251,8 @@ class SubtitleEditorDialog(QDialog):
     def _populate(self, items):
         self.table.setRowCount(len(items))
         self._role_groups = []
+        self._font_combos = []
+        self._size_edits = []
         for row, item in enumerate(items):
             # 時間列: 表示のみ (編集不可)
             time_item = QTableWidgetItem(_format_time_range(item["start"], item["end"]))
@@ -250,7 +291,37 @@ class SubtitleEditorDialog(QDialog):
                     default_button.setChecked(True)
             self._role_groups.append(group)
 
+            # フォント列: Blank(=デフォルト使用) + フォント一覧。行ごとに任意で上書きする
+            font_combo = self._make_font_combo(str(item.get("font", "") or ""))
+            self.table.setCellWidget(row, _COL_FONT, font_combo)
+            self._font_combos.append(font_combo)
+
+            # サイズ列: 小さめテキストボックス (空欄=デフォルト / 整数のみ)
+            size_edit = QLineEdit()
+            size_edit.setValidator(QIntValidator())
+            size_edit.setMaximumWidth(_SIZE_FIELD_MAX_WIDTH)
+            size_value = item.get("font_size")
+            if size_value not in (None, ""):
+                size_edit.setText(str(size_value))
+            self.table.setCellWidget(row, _COL_SIZE, size_edit)
+            self._size_edits.append(size_edit)
+
         self.table.resizeRowsToContents()
+
+    # フォント個別列のコンボを生成する (先頭 Blank=デフォルト / 各項目を自フォント描画)
+    def _make_font_combo(self, current_font):
+        combo = QComboBox()
+        combo.addItem("", _FONT_BLANK_VALUE)  # Blank = デフォルト使用
+        for family in self._font_families:
+            combo.addItem(family, family)
+            # 各項目を自フォントで描画してプレビュー代わりにする (resolve16 §4.1)
+            combo.setItemData(
+                combo.count() - 1, QFont(family, _FONT_PREVIEW_POINT_SIZE), Qt.FontRole
+            )
+        # 既存の font 指定があれば選択状態にする (無ければ Blank)
+        index = combo.findData(current_font) if current_font else 0
+        combo.setCurrentIndex(index if index >= 0 else 0)
+        return combo
 
     # セル編集で改行が増減した際に、その行の高さを内容へ追従させる
     def _on_item_changed(self, item):
@@ -265,8 +336,10 @@ class SubtitleEditorDialog(QDialog):
                 use_item.setCheckState(state)
 
     # 「字幕決定」確定後に編集結果を返す
-    # 戻り値: [{"start", "end", "text", "use", "role"}]
-    #   start/end は不変、text/use/role は編集反映。role は焼き込み時の色分けに使う。
+    # 戻り値: [{"start", "end", "text", "use", "role", "font", "font_size"}]
+    #   start/end は不変、text/use/role/font/font_size は編集反映。
+    #   role は焼き込み時の色分け、font/font_size は個別上書き (resolve16 §4.4)。
+    #   font="" / font_size=None は「デフォルト使用」を表す。
     def result_items(self):
         results = []
         for row, original in enumerate(self._items):
@@ -284,5 +357,28 @@ class SubtitleEditorDialog(QDialog):
                 "text": text,
                 "use": use,
                 "role": role,
+                # 個別フォント/サイズ (Blank/空欄はデフォルト使用)
+                "font": self._font_at(row),
+                "font_size": self._size_at(row),
             })
         return results
+
+    # 指定行のフォント個別指定を返す (Blank は "" = デフォルト使用)
+    def _font_at(self, row):
+        combo = self._font_combos[row] if row < len(self._font_combos) else None
+        if combo is None:
+            return ""
+        return combo.currentData() or ""
+
+    # 指定行のサイズ個別指定を返す (空欄/非数値は None = デフォルト使用)
+    def _size_at(self, row):
+        edit = self._size_edits[row] if row < len(self._size_edits) else None
+        if edit is None:
+            return None
+        text = edit.text().strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
