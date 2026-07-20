@@ -9,7 +9,20 @@
       "PowerShell(gh *)",
       "PowerShell(py *)",
       "Bash(git -C . status --short)",
-      "Bash(gh release *)"
+      "Bash(gh release *)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time,dts_time,duration_time -read_intervals \"%+20\" -of csv=p=0 ark.mp4)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time,duration_time -read_intervals \"3600%+10\" -of csv=p=0 ark.mp4)",
+      "Bash(ffmpeg -v error -ss 600 -i ark.mp4 -frames:v 1 -q:v 3 /tmp/ark_600.jpg -y)",
+      "Bash(ffmpeg -v error -ss 3600 -i ark.mp4 -frames:v 1 -q:v 3 /tmp/ark_3600.jpg -y)",
+      "Bash(ls -la /tmp/ark_*.jpg)",
+      "Bash(ffmpeg -version)",
+      "Bash(time ffmpeg -v error -y -ss 3600 -t 300 -i ark.mp4 -c copy -avoid_negative_ts make_zero tmp_verify/slice.mp4)",
+      "Bash(ffprobe -v error -show_entries stream=codec_type,duration,nb_frames,r_frame_rate,avg_frame_rate,start_time -of csv=p=0 tmp_verify/slice.mp4)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate,avg_frame_rate,nb_frames,duration,time_base -of csv=p=0 silence_cut.mp4)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 burn_setpts.mp4)",
+      "Bash(../src/ffmpeg/ffmpeg.exe -v error -fflags +genpts -i silence_cut.mp4 -vf \"setpts=N/FRAME_RATE/TB\" -an -fps_mode passthrough -f null - -stats)",
+      "Read(//d/develop/**)",
+      "Bash(rm -rf D:/develop/autoedit/tmp_b2)"
     ]
   }
 }

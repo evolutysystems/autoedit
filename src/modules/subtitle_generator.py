@@ -557,6 +557,7 @@ def _format_ass_time(seconds):
 # 映像/音声のタイムスタンプを再生成しつつ CFR で再エンコードする (resolve 20260630 対策A)。
 # これにより mux 時の "Application provided duration ... is invalid" (EINVAL=-22) と
 # vsync による大量フレーム脱落 (drop) を回避する。
+# CFR 化は fps フィルタ (実PTS基準) で行い、映像と音声の同期を保つ (resolve 20260719 対策A)。
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
                   total_duration=0.0, on_progress=None, target_size=None,
                   fonts_dir=None):
@@ -566,15 +567,22 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
     # 両者は別階層に作用するため併用が正しい (クォートだけでは ':' 分割を防げず
     # ドライブレターが original_size オプションへ流れて EINVAL になる)。
     safe_path = subtitle_path.replace("\\", "/").replace(":", "\\:")
-    # 先に setpts で映像PTSをフレーム番号から単調再構築し、その後 subtitles を焼く。
-    # 【テロップ進行ズレ対策 / 順序が重要】
-    #   無音カット出力 (seek抽出→concat -c copy) は、区間ごとの微小な隙間が累積して
-    #   映像PTSが実尺より線形に膨張している (例: 実10.0s のフレームがPTS≒10.4s)。
-    #   一方 whisper のタイムスタンプは音声サンプルの連番=連続コンテンツ時刻で付くため、
-    #   subtitles を先に適用すると「膨張したPTS」に対して「連続時刻のASS」を突き合わせ、
-    #   長尺ほど字幕が前ズレする (30分で末尾≒1秒早まる)。setpts で先にPTSをフレーム番号基準
-    #   (=whisperと同じ連続時刻) へ正規化してから焼くことで、字幕位置を発話に一致させる。
-    #   (setpts 自体は従来どおり破損TS→CFR化の役割も兼ねる / resolve 20260630)
+    # 先に fps フィルタで映像を実時刻基準の CFR へ整え、その後 subtitles を焼く。
+    # 【映像/音声 同期ズレ対策 / 順序が重要】(resolve 20260719 対策A)
+    #   無音カット出力 (seek抽出→concat -c copy) の映像PTSには、区間境界ごとに
+    #   約21ms (=AAC 1フレーム 1024/48000) の空白が入っている。区間ファイルの音声は
+    #   AAC のフレーム量子化により必ず映像より 1フレーム長くなり、concat デマルチプレクサは
+    #   次区間のオフセットを「ファイル尺=長い方=音声尺」で進めるため、映像側にだけ穴が空く。
+    #   この時点では各フレームは正しい時刻に置かれており、映像と音声は同期している。
+    #   旧実装の setpts=N/FRAME_RATE/TB はフレーム番号で全フレームを等間隔に振り直すため、
+    #   この不均一な空白を一様に均してしまい、カット密度の偏りに応じて映像だけが前後した
+    #   (実測: 2時間素材で最大 0.93 秒の映像先行 / docs/error/20260719)。
+    #   fps={output_fps} は各フレームの実PTSを見て複製/間引きするため、絵と実時刻の対応が
+    #   保たれ、実時刻を保持する音声 (aresample) と整合する。空白は複製フレームで埋まる。
+    #   テロップ位置は「実PTS + 実時刻由来の whisper タイムスタンプ」で自然に一致するため、
+    #   setpts による人為的な前ズレ補正は不要。
+    #   fps 明示により setpts の FRAME_RATE 暗黙解決 (avg か r か / ffmpeg ビルド依存) にも
+    #   依存しなくなる。無音カット出力は r_frame_rate が 240/1 等へ壊れることがあるため重要。
     # 縦動画時 (target_size 指定時) は subtitles の前に scale+pad を挟み、
     # 本編を縦キャンバス(例 1080x1920)へ正規化してから字幕を焼く (request14)。
     # アスペクト比を保ったまま縮小し、余白は中央寄せの黒帯で埋める。ASS の PlayRes と一致させる。
@@ -600,8 +608,8 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
             if os.path.splitext(name)[1].lower() in (".ttf", ".otf", ".ttc")
         )
         _logger.info("追加フォント fontsdir を適用: %s (%d 件)", fonts_dir, font_count)
-    filter_spec = f"setpts=N/FRAME_RATE/TB,{scale_chain}{subtitles_opt}"
     fps = ffmpeg_runner.get_output_fps(ffmpeg_settings)
+    filter_spec = f"fps={fps},{scale_chain}{subtitles_opt}"
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
     cmd = [
@@ -611,7 +619,7 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
         "-fflags", "+genpts",          # 欠落PTSを再生成して読み込む
         "-i", input_path,
         "-vf", filter_spec,
-        "-af", "aresample=async=1:first_pts=0",  # 映像PTS再構築に音声を追従させ同期維持
+        "-af", "aresample=async=1:first_pts=0",  # 音声を実時刻・先頭0基準で保持し同期維持
         *ffmpeg_runner.build_encode_options(ffmpeg_settings),
         "-fps_mode", "cfr",            # 固定フレームレート化 (有効な duration を保証)
         "-r", str(fps),                # 出力フレームレート (setting.json: ffmpeg.output_fps)
