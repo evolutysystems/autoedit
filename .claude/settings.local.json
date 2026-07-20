@@ -22,7 +22,9 @@
       "Bash(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 burn_setpts.mp4)",
       "Bash(../src/ffmpeg/ffmpeg.exe -v error -fflags +genpts -i silence_cut.mp4 -vf \"setpts=N/FRAME_RATE/TB\" -an -fps_mode passthrough -f null - -stats)",
       "Read(//d/develop/**)",
-      "Bash(rm -rf D:/develop/autoedit/tmp_b2)"
+      "Bash(rm -rf D:/develop/autoedit/tmp_b2)",
+      "Bash(gh auth *)",
+      "PowerShell(winget install *)"
     ]
   }
 }
