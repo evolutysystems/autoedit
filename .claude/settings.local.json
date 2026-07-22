@@ -24,7 +24,15 @@
       "Read(//d/develop/**)",
       "Bash(rm -rf D:/develop/autoedit/tmp_b2)",
       "Bash(gh auth *)",
-      "PowerShell(winget install *)"
+      "PowerShell(winget install *)",
+      "Bash(rm -f installer/release_notes_v1.0.9.md)",
+      "Bash(rm -f \"C:/Users/evolu/AppData/Local/Temp/Stretheus-v1.0.9.zip\")",
+      "Read(//c/Users/evolu/AppData/Local/Temp/**)",
+      "Bash(./src/ffmpeg/ffprobe.exe *)",
+      "Bash(time ./src/ffmpeg/ffmpeg.exe -y -hide_banner -loglevel error -ss 3600 -i f1.mp4 -t 1800 -c copy docs/error/20260722/work/f1_mid.mp4)",
+      "Bash(export PYTHONUTF8=1)",
+      "Bash(./src/ffmpeg/ffmpeg.exe -y -hide_banner -loglevel error -i docs/error/20260722/work/dense.wav -t 90 docs/error/20260722/work/bench90.wav)",
+      "WebSearch"
     ]
   }
 }
