@@ -542,7 +542,7 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("切り抜き自動編集 実行")
+        self.setWindowTitle("Stretheus")
         # 自動更新チェックの ON/OFF 判定に使用する設定
         self._settings = load_settings()
         # 自動更新ワーカー参照 (GC 防止)
