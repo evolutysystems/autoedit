@@ -236,6 +236,12 @@ DEFAULT_SETTINGS = {
         "log_dir": "logs",
         "level": "INFO",
     },
+    # アーカイブ切り抜き (request17 / flow17 R0)。R0 はメイン画面タブ化のみで、
+    # アーカイブ機能本体 (採点・取得・結果画面) は後続リリースで追加する。
+    # enabled は後続段階での露出制御用。既定 False の間 UI は「準備中」を表示する。
+    "archive": {
+        "enabled": False,
+    },
 }
 
 # スタイル定数

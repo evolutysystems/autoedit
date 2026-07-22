@@ -3,6 +3,10 @@
 # 入力動画の選択 / 実行ボタン / 進捗表示 / 字幕編集画面の橋渡しを担う。
 # パイプラインはワーカースレッドで実行し、フルテロップ後にメインスレッドで
 # 字幕編集画面 (モーダル) を開く。
+#
+# request17 / flow17 R0: メイン画面をタブ化した。現行のクリップ機能は ClipTabWidget へ
+# 無改変で移設し、アーカイブ切り抜き用タブ (ArchiveTabWidget) を「準備中」で追加する。
+# MainWindow は QTabWidget のホスト兼アプリ級の自動更新チェックを担う。
 import os
 import sys
 import threading
@@ -50,6 +54,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -271,12 +276,13 @@ class UpdateDownloadWorker(QThread):
             self.progress.emit(-1)  # 総サイズ不明 → 不確定表示
 
 
-# GUI ランチャ本体
-class MainWindow(QWidget):
+# クリップ用タブ (現行のクリップ自動編集フロー一式)
+# request17 / flow17 R0: 旧 MainWindow の本体 (入力選択・実行・進捗・スピナー・
+# ドラッグ&ドロップ・字幕編集/音量解析の橋渡し) をそのまま移設したもの。挙動は不変。
+class ClipTabWidget(QWidget):
 
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("切り抜き自動編集 実行")
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self._settings = load_settings()
         self._worker = None
         self._bridge = None
@@ -284,12 +290,8 @@ class MainWindow(QWidget):
         self._volume_bridge = None
         # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ)
         self._settings_window = None
-        # 自動更新ワーカー参照 (GC 防止)
-        self._update_check_worker = None
-        self._update_download_worker = None
-        self._update_progress = None
         self._build_ui()
-        # ウィンドウ全体で動画ファイルのドロップを受け付ける (resolve12)
+        # このタブ上で動画ファイルのドロップを受け付ける (resolve12)
         self.setAcceptDrops(True)
 
     # 画面構築
@@ -467,6 +469,61 @@ class MainWindow(QWidget):
         self._set_running(False)
         self.status_label.setText("エラーで停止しました")
         QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
+
+
+# アーカイブ切り抜き用タブ (request17 / flow17 R0: 準備中プレースホルダ)
+# 採点・Twitch 取得・結果画面・切り抜きは後続リリース (R1 以降) で実装する。
+# R0 では機能を一切持たず「準備中」を表示するのみ (誤操作でパイプラインが走らないこと)。
+# 露出制御用の archive.enabled は後続段階で使用する (現段階は常に準備中)。
+class ArchiveTabWidget(QWidget):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_ui()
+
+    # 準備中メッセージのみを中央に表示する
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.addStretch(1)
+        title = QLabel("アーカイブ切り抜き（準備中）")
+        title.setAlignment(Qt.AlignCenter)
+        root.addWidget(title)
+        note = QLabel(
+            "Twitch アーカイブからの採点・切り抜き機能は準備中です。\n"
+            "今後のアップデートで順次提供します。"
+        )
+        note.setAlignment(Qt.AlignCenter)
+        root.addWidget(note)
+        root.addStretch(1)
+
+
+# GUI ランチャ本体 (タブホスト)
+# request17 / flow17 R0: メイン画面を QTabWidget 化し、クリップ用/アーカイブ切り抜き用を
+# タブで切り分ける。アプリ級の自動更新チェックは本ウィンドウが担う。
+class MainWindow(QWidget):
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("切り抜き自動編集 実行")
+        # 自動更新チェックの ON/OFF 判定に使用する設定
+        self._settings = load_settings()
+        # 自動更新ワーカー参照 (GC 防止)
+        self._update_check_worker = None
+        self._update_download_worker = None
+        self._update_progress = None
+        self._build_ui()
+
+    # タブを構築する (現行クリップ機能 + アーカイブ切り抜き準備中)
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        # クリップ用タブ (現行機能を無改変移設)
+        self.clip_tab = ClipTabWidget()
+        self.tabs.addTab(self.clip_tab, "クリップ用")
+        # アーカイブ切り抜き用タブ (R0: 準備中)
+        self.archive_tab = ArchiveTabWidget()
+        self.tabs.addTab(self.archive_tab, "アーカイブ切り抜き用")
+        root.addWidget(self.tabs)
 
     # ===== 自動更新 (request_autoupdate.md §6) =====
 

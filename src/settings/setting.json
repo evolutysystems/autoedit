@@ -106,5 +106,8 @@
     "logging": {
         "log_dir": "logs",
         "level": "INFO"
+    },
+    "archive": {
+        "enabled": false
     }
 }
