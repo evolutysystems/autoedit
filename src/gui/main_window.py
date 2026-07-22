@@ -42,8 +42,8 @@ else:
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFontDatabase, QIcon
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QFontDatabase, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -71,6 +71,30 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
 # 表示崩れ環境向けに ASCII 版 ["|", "/", "-", "\\"] へ差し替え可能
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _SPINNER_INTERVAL_MS = 120
+
+# ボタンのアイコン化 (設定/実行を文言ではなくアイコン表示にする)
+# 画像素材を追加せず、Unicode 記号を描画して QIcon 化する。記号は定数で管理する。
+_BUTTON_ICON_PX = 18          # アイコン描画サイズ (px)
+_SETTINGS_GLYPH = "⚙"    # ⚙ 設定 (歯車)
+_RUN_GLYPH = "▶"         # ▶ 実行 (再生)
+# 記号グリフを確実に描画するためのフォント候補 (Windows 標準の記号フォント)。
+# 既定 UI フォントは歯車(U+2699)等を持たない場合があるため明示する。
+_ICON_FONT_FAMILIES = ["Segoe UI Symbol", "Segoe UI Emoji", "Segoe UI"]
+
+
+# Unicode 記号を指定色で描画して QIcon 化する (ボタンをアイコン表示にするためのヘルパ)
+def _glyph_icon(glyph, color):
+    pixmap = QPixmap(_BUTTON_ICON_PX, _BUTTON_ICON_PX)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setPen(color)
+    font = painter.font()
+    font.setFamilies(_ICON_FONT_FAMILIES)
+    font.setPointSizeF(_BUTTON_ICON_PX * 0.72)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, glyph)
+    painter.end()
+    return QIcon(pixmap)
 
 
 # ワーカースレッドとメインスレッドの橋渡し (字幕編集画面の表示)
@@ -298,9 +322,12 @@ class ClipTabWidget(QWidget):
     def _build_ui(self):
         root = QVBoxLayout(self)
 
-        # 入力動画選択
+        # ボタンアイコンの描画色はパレットのボタン文字色に合わせる (ライト/ダーク両対応)
+        icon_color = self.palette().color(QPalette.ButtonText)
+        icon_size = QSize(_BUTTON_ICON_PX, _BUTTON_ICON_PX)
+
+        # 入力動画選択 ("入力動画:" のラベルは廃止し、入力欄のプレースホルダで案内する)
         input_row = QHBoxLayout()
-        input_row.addWidget(QLabel("入力動画:"))
         self.input_edit = QLineEdit()
         # 動画ファイルを直接ドラッグ&ドロップできる旨を案内する (resolve12)
         self.input_edit.setPlaceholderText("動画ファイルをここにドラッグ&ドロップ、または「参照...」")
@@ -310,15 +337,26 @@ class ClipTabWidget(QWidget):
         input_row.addWidget(self.browse_button)
         root.addLayout(input_row)
 
-        # 設定画面を開くボタン (settings_window.SettingsWindow を参照する)
-        self.settings_button = QPushButton("設定...")
-        self.settings_button.clicked.connect(self._on_open_settings)
-        root.addWidget(self.settings_button)
+        # 設定・実行ボタンは横並びで配置する
+        button_row = QHBoxLayout()
 
-        # 実行ボタン
-        self.run_button = QPushButton("実行")
+        # 設定画面を開くボタン (文言ではなく歯車アイコン。用途はツールチップで示す)
+        self.settings_button = QPushButton()
+        self.settings_button.setIcon(_glyph_icon(_SETTINGS_GLYPH, icon_color))
+        self.settings_button.setIconSize(icon_size)
+        self.settings_button.setToolTip("設定")
+        self.settings_button.clicked.connect(self._on_open_settings)
+        button_row.addWidget(self.settings_button)
+
+        # 実行ボタン (文言ではなく再生アイコン。用途はツールチップで示す)
+        self.run_button = QPushButton()
+        self.run_button.setIcon(_glyph_icon(_RUN_GLYPH, icon_color))
+        self.run_button.setIconSize(icon_size)
+        self.run_button.setToolTip("実行")
         self.run_button.clicked.connect(self._on_run)
-        root.addWidget(self.run_button)
+        button_row.addWidget(self.run_button)
+
+        root.addLayout(button_row)
 
         # 進捗バー + ステータス
         self.progress_bar = QProgressBar()
