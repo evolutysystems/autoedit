@@ -32,7 +32,9 @@
       "Bash(time ./src/ffmpeg/ffmpeg.exe -y -hide_banner -loglevel error -ss 3600 -i f1.mp4 -t 1800 -c copy docs/error/20260722/work/f1_mid.mp4)",
       "Bash(export PYTHONUTF8=1)",
       "Bash(./src/ffmpeg/ffmpeg.exe -y -hide_banner -loglevel error -i docs/error/20260722/work/dense.wav -t 90 docs/error/20260722/work/bench90.wav)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(rm -rf build dist)",
+      "Bash(pyinstaller main_window.spec --clean --noconfirm)"
     ]
   }
 }
