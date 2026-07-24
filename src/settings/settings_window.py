@@ -236,11 +236,50 @@ DEFAULT_SETTINGS = {
         "log_dir": "logs",
         "level": "INFO",
     },
-    # アーカイブ切り抜き (request17 / flow17 R0)。R0 はメイン画面タブ化のみで、
-    # アーカイブ機能本体 (採点・取得・結果画面) は後続リリースで追加する。
-    # enabled は後続段階での露出制御用。既定 False の間 UI は「準備中」を表示する。
+    # アーカイブ切り抜き (request17 / flow17)。R1: 方式A中核採点(音量/無音/コメント)
+    # → TOP5 → 切り抜き+字幕焼き込み。Twitch取得・任意スコアラ・方式Bは後続リリース。
     "archive": {
-        "enabled": False,
+        "enabled": True,
+        "download": {
+            # R1 はローカル mp4 指定のみ。twitch-dl 取得は R3 で追加する。
+            "downloader": "local",
+            "work_dir": "archive_work",
+        },
+        "scoring": {
+            "method": "A",
+            "top_n": 5,
+            "window_sec": 300,          # 方式A: 5分窓
+            "slide_sec": 60,            # 方式A: 1分スライド (= セル幅)
+            "clip_pad_sec": 0,          # 採用区間の前後パディング
+            "loud_percentile": 0.8,     # 大声セル判定 (max_db の上位分位)
+            "silence_ratio_threshold": 0.6,  # 無音セル判定 (無音率がこれ以上)
+            "method_a": {
+                "weights": {"emotion": 0.55, "comment": 0.45},
+                # R1 は音声のみのため loud/long_silence を使用 (他はML必要=後続)
+                "emotion_points": {
+                    "big_laugh": 15, "loud": 10, "surprise": 8,
+                    "cry": 15, "anger": 12, "long_silence": -8,
+                },
+                "comment": {"w_point_per_char": 1, "rate_spike_bonus": 10},
+            },
+        },
+        # 切り抜き出力ファイル名の接頭辞 (flow17 R1)
+        "output": {
+            "clip_prefix": "archive",
+        },
+        # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
+        "clip_pipeline": {
+            "silence_cut": True,       # 各クリップで無音カットを行う
+            "subtitle_review": True,   # 各クリップでテロップ編集画面を出す
+            "volume_dialog": False,    # 音量/カット閾値ダイアログは出さない
+        },
+        # 結合 (request18): TOP5 を結合して 1 本にし、OP/ED を1回だけ付ける。
+        "combine": {
+            "enabled": True,
+            "opening_ending": True,    # 結合1本に OP/ED を付ける (実体は general フラグ+素材有無)
+            "keep_individual": False,  # 個別クリップも残すか (既定: 残さない)
+            "combined_suffix": "combined",
+        },
     },
 }
 

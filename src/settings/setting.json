@@ -108,6 +108,41 @@
         "level": "INFO"
     },
     "archive": {
-        "enabled": false
+        "enabled": true,
+        "download": {
+            "downloader": "local",
+            "work_dir": "archive_work"
+        },
+        "scoring": {
+            "method": "A",
+            "top_n": 5,
+            "window_sec": 300,
+            "slide_sec": 60,
+            "clip_pad_sec": 0,
+            "loud_percentile": 0.8,
+            "silence_ratio_threshold": 0.6,
+            "method_a": {
+                "weights": { "emotion": 0.55, "comment": 0.45 },
+                "emotion_points": {
+                    "big_laugh": 15, "loud": 10, "surprise": 8,
+                    "cry": 15, "anger": 12, "long_silence": -8
+                },
+                "comment": { "w_point_per_char": 1, "rate_spike_bonus": 10 }
+            }
+        },
+        "output": {
+            "clip_prefix": "archive"
+        },
+        "clip_pipeline": {
+            "silence_cut": true,
+            "subtitle_review": true,
+            "volume_dialog": false
+        },
+        "combine": {
+            "enabled": true,
+            "opening_ending": true,
+            "keep_individual": false,
+            "combined_suffix": "combined"
+        }
     }
 }

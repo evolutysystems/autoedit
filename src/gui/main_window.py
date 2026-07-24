@@ -15,6 +15,7 @@ import threading
 if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.exceptions import PipelineCancelled
+    from src.gui.archive_tab import ArchiveTabWidget
     from src.gui.subtitle_editor_dialog import SubtitleEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
     from src.pipeline.pipeline_runner import run_pipeline
@@ -39,6 +40,7 @@ else:
     from ..utils import updater
     from ..utils.logger import get_logger
     from ..version import __version__
+    from .archive_tab import ArchiveTabWidget
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
@@ -507,32 +509,6 @@ class ClipTabWidget(QWidget):
         self._set_running(False)
         self.status_label.setText("エラーで停止しました")
         QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
-
-
-# アーカイブ切り抜き用タブ (request17 / flow17 R0: 準備中プレースホルダ)
-# 採点・Twitch 取得・結果画面・切り抜きは後続リリース (R1 以降) で実装する。
-# R0 では機能を一切持たず「準備中」を表示するのみ (誤操作でパイプラインが走らないこと)。
-# 露出制御用の archive.enabled は後続段階で使用する (現段階は常に準備中)。
-class ArchiveTabWidget(QWidget):
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._build_ui()
-
-    # 準備中メッセージのみを中央に表示する
-    def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.addStretch(1)
-        title = QLabel("アーカイブ切り抜き（準備中）")
-        title.setAlignment(Qt.AlignCenter)
-        root.addWidget(title)
-        note = QLabel(
-            "Twitch アーカイブからの採点・切り抜き機能は準備中です。\n"
-            "今後のアップデートで順次提供します。"
-        )
-        note.setAlignment(Qt.AlignCenter)
-        root.addWidget(note)
-        root.addStretch(1)
 
 
 # GUI ランチャ本体 (タブホスト)

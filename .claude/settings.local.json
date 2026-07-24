@@ -34,7 +34,8 @@
       "Bash(./src/ffmpeg/ffmpeg.exe -y -hide_banner -loglevel error -i docs/error/20260722/work/dense.wav -t 90 docs/error/20260722/work/bench90.wav)",
       "WebSearch",
       "Bash(rm -rf build dist)",
-      "Bash(pyinstaller main_window.spec --clean --noconfirm)"
+      "Bash(pyinstaller main_window.spec --clean --noconfirm)",
+      "Bash(QT_QPA_PLATFORM=offscreen python -)"
     ]
   }
 }

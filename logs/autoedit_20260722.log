@@ -2,3 +2,74 @@
 2026-07-22 15:04:04,053 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
 2026-07-22 15:05:38,891 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
 2026-07-22 15:26:08,465 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-22 16:52:39,039 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\f1.mp4 (窓300s/スライド60s)
+2026-07-22 17:34:13,163 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad/test_archive.mp4 (窓300s/スライド60s)
+2026-07-22 17:34:16,033 [INFO] src.archive.pipeline: 採点完了: 窓1件 → TOP1抽出
+2026-07-22 17:34:16,034 [INFO] src.archive.pipeline:   clip1: 0.0-40.0 点=5.5 (感情10.0/コメント0.0)
+2026-07-22 17:34:16,223 [INFO] src.modules.output_profile: 横動画と判定 (入力=640x360)
+2026-07-22 17:34:16,223 [INFO] src.modules.subtitle_generator: テロップ生成スキップ (subtitle.enabled=false)
+2026-07-22 17:34:16,236 [INFO] src.archive.clip_writer: クリップ出力: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad\archive_test_archive_clip1_0-00-00-0-00-40.mp4
+2026-07-22 17:55:47,288 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad/test_archive.mp4 (窓300s/スライド60s)
+2026-07-22 17:55:47,700 [INFO] src.archive.pipeline: 採点完了: 窓1件 → TOP1抽出
+2026-07-22 17:55:47,700 [INFO] src.archive.pipeline:   clip1: 0.0-40.0 点=5.5 (感情10.0/コメント0.0)
+2026-07-22 17:55:47,870 [INFO] src.modules.output_profile: 横動画と判定 (入力=640x360)
+2026-07-22 17:55:47,870 [INFO] src.modules.subtitle_generator: テロップ生成スキップ (subtitle.enabled=false)
+2026-07-22 17:55:47,876 [INFO] src.archive.clip_writer: クリップ出力: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad\archive_test_archive_clip1_0-00-00-0-00-40.mp4
+2026-07-22 17:55:58,257 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-22 17:56:51,896 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/f1.mp4 (窓300s/スライド60s)
+2026-07-22 18:44:18,074 [INFO] src.archive.pipeline: 採点完了: 窓141件 → TOP5抽出
+2026-07-22 18:44:18,090 [INFO] src.archive.pipeline:   clip1: 1500.0-1800.0 点=48.6 (感情88.3/コメント0.0)
+2026-07-22 18:44:18,090 [INFO] src.archive.pipeline:   clip2: 3240.0-3540.0 点=44.4 (感情80.7/コメント0.0)
+2026-07-22 18:44:18,090 [INFO] src.archive.pipeline:   clip3: 5100.0-5400.0 点=52.1 (感情94.7/コメント0.0)
+2026-07-22 18:44:18,090 [INFO] src.archive.pipeline:   clip4: 5820.0-6120.0 点=55.0 (感情100.0/コメント0.0)
+2026-07-22 18:44:18,090 [INFO] src.archive.pipeline:   clip5: 6300.0-6600.0 点=55.0 (感情100.0/コメント0.0)
+2026-07-22 18:45:46,432 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-22 18:46:18,204 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-22 18:46:18,204 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-22 18:46:25,012 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-22 18:50:07,856 [INFO] src.modules.subtitle_generator: 音声認識完了 (66 セグメント)
+2026-07-22 18:50:08,206 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 66 → 66 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-22 18:57:08,006 [INFO] src.archive.clip_writer: クリップ出力: D:/develop/autoedit/output\archive_f1_clip1_0-25-00-0-30-00.mp4
+2026-07-22 18:57:08,751 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-22 18:57:08,752 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-22 18:57:08,752 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-22 18:57:16,148 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-22 19:00:18,612 [INFO] src.modules.subtitle_generator: 音声認識完了 (55 セグメント)
+2026-07-22 19:00:18,827 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 55 → 55 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-22 19:05:20,569 [INFO] src.archive.clip_writer: クリップ出力: D:/develop/autoedit/output\archive_f1_clip2_0-54-00-0-59-00.mp4
+2026-07-22 19:05:21,275 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-22 19:05:21,275 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-22 19:05:21,276 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-22 19:05:27,833 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-22 19:08:57,460 [INFO] src.modules.subtitle_generator: 音声認識完了 (63 セグメント)
+2026-07-22 19:08:57,690 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 63 → 63 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-22 19:14:36,704 [INFO] src.archive.clip_writer: クリップ出力: D:/develop/autoedit/output\archive_f1_clip3_1-25-00-1-30-00.mp4
+2026-07-22 19:14:37,509 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-22 19:14:37,509 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-22 19:14:37,509 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-22 19:14:45,053 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-22 19:20:08,685 [INFO] src.modules.subtitle_generator: 音声認識完了 (90 セグメント)
+2026-07-22 19:20:08,910 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 90 → 90 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-22 19:25:47,220 [INFO] src.archive.clip_writer: クリップ出力: D:/develop/autoedit/output\archive_f1_clip4_1-37-00-1-42-00.mp4
+2026-07-22 19:25:48,150 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-22 19:25:48,150 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-22 19:25:48,150 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-22 19:25:56,057 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-22 19:30:30,985 [INFO] src.modules.subtitle_generator: 音声認識完了 (82 セグメント)
+2026-07-22 19:30:31,201 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 82 → 82 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-22 19:35:57,844 [INFO] src.archive.clip_writer: クリップ出力: D:/develop/autoedit/output\archive_f1_clip5_1-45-00-1-50-00.mp4
+2026-07-22 20:28:18,856 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad/test_archive.mp4 (窓300s/スライド60s)
+2026-07-22 20:28:19,155 [INFO] src.archive.pipeline: 採点完了: 窓1件 → TOP1抽出
+2026-07-22 20:28:19,155 [INFO] src.archive.pipeline:   clip1: 0.0-40.0 点=5.5 (感情10.0/コメント0.0)
+2026-07-22 20:28:19,225 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-22 20:28:19,225 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_ol0dzdev\clip1_raw.mp4
+2026-07-22 20:28:19,279 [INFO] src.modules.output_profile: 横動画と判定 (入力=640x360)
+2026-07-22 20:28:19,279 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-22 20:28:19,440 [INFO] src.modules.silence_cutter: 検出された無音区間: 0 件
+2026-07-22 20:28:21,753 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_cbi7r89y\silence_cut.mp4
+2026-07-22 20:28:21,753 [INFO] src.modules.subtitle_generator: テロップ生成スキップ (subtitle.enabled=false)
+2026-07-22 20:28:21,753 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-22 20:28:21,753 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-22 20:28:21,753 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ol0dzdev\clip1_raw_edited.mp4
+2026-07-22 20:28:21,753 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ol0dzdev\clip1_raw_edited.mp4
+2026-07-22 20:28:33,976 [INFO] src.archive.clip_writer: 結合出力: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/14b7b5ae-2613-4f29-b331-15203e9edb76/scratchpad\archive_test_archive_combined.mp4 (使用1 / スキップ0)
