@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIntValidator
+from PySide6.QtGui import QColor, QDoubleValidator, QFont, QFontDatabase, QIntValidator
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -280,6 +280,28 @@ DEFAULT_SETTINGS = {
             "keep_individual": False,  # 個別クリップも残すか (既定: 残さない)
             "combined_suffix": "combined",
         },
+        # テーマ・イントロカード (resolve19): 字幕一覧画面でテーマを入力した
+        # クリップにのみ発火。開始前 buffer_sec を復元しブラー+黒帯+中央テーマを重ね、
+        # 本編全長には左上へ小さくテーマを焼く。未入力クリップは現行どおり。
+        "intro_card": {
+            "enabled": True,            # 機能全体のスイッチ (false でテーマ欄も出さない)
+            "buffer_sec": 1.5,          # 開始前に戻すバッファ秒数 (要望: 1.5)
+            "blur_sigma": 18,           # 画面全体ブラーの強さ (gblur sigma)
+            "margin_top_px": 300,       # 黒帯の上余白 (要望: 300)
+            "margin_bottom_px": 300,    # 黒帯の下余白 (要望: 300)
+            "box_color": "black",       # 黒色要素の色
+            "box_opacity": 1.0,         # 黒色要素の不透明度 (1.0=完全不透明)
+            "title_font_family": "",    # 中央テーマのフォント (空=subtitle.font_family)
+            "title_font_size": 112,     # 中央テーマの文字サイズ (1080p 目安)
+            "title_color": "#FFFFFF",   # 中央テーマの文字色
+            "tag_font_family": "",      # 左上タグのフォント (空=subtitle.font_family)
+            "tag_font_size": 40,        # 左上タグの文字サイズ
+            "tag_color": "#FFFFFF",     # 左上タグの文字色
+            "tag_bg_opacity": 0.45,     # 左上タグ背景の不透明度 (可読性用・0で無効)
+            "tag_margin_l": 40,         # 左上タグの左マージン
+            "tag_margin_v": 30,         # 左上タグの上マージン
+            "mute_intro": False,        # イントロ 1.5 秒の音声を無音化するか
+        },
     },
 }
 
@@ -486,6 +508,24 @@ class SettingsWindow(QWidget):
         self.vertical_margin_l_edit = None
         self.vertical_margin_r_edit = None
         self.vertical_margin_v_edit = None
+        # アーカイブ切り抜き: テーマ・イントロカード ウィジェット参照 (resolve19 §5)
+        self.intro_enabled_check = None
+        self.intro_buffer_sec_edit = None
+        self.intro_blur_sigma_edit = None
+        self.intro_margin_top_edit = None
+        self.intro_margin_bottom_edit = None
+        self.intro_box_color_edit = None
+        self.intro_box_opacity_edit = None
+        self.intro_title_font_combo = None
+        self.intro_title_font_size_edit = None
+        self.intro_title_color_edit = None
+        self.intro_tag_font_combo = None
+        self.intro_tag_font_size_edit = None
+        self.intro_tag_color_edit = None
+        self.intro_tag_bg_opacity_edit = None
+        self.intro_tag_margin_l_edit = None
+        self.intro_tag_margin_v_edit = None
+        self.intro_mute_check = None
 
         # 追加フォント (settings/fonts) を Qt へ登録してから UI を構築する
         # (フォント一覧・プレビューに追加フォントを反映する / resolve16 §4.2)
@@ -504,6 +544,7 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._build_general_tab(), "一般")
         tabs.addTab(self._build_subtitle_tab(), "字幕")
         tabs.addTab(self._build_vertical_tab(), "縦動画")
+        tabs.addTab(self._build_archive_tab(), "アーカイブ")
         root_layout.addWidget(tabs)
 
         # 保存ボタン (全タブ共通・タブ外に配置)
@@ -907,6 +948,137 @@ class SettingsWindow(QWidget):
         layout.addStretch(1)
         return page
 
+    # 「アーカイブ」タブを構築する (resolve19 §5)
+    # アーカイブ切り抜きのテーマ・イントロカード演出を設定する。
+    # 字幕一覧画面でテーマを入力したクリップにのみ発火する演出のパラメータ。
+    def _build_archive_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        row = 0
+
+        # 見出し (テーマ・イントロカード)
+        layout.addWidget(self._make_title("テーマ・イントロカード"))
+        note = QLabel(
+            "字幕一覧画面でテーマを入力したクリップに、開始前バッファを復元して\n"
+            "ブラー+黒帯+中央テーマのイントロを付け、本編には左上へテーマを焼きます。"
+        )
+        note.setStyleSheet("color: #888; padding-bottom: 4px;")
+        layout.addWidget(note)
+
+        # 機能 ON/OFF (OFF 時はテーマ欄自体を出さない)
+        self.intro_enabled_check = QCheckBox("テーマ・イントロカードを有効にする")
+        grid.addWidget(self._make_column_label("機能"), row, 0)
+        grid.addWidget(self.intro_enabled_check, row, 1)
+        row += 1
+
+        # 開始前バッファ秒数 (切り抜きで削れた直前を復元する長さ)
+        self.intro_buffer_sec_edit = self._make_float_edit()
+        grid.addWidget(self._make_column_label("開始前バッファ(秒)"), row, 0)
+        grid.addWidget(self.intro_buffer_sec_edit, row, 1)
+        row += 1
+
+        # ブラー強度 (gblur sigma)
+        self.intro_blur_sigma_edit = self._make_float_edit()
+        grid.addWidget(self._make_column_label("ブラー強度"), row, 0)
+        grid.addWidget(self.intro_blur_sigma_edit, row, 1)
+        row += 1
+
+        # 黒帯の上下余白 (px) を横並びで配置
+        self.intro_margin_top_edit = self._make_int_edit()
+        self.intro_margin_bottom_edit = self._make_int_edit()
+        margin_layout = QHBoxLayout()
+        margin_layout.setContentsMargins(0, 0, 0, 0)
+        margin_layout.addWidget(QLabel("上"))
+        margin_layout.addWidget(self.intro_margin_top_edit)
+        margin_layout.addWidget(QLabel("下"))
+        margin_layout.addWidget(self.intro_margin_bottom_edit)
+        grid.addWidget(self._make_column_label("黒帯の余白(px)"), row, 0)
+        grid.addLayout(margin_layout, row, 1)
+        row += 1
+
+        # 黒帯の色 (ffmpeg 色名または #RRGGBB) と不透明度 を横並びで配置
+        self.intro_box_color_edit = QLineEdit()
+        self.intro_box_color_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        self.intro_box_color_edit.setPlaceholderText("black")
+        self.intro_box_opacity_edit = self._make_float_edit()
+        box_layout = QHBoxLayout()
+        box_layout.setContentsMargins(0, 0, 0, 0)
+        box_layout.addWidget(QLabel("色"))
+        box_layout.addWidget(self.intro_box_color_edit)
+        box_layout.addWidget(QLabel("不透明度"))
+        box_layout.addWidget(self.intro_box_opacity_edit)
+        grid.addWidget(self._make_column_label("黒帯"), row, 0)
+        grid.addLayout(box_layout, row, 1)
+        row += 1
+
+        # 中央テーマ フォント (空=字幕フォントに従う)
+        self.intro_title_font_combo = self._make_optional_font_combo()
+        grid.addWidget(self._make_column_label("中央テーマ フォント"), row, 0)
+        grid.addWidget(self.intro_title_font_combo, row, 1)
+        row += 1
+
+        # 中央テーマ 文字サイズ
+        self.intro_title_font_size_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("中央テーマ サイズ"), row, 0)
+        grid.addWidget(self.intro_title_font_size_edit, row, 1)
+        row += 1
+
+        # 中央テーマ 文字色 (HTML #RRGGBB)
+        self.intro_title_color_edit = QLineEdit()
+        grid.addWidget(self._make_column_label("中央テーマ 文字色"), row, 0)
+        grid.addLayout(self._make_color_picker(self.intro_title_color_edit, with_alpha=False), row, 1)
+        row += 1
+
+        # 左上タグ フォント (空=字幕フォントに従う)
+        self.intro_tag_font_combo = self._make_optional_font_combo()
+        grid.addWidget(self._make_column_label("左上タグ フォント"), row, 0)
+        grid.addWidget(self.intro_tag_font_combo, row, 1)
+        row += 1
+
+        # 左上タグ 文字サイズ
+        self.intro_tag_font_size_edit = self._make_int_edit()
+        grid.addWidget(self._make_column_label("左上タグ サイズ"), row, 0)
+        grid.addWidget(self.intro_tag_font_size_edit, row, 1)
+        row += 1
+
+        # 左上タグ 文字色 (HTML #RRGGBB)
+        self.intro_tag_color_edit = QLineEdit()
+        grid.addWidget(self._make_column_label("左上タグ 文字色"), row, 0)
+        grid.addLayout(self._make_color_picker(self.intro_tag_color_edit, with_alpha=False), row, 1)
+        row += 1
+
+        # 左上タグ 背景不透明度 (0で背景なし)
+        self.intro_tag_bg_opacity_edit = self._make_float_edit()
+        grid.addWidget(self._make_column_label("左上タグ 背景不透明度"), row, 0)
+        grid.addWidget(self.intro_tag_bg_opacity_edit, row, 1)
+        row += 1
+
+        # 左上タグ 余白 (左/上) を横並びで配置
+        self.intro_tag_margin_l_edit = self._make_int_edit()
+        self.intro_tag_margin_v_edit = self._make_int_edit()
+        tag_margin_layout = QHBoxLayout()
+        tag_margin_layout.setContentsMargins(0, 0, 0, 0)
+        tag_margin_layout.addWidget(QLabel("左"))
+        tag_margin_layout.addWidget(self.intro_tag_margin_l_edit)
+        tag_margin_layout.addWidget(QLabel("上"))
+        tag_margin_layout.addWidget(self.intro_tag_margin_v_edit)
+        grid.addWidget(self._make_column_label("左上タグ 余白(px)"), row, 0)
+        grid.addLayout(tag_margin_layout, row, 1)
+        row += 1
+
+        # イントロ音声の無音化
+        self.intro_mute_check = QCheckBox("イントロの音声を無音化する")
+        grid.addWidget(self._make_column_label("イントロ音声"), row, 0)
+        grid.addWidget(self.intro_mute_check, row, 1)
+        row += 1
+
+        layout.addLayout(grid)
+        layout.addStretch(1)
+        return page
+
     # タイトル用ラベルを生成する
     def _make_title(self, text):
         label = QLabel(text)
@@ -930,6 +1102,27 @@ class SettingsWindow(QWidget):
         edit.setValidator(QIntValidator())
         edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
         return edit
+
+    # 小数入力用の QLineEdit を生成する (バリデータ付き / resolve19)
+    def _make_float_edit(self):
+        edit = QLineEdit()
+        validator = QDoubleValidator()
+        validator.setBottom(0.0)  # 秒数・強度・不透明度はいずれも非負
+        edit.setValidator(validator)
+        edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        return edit
+
+    # 先頭に「(字幕フォントに従う)」= 空値 を持つフォント種類コンボを生成する (resolve19)
+    # 空選択のとき intro_card の *_font_family を "" として保存する。
+    def _make_optional_font_combo(self):
+        combo = QComboBox()
+        combo.setEditable(False)
+        combo.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        combo.addItem("(字幕フォントに従う)", "")  # 既定 = 空文字
+        for family in QFontDatabase.families():
+            combo.addItem(family, family)
+            combo.setItemData(combo.count() - 1, QFont(family, FONT_PREVIEW_POINT_SIZE), Qt.FontRole)
+        return combo
 
     # value/text を分離したドロップダウンを生成する
     # options は (value, 表示テキスト) のリスト
@@ -1055,6 +1248,7 @@ class SettingsWindow(QWidget):
         subtitle = self._loaded_settings.get("subtitle", {})
         silence_cut = self._loaded_settings.get("silence_cut", {})
         vertical = self._loaded_settings.get("vertical", {})
+        intro_card = self._loaded_settings.get("archive", {}).get("intro_card", {})
 
         self.video_dir_edit.setText(general.get("video_directory", ""))
         self.opening_edit.setText(general.get("opening_video", ""))
@@ -1132,6 +1326,36 @@ class SettingsWindow(QWidget):
         self.vertical_margin_l_edit.setText(str(vertical.get("margin_l", 40)))
         self.vertical_margin_r_edit.setText(str(vertical.get("margin_r", 40)))
         self.vertical_margin_v_edit.setText(str(vertical.get("margin_v", 320)))
+
+        # アーカイブ切り抜き: テーマ・イントロカード (resolve19 §5)
+        self.intro_enabled_check.setChecked(bool(intro_card.get("enabled", True)))
+        self.intro_buffer_sec_edit.setText(str(intro_card.get("buffer_sec", 1.5)))
+        self.intro_blur_sigma_edit.setText(str(intro_card.get("blur_sigma", 18)))
+        self.intro_margin_top_edit.setText(str(intro_card.get("margin_top_px", 300)))
+        self.intro_margin_bottom_edit.setText(str(intro_card.get("margin_bottom_px", 300)))
+        self.intro_box_color_edit.setText(str(intro_card.get("box_color", "black")))
+        self.intro_box_opacity_edit.setText(str(intro_card.get("box_opacity", 1.0)))
+        self._set_optional_font(self.intro_title_font_combo, intro_card.get("title_font_family", ""))
+        self.intro_title_font_size_edit.setText(str(intro_card.get("title_font_size", 112)))
+        self.intro_title_color_edit.setText(str(intro_card.get("title_color", "#FFFFFF")))
+        self._set_optional_font(self.intro_tag_font_combo, intro_card.get("tag_font_family", ""))
+        self.intro_tag_font_size_edit.setText(str(intro_card.get("tag_font_size", 40)))
+        self.intro_tag_color_edit.setText(str(intro_card.get("tag_color", "#FFFFFF")))
+        self.intro_tag_bg_opacity_edit.setText(str(intro_card.get("tag_bg_opacity", 0.45)))
+        self.intro_tag_margin_l_edit.setText(str(intro_card.get("tag_margin_l", 40)))
+        self.intro_tag_margin_v_edit.setText(str(intro_card.get("tag_margin_v", 30)))
+        self.intro_mute_check.setChecked(bool(intro_card.get("mute_intro", False)))
+
+    # 任意フォントコンボを値で選択する (空=先頭「字幕フォントに従う」/ 一覧に無ければ補完追加)
+    def _set_optional_font(self, combo, family):
+        if not family:
+            combo.setCurrentIndex(0)
+            return
+        index = combo.findData(family)
+        if index < 0:
+            combo.addItem(family, family)
+            index = combo.findData(family)
+        combo.setCurrentIndex(index if index >= 0 else 0)
 
     # コンボボックスに値が含まれていれば選択状態にする
     def _set_combo_value(self, combo, value):
@@ -1324,6 +1548,28 @@ class SettingsWindow(QWidget):
             "margin_r": self._to_int(self.vertical_margin_r_edit.text(), 40),
             "margin_v": self._to_int(self.vertical_margin_v_edit.text(), 320),
         })
+        # アーカイブ切り抜き: テーマ・イントロカード (resolve19 §5)。
+        # archive セクションの他キー (download/scoring/output/clip_pipeline/combine) は
+        # base から引き継ぎ、intro_card サブ辞書のみ UI 値で差し替える。
+        settings.setdefault("archive", {})["intro_card"] = {
+            "enabled": self.intro_enabled_check.isChecked(),
+            "buffer_sec": self._to_float(self.intro_buffer_sec_edit.text(), 1.5),
+            "blur_sigma": self._to_float(self.intro_blur_sigma_edit.text(), 18),
+            "margin_top_px": self._to_int(self.intro_margin_top_edit.text(), 300),
+            "margin_bottom_px": self._to_int(self.intro_margin_bottom_edit.text(), 300),
+            "box_color": self.intro_box_color_edit.text().strip() or "black",
+            "box_opacity": self._to_float(self.intro_box_opacity_edit.text(), 1.0),
+            "title_font_family": self.intro_title_font_combo.currentData() or "",
+            "title_font_size": self._to_int(self.intro_title_font_size_edit.text(), 112),
+            "title_color": self.intro_title_color_edit.text().strip() or "#FFFFFF",
+            "tag_font_family": self.intro_tag_font_combo.currentData() or "",
+            "tag_font_size": self._to_int(self.intro_tag_font_size_edit.text(), 40),
+            "tag_color": self.intro_tag_color_edit.text().strip() or "#FFFFFF",
+            "tag_bg_opacity": self._to_float(self.intro_tag_bg_opacity_edit.text(), 0.45),
+            "tag_margin_l": self._to_int(self.intro_tag_margin_l_edit.text(), 40),
+            "tag_margin_v": self._to_int(self.intro_tag_margin_v_edit.text(), 30),
+            "mute_intro": self.intro_mute_check.isChecked(),
+        }
         return settings
 
     # 現在の UI 値を保存する (成功時 True を返す)

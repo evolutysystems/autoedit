@@ -19,9 +19,9 @@
         "review_on_empty_skip": true,
         "speech_gate_enabled": true,
         "speech_threshold_db": -20,
-        "speech_min_duration_sec": 0.6,
+        "speech_min_duration_sec": 1.0,
         "speech_gate_mode": "trim",
-        "speech_pad_sec": 0.5,
+        "speech_pad_sec": 0.0,
         "font_family": "Yu Gothic UI",
         "font_size": 130,
         "custom_fonts_dir": "fonts",
@@ -122,12 +122,22 @@
             "loud_percentile": 0.8,
             "silence_ratio_threshold": 0.6,
             "method_a": {
-                "weights": { "emotion": 0.55, "comment": 0.45 },
-                "emotion_points": {
-                    "big_laugh": 15, "loud": 10, "surprise": 8,
-                    "cry": 15, "anger": 12, "long_silence": -8
+                "weights": {
+                    "emotion": 0.55,
+                    "comment": 0.45
                 },
-                "comment": { "w_point_per_char": 1, "rate_spike_bonus": 10 }
+                "emotion_points": {
+                    "big_laugh": 15,
+                    "loud": 10,
+                    "surprise": 8,
+                    "cry": 15,
+                    "anger": 12,
+                    "long_silence": -8
+                },
+                "comment": {
+                    "w_point_per_char": 1,
+                    "rate_spike_bonus": 10
+                }
             }
         },
         "output": {
@@ -143,6 +153,25 @@
             "opening_ending": true,
             "keep_individual": false,
             "combined_suffix": "combined"
+        },
+        "intro_card": {
+            "enabled": true,
+            "buffer_sec": 3.0,
+            "blur_sigma": 18.0,
+            "margin_top_px": 300,
+            "margin_bottom_px": 300,
+            "box_color": "black",
+            "box_opacity": 1.0,
+            "title_font_family": "Arial Black",
+            "title_font_size": 112,
+            "title_color": "#FFFFFF",
+            "tag_font_family": "",
+            "tag_font_size": 60,
+            "tag_color": "#FFFFFF",
+            "tag_bg_opacity": 0.8,
+            "tag_margin_l": 40,
+            "tag_margin_v": 20,
+            "mute_intro": false
         }
     }
 }

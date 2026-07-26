@@ -146,23 +146,29 @@ def _role_default_column():
     return _ROLE_COLUMNS[0][1]
 
 
-# 字幕編集ダイアログ
-# items: [{"start": float, "end": float, "text": str, "use": bool, "role": str}]
-#   role は "streamer"(配信者) / "sub"(サブ) / "comment"(コメント)。省略時は配信者。
-# default_font/default_size: フォント/サイズ列の「Blank=デフォルト」時に使う既定値
-#   (設定画面の subtitle.font_family / font_size)。画面に併記する (resolve16 §4.4)。
-# font_families: フォント列の選択肢。省略時はインストール済フォント一覧を用いる。
-class SubtitleEditorDialog(QDialog):
+# 字幕編集ウィジェット (埋め込み可能な編集テーブル本体 / resolve17 §4.7.2)
+# ダイアログ (SubtitleEditorDialog) とアーカイブ結果画面 (ArchiveResultWindow) の
+# 双方から再利用する。テーブル・テーマ欄・全選択ボタンのみを持ち、説明ラベルや
+# 決定/キャンセルボタンは埋め込み側 (ダイアログ等) が付与する。
+# items: [{"start","end","text","use","role","font","font_size"}]
+#   role は "streamer"/"sub"/"comment"。省略時は配信者。
+# default_font/default_size: フォント/サイズ列の「Blank=デフォルト」時の実効値 (画面併記用)。
+# font_families: フォント列の選択肢。省略時はインストール済フォント一覧。
+# show_theme_field=True のときだけ上部にテーマ入力欄を出す (resolve19)。
+class SubtitleEditorWidget(QWidget):
 
-    # 初期化 (items の use 初期値は呼び出し側で全件 True を渡す想定)
-    def __init__(self, items, parent=None, default_font="", default_size=None,
-                 font_families=None):
+    def __init__(self, items=None, parent=None, default_font="", default_size=None,
+                 font_families=None, show_theme_field=False, theme_placeholder="",
+                 theme_text=""):
         super().__init__(parent)
-        self.setWindowTitle("字幕編集")
-        self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
+        # テーマ欄の表示可否・プレースホルダ・初期値 (resolve19)
+        self._show_theme_field = bool(show_theme_field)
+        self._theme_placeholder = theme_placeholder or ""
+        self._theme_text = theme_text or ""
+        self.theme_edit = None  # show_theme_field=True のとき QLineEdit を割り当てる
 
         # start/end は編集不可のため元値を保持しておき、確定時にそのまま返す
-        self._items = [dict(item) for item in items]
+        self._items = [dict(item) for item in (items or [])]
         # 行ごとの役割ラジオを排他管理する QButtonGroup を保持する (result 取得用)
         self._role_groups = []
         # 行ごとのフォント/サイズウィジェット参照 (result 取得用 / resolve16 §4.4)
@@ -187,17 +193,29 @@ class SubtitleEditorDialog(QDialog):
             return font
         return f"{font} / {self._default_size}"
 
-    # 画面構築
-    def _build_ui(self):
-        root = QVBoxLayout(self)
-
-        # 説明ラベル
-        root.addWidget(QLabel(
-            "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
+    # 説明文 (埋め込み側が説明ラベルに使えるよう公開する)
+    def description_text(self):
+        return (
+            "誤訳の修正と使用可否を選択します。\n"
             "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
             "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
             f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self._default_desc()})。"
-        ))
+        )
+
+    # 画面構築 (テーマ欄 + テーブル + 全選択ボタン。説明/決定ボタンは埋め込み側が付ける)
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        # テーマ入力欄 (resolve19 / アーカイブ切り抜き経路のみ)。
+        if self._show_theme_field:
+            theme_row = QHBoxLayout()
+            theme_row.addWidget(QLabel("テーマ:"))
+            self.theme_edit = QLineEdit()
+            self.theme_edit.setPlaceholderText(self._theme_placeholder)
+            self.theme_edit.setText(self._theme_text)
+            theme_row.addWidget(self.theme_edit)
+            root.addLayout(theme_row)
 
         # 一覧テーブル
         self.table = QTableWidget(self)
@@ -235,17 +253,15 @@ class SubtitleEditorDialog(QDialog):
         select_row.addStretch(1)
         root.addLayout(select_row)
 
-        # 決定 / キャンセル
-        button_row = QHBoxLayout()
-        button_row.addStretch(1)
-        self.decide_button = QPushButton("字幕決定")
-        self.decide_button.setDefault(True)
-        self.decide_button.clicked.connect(self.accept)
-        self.cancel_button = QPushButton("キャンセル")
-        self.cancel_button.clicked.connect(self.reject)
-        button_row.addWidget(self.decide_button)
-        button_row.addWidget(self.cancel_button)
-        root.addLayout(button_row)
+    # 別クリップ等へテーブルの内容を差し替える (resolve17 §4.7.2 クリップ切替)
+    def set_items(self, items):
+        self._items = [dict(item) for item in (items or [])]
+        self._populate(self._items)
+
+    # テーマ欄の値を設定する (クリップ切替時の復元用 / resolve19)
+    def set_theme(self, text):
+        if self.theme_edit is not None:
+            self.theme_edit.setText(text or "")
 
     # items をテーブルへ反映する
     def _populate(self, items):
@@ -363,6 +379,12 @@ class SubtitleEditorDialog(QDialog):
             })
         return results
 
+    # テーマ入力欄の値を返す (resolve19)。欄が無ければ空文字。
+    def theme_value(self):
+        if self.theme_edit is None:
+            return ""
+        return self.theme_edit.text().strip()
+
     # 指定行のフォント個別指定を返す (Blank は "" = デフォルト使用)
     def _font_at(self, row):
         combo = self._font_combos[row] if row < len(self._font_combos) else None
@@ -382,3 +404,60 @@ class SubtitleEditorDialog(QDialog):
             return int(text)
         except ValueError:
             return None
+
+
+# 字幕編集ダイアログ (SubtitleEditorWidget を包む薄いラッパ)
+# コンストラクタ引数・戻り値は従来と完全同一 (main_window / SubtitleReviewBridge は無改修)。
+# items: [{"start","end","text","use","role"}] / role 省略時は配信者。
+class SubtitleEditorDialog(QDialog):
+
+    def __init__(self, items, parent=None, default_font="", default_size=None,
+                 font_families=None, show_theme_field=False, theme_placeholder="",
+                 theme_text=""):
+        super().__init__(parent)
+        self.setWindowTitle("字幕編集")
+        self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
+
+        root = QVBoxLayout(self)
+
+        # 編集本体 (テーブル・テーマ欄・全選択ボタン)
+        self.editor = SubtitleEditorWidget(
+            items, parent=self,
+            default_font=default_font, default_size=default_size,
+            font_families=font_families, show_theme_field=show_theme_field,
+            theme_placeholder=theme_placeholder, theme_text=theme_text,
+        )
+
+        # 説明ラベル (従来ダイアログの文言。「字幕決定」で焼き込みに進む旨)
+        root.addWidget(QLabel(
+            "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
+            "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
+            "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
+            f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self.editor._default_desc()})。"
+        ))
+        root.addWidget(self.editor)
+
+        # 決定 / キャンセル
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        self.decide_button = QPushButton("字幕決定")
+        self.decide_button.setDefault(True)
+        self.decide_button.clicked.connect(self.accept)
+        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button.clicked.connect(self.reject)
+        button_row.addWidget(self.decide_button)
+        button_row.addWidget(self.cancel_button)
+        root.addLayout(button_row)
+
+    # 後方互換: 既存コードが参照し得る theme_edit をエディタへ委譲する
+    @property
+    def theme_edit(self):
+        return self.editor.theme_edit
+
+    # 編集結果を返す (SubtitleEditorWidget へ委譲・戻り値は従来と同一)
+    def result_items(self):
+        return self.editor.result_items()
+
+    # テーマ入力欄の値を返す (SubtitleEditorWidget へ委譲)
+    def theme_value(self):
+        return self.editor.theme_value()

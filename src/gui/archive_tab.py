@@ -1,6 +1,7 @@
-# アーカイブ切り抜き用タブ (flow17 R1: 方式A中核採点 + 切り抜き+焼き込み)
-# ローカル mp4 を入力 → 採点開始 → TOP5 を簡易確認 → 完了で切り抜き+字幕焼き込み。
-# 取得(Twitch)・採点グラフ・プレビュー・任意スコアラは後続リリース(R2/R3/R4+)で追加する。
+# アーカイブ切り抜き用タブ (flow17 R2: 方式A中核採点 + 結果画面フル + 切り抜き+焼き込み)
+# ローカル mp4 を入力 → 採点開始 → 全クリップを文字起こし → 1つの結果画面
+# (採点グラフ + 字幕編集 + プレビュー) で一括編集 → 完了で切り抜き+字幕焼き込み+結合。
+# 取得(Twitch)・任意スコアラは後続リリース(R3/R4+)で追加する。
 import os
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
@@ -24,7 +25,7 @@ from ..settings.settings_window import (
     resolve_fonts_dir,
 )
 from ..utils.logger import get_logger
-from .archive_result_dialog import ArchiveResultDialog
+from .archive_result_window import ArchiveResultBridge
 
 _logger = get_logger(__name__)
 
@@ -34,6 +35,9 @@ _SPINNER_INTERVAL_MS = 120
 
 # 入力に使う動画フィルタ (main_window と整合)
 _VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;すべてのファイル (*)"
+
+# テーマ欄のプレースホルダ (resolve19 / request19 指定の固定文言。設定項目にはしない)
+_THEME_PLACEHOLDER = "(任意)テーマを決めてください"
 
 
 # 採点(analyze)をワーカースレッドで実行する
@@ -60,24 +64,28 @@ class ArchiveAnalyzeWorker(QThread):
         self.progress.emit(float(ratio), str(label))
 
 
-# 切り抜き+字幕焼き込みをワーカースレッドで実行する
+# 準備(文字起こし)+一括レビュー+切り抜き+字幕焼き込みをワーカースレッドで実行する (R2)
 class ArchiveClipWorker(QThread):
     progress = Signal(float, str)
     finished_ok = Signal(object)   # 出力パスのリスト
     failed = Signal(str)
 
-    def __init__(self, input_path, settings, clips, review_callback=None, parent=None):
+    def __init__(self, input_path, settings, clips, result_callback=None,
+                 curve=None, parent=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
         self._clips = clips
-        self._review_callback = review_callback
+        self._result_callback = result_callback
+        self._curve = curve or []
 
     def run(self):
         try:
+            # prepare(全クリップ文字起こし) → 一括結果画面(result_callback) → burn → 結合
             outputs = clip_writer.write_clips(
                 self._input_path, self._settings, self._clips,
-                progress_cb=self._emit, review_callback=self._review_callback)
+                progress_cb=self._emit, result_callback=self._result_callback,
+                curve=self._curve)
             self.finished_ok.emit(outputs)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("切り抜き+焼き込みに失敗")
@@ -180,49 +188,40 @@ class ArchiveTabWidget(QWidget):
         self._set_running(True)
         self._analyze_worker.start()
 
-    # 採点完了 → 結果ダイアログ → 完了で切り抜き
+    # 採点完了 → 全クリップ準備(文字起こし) → 1つの結果画面で一括編集 → 完了で切り抜き (R2)
     def _on_analyze_done(self, result):
         self._set_running(False)
         clips = result.get("clips", []) if isinstance(result, dict) else []
+        curve = result.get("curve", []) if isinstance(result, dict) else []
         if not clips:
             QMessageBox.information(self, "採点結果", "切り抜き候補が見つかりませんでした。")
             self.status_label.setText("候補なし")
-            return
-
-        dialog = ArchiveResultDialog(clips, parent=self)
-        if dialog.exec() != ArchiveResultDialog.Accepted:
-            self.status_label.setText("キャンセルしました")
-            return
-
-        confirmed = [c for c in dialog.result_clips() if c.get("use", True)]
-        if not confirmed:
-            QMessageBox.information(self, "切り抜き", "使用する候補が選択されていません。")
-            self.status_label.setText("待機中")
             return
 
         # 追加フォント(settings/fonts)を Qt へ登録し編集画面の一覧へ反映する (resolve16 §4.2)
         register_fonts_in_dir(resolve_fonts_dir(self._settings))
         subtitle_cfg = self._settings.get("subtitle", {})
 
-        # クリップごとに現行クリップ用と同じテロップ編集画面を出す橋渡し (resolve18 §4.3)
-        # 循環 import を避けるため main_window の既存ブリッジを遅延 import で流用する。
-        # 音量ダイアログは出さない (回答①) ため VolumeThresholdBridge は使わない。
-        from .main_window import SubtitleReviewBridge
-        self._review_bridge = SubtitleReviewBridge(
+        # 一括結果画面 (採点グラフ+字幕編集+プレビュー) をメインスレッドで開く橋渡し (R2)。
+        # ワーカーは prepare(全クリップ文字起こし)後に本ブリッジを1回だけ呼ぶ。
+        self._review_bridge = ArchiveResultBridge(
             parent_window=self,
+            settings=self._settings,
+            source_path=self._pending_input,
             default_font=subtitle_cfg.get("font_family", ""),
             default_size=subtitle_cfg.get("font_size", None),
             font_families=list(QFontDatabase.families()),
+            theme_placeholder=_THEME_PLACEHOLDER,
         )
 
-        # 切り抜き+編集+焼き込み+結合を開始
+        # 準備+一括編集+切り抜き+焼き込み+結合を開始 (TOP5 全件を prepare し、使用可否は結果画面で選ぶ)
         self._clip_worker = ArchiveClipWorker(
-            self._pending_input, self._settings, confirmed,
-            review_callback=self._review_bridge, parent=self)
+            self._pending_input, self._settings, clips,
+            result_callback=self._review_bridge, curve=curve, parent=self)
         self._clip_worker.progress.connect(self._on_progress)
         self._clip_worker.finished_ok.connect(self._on_clip_done)
         self._clip_worker.failed.connect(self._on_failed)
-        self._spinner_message = "切り抜き開始…"
+        self._spinner_message = "文字起こし中…"
         self._set_running(True)
         self._clip_worker.start()
 

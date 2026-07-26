@@ -108,13 +108,18 @@ class SubtitleReviewBridge(QObject):
     review_requested = Signal(list)
 
     def __init__(self, parent_window=None, default_font="", default_size=None,
-                 font_families=None):
+                 font_families=None, show_theme_field=False, theme_placeholder=""):
         super().__init__()
         self._parent_window = parent_window
         # テロップ個別フォント/サイズの既定値・選択肢 (resolve16 §4.4)
         self._default_font = default_font or ""
         self._default_size = default_size
         self._font_families = font_families
+        # テーマ欄 (resolve19)。アーカイブ切り抜き経路のみ show_theme_field=True。
+        # 通常クリップ用は既定 False のためテーマ欄も consume_theme も使わず従来同一。
+        self._show_theme_field = bool(show_theme_field)
+        self._theme_placeholder = theme_placeholder or ""
+        self._last_theme = ""  # 直近クリップで入力されたテーマ (consume_theme で1回消費)
         # ワーカースレッドを待機させるためのイベントと結果共有領域
         self._event = threading.Event()
         self._result = None
@@ -140,15 +145,28 @@ class SubtitleReviewBridge(QObject):
                 default_font=self._default_font,
                 default_size=self._default_size,
                 font_families=self._font_families,
+                # テーマ欄はアーカイブ経路のみ表示 (resolve19)
+                show_theme_field=self._show_theme_field,
+                theme_placeholder=self._theme_placeholder,
             )
             if dialog.exec() == SubtitleEditorDialog.Accepted:
                 self._result = dialog.result_items()
+                # 入力テーマを保存 (clip_writer が consume_theme で取り出す / resolve19)
+                self._last_theme = dialog.theme_value()
             else:
                 # キャンセル / × クローズ → None (中断扱い)
                 self._result = None
+                self._last_theme = ""  # キャンセル時はテーマ無効
         finally:
             # 例外有無に関わらずワーカーを再開させる (デッドロック防止)
             self._event.set()
+
+    # 直近クリップのテーマを返して空にする (1回消費 / resolve19)。
+    # run_pipeline は 1 クリップずつ同期実行のため、必ず「直前に処理したクリップ」の値を返す。
+    def consume_theme(self):
+        theme = self._last_theme
+        self._last_theme = ""
+        return theme
 
 
 # 音量解析の閾値確認ダイアログをワーカースレッド→メインスレッドで橋渡しする

@@ -25,3 +25,29 @@ def method_a_config(settings):
 def clip_prefix(settings):
     archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
     return str(archive.get("output", {}).get("clip_prefix", "archive")) or "archive"
+
+
+# テーマ・イントロカードの設定を平坦化して返す (resolve19 §5)
+# 欠落キーは DEFAULT_SETTINGS 側で補完される前提だが、単体でも安全に既定へフォールバックする。
+def intro_card_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    card = archive.get("intro_card", {})
+    return {
+        "enabled": bool(card.get("enabled", True)),
+        "buffer_sec": float(card.get("buffer_sec", 1.5)),
+        "blur_sigma": float(card.get("blur_sigma", 18)),
+        "margin_top_px": int(card.get("margin_top_px", 300)),
+        "margin_bottom_px": int(card.get("margin_bottom_px", 300)),
+        "box_color": str(card.get("box_color", "black")) or "black",
+        "box_opacity": float(card.get("box_opacity", 1.0)),
+        "title_font_family": str(card.get("title_font_family", "") or ""),
+        "title_font_size": int(card.get("title_font_size", 112)),
+        "title_color": str(card.get("title_color", "#FFFFFF")) or "#FFFFFF",
+        "tag_font_family": str(card.get("tag_font_family", "") or ""),
+        "tag_font_size": int(card.get("tag_font_size", 40)),
+        "tag_color": str(card.get("tag_color", "#FFFFFF")) or "#FFFFFF",
+        "tag_bg_opacity": float(card.get("tag_bg_opacity", 0.45)),
+        "tag_margin_l": int(card.get("tag_margin_l", 40)),
+        "tag_margin_v": int(card.get("tag_margin_v", 30)),
+        "mute_intro": bool(card.get("mute_intro", False)),
+    }

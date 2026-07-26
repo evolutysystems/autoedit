@@ -1,0 +1,54 @@
+2026-07-25 00:01:34,164 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-25 00:02:01,390 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/f1.mp4 (窓300s/スライド60s)
+2026-07-25 00:43:20,370 [INFO] src.archive.pipeline: 採点完了: 窓141件 → TOP5抽出
+2026-07-25 00:43:20,370 [INFO] src.archive.pipeline:   clip1: 1500.0-1800.0 点=48.6 (感情88.3/コメント0.0)
+2026-07-25 00:43:20,370 [INFO] src.archive.pipeline:   clip2: 3240.0-3540.0 点=44.4 (感情80.7/コメント0.0)
+2026-07-25 00:43:20,370 [INFO] src.archive.pipeline:   clip3: 5100.0-5400.0 点=52.1 (感情94.7/コメント0.0)
+2026-07-25 00:43:20,370 [INFO] src.archive.pipeline:   clip4: 5820.0-6120.0 点=55.0 (感情100.0/コメント0.0)
+2026-07-25 00:43:20,411 [INFO] src.archive.pipeline:   clip5: 6300.0-6600.0 点=55.0 (感情100.0/コメント0.0)
+2026-07-25 00:43:21,113 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-25 00:44:04,167 [INFO] src.modules.silence_cutter: 検出された無音区間: 50 件
+2026-07-25 00:46:28,725 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ocdk8jpj\clip1\silence_cut.mp4
+2026-07-25 00:46:28,835 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-25 00:47:14,223 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-25 00:47:14,223 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-25 00:47:22,446 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-25 00:51:19,608 [INFO] src.modules.subtitle_generator: 音声認識完了 (70 セグメント)
+2026-07-25 00:51:19,710 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 70 件)
+2026-07-25 00:51:20,295 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-25 00:52:00,213 [INFO] src.modules.silence_cutter: 検出された無音区間: 42 件
+2026-07-25 00:53:35,509 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ocdk8jpj\clip2\silence_cut.mp4
+2026-07-25 00:53:35,605 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-25 00:53:35,605 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-25 00:53:35,605 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-25 00:53:42,275 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-25 00:56:31,609 [INFO] src.modules.subtitle_generator: 音声認識完了 (54 セグメント)
+2026-07-25 00:56:31,711 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 54 件)
+2026-07-25 00:56:32,305 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-25 00:57:12,725 [INFO] src.modules.silence_cutter: 検出された無音区間: 45 件
+2026-07-25 00:59:03,579 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ocdk8jpj\clip3\silence_cut.mp4
+2026-07-25 00:59:03,682 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-25 00:59:03,682 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-25 00:59:03,682 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-25 00:59:10,723 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-25 01:05:41,004 [INFO] src.modules.subtitle_generator: 音声認識完了 (49 セグメント)
+2026-07-25 01:05:41,104 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 49 件)
+2026-07-25 01:05:41,579 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-25 01:06:19,480 [INFO] src.modules.silence_cutter: 検出された無音区間: 50 件
+2026-07-25 01:08:58,534 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ocdk8jpj\clip4\silence_cut.mp4
+2026-07-25 01:08:58,617 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-25 01:08:58,617 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-25 01:08:58,617 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-25 01:09:04,911 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-25 01:14:03,377 [INFO] src.modules.subtitle_generator: 音声認識完了 (88 セグメント)
+2026-07-25 01:14:03,493 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 88 件)
+2026-07-25 01:14:04,137 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-25 01:14:50,313 [INFO] src.modules.silence_cutter: 検出された無音区間: 51 件
+2026-07-25 01:17:27,651 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ocdk8jpj\clip5\silence_cut.mp4
+2026-07-25 01:17:27,731 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-25 01:17:27,731 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-25 01:17:27,731 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-25 01:17:33,654 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-25 01:21:41,106 [INFO] src.modules.subtitle_generator: 音声認識完了 (70 セグメント)
+2026-07-25 01:21:41,200 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 70 件)
+2026-07-25 01:48:58,992 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_f1_combined.mp4 (使用5)

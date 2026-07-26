@@ -35,7 +35,16 @@
       "WebSearch",
       "Bash(rm -rf build dist)",
       "Bash(pyinstaller main_window.spec --clean --noconfirm)",
-      "Bash(QT_QPA_PLATFORM=offscreen python -)"
+      "Bash(QT_QPA_PLATFORM=offscreen python -)",
+      "Bash(cp /c/Windows/Fonts/YuGothB.ttc ./yugothb.ttc)",
+      "Bash(ffmpeg -y -i base.png -vf \"gblur=sigma=18,drawbox=x=0:y=300:w=iw:h=ih-600:color=black@1.0:t=fill,drawtext=fontfile=yugothb.ttc:textfile=theme.txt:fontcolor=white:fontsize=112:x=\\(w-tw\\)/2:y=\\(h-th\\)/2\" mock_intro.png)",
+      "Bash(ffmpeg -y -i base.png -vf \"drawtext=fontfile=yugothb.ttc:textfile=tag.txt:fontcolor=white:fontsize=40:x=40:y=30:box=1:boxcolor=black@0.45:boxborderw=14\" mock_tag.png)",
+      "Bash(mkdir -p /d/develop/autoedit/docs/request/ver2/images)",
+      "Bash(cp C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad/mock_intro.png /d/develop/autoedit/docs/request/ver2/images/resolve19_intro_card.png)",
+      "Bash(cp C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad/mock_tag.png /d/develop/autoedit/docs/request/ver2/images/resolve19_clip_tag.png)",
+      "Bash(cp C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad/base.png /d/develop/autoedit/docs/request/ver2/images/resolve19_base_frame.png)",
+      "Bash(export SP=\"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad\")",
+      "Bash(export PYTHONPATH=\"D:/develop/autoedit\")"
     ]
   }
 }

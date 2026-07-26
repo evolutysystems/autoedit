@@ -417,6 +417,45 @@ class WhisperTextSource(TextSource):
         return wrap_lines(text, self._min_line_length, self._max_line_length, self._wrap_engine)
 
 
+# 字幕設定 (subtitle セクション) から FontProfile を構築する
+# run() とアーカイブ切り抜き (clip_writer) の双方で同一のスタイルを得るために共通化する。
+# 役割別カラー/アウトライン色・コメントラベル・装飾・余白など現行 run() と同一の対応。
+def build_font_profile(subtitle_cfg):
+    return FontProfile(
+        family=subtitle_cfg.get("font_family", "Yu Gothic UI"),
+        size=subtitle_cfg.get("font_size", 48),
+        color_hex=subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
+        # テロップ役割別カラー (配信者=own / サブ / コメント)。欠落時は配信者色へ寄せる。
+        role_colors={
+            "streamer": subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
+            "sub": subtitle_cfg.get("sub_subtitle_color", ""),
+            "comment": subtitle_cfg.get("comment_subtitle_color", ""),
+        },
+        # 役割別アウトライン色 (追加2)。空文字なら配信者アウトライン色へフォールバック。
+        role_outline_colors={
+            "streamer": subtitle_cfg.get("outline_color", ""),
+            "sub": subtitle_cfg.get("sub_outline_color", ""),
+            "comment": subtitle_cfg.get("comment_outline_color", ""),
+        },
+        # コメント役割の先頭ラベル (request10 追加要望5)。空文字ならラベル無し。
+        comment_label=subtitle_cfg.get("comment_label", "コメント："),
+        outline_color=subtitle_cfg.get("outline_color", _DEFAULT_OUTLINE_COLOR),
+        outline_width=subtitle_cfg.get("outline_width", 3),
+        back_color=subtitle_cfg.get("back_color", _DEFAULT_BACK_COLOR),
+        bold=subtitle_cfg.get("bold", False),
+        italic=subtitle_cfg.get("italic", False),
+        underline=subtitle_cfg.get("underline", False),
+        strikeout=subtitle_cfg.get("strikeout", False),
+        spacing=subtitle_cfg.get("spacing", 0),
+        angle=subtitle_cfg.get("angle", 0),
+        border_style=subtitle_cfg.get("border_style", 1),
+        alignment=subtitle_cfg.get("alignment", 2),
+        margin_l=subtitle_cfg.get("margin_l", 40),
+        margin_r=subtitle_cfg.get("margin_r", 40),
+        margin_v=subtitle_cfg.get("margin_v", 60),
+    )
+
+
 # 縦動画時に字幕設定へ反映する縦用の上書きキー (request14)
 # フォントサイズ・改行文字数・表示位置・余白のみを縦タブ(vertical)値で差し替える。
 # 色/フォント種類/装飾は横設定を共有する。
@@ -860,39 +899,7 @@ def run(context):
         _logger.info("音声認識エンジン無効のためテロップ生成をスキップ")
         return context.current_video_path()
 
-    font_profile = FontProfile(
-        family=subtitle_cfg.get("font_family", "Yu Gothic UI"),
-        size=subtitle_cfg.get("font_size", 48),
-        color_hex=subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
-        # テロップ役割別カラー (配信者=own / サブ / コメント)。欠落時は配信者色へ寄せる。
-        role_colors={
-            "streamer": subtitle_cfg.get("own_subtitle_color", "#FFFFFF"),
-            "sub": subtitle_cfg.get("sub_subtitle_color", ""),
-            "comment": subtitle_cfg.get("comment_subtitle_color", ""),
-        },
-        # 役割別アウトライン色 (追加2)。空文字なら配信者アウトライン色へフォールバック。
-        role_outline_colors={
-            "streamer": subtitle_cfg.get("outline_color", ""),
-            "sub": subtitle_cfg.get("sub_outline_color", ""),
-            "comment": subtitle_cfg.get("comment_outline_color", ""),
-        },
-        # コメント役割の先頭ラベル (request10 追加要望5)。空文字ならラベル無し。
-        comment_label=subtitle_cfg.get("comment_label", "コメント："),
-        outline_color=subtitle_cfg.get("outline_color", _DEFAULT_OUTLINE_COLOR),
-        outline_width=subtitle_cfg.get("outline_width", 3),
-        back_color=subtitle_cfg.get("back_color", _DEFAULT_BACK_COLOR),
-        bold=subtitle_cfg.get("bold", False),
-        italic=subtitle_cfg.get("italic", False),
-        underline=subtitle_cfg.get("underline", False),
-        strikeout=subtitle_cfg.get("strikeout", False),
-        spacing=subtitle_cfg.get("spacing", 0),
-        angle=subtitle_cfg.get("angle", 0),
-        border_style=subtitle_cfg.get("border_style", 1),
-        alignment=subtitle_cfg.get("alignment", 2),
-        margin_l=subtitle_cfg.get("margin_l", 40),
-        margin_r=subtitle_cfg.get("margin_r", 40),
-        margin_v=subtitle_cfg.get("margin_v", 60),
-    )
+    font_profile = build_font_profile(subtitle_cfg)
 
     input_path = context.current_video_path()
     output_path = context.allocate_intermediate("subtitle.mp4")

@@ -1,0 +1,32 @@
+2026-07-24 10:22:53,918 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-07-24 10:22:55,739 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (1.50s, テーマ=ベルギーGP 決勝ハイライト)
+2026-07-24 20:09:54,390 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 20:09:55,601 [INFO] src.modules.silence_cutter: 検出された無音区間: 2 件
+2026-07-24 20:10:00,557 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_cc_e5wm2\clip1\silence_cut.mp4
+2026-07-24 20:10:00,639 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 20:10:00,675 [INFO] src.modules.subtitle_generator: 音声認識エンジン未使用 (subtitle.engine=none)
+2026-07-24 20:10:00,675 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 0 件)
+2026-07-24 20:10:00,888 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 20:10:01,949 [INFO] src.modules.silence_cutter: 検出された無音区間: 2 件
+2026-07-24 20:10:03,055 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_cc_e5wm2\clip2\silence_cut.mp4
+2026-07-24 20:10:03,165 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 20:10:03,165 [INFO] src.modules.subtitle_generator: 音声認識エンジン未使用 (subtitle.engine=none)
+2026-07-24 20:10:03,165 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 0 件)
+2026-07-24 20:10:08,993 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-07-24 20:10:11,941 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=ベルギーGP ハイライト)
+2026-07-24 20:10:15,378 [INFO] src.archive.clip_writer: 結合出力: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad\r2_out\archive_f1_combined.mp4 (使用2)
+2026-07-24 20:30:06,890 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad\short90.mp4 (窓30s/スライド15s)
+2026-07-24 20:30:30,918 [INFO] src.archive.pipeline: 採点完了: 窓6件 → TOP2抽出
+2026-07-24 20:30:30,918 [INFO] src.archive.pipeline:   clip1: 15.0-45.0 点=51.3 (感情93.3/コメント0.0)
+2026-07-24 20:30:30,918 [INFO] src.archive.pipeline:   clip2: 60.0-90.0 点=41.7 (感情75.9/コメント0.0)
+2026-07-24 20:30:31,072 [INFO] src.modules.silence_cutter: 無音カットスキップ (silence_cut.enabled=false)
+2026-07-24 20:30:31,136 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 20:30:31,136 [INFO] src.modules.subtitle_generator: 音声認識エンジン未使用 (subtitle.engine=none)
+2026-07-24 20:30:31,136 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 0 件)
+2026-07-24 20:30:31,264 [INFO] src.modules.silence_cutter: 無音カットスキップ (silence_cut.enabled=false)
+2026-07-24 20:30:31,327 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 20:30:31,327 [INFO] src.modules.subtitle_generator: 音声認識エンジン未使用 (subtitle.engine=none)
+2026-07-24 20:30:31,327 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 0 件)
+2026-07-24 20:30:32,442 [INFO] src.archive.clip_writer: clip1 使用字幕0件 → 焼き込みスキップ
+2026-07-24 20:30:32,442 [INFO] src.archive.clip_writer: clip2 使用字幕0件 → 焼き込みスキップ
+2026-07-24 20:31:08,025 [INFO] src.archive.clip_writer: 結合出力: C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad\run_out\archive_short90_combined.mp4 (使用2)

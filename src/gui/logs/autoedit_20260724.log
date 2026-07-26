@@ -1,0 +1,276 @@
+2026-07-24 10:35:13,710 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-24 10:44:12,829 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/test.mp4 (窓300s/スライド60s)
+2026-07-24 10:57:11,391 [INFO] src.archive.pipeline: 採点完了: 窓38件 → TOP5抽出
+2026-07-24 10:57:11,391 [INFO] src.archive.pipeline:   clip1: 60.0-360.0 点=29.4 (感情53.5/コメント0.0)
+2026-07-24 10:57:11,392 [INFO] src.archive.pipeline:   clip2: 780.0-1080.0 点=46.5 (感情84.5/コメント0.0)
+2026-07-24 10:57:11,392 [INFO] src.archive.pipeline:   clip3: 1260.0-1560.0 点=43.0 (感情78.1/コメント0.0)
+2026-07-24 10:57:11,392 [INFO] src.archive.pipeline:   clip4: 1680.0-1980.0 点=34.1 (感情62.1/コメント0.0)
+2026-07-24 10:57:11,394 [INFO] src.archive.pipeline:   clip5: 1980.0-2280.0 点=49.8 (感情90.5/コメント0.0)
+2026-07-24 10:57:26,367 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 10:57:26,367 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip1_raw.mp4
+2026-07-24 10:57:26,848 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 10:57:26,848 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 10:58:28,713 [INFO] src.modules.silence_cutter: 検出された無音区間: 68 件
+2026-07-24 11:03:08,887 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_iig10gd6\silence_cut.mp4
+2026-07-24 11:03:51,819 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 11:03:51,820 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 11:04:02,428 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 11:08:32,043 [INFO] src.modules.subtitle_generator: 音声認識完了 (68 セグメント)
+2026-07-24 11:08:32,335 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 68 → 68 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 11:22:19,435 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 11:22:19,436 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 11:22:19,439 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip1_raw_edited.mp4
+2026-07-24 11:22:19,439 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip1_raw_edited.mp4
+2026-07-24 11:24:46,626 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-07-24 11:24:48,720 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (1.50s, テーマ=AMのアップデート)
+2026-07-24 11:24:49,267 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 11:24:49,268 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip2_raw.mp4
+2026-07-24 11:24:49,362 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 11:24:49,362 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 11:25:42,353 [INFO] src.modules.silence_cutter: 検出された無音区間: 76 件
+2026-07-24 11:28:08,741 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_0uido7fa\silence_cut.mp4
+2026-07-24 11:28:08,741 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 11:28:08,741 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 11:28:17,853 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 11:31:49,751 [INFO] src.modules.subtitle_generator: 音声認識完了 (48 セグメント)
+2026-07-24 11:31:50,061 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 48 → 48 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 11:40:41,546 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 11:40:41,546 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 11:40:41,551 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip2_raw_edited.mp4
+2026-07-24 11:40:41,551 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip2_raw_edited.mp4
+2026-07-24 11:41:51,560 [INFO] src.archive.clip_writer: clip2: 左上テーマタグを焼き込み
+2026-07-24 11:41:53,431 [INFO] src.archive.clip_writer: clip2: イントロカード生成 (1.50s, テーマ=KITHでタットルド)
+2026-07-24 11:41:53,981 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 11:41:53,981 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip3_raw.mp4
+2026-07-24 11:41:54,056 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 11:41:54,057 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 11:42:36,789 [INFO] src.modules.silence_cutter: 検出された無音区間: 80 件
+2026-07-24 11:44:55,315 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_kk3xt75l\silence_cut.mp4
+2026-07-24 11:44:55,315 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 11:44:55,315 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 11:45:03,080 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 11:48:40,337 [INFO] src.modules.subtitle_generator: 音声認識完了 (81 セグメント)
+2026-07-24 11:48:40,569 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 81 → 81 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 11:50:49,725 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 11:50:49,726 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 11:50:49,729 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip3_raw_edited.mp4
+2026-07-24 11:50:49,729 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip3_raw_edited.mp4
+2026-07-24 11:51:57,450 [INFO] src.archive.clip_writer: clip3: 左上テーマタグを焼き込み
+2026-07-24 11:51:59,488 [INFO] src.archive.clip_writer: clip3: イントロカード生成 (1.50s, テーマ=KITHの服)
+2026-07-24 11:52:00,142 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 11:52:00,142 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip4_raw.mp4
+2026-07-24 11:52:00,237 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 11:52:00,237 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 11:52:46,433 [INFO] src.modules.silence_cutter: 検出された無音区間: 61 件
+2026-07-24 11:55:00,524 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_ywxznmii\silence_cut.mp4
+2026-07-24 11:55:00,524 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 11:55:00,524 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 11:55:07,137 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 11:59:05,981 [INFO] src.modules.subtitle_generator: 音声認識完了 (71 セグメント)
+2026-07-24 11:59:06,211 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 71 → 71 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 12:01:55,966 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 12:01:55,966 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 12:01:55,973 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip4_raw_edited.mp4
+2026-07-24 12:01:55,974 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip4_raw_edited.mp4
+2026-07-24 12:03:09,852 [INFO] src.archive.clip_writer: clip4: 左上テーマタグを焼き込み
+2026-07-24 12:03:11,981 [INFO] src.archive.clip_writer: clip4: イントロカード生成 (1.50s, テーマ=ビルケン〇〇〇〇)
+2026-07-24 12:03:12,556 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 12:03:12,556 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip5_raw.mp4
+2026-07-24 12:03:12,645 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 12:03:12,645 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 12:03:56,919 [INFO] src.modules.silence_cutter: 検出された無音区間: 65 件
+2026-07-24 12:06:10,071 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_zqqzfj53\silence_cut.mp4
+2026-07-24 12:06:10,071 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 12:06:10,071 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 12:06:17,520 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 12:19:39,150 [INFO] src.modules.subtitle_generator: 音声認識完了 (74 セグメント)
+2026-07-24 12:19:39,394 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 74 → 74 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 12:22:18,329 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 12:22:18,329 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 12:22:18,334 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip5_raw_edited.mp4
+2026-07-24 12:22:18,334 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_zdzyl2lp\clip5_raw_edited.mp4
+2026-07-24 12:27:48,193 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_test_combined.mp4 (使用5 / スキップ0)
+2026-07-24 12:45:03,035 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/test.mp4 (窓300s/スライド60s)
+2026-07-24 13:34:09,617 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-24 13:44:11,538 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/test.mp4 (窓300s/スライド60s)
+2026-07-24 13:58:50,321 [INFO] src.archive.pipeline: 採点完了: 窓38件 → TOP5抽出
+2026-07-24 13:58:50,324 [INFO] src.archive.pipeline:   clip1: 60.0-360.0 点=29.4 (感情53.5/コメント0.0)
+2026-07-24 13:58:50,324 [INFO] src.archive.pipeline:   clip2: 780.0-1080.0 点=46.5 (感情84.5/コメント0.0)
+2026-07-24 13:58:50,324 [INFO] src.archive.pipeline:   clip3: 1260.0-1560.0 点=43.0 (感情78.1/コメント0.0)
+2026-07-24 13:58:50,325 [INFO] src.archive.pipeline:   clip4: 1680.0-1980.0 点=34.1 (感情62.1/コメント0.0)
+2026-07-24 13:58:50,325 [INFO] src.archive.pipeline:   clip5: 1980.0-2280.0 点=49.8 (感情90.5/コメント0.0)
+2026-07-24 14:06:02,777 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 14:06:02,778 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip1_raw.mp4
+2026-07-24 14:06:02,840 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 14:06:02,841 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 14:07:03,886 [INFO] src.modules.silence_cutter: 検出された無音区間: 68 件
+2026-07-24 14:11:58,008 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_6nv3eh6t\silence_cut.mp4
+2026-07-24 14:12:03,406 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 14:12:03,406 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 14:12:11,469 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 14:16:04,661 [INFO] src.modules.subtitle_generator: 音声認識完了 (68 セグメント)
+2026-07-24 14:16:04,914 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 68 → 68 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 14:23:55,600 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 14:23:55,600 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 14:23:55,600 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip1_raw_edited.mp4
+2026-07-24 14:23:55,600 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip1_raw_edited.mp4
+2026-07-24 14:26:17,372 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-07-24 14:26:21,754 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=AMのアップデート)
+2026-07-24 14:26:22,354 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 14:26:22,354 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip2_raw.mp4
+2026-07-24 14:26:22,449 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 14:26:22,449 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 14:27:13,203 [INFO] src.modules.silence_cutter: 検出された無音区間: 76 件
+2026-07-24 14:29:43,947 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_e8b7n1kq\silence_cut.mp4
+2026-07-24 14:29:43,953 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 14:29:43,953 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 14:29:51,357 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 14:32:57,194 [INFO] src.modules.subtitle_generator: 音声認識完了 (48 セグメント)
+2026-07-24 14:32:57,451 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 48 → 48 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 14:35:04,610 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 14:35:04,611 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 14:35:04,615 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip2_raw_edited.mp4
+2026-07-24 14:35:04,615 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip2_raw_edited.mp4
+2026-07-24 14:36:24,335 [INFO] src.archive.clip_writer: clip2: 左上テーマタグを焼き込み
+2026-07-24 14:36:27,766 [INFO] src.archive.clip_writer: clip2: イントロカード生成 (3.00s, テーマ=KITH)
+2026-07-24 14:36:28,332 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 14:36:28,332 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip3_raw.mp4
+2026-07-24 14:36:28,432 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 14:36:28,432 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 14:37:14,693 [INFO] src.modules.silence_cutter: 検出された無音区間: 80 件
+2026-07-24 14:39:41,822 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_4a8fpe4c\silence_cut.mp4
+2026-07-24 14:39:41,822 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 14:39:41,823 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 14:39:49,707 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 14:43:41,313 [INFO] src.modules.subtitle_generator: 音声認識完了 (81 セグメント)
+2026-07-24 14:43:41,586 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 81 → 81 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 14:45:54,613 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 14:45:54,616 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 14:45:54,619 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip3_raw_edited.mp4
+2026-07-24 14:45:54,620 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip3_raw_edited.mp4
+2026-07-24 14:45:55,587 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 14:45:55,593 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip4_raw.mp4
+2026-07-24 14:45:55,722 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 14:45:55,725 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 14:46:44,017 [INFO] src.modules.silence_cutter: 検出された無音区間: 61 件
+2026-07-24 14:49:07,949 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_p3xt6r9p\silence_cut.mp4
+2026-07-24 14:49:07,949 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 14:49:07,949 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 14:49:16,269 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 14:53:12,828 [INFO] src.modules.subtitle_generator: 音声認識完了 (71 セグメント)
+2026-07-24 14:53:13,087 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 71 → 71 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 14:55:55,175 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 14:55:55,176 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 14:55:55,179 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip4_raw_edited.mp4
+2026-07-24 14:55:55,180 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip4_raw_edited.mp4
+2026-07-24 14:57:06,777 [INFO] src.archive.clip_writer: clip4: 左上テーマタグを焼き込み
+2026-07-24 14:57:10,249 [INFO] src.archive.clip_writer: clip4: イントロカード生成 (3.00s, テーマ=ビルケン)
+2026-07-24 14:57:10,783 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 14:57:10,783 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip5_raw.mp4
+2026-07-24 14:57:10,868 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 14:57:10,868 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 14:57:53,032 [INFO] src.modules.silence_cutter: 検出された無音区間: 65 件
+2026-07-24 15:00:05,564 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_68vgd_6_\silence_cut.mp4
+2026-07-24 15:00:05,564 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 15:00:05,571 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 15:00:12,567 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 15:06:55,726 [INFO] src.modules.subtitle_generator: 音声認識完了 (64 セグメント)
+2026-07-24 15:06:56,003 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 64 → 64 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 15:09:12,228 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 15:09:12,228 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 15:09:12,228 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip5_raw_edited.mp4
+2026-07-24 15:09:12,228 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_81x13e5b\clip5_raw_edited.mp4
+2026-07-24 15:10:16,444 [INFO] src.archive.clip_writer: clip5: 左上テーマタグを焼き込み
+2026-07-24 15:10:19,429 [INFO] src.archive.clip_writer: clip5: イントロカード生成 (3.00s, テーマ=サンダル)
+2026-07-24 15:15:45,680 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_test_combined.mp4 (使用5 / スキップ0)
+2026-07-24 15:51:47,286 [INFO] src.archive.pipeline: アーカイブ採点開始: C:/Users/evolu/Downloads/test.mp4 (窓300s/スライド60s)
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline: 採点完了: 窓38件 → TOP5抽出
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline:   clip1: 60.0-360.0 点=29.4 (感情53.5/コメント0.0)
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline:   clip2: 780.0-1080.0 点=46.5 (感情84.5/コメント0.0)
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline:   clip3: 1260.0-1560.0 点=43.0 (感情78.1/コメント0.0)
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline:   clip4: 1680.0-1980.0 点=34.1 (感情62.1/コメント0.0)
+2026-07-24 16:06:17,440 [INFO] src.archive.pipeline:   clip5: 1980.0-2280.0 点=49.8 (感情90.5/コメント0.0)
+2026-07-24 16:08:52,758 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 16:08:52,758 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip1_raw.mp4
+2026-07-24 16:08:52,834 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 16:08:52,834 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 16:09:48,888 [INFO] src.modules.silence_cutter: 検出された無音区間: 68 件
+2026-07-24 16:14:53,005 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_62z99hxl\silence_cut.mp4
+2026-07-24 16:14:53,006 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 16:14:53,006 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 16:15:02,011 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 16:19:15,577 [INFO] src.modules.subtitle_generator: 音声認識完了 (68 セグメント)
+2026-07-24 16:19:15,817 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 68 → 68 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 16:42:41,678 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 16:42:41,680 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 16:42:41,683 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip1_raw_edited.mp4
+2026-07-24 16:42:41,684 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip1_raw_edited.mp4
+2026-07-24 16:44:55,352 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-07-24 16:44:59,790 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=test)
+2026-07-24 16:45:00,678 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 16:45:00,678 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip2_raw.mp4
+2026-07-24 16:45:00,833 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 16:45:00,834 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 16:45:48,990 [INFO] src.modules.silence_cutter: 検出された無音区間: 76 件
+2026-07-24 16:48:22,925 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_8p1t63j5\silence_cut.mp4
+2026-07-24 16:48:22,926 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 16:48:22,926 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 16:48:34,738 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 16:52:01,068 [INFO] src.modules.subtitle_generator: 音声認識完了 (48 セグメント)
+2026-07-24 16:52:01,511 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 48 → 48 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 16:54:08,759 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 16:54:08,759 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 16:54:08,761 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip2_raw_edited.mp4
+2026-07-24 16:54:08,763 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip2_raw_edited.mp4
+2026-07-24 16:55:19,565 [INFO] src.archive.clip_writer: clip2: 左上テーマタグを焼き込み
+2026-07-24 16:55:22,937 [INFO] src.archive.clip_writer: clip2: イントロカード生成 (3.00s, テーマ=タットルド)
+2026-07-24 16:55:23,724 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 16:55:23,724 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip3_raw.mp4
+2026-07-24 16:55:23,866 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 16:55:23,867 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 16:56:07,008 [INFO] src.modules.silence_cutter: 検出された無音区間: 80 件
+2026-07-24 16:58:35,588 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_ywgj9st2\silence_cut.mp4
+2026-07-24 16:58:35,589 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 16:58:35,590 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 16:58:47,166 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 17:02:57,339 [INFO] src.modules.subtitle_generator: 音声認識完了 (81 セグメント)
+2026-07-24 17:02:57,711 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 81 → 81 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 17:07:29,217 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 17:07:29,217 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 17:07:29,221 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip3_raw_edited.mp4
+2026-07-24 17:07:29,221 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip3_raw_edited.mp4
+2026-07-24 17:08:36,283 [INFO] src.archive.clip_writer: clip3: 左上テーマタグを焼き込み
+2026-07-24 17:08:39,778 [INFO] src.archive.clip_writer: clip3: イントロカード生成 (3.00s, テーマ=高いアイス)
+2026-07-24 17:08:40,551 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 17:08:40,551 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip4_raw.mp4
+2026-07-24 17:08:40,678 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 17:08:40,679 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 17:09:23,999 [INFO] src.modules.silence_cutter: 検出された無音区間: 61 件
+2026-07-24 17:11:46,215 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_k9n4_n9x\silence_cut.mp4
+2026-07-24 17:11:46,216 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 17:11:46,216 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 17:11:53,510 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 17:16:13,967 [INFO] src.modules.subtitle_generator: 音声認識完了 (71 セグメント)
+2026-07-24 17:16:14,195 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 71 → 71 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 17:18:32,032 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 17:18:32,032 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 17:18:32,034 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip4_raw_edited.mp4
+2026-07-24 17:18:32,034 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip4_raw_edited.mp4
+2026-07-24 17:18:32,940 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-07-24 17:18:32,941 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip5_raw.mp4
+2026-07-24 17:18:33,052 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-24 17:18:33,052 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-24 17:19:15,274 [INFO] src.modules.silence_cutter: 検出された無音区間: 65 件
+2026-07-24 17:21:34,852 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\autoedit_2rd1vi40\silence_cut.mp4
+2026-07-24 17:21:34,852 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-24 17:21:34,852 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-24 17:21:47,618 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-24 17:38:37,710 [INFO] src.modules.subtitle_generator: 音声認識完了 (83 セグメント)
+2026-07-24 17:38:37,983 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 83 → 83 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-07-24 17:53:41,775 [INFO] src.modules.concat_processor: オープニング結合 スキップ (フラグ無効)
+2026-07-24 17:53:41,778 [INFO] src.modules.concat_processor: エンディング結合 スキップ (フラグ無効)
+2026-07-24 17:53:41,778 [INFO] src.modules.output_writer: 出力完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip5_raw_edited.mp4
+2026-07-24 17:53:41,778 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: C:\Users\evolu\AppData\Local\Temp\archive_clips_uqbdt7n0\clip5_raw_edited.mp4
+2026-07-24 17:54:46,712 [INFO] src.archive.clip_writer: clip5: 左上テーマタグを焼き込み
+2026-07-24 17:54:50,811 [INFO] src.archive.clip_writer: clip5: イントロカード生成 (3.00s, テーマ=す？しゅ？)
+2026-07-24 18:00:04,986 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_test_combined.mp4 (使用5 / スキップ0)
