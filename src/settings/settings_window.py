@@ -959,6 +959,28 @@ class SettingsWindow(QWidget):
         grid.setVerticalSpacing(8)
         row = 0
 
+        # 見出し (アーカイブ切り抜き 本体の有効/無効)
+        # archive.enabled はメイン画面「アーカイブ切り抜き」タブの表示可否を決める
+        # マスタースイッチ。従来は setting.json 直接編集でしか切替できなかったため
+        # GUI から切替できるようにする (無効時はタブが「無効」表示になる)。
+        # タイトル/説明/チェックは (末尾で追加される grid とは別に) layout へ直接足し、
+        # 「テーマ・イントロカード」節より前に来るよう表示順を保つ。
+        layout.addWidget(self._make_title("アーカイブ切り抜き"))
+        archive_note = QLabel(
+            "メイン画面の「アーカイブ切り抜き」タブを使えるようにします。\n"
+            "変更はアプリの再起動後に反映されます。"
+        )
+        archive_note.setStyleSheet("color: #888; padding-bottom: 4px;")
+        layout.addWidget(archive_note)
+
+        self.archive_enabled_check = QCheckBox("アーカイブ切り抜きを有効にする")
+        archive_enable_layout = QHBoxLayout()
+        archive_enable_layout.setContentsMargins(0, 0, 0, 0)
+        archive_enable_layout.addWidget(self._make_column_label("機能"))
+        archive_enable_layout.addWidget(self.archive_enabled_check)
+        archive_enable_layout.addStretch(1)
+        layout.addLayout(archive_enable_layout)
+
         # 見出し (テーマ・イントロカード)
         layout.addWidget(self._make_title("テーマ・イントロカード"))
         note = QLabel(
@@ -1248,7 +1270,8 @@ class SettingsWindow(QWidget):
         subtitle = self._loaded_settings.get("subtitle", {})
         silence_cut = self._loaded_settings.get("silence_cut", {})
         vertical = self._loaded_settings.get("vertical", {})
-        intro_card = self._loaded_settings.get("archive", {}).get("intro_card", {})
+        archive = self._loaded_settings.get("archive", {})
+        intro_card = archive.get("intro_card", {})
 
         self.video_dir_edit.setText(general.get("video_directory", ""))
         self.opening_edit.setText(general.get("opening_video", ""))
@@ -1326,6 +1349,10 @@ class SettingsWindow(QWidget):
         self.vertical_margin_l_edit.setText(str(vertical.get("margin_l", 40)))
         self.vertical_margin_r_edit.setText(str(vertical.get("margin_r", 40)))
         self.vertical_margin_v_edit.setText(str(vertical.get("margin_v", 320)))
+
+        # アーカイブ切り抜き: 本体の有効/無効 (メイン画面タブの表示可否)。
+        # 既定は archive_tab の判定 (.get("enabled", False)) に合わせ、キー欠落時は無効表示にする。
+        self.archive_enabled_check.setChecked(bool(archive.get("enabled", False)))
 
         # アーカイブ切り抜き: テーマ・イントロカード (resolve19 §5)
         self.intro_enabled_check.setChecked(bool(intro_card.get("enabled", True)))
@@ -1548,10 +1575,11 @@ class SettingsWindow(QWidget):
             "margin_r": self._to_int(self.vertical_margin_r_edit.text(), 40),
             "margin_v": self._to_int(self.vertical_margin_v_edit.text(), 320),
         })
-        # アーカイブ切り抜き: テーマ・イントロカード (resolve19 §5)。
+        # アーカイブ切り抜き: 本体の有効/無効 (メイン画面タブの表示可否) を保存。
         # archive セクションの他キー (download/scoring/output/clip_pipeline/combine) は
-        # base から引き継ぎ、intro_card サブ辞書のみ UI 値で差し替える。
-        settings.setdefault("archive", {})["intro_card"] = {
+        # base から引き継ぎ、enabled と intro_card サブ辞書のみ UI 値で差し替える。
+        settings.setdefault("archive", {})["enabled"] = self.archive_enabled_check.isChecked()
+        settings["archive"]["intro_card"] = {
             "enabled": self.intro_enabled_check.isChecked(),
             "buffer_sec": self._to_float(self.intro_buffer_sec_edit.text(), 1.5),
             "blur_sigma": self._to_float(self.intro_blur_sigma_edit.text(), 18),
