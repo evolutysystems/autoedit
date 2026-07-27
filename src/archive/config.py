@@ -1,5 +1,12 @@
 # アーカイブ採点の設定読み出し (ハードコード回避のため setting.json の archive セクションを参照)
 # 欠落キーは DEFAULT_SETTINGS 側で補完される前提だが、単体でも安全に既定へフォールバックする。
+import os
+
+
+# src/settings ディレクトリの絶対パスを返す (work_dir/トークン等の相対解決の基準)。
+# settings_window.SETTINGS_DIR と同一だが、PySide 依存を避けるため独立に算出する。
+def _settings_dir():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings")
 
 
 # 方式A の採点設定を1つの辞書に平坦化して返す (scoring.score_window / select_top_events 用)
@@ -17,8 +24,52 @@ def method_a_config(settings):
         "weights": method_a.get("weights", {"emotion": 0.55, "comment": 0.45}),
         "emotion_points": method_a.get("emotion_points", {"loud": 10, "long_silence": -8}),
         "comment": method_a.get("comment", {"w_point_per_char": 1, "rate_spike_bonus": 10}),
-        "comment_spike": False,  # R1(local)はコメント無しのため急増ボーナス無効
+        # 急増ボーナスの有効化と平均コメント数/分は pipeline がコメント取得時に上書きする
+        # (未取得なら False/0 のまま = ボーナス無効 = 従来どおり音声のみ採点)。
+        "comment_spike": False,
+        "avg_comments_per_min": 0.0,
     }
+
+
+# Twitch ログイン認証設定を平坦化して返す (resolve17 §4.3.0 / §4.9)
+def auth_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    auth = archive.get("auth", {})
+    return {
+        "client_id": str(auth.get("client_id", "") or ""),
+        "client_secret": str(auth.get("client_secret", "") or ""),
+        "redirect_port": int(auth.get("redirect_port", 3737)),
+        "owner_only": bool(auth.get("owner_only", True)),
+    }
+
+
+# 取得(download)設定を平坦化して返す (resolve17 §4.3 / §4.9)
+def download_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    dl = archive.get("download", {})
+    return {
+        "downloader": str(dl.get("downloader", "local") or "local"),
+        "twitch_dl_path": str(dl.get("twitch_dl_path", "twitch-dl") or "twitch-dl"),
+        "vod_format": str(dl.get("vod_format", "source") or "source"),
+        "chat_source": str(dl.get("chat_source", "twitch-dl") or "twitch-dl"),
+        "work_dir": str(dl.get("work_dir", "archive_work") or "archive_work"),
+    }
+
+
+# 取得物の作業ディレクトリを絶対パスで解決し、無ければ作成して返す。
+# 相対指定は src/settings 基準 (resolve_fonts_dir と同方針・ハードコード回避)。
+def resolve_work_dir(settings):
+    work_dir = download_config(settings)["work_dir"]
+    if not os.path.isabs(work_dir):
+        work_dir = os.path.join(_settings_dir(), work_dir)
+    os.makedirs(work_dir, exist_ok=True)
+    return work_dir
+
+
+# Twitch トークンの保存先 (ローカル限定・機微情報。resolve17 §4.3.0/§7)。
+# 作業ディレクトリ配下に置く (書込可能・アンインストールで消える運用)。
+def twitch_token_path(settings):
+    return os.path.join(resolve_work_dir(settings), "twitch_token.json")
 
 
 # 切り抜き出力ファイル名の接頭辞を返す (既定 "archive")

@@ -111,13 +111,22 @@
         "enabled": true,
         "download": {
             "downloader": "local",
+            "twitch_dl_path": "twitch-dl",
+            "vod_format": "source",
+            "chat_source": "twitch-dl",
             "work_dir": "archive_work"
+        },
+        "auth": {
+            "client_id": "",
+            "client_secret": "",
+            "redirect_port": 3737,
+            "owner_only": true
         },
         "scoring": {
             "method": "A",
-            "top_n": 5,
-            "window_sec": 300,
-            "slide_sec": 60,
+            "top_n": 10,
+            "window_sec": 180,
+            "slide_sec": 45,
             "clip_pad_sec": 0,
             "loud_percentile": 0.8,
             "silence_ratio_threshold": 0.6,

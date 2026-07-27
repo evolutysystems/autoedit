@@ -37,3 +37,9 @@ class SubtitleError(AutoEditError):
 # 異常終了ではなく「ユーザー意図による中断」を表す (resolve3 §9 / §10-2)
 class PipelineCancelled(AutoEditError):
     pass
+
+
+# Twitch ログイン/取得エラー (flow17 R3 / resolve17 §4.3)
+# 認証失敗・所有判定不成立・twitch-dl 実行失敗などを表す。
+class TwitchError(AutoEditError):
+    pass

@@ -49,7 +49,8 @@ def _clamp(value, lo, hi):
 
 # 1つの窓(セル添字 i0..i1)を採点し {start,end,emotion,comment,total} を返す
 # emotion: 音量ベース(0..100) + 大声加点 + 無音減点 をクランプ (R1は大声/無音のみ検出可能)
-# comment: 区間内の「ｗ」総数を点数化 (+急増ボーナス)。R1(local)はコメント無しのため 0。
+# comment: 区間内の「ｗ」総数を点数化 (+急増ボーナス)。コメント未取得(local/取得失敗)なら 0。
+#          R3 で twitch-dl 取得したコメントをセルに集計すると有効になる (comment_source)。
 def score_window(cells, norm, window, loud_thr, cfg):
     i0, i1 = window
     slice_cells = cells[i0:i1]
@@ -77,12 +78,18 @@ def score_window(cells, norm, window, loud_thr, cfg):
     emotion = base + loud_points * loud_cells + long_silence_points * silent_cells
     emotion = _clamp(emotion, 0.0, 100.0)
 
-    # コメント: ｗ総数を点数化 (+ 平均コメント数/分 を超える急増でボーナス)
+    # コメント: ｗ総数を点数化 (+ 平均コメント数/分 を超える急増区間にボーナス / resolve17 §4.4.1)
     comment_cfg = cfg["comment"]
     w_total = sum(int(c.get("w_count", 0)) for c in slice_cells)
     comment = float(w_total) * float(comment_cfg.get("w_point_per_char", 1))
+    # 急増ボーナス: この窓のコメント数/分が動画全体の平均を上回るとき加点。
+    # avg_comments_per_min は pipeline がコメント取得時に算出して cfg へ供給する。
     if cfg.get("comment_spike", False):
-        comment += float(comment_cfg.get("rate_spike_bonus", 10))
+        avg_cpm = float(cfg.get("avg_comments_per_min", 0.0))
+        win_min = max((slice_cells[-1]["end"] - slice_cells[0]["start"]) / 60.0, 1e-6)
+        win_cpm = sum(int(c.get("comment_count", 0)) for c in slice_cells) / win_min
+        if avg_cpm > 0 and win_cpm > avg_cpm:
+            comment += float(comment_cfg.get("rate_spike_bonus", 10))
     comment = _clamp(comment, 0.0, 100.0)
 
     weights = cfg["weights"]
@@ -101,10 +108,34 @@ def _overlaps(a_start, a_end, b_start, b_end):
     return a_start < b_end and b_start < a_end
 
 
-# 採点済み窓から重なりを避けて上位 top_n をイベントとして選ぶ (貪欲法)
-# 高得点の窓を採用し、それと重なる窓を除外する。これにより連続する高得点窓群からは
-# ピーク窓のみが1イベントとして選ばれる (request17 §4.5 の「連続を1つにまとめる」を実現)。
-# clip_pad_sec で採用区間の前後に余白を付け、duration でクランプする。
+# start 昇順のクリップ列から、時間が連続(接触)または重なる区間を1つのセクションへ統合する。
+# 統合区間は union([start,end]) とし、3分窓の固定枠を外して実際の連続範囲にする。
+# 代表スコア(score/emotion/comment)は統合対象のうち最大 total の窓の値を採用する。
+def _merge_time_sections(clips):
+    if not clips:
+        return []
+    merged = [dict(clips[0])]
+    for c in clips[1:]:
+        cur = merged[-1]
+        # next.start <= cur.end なら「連続 or 重なり」 → 統合して区間を伸ばす
+        if c["start"] <= cur["end"]:
+            cur["end"] = max(cur["end"], c["end"])
+            cur["start"] = min(cur["start"], c["start"])
+            if c["total"] > cur["total"]:
+                cur["total"] = c["total"]
+                cur["emotion"] = c["emotion"]
+                cur["comment"] = c["comment"]
+        else:
+            merged.append(dict(c))
+    return merged
+
+
+# 採点済み窓から重なりを避けて上位 top_n をイベントとして選び、
+# その中で時間が連続 or 重なるものは 1 つのクリップ(セクション)へ統合して返す。
+# 1) 高得点の窓を貪欲採用し、重なる窓を除外 → 連続する高得点窓群はピーク窓に代表される (§4.5)。
+# 2) clip_pad_sec で前後に余白を付け duration でクランプ。
+# 3) 連続(接触)/重なりの採用区間を union で1セクションに統合 (3分枠を外す)。要望: TOP10内の
+#    継続 or 重なりは1クリップ。
 def select_top_events(scored, top_n, clip_pad_sec, duration):
     ordered = sorted((w for w in scored if w), key=lambda w: w["total"], reverse=True)
     chosen = []
@@ -115,19 +146,28 @@ def select_top_events(scored, top_n, clip_pad_sec, duration):
             continue
         chosen.append(w)
 
-    # 時系列順に並べ、クリップ番号を振る
+    # 時系列順に並べ、パディングを付与
     chosen.sort(key=lambda w: w["start"])
-    clips = []
-    for idx, w in enumerate(chosen, 1):
+    padded = []
+    for w in chosen:
         cstart = max(0.0, w["start"] - clip_pad_sec)
         cend = min(duration, w["end"] + clip_pad_sec) if duration > 0 else w["end"] + clip_pad_sec
+        padded.append({
+            "start": cstart, "end": cend, "total": w["total"],
+            "emotion": w["emotion"], "comment": w["comment"],
+        })
+
+    # 連続/重なりを1セクションへ統合し、クリップ番号を振る
+    merged = _merge_time_sections(padded)
+    clips = []
+    for idx, m in enumerate(merged, 1):
         clips.append({
             "index": idx,
-            "start": cstart,
-            "end": cend,
-            "score": w["total"],
-            "emotion": w["emotion"],
-            "comment": w["comment"],
+            "start": m["start"],
+            "end": m["end"],
+            "score": m["total"],
+            "emotion": m["emotion"],
+            "comment": m["comment"],
             "use": True,
         })
     return clips

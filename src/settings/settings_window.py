@@ -241,15 +241,29 @@ DEFAULT_SETTINGS = {
     "archive": {
         "enabled": True,
         "download": {
-            # R1 はローカル mp4 指定のみ。twitch-dl 取得は R3 で追加する。
-            "downloader": "local",
-            "work_dir": "archive_work",
+            # R3: ローカル指定に加え Twitch VOD を twitch-dl で自動取得できる (flow17 R3)。
+            "downloader": "local",       # "local" | "twitch-dl" (UI の入力ソース選択で切替)
+            "twitch_dl_path": "twitch-dl",  # twitch-dl CLI (同梱 or PATH。ffmpeg と同方式で解決)
+            "vod_format": "source",      # 取得画質 (source=最高)
+            "chat_source": "twitch-dl",  # コメントは twitch-dl chat json に一本化
+            "work_dir": "archive_work",  # 取得物の作業ディレクトリ (settings 相対 or 絶対)
+        },
+        # Twitch ログイン (OAuth 認可コードフロー / resolve17 §4.3.0)。
+        # client_id/client_secret は dev.twitch.tv で登録したアプリの値を設定する。
+        # リダイレクトURL には http://localhost:<redirect_port> を登録すること。
+        "auth": {
+            "client_id": "",           # OAuth 用 Client-ID (未設定ならログイン不可)
+            "client_secret": "",       # OAuth 用 Client-Secret (認可コードフローに必要)
+            "redirect_port": 3737,     # ローカル redirect 受信ポート
+            "owner_only": True,        # 自分が所有する VOD のみ許可 (resolve17 §8-1)
         },
         "scoring": {
             "method": "A",
-            "top_n": 5,
-            "window_sec": 300,          # 方式A: 5分窓
-            "slide_sec": 60,            # 方式A: 1分スライド (= セル幅)
+            "top_n": 10,          # 切り抜き候補の上限件数 (TOP10)
+            # 方式A: 3分窓/45秒スライド。5分窓ではスコープが広すぎて別トークテーマを
+            # 巻き込むため、より狭い窓に変更 (window_sec/slide_sec=180/45)。
+            "window_sec": 180,          # 方式A: 3分窓
+            "slide_sec": 45,            # 方式A: 45秒スライド (= セル幅)
             "clip_pad_sec": 0,          # 採用区間の前後パディング
             "loud_percentile": 0.8,     # 大声セル判定 (max_db の上位分位)
             "silence_ratio_threshold": 0.6,  # 無音セル判定 (無音率がこれ以上)

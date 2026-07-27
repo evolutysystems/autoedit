@@ -26,13 +26,15 @@ a = Analysis(
         # ソースは src/ffmpeg/ に配置(git 管理外・HowToRelease §2 で入手)。binaries でなく datas で純コピーする。
         ('ffmpeg/ffmpeg.exe', 'ffmpeg'),
         ('ffmpeg/ffprobe.exe', 'ffmpeg'),
-    ] + collect_data_files('budoux'),   # BudouX のモデルJSON等を同梱 (request11)
+    ] + collect_data_files('budoux')     # BudouX のモデルJSON等を同梱 (request11)
+      + collect_data_files('twitchdl'),  # twitch-dl の同梱データ (flow17 R3 / Twitch取得)
     hiddenimports=[
         'faster_whisper',            # 遅延 import のため明示
         # アーカイブ結果画面の採点グラフ (flow17 R2 / resolve17 §4.7.1)。
         # Qt アドオンのため明示同梱する。CUDA/torch は従来どおり非同梱 (CPU-only 維持)。
         'PySide6.QtCharts',
-    ] + collect_submodules('budoux'),   # BudouX 遅延 import 対策 (request11)
+    ] + collect_submodules('budoux')     # BudouX 遅延 import 対策 (request11)
+      + collect_submodules('twitchdl'),  # twitch-dl (VOD/コメント取得) を同梱 (flow17 R3)
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
