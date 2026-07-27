@@ -7,3 +7,6 @@
 2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: 採点完了: 窓5件 → TOP2抽出
 2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip1: 0.0-180.0 点=30.1 (感情40.0/コメント18.0)
 2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip2: 180.0-360.0 点=22.0 (感情40.0/コメント0.0)
+2026-07-27 20:04:59,055 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3939)
+2026-07-27 20:05:03,768 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-07-27 20:05:32,241 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3941)

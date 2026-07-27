@@ -117,7 +117,7 @@
             "work_dir": "archive_work"
         },
         "auth": {
-            "client_id": "",
+            "client_id": "mcu1dwig8t6bmv87xp6s08y2s757r5",
             "client_secret": "",
             "redirect_port": 3737,
             "owner_only": true
