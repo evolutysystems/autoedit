@@ -1,0 +1,9 @@
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: アーカイブ採点開始: dummy.mp4 (窓180s/スライド45s, コメント0件)
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: 採点完了: 窓5件 → TOP2抽出
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip1: 0.0-180.0 点=22.0 (感情40.0/コメント0.0)
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip2: 180.0-360.0 点=22.0 (感情40.0/コメント0.0)
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: アーカイブ採点開始: dummy.mp4 (窓180s/スライド45s, コメント3件)
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: コメント集計: 3件 / 平均0.50件/分
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline: 採点完了: 窓5件 → TOP2抽出
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip1: 0.0-180.0 点=30.1 (感情40.0/コメント18.0)
+2026-07-27 19:21:06,111 [INFO] src.archive.pipeline:   clip2: 180.0-360.0 点=22.0 (感情40.0/コメント0.0)

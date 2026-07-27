@@ -44,7 +44,17 @@
       "Bash(cp C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad/mock_tag.png /d/develop/autoedit/docs/request/ver2/images/resolve19_clip_tag.png)",
       "Bash(cp C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad/base.png /d/develop/autoedit/docs/request/ver2/images/resolve19_base_frame.png)",
       "Bash(export SP=\"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/7c0fcd98-7340-41c4-931c-3745db3ea30b/scratchpad\")",
-      "Bash(export PYTHONPATH=\"D:/develop/autoedit\")"
+      "Bash(export PYTHONPATH=\"D:/develop/autoedit\")",
+      "Bash(grep -vE '\\\\.\\(pyc|log\\)$')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git tag *)",
+      "Bash(git push *)",
+      "Bash([ -f \"$P\" ])",
+      "Read(//c/Users/evolu/AppData/Local/**)",
+      "Bash(grep -v '\\\\.pyc$')",
+      "Bash(where twitch-dl *)",
+      "Bash(QT_QPA_PLATFORM=offscreen python -c ' *)"
     ]
   }
 }
