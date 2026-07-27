@@ -650,6 +650,15 @@ def _resolve_app_icon_path():
 
 # エントリーポイント
 def main():
+    # 凍結配布物では twitch-dl を別バイナリにせず、本体exeを multi-call で twitchdl CLI として動かす。
+    # これによりアップデート/インストール時に本体と一緒に twitch-dl も展開される (追加バイナリ不要 /
+    # flow17 R3)。twitch_source が凍結時に [sys.executable, "__twitchdl__", ...] を起動する。
+    if len(sys.argv) > 1 and sys.argv[1] == "__twitchdl__":
+        from twitchdl.cli import cli
+        sys.argv = ["twitch-dl", *sys.argv[2:]]  # `python -m twitchdl` 相当に整える
+        cli()  # click グループ (standalone_mode=True で内部 sys.exit する)
+        return
+
     app = QApplication(sys.argv)
     # 実行中ウィンドウ/タスクバーのアイコンを設定する (exe 埋め込みアイコンとは別管理)。
     # QApplication へ設定すると全トップレベルウィンドウの既定アイコンになる。

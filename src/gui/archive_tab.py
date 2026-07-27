@@ -104,10 +104,14 @@ class ArchiveAnalyzeWorker(QThread):
 
     # Twitch VOD/コメントを取得する (所有判定 → download → chat json)
     def _fetch_twitch(self):
+        from ..modules import ffmpeg_runner
         dl = config.download_config(self._settings)
         auth_cfg = config.auth_config(self._settings)
         work_dir = config.resolve_work_dir(self._settings)
         video_id = twitch_source.extract_video_id(self._job["url"])
+        # 同梱 ffmpeg のディレクトリ (twitch-dl の VOD 結合に PATH で渡す)
+        ffmpeg_dir = os.path.dirname(
+            ffmpeg_runner.get_ffmpeg_exe(self._settings.get("ffmpeg", {})))
 
         # 所有判定 (owner_only): 自分の VOD のみ許可 (resolve17 §8-1)
         if auth_cfg["owner_only"]:
@@ -121,14 +125,14 @@ class ArchiveAnalyzeWorker(QThread):
         self.progress.emit(0.0, "VOD取得中…")
         input_path = twitch_source.download_vod(
             video_id, work_dir, dl["twitch_dl_path"], dl["vod_format"],
-            progress_cb=lambda m: self.progress.emit(0.0, m))
+            progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir)
 
         # コメント取得。失敗してもコメント無しで採点続行 (resolve17 §5)
         comments = None
         try:
             chat_path = twitch_source.download_chat(
                 video_id, work_dir, dl["twitch_dl_path"],
-                progress_cb=lambda m: self.progress.emit(0.0, m))
+                progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir)
             comments = comment_source.load_comments(chat_path)
         except TwitchError as e:
             _logger.warning("コメント取得に失敗 (コメント無しで継続): %s", e)

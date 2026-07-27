@@ -27,14 +27,20 @@ a = Analysis(
         ('ffmpeg/ffmpeg.exe', 'ffmpeg'),
         ('ffmpeg/ffprobe.exe', 'ffmpeg'),
     ] + collect_data_files('budoux')     # BudouX のモデルJSON等を同梱 (request11)
-      + collect_data_files('twitchdl'),  # twitch-dl の同梱データ (flow17 R3 / Twitch取得)
+      + collect_data_files('twitchdl')   # twitch-dl の同梱データ (flow17 R3 / Twitch取得)
+      + collect_data_files('certifi'),   # httpx(twitch-dl) の HTTPS 用ルート証明書 (cacert.pem)
     hiddenimports=[
         'faster_whisper',            # 遅延 import のため明示
         # アーカイブ結果画面の採点グラフ (flow17 R2 / resolve17 §4.7.1)。
         # Qt アドオンのため明示同梱する。CUDA/torch は従来どおり非同梱 (CPU-only 維持)。
         'PySide6.QtCharts',
+        # twitch-dl を本体exeの multi-call で動かすため CLI とその依存を明示同梱する (flow17 R3)。
+        'twitchdl.cli',
     ] + collect_submodules('budoux')     # BudouX 遅延 import 対策 (request11)
-      + collect_submodules('twitchdl'),  # twitch-dl (VOD/コメント取得) を同梱 (flow17 R3)
+      + collect_submodules('twitchdl')   # twitch-dl (VOD/コメント取得) を同梱 (flow17 R3)
+      + collect_submodules('httpx')      # twitch-dl の HTTP クライアント
+      + collect_submodules('httpcore')   # httpx の下位 (h11 等)
+      + collect_submodules('m3u8'),      # twitch-dl の HLS プレイリスト解析
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
