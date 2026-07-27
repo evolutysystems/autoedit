@@ -248,12 +248,12 @@ DEFAULT_SETTINGS = {
             "chat_source": "twitch-dl",  # コメントは twitch-dl chat json に一本化
             "work_dir": "archive_work",  # 取得物の作業ディレクトリ (settings 相対 or 絶対)
         },
-        # Twitch ログイン (OAuth 認可コードフロー / resolve17 §4.3.0)。
-        # client_id/client_secret は dev.twitch.tv で登録したアプリの値を設定する。
+        # Twitch ログイン (OAuth インプリシットフロー / resolve17 §4.3.0)。
+        # client_id は dev.twitch.tv で登録したアプリの値を設定する (Client-Secret は不要)。
         # リダイレクトURL には http://localhost:<redirect_port> を登録すること。
         "auth": {
             "client_id": "",           # OAuth 用 Client-ID (未設定ならログイン不可)
-            "client_secret": "",       # OAuth 用 Client-Secret (認可コードフローに必要)
+            "client_secret": "",       # 未使用 (インプリシットフローでは不要。後方互換で保持)
             "redirect_port": 3737,     # ローカル redirect 受信ポート
             "owner_only": True,        # 自分が所有する VOD のみ許可 (resolve17 §8-1)
         },

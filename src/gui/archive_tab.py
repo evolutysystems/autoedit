@@ -330,13 +330,14 @@ class ArchiveTabWidget(QWidget):
 
     # ---- Twitch ログイン --------------------------------------------------
     def _on_login(self):
+        self._settings = load_settings()  # 最新の設定(client_id 等)を反映
         auth_cfg = config.auth_config(self._settings)
-        if not auth_cfg["client_id"] or not auth_cfg["client_secret"]:
+        if not auth_cfg["client_id"]:
             QMessageBox.warning(
                 self, "設定が必要",
-                "Twitch の Client-ID / Client-Secret が未設定です。\n"
-                "dev.twitch.tv でアプリを登録し、setting.json の archive.auth に\n"
-                "client_id / client_secret / redirect_port を設定してください。\n"
+                "Twitch の Client-ID が未設定です。\n"
+                "dev.twitch.tv でアプリを登録し、setting.json の archive.auth.client_id に\n"
+                "設定してください (Client-Secret は不要です)。\n"
                 f"リダイレクトURL には http://localhost:{auth_cfg['redirect_port']} を登録します。")
             return
         # ログイン前に最新設定で auth を作り直す
