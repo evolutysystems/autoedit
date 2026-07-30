@@ -120,6 +120,9 @@ class SubtitleReviewBridge(QObject):
         self._show_theme_field = bool(show_theme_field)
         self._theme_placeholder = theme_placeholder or ""
         self._last_theme = ""  # 直近クリップで入力されたテーマ (consume_theme で1回消費)
+        # Resolve 出力用の付随情報 (元入力パス・編集点・設定 / resolve20 §5.3)。
+        # subtitle_generator が set_export_context で注入し、ダイアログ終了時に破棄する。
+        self._export_context = None
         # ワーカースレッドを待機させるためのイベントと結果共有領域
         self._event = threading.Event()
         self._result = None
@@ -137,6 +140,10 @@ class SubtitleReviewBridge(QObject):
         self._event.wait()
         return self._result
 
+    # Resolve 出力用の付随情報を受け取る (subtitle_generator._attach_export_context から)
+    def set_export_context(self, payload):
+        self._export_context = payload
+
     # メインスレッドで実行されるスロット: ダイアログを開いて結果を共有領域へ格納
     def _on_review_requested(self, items):
         try:
@@ -148,6 +155,8 @@ class SubtitleReviewBridge(QObject):
                 # テーマ欄はアーカイブ経路のみ表示 (resolve19)
                 show_theme_field=self._show_theme_field,
                 theme_placeholder=self._theme_placeholder,
+                # DaVinci Resolve 出力の材料 (未注入なら出力ボタン非表示 / resolve20 §5.3)
+                export_context=self._export_context,
             )
             if dialog.exec() == SubtitleEditorDialog.Accepted:
                 self._result = dialog.result_items()
@@ -158,6 +167,8 @@ class SubtitleReviewBridge(QObject):
                 self._result = None
                 self._last_theme = ""  # キャンセル時はテーマ無効
         finally:
+            # ダイアログ終了時に編集点・元パスを破棄する (resolve20 §5.3 寿命管理)
+            self._export_context = None
             # 例外有無に関わらずワーカーを再開させる (デッドロック防止)
             self._event.set()
 

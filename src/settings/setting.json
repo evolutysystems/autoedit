@@ -182,5 +182,27 @@
             "tag_margin_v": 20,
             "mute_intro": false
         }
+    },
+    "export": {
+        "resolve": {
+            "enabled": true,
+            "format": "fcpxml",
+            "fcpxml_version": "1.9",
+            "event_name": "Stretheus",
+            "title_effect_uid": "",
+            "clip_edit_points": "context",
+            "include_intro_card": true,
+            "clip_prefix": "clip",
+            "title": {
+                "coord_space": "normalized",
+                "origin": "center"
+            },
+            "subtitle": {
+                "mode": "caption",
+                "caption_format": "ITT",
+                "language": "ja",
+                "srt_sidecar": true
+            }
+        }
     }
 }

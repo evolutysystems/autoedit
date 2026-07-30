@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -23,8 +24,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..exceptions import AutoEditError
+from ..export import resolve_export
+
 # 既存の ASS タイムスタンプ整形を再利用し、画面・ASS で表記を揃える (§8.3)
 from ..modules.subtitle_generator import _format_ass_time
+from ..utils.logger import get_logger
+
+_logger = get_logger(__name__)
 
 # 列インデックス定義 (マジックナンバー回避)
 _COL_TIME = 0
@@ -62,6 +69,51 @@ _DIALOG_HEIGHT = 520
 
 # 改行挿入に使う修飾キー (Alt / Shift + Enter で改行)
 _NEWLINE_MODIFIERS = Qt.AltModifier | Qt.ShiftModifier
+
+# DaVinci Resolve 出力ボタンの文言 (両画面で共通 / resolve20)
+RESOLVE_EXPORT_BUTTON_TEXT = "DaVinci Resolve ファイル出力"
+
+
+# 「DaVinci Resolve 出力」の共通処理 (クリップ用 字幕一覧 / アーカイブ用 結果画面 で共用)
+# export_call(overwrite_confirm) -> 出力パスの list or None を呼び出し、結果を画面へ通知する。
+# 例外は画面へ集約通知し、既存フロー (焼き込み・パイプライン) には影響させない (resolve20 §7)。
+def run_resolve_export(parent, export_call):
+    def _confirm_overwrite(path):
+        answer = QMessageBox.question(
+            parent, "上書き確認",
+            f"既に同名のファイルがあります。上書きしますか?\n{path}",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
+
+    try:
+        result = export_call(_confirm_overwrite)
+    except AutoEditError as e:
+        QMessageBox.critical(parent, "DaVinci Resolve 出力", str(e))
+        return None
+    except Exception as e:  # noqa: BLE001 (GUI へ集約通知するため広く捕捉)
+        _logger.exception("DaVinci Resolve 出力に失敗")
+        QMessageBox.critical(
+            parent, "DaVinci Resolve 出力", f"出力に失敗しました:\n{e}")
+        return None
+
+    if result is None:
+        return None
+    # 戻り値は出力パスの list ([fcpxml] または [fcpxml, srt] / resolve21 §5.7)
+    paths = result if isinstance(result, list) else [result]
+    message = (
+        "プロジェクトファイルを出力しました。\n"
+        + "\n".join(paths)
+        + "\n\nDaVinci Resolve の File > Import > Timeline から取り込んでください。"
+    )
+    if any(str(p).lower().endswith(".srt") for p in paths):
+        message += (
+            "\n字幕(.srt) はメディアプール右クリック > 字幕の読み込み (Import Subtitle) "
+            "からも取り込めます。\n字幕のフォント等はタイムラインの字幕トラックヘッダー選択 "
+            "→ インスペクタ → トラックスタイルで一括設定できます。"
+        )
+    QMessageBox.information(parent, "DaVinci Resolve 出力", message)
+    return paths
 
 
 # 「字幕」セル内の複数行エディタ
@@ -407,16 +459,21 @@ class SubtitleEditorWidget(QWidget):
 
 
 # 字幕編集ダイアログ (SubtitleEditorWidget を包む薄いラッパ)
-# コンストラクタ引数・戻り値は従来と完全同一 (main_window / SubtitleReviewBridge は無改修)。
 # items: [{"start","end","text","use","role"}] / role 省略時は配信者。
+# export_context: DaVinci Resolve 出力の材料 (resolve20 §5.3)。
+#   {"source_path","keep_segments","settings","profile"}。既定 None = 出力ボタン非表示
+#   (既存呼び出しは無改修で従来どおり動作する)。
 class SubtitleEditorDialog(QDialog):
 
     def __init__(self, items, parent=None, default_font="", default_size=None,
                  font_families=None, show_theme_field=False, theme_placeholder="",
-                 theme_text=""):
+                 theme_text="", export_context=None):
         super().__init__(parent)
         self.setWindowTitle("字幕編集")
         self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
+
+        # Resolve 出力の材料 (元入力パス・編集点・設定)
+        self._export_context = export_context or None
 
         root = QVBoxLayout(self)
 
@@ -437,9 +494,19 @@ class SubtitleEditorDialog(QDialog):
         ))
         root.addWidget(self.editor)
 
-        # 決定 / キャンセル
+        # DaVinci Resolve ファイル出力 / 決定 / キャンセル
         button_row = QHBoxLayout()
         button_row.addStretch(1)
+        # 出力ボタン (材料が揃い、かつ設定で有効なときだけ追加する / resolve20 §5.3)
+        self.export_button = None
+        if self._can_export():
+            self.export_button = QPushButton(RESOLVE_EXPORT_BUTTON_TEXT)
+            self.export_button.setToolTip(
+                "現在の字幕とカット編集点を DaVinci Resolve 用プロジェクトファイル"
+                "(.fcpxml) として出力します。"
+            )
+            self.export_button.clicked.connect(self._on_export_resolve)
+            button_row.addWidget(self.export_button)
         self.decide_button = QPushButton("字幕決定")
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
@@ -448,6 +515,20 @@ class SubtitleEditorDialog(QDialog):
         button_row.addWidget(self.decide_button)
         button_row.addWidget(self.cancel_button)
         root.addLayout(button_row)
+
+    # Resolve 出力ボタンを出せるか (材料の有無 + 設定の有効/無効)
+    def _can_export(self):
+        if not self._export_context or not self._export_context.get("source_path"):
+            return False
+        return resolve_export.is_enabled(self._export_context.get("settings") or {})
+
+    # 「DaVinci Resolve ファイル出力」押下: 現在の編集内容で FCPXML を書き出す (resolve20 §5.3)
+    def _on_export_resolve(self):
+        run_resolve_export(
+            self,
+            lambda confirm: resolve_export.export_clip_review(
+                self._export_context, self.result_items(), overwrite_confirm=confirm),
+        )
 
     # 後方互換: 既存コードが参照し得る theme_edit をエディタへ委譲する
     @property

@@ -8,6 +8,7 @@ import os
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -187,6 +188,8 @@ class ArchiveTabWidget(QWidget):
         self._review_bridge = None  # テロップ編集画面の橋渡し (GC 防止のため保持)
         self._pending_input = None  # 採点対象の入力パス (採点→切り抜きで引き継ぐ)
         self._auth = None           # TwitchAuth (ログイン状態を保持)
+        # 無音カット可否チェック (resolve20 §5.8)。機能無効時は UI を作らないため None。
+        self.silence_cut_check = None
         if self._enabled:
             self._build_ui()
             self._init_auth()
@@ -268,6 +271,19 @@ class ArchiveTabWidget(QWidget):
         twitch_layout.addWidget(self.url_edit)
         root.addWidget(self.twitch_group)
 
+        # 実行オプション: 無音カットの可否 (resolve20 §5.8 / R7)
+        # 初期値は setting.json (archive.clip_pipeline.silence_cut) に従う。
+        option_row = QHBoxLayout()
+        self.silence_cut_check = QCheckBox("無音カット")
+        self.silence_cut_check.setToolTip(
+            "各クリップから無音区間を除去します。"
+            "外すと切り抜き区間をそのまま使用します。"
+        )
+        self.silence_cut_check.setChecked(self._silence_cut_default())
+        option_row.addWidget(self.silence_cut_check)
+        option_row.addStretch(1)
+        root.addLayout(option_row)
+
         # 採点開始
         self.analyze_button = QPushButton("採点開始")
         self.analyze_button.clicked.connect(self._on_analyze)
@@ -289,6 +305,22 @@ class ArchiveTabWidget(QWidget):
 
         # 初期モード反映 (既定はローカル)
         self._on_mode_changed()
+
+    # 無音カットチェックの初期値を設定から取得する (resolve20 §5.8)
+    # 参照先は既存キー archive.clip_pipeline.silence_cut (既定 True)。新規キーは追加しない。
+    def _silence_cut_default(self):
+        clip_pipe = self._settings.get("archive", {}).get("clip_pipeline", {})
+        return bool(clip_pipe.get("silence_cut", True))
+
+    # チェック状態を「その実行の設定」へ反映する (resolve20 §5.8 / §10-10)
+    # setting.json へは書き戻さない (初期値は毎回設定から復元する)。
+    def _apply_silence_cut_option(self):
+        if self.silence_cut_check is None:
+            return
+        enabled = bool(self.silence_cut_check.isChecked())
+        clip_pipe = self._settings.setdefault("archive", {}).setdefault("clip_pipeline", {})
+        clip_pipe["silence_cut"] = enabled
+        _logger.info("無音カット: %s (アーカイブタブの選択)", "ON" if enabled else "OFF")
 
     # 設定から TwitchAuth を用意する (保存済みトークンがあればログイン状態を復元)
     def _init_auth(self):
@@ -389,6 +421,8 @@ class ArchiveTabWidget(QWidget):
     # ---- 採点開始 --------------------------------------------------------
     def _on_analyze(self):
         self._settings = load_settings()  # 最新化
+        # 無音カット可否 (チェックボックス) を当該実行の設定へ反映する (resolve20 §5.8)
+        self._apply_silence_cut_option()
         mode = self._current_mode()
 
         if mode == _MODE_TWITCH:
@@ -490,6 +524,9 @@ class ArchiveTabWidget(QWidget):
         self.url_edit.setEnabled(not running)
         self.vod_combo.setEnabled(not running)
         self.login_button.setEnabled(not running)
+        # 実行中は無音カットの可否を変更できないようにする (resolve20 §5.8)
+        if self.silence_cut_check is not None:
+            self.silence_cut_check.setEnabled(not running)
         if running:
             self._spinner_timer.start()
         else:

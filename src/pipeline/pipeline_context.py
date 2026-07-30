@@ -48,6 +48,11 @@ class PipelineContext:
         # 未設定(None)の場合、各工程は従来どおり横として振る舞う。
         self.output_profile = None
 
+        # 無音カットで残した区間 (元入力動画相対) / resolve20 §5.3 案B
+        # Resolve 出力のカット編集点として字幕編集画面へ渡すためだけに保持する。
+        # その回の処理専用の一時データであり cleanup() でクリアする (寿命管理)。
+        self._keep_segments = None
+
     # 現在の処理対象動画パスを取得する
     def current_video_path(self):
         return self._current_video_path
@@ -55,6 +60,18 @@ class PipelineContext:
     # 現在の処理対象動画パスを更新する
     def set_current_video_path(self, path):
         self._current_video_path = path
+
+    # 無音カットの残す区間を取得する (未実行/無効時は None / resolve20 §5.3)
+    def keep_segments(self):
+        return self._keep_segments
+
+    # 無音カットの残す区間を保持する (silence_cutter が算出直後に呼ぶ)
+    def set_keep_segments(self, segments):
+        self._keep_segments = list(segments) if segments else None
+
+    # 保持中の編集点を破棄する (全処理完了時。次回実行へ持ち越さない / resolve20 §5.3)
+    def clear_keep_segments(self):
+        self._keep_segments = None
 
     # 中間ファイル用パスを割り当てる
     def allocate_intermediate(self, filename):
@@ -90,6 +107,9 @@ class PipelineContext:
 
     # 作業ディレクトリの後処理 (パイプライン終了時に一時ファイルを削除する)
     def cleanup(self):
+        # 保持していた Resolve 出力用の編集点を破棄する (resolve20 §5.3 寿命管理)
+        self.clear_keep_segments()
+
         # 自動生成した一時ディレクトリは中身ごと削除する
         if self._tempdir_obj is not None:
             self._tempdir_obj.cleanup()

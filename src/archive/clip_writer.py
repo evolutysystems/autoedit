@@ -285,10 +285,13 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
 
 # 無音カットを最小 PipelineContext で実行する (extract_mode/fade/batch 等の既存挙動を流用)。
 # silence_cut.enabled=false のときは元パスをそのまま返す。
+# 戻り値: (無音カット後パス, クリップ内の残す区間 or None)
+#   残す区間は Resolve 出力のカット編集点として結果画面へ引き継ぐ (resolve20 §5.4 案①)。
+#   無音カット無効時は None (= 区間全長) となり、字幕時間と生クリップ区間が一致する。
 def _silence_cut(raw, clip_settings, clip_dir):
     ctx = PipelineContext(input_path=raw, settings=clip_settings, working_dir=clip_dir)
     silence_cutter.run(ctx)
-    return ctx.current_video_path()
+    return ctx.current_video_path(), ctx.keep_segments()
 
 
 # 文字起こし→表示タイミング整形で編集用タイムライン(items)を得る (subtitle_generator 標準関数)。
@@ -317,7 +320,8 @@ def _transcribe(prepared_path, settings, eff_cfg):
 
 
 # 全クリップを prepare する (切り出し→無音カット→文字起こし)。ダイアログは出さない。
-# 戻り値: [{"index","start","end","score","prepared_path","profile","eff_cfg","items"}]
+# 戻り値: [{"index","start","end","score","prepared_path","profile","eff_cfg","items",
+#           "keep_segments"}]
 def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb):
     prepared = []
     total = len(used)
@@ -331,7 +335,7 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
         os.makedirs(clip_dir, exist_ok=True)
         raw = os.path.join(clip_dir, "raw.mp4")
         _cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
-        prepared_path = _silence_cut(raw, clip_settings, clip_dir)
+        prepared_path, keep_segments = _silence_cut(raw, clip_settings, clip_dir)
         profile = output_profile.resolve_output_profile(prepared_path, settings)
         eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
             subtitle_cfg, vertical_cfg, profile)
@@ -341,6 +345,8 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
             "score": clip.get("score", 0.0),
             "prepared_path": prepared_path, "profile": profile,
             "eff_cfg": eff_cfg, "items": items,
+            # クリップ内の無音カット編集点 (Resolve 出力用の一時データ / resolve20 §5.4)
+            "keep_segments": keep_segments,
         })
         _logger.info("clip%d prepare 完了 (字幕 %d 件)", clip["index"], len(items))
     return prepared
@@ -492,6 +498,11 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
                 {"index": p["index"], "items": p["items"], "theme": "", "use": True}
                 for p in prepared
             ]
+
+        # レビュー終了後は Resolve 出力用の編集点を破棄する (resolve20 §5.3 寿命管理)。
+        # 結果画面側でも閉じる際に破棄するため、ここは画面を持たない経路の保険。
+        for p in prepared:
+            p.pop("keep_segments", None)
 
         # ③ burn: 各クリップを 字幕焼き込み→テーマ演出→パーツ化
         if progress_cb:

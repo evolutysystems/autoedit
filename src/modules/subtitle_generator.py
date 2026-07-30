@@ -814,6 +814,22 @@ def adjust_display_timing(timeline, max_hold_sec=2.0, min_duration_sec=0.0):
     return adjusted
 
 
+# 編集画面ブリッジへ Resolve 出力用の付随情報を渡す (resolve20 §5.3)
+# 元入力パス・無音カットの編集点・出力プロファイルを渡し、字幕一覧画面から
+# 「DaVinci Resolve 出力」を行えるようにする。焼き込み処理には一切影響しない。
+def _attach_export_context(review_cb, context):
+    setter = getattr(review_cb, "set_export_context", None)
+    if not callable(setter):
+        return
+    keep_getter = getattr(context, "keep_segments", None)
+    setter({
+        "source_path": getattr(context, "input_path", ""),
+        "keep_segments": keep_getter() if callable(keep_getter) else None,
+        "settings": context.settings,
+        "profile": getattr(context, "output_profile", None),
+    })
+
+
 # 字幕編集画面 (レビュー) を適用する (resolve3 §6.2)
 # context にレビューコールバックが注入されていれば呼び出し、編集結果で置き換える。
 # 注入が無い (CLI/ヘッドレス) 場合は全件使用としてそのまま返す。
@@ -836,6 +852,10 @@ def _review_timeline(context, timeline, subtitle_cfg):
          "role": e.get("role", _DEFAULT_ROLE)}
         for e in timeline
     ]
+
+    # Resolve 出力 (resolve20 §5.3) 用の付随情報を編集画面ブリッジへ渡す。
+    # ブリッジが対応していない実行経路 (CLI/テスト) では何もしない。
+    _attach_export_context(review_cb, context)
 
     edited = review_cb(items)  # 「字幕決定」まで待機し編集結果を返す
 

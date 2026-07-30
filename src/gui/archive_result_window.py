@@ -23,12 +23,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..export import resolve_export
 from ..modules import ffmpeg_runner
 from ..modules.subtitle_generator import _format_ass_time
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from .score_graph_widget import ScoreGraphWidget
-from .subtitle_editor_dialog import SubtitleEditorWidget
+from .subtitle_editor_dialog import (
+    RESOLVE_EXPORT_BUTTON_TEXT,
+    SubtitleEditorWidget,
+    run_resolve_export,
+)
 
 _logger = get_logger(__name__)
 
@@ -148,9 +153,19 @@ class ArchiveResultWindow(QDialog):
         outer.setStretchFactor(1, 3)
         root.addWidget(outer)
 
-        # 完了 / キャンセル
+        # DaVinci Resolve ファイル出力 / 完了 / キャンセル
         button_row = QHBoxLayout()
         button_row.addStretch(1)
+        # 出力ボタン (元 VOD が特定でき、設定で有効なときだけ追加する / resolve20 §5.4)
+        self.export_button = None
+        if self._can_export():
+            self.export_button = QPushButton(RESOLVE_EXPORT_BUTTON_TEXT)
+            self.export_button.setToolTip(
+                "使用チェックしたクリップのカット編集点と字幕を DaVinci Resolve 用"
+                "プロジェクトファイル(.fcpxml) として出力します。"
+            )
+            self.export_button.clicked.connect(self._on_export_resolve)
+            button_row.addWidget(self.export_button)
         self.decide_button = QPushButton("完了（切り抜き＋字幕焼き込み）")
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
@@ -243,6 +258,40 @@ class ArchiveResultWindow(QDialog):
             })
         return results
 
+    # Resolve 出力ボタンを出せるか (元 VOD の有無 + 設定の有効/無効 / resolve20 §5.4)
+    def _can_export(self):
+        return bool(self._source_path) and resolve_export.is_enabled(self._settings)
+
+    # Resolve 出力用のクリップ情報を組み立てる (使用チェックのみ・TOP 順)
+    # keep_segments はクリップ内の残す区間 (無音カット OFF/未実行なら None → 区間全長)。
+    def _export_entries(self):
+        self._save_current()
+        entries = []
+        for row, p in enumerate(self._prepared):
+            list_item = self.clip_list.item(row)
+            if list_item is not None and list_item.checkState() != Qt.Checked:
+                continue
+            state = self._states[row]
+            entries.append({
+                "index": p.get("index"),
+                "start": p.get("start", 0.0),
+                "end": p.get("end", 0.0),
+                "keep_segments": p.get("keep_segments"),
+                "items": state["items"],
+                "theme": state["theme"],
+                "eff_cfg": p.get("eff_cfg"),
+            })
+        return entries
+
+    # 「DaVinci Resolve ファイル出力」押下: 現在の編集内容で FCPXML を書き出す
+    def _on_export_resolve(self):
+        entries = self._export_entries()
+        run_resolve_export(
+            self,
+            lambda confirm: resolve_export.export_archive_result(
+                self._source_path, entries, self._settings, overwrite_confirm=confirm),
+        )
+
     # 後始末: プレビュー一時ディレクトリを削除する
     def _cleanup(self):
         try:
@@ -258,6 +307,9 @@ class ArchiveResultWindow(QDialog):
     def done(self, code):
         # ダイアログ終了時 (完了/キャンセル/×) にプレビュー一時領域を掃除する
         self._cleanup()
+        # 保持していた編集点を破棄する (次回実行へ持ち越さない / resolve20 §5.3 寿命管理)
+        for p in self._prepared:
+            p.pop("keep_segments", None)
         super().done(code)
 
 

@@ -39,6 +39,13 @@ class PipelineCancelled(AutoEditError):
     pass
 
 
+# DaVinci Resolve プロジェクトファイル出力エラー (resolve20 §7)
+# ソース未特定・書き出し失敗など、エクスポート固有の失敗を表す。
+# 読み取り専用の追加機能のため、この例外はパイプライン本体へ影響させない。
+class ExportError(AutoEditError):
+    pass
+
+
 # Twitch ログイン/取得エラー (flow17 R3 / resolve17 §4.3)
 # 認証失敗・所有判定不成立・twitch-dl 実行失敗などを表す。
 class TwitchError(AutoEditError):

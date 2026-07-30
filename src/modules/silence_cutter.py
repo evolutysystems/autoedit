@@ -443,6 +443,12 @@ def run(context):
     if not keep_segments:
         raise InputError("有音区間が抽出できませんでした")
 
+    # 算出した編集点 (元入力相対) を context へ保持する (Resolve 出力用 / resolve20 §5.3)。
+    # カット処理そのものには影響しない追加のみの保持。context 実装差に備えて存在確認する。
+    setter = getattr(context, "set_keep_segments", None)
+    if callable(setter):
+        setter(keep_segments)
+
     if extract_mode == "seek":
         # 案A: 入力シーク方式 (推奨)。trim による全長再デコードを回避する。
         cut_and_concat_seek(

@@ -1,0 +1,82 @@
+2026-07-30 12:43:43,893 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_i0zkdj19\sample.mp4
+2026-07-30 12:43:43,893 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-07-30 12:43:43,906 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_97z_4zdc\sample.mp4
+2026-07-30 12:43:43,915 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_et3xa8if\sample.mp4
+2026-07-30 12:43:43,925 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wleuykey\sample.mp4
+2026-07-30 12:43:43,925 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-07-30 12:43:43,934 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6xz5beds\sample.mp4
+2026-07-30 12:43:43,943 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_pthn1uau\sample.mp4
+2026-07-30 12:43:43,953 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_l1_cut1w\sample.mp4
+2026-07-30 12:43:43,962 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0kvlfeun\sample.mp4
+2026-07-30 12:43:43,970 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_odo7ogjj\sample.mp4
+2026-07-30 12:43:43,979 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_qa9ehoe7\sample.mp4
+2026-07-30 12:43:43,989 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_sjn2e07d\sample.mp4
+2026-07-30 12:43:43,998 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_q0wzas8l\sample.mp4
+2026-07-30 12:43:43,999 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-07-30 12:43:44,008 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s26wj53q\sample.mp4
+2026-07-30 12:43:44,009 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s26wj53q\out.fcpxml (クリップ 1 件 / 字幕・テーマ 1 件 / 1920x1080 60fps)
+2026-07-30 12:43:44,010 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s26wj53q\out.fcpxml (タイムライン尺 5.00s)
+2026-07-30 12:43:44,010 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s26wj53q\out.fcpxml
+2026-07-30 12:50:24,911 [INFO] src.gui.archive_tab: 無音カット: OFF (アーカイブタブの選択)
+2026-07-30 12:54:55,403 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-07-30 12:54:55,486 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-07-30 12:54:55,487 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-07-30 12:54:55,487 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\claude\D--develop-autoedit\ce292fb6-48c1-4efb-a0ae-d6811ca46b3b\scratchpad\archive_archive_f1_combined.fcpxml (クリップ 4 件 / 字幕・テーマ 5 件 / 1920x1080 60fps)
+2026-07-30 12:54:55,488 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\claude\D--develop-autoedit\ce292fb6-48c1-4efb-a0ae-d6811ca46b3b\scratchpad\archive_archive_f1_combined.fcpxml (タイムライン尺 41.50s)
+2026-07-30 12:54:55,590 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-07-30 12:54:55,666 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\claude\D--develop-autoedit\ce292fb6-48c1-4efb-a0ae-d6811ca46b3b\scratchpad\clip_archive_f1_combined.fcpxml (クリップ 2 件 / 字幕・テーマ 1 件 / 1920x1080 60fps)
+2026-07-30 12:54:55,668 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\claude\D--develop-autoedit\ce292fb6-48c1-4efb-a0ae-d6811ca46b3b\scratchpad\clip_archive_f1_combined.fcpxml (タイムライン尺 15.00s)
+2026-07-30 12:56:08,230 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_rj7p4w3e\sample.mp4
+2026-07-30 12:56:08,230 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-07-30 12:56:08,239 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_y9u7ph3r\sample.mp4
+2026-07-30 12:56:08,248 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_kzfbi4_8\sample.mp4
+2026-07-30 12:56:08,257 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_pf6kwe09\sample.mp4
+2026-07-30 12:56:08,257 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-07-30 12:56:08,265 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_3medwoxe\sample.mp4
+2026-07-30 12:56:08,272 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_rl5sadyd\sample.mp4
+2026-07-30 12:56:08,281 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksno7bqm\sample.mp4
+2026-07-30 12:56:08,290 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_c3khva9c\sample.mp4
+2026-07-30 12:56:08,299 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_tr95xqhm\sample.mp4
+2026-07-30 12:56:08,308 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_cdzzn5nz\sample.mp4
+2026-07-30 12:56:08,316 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_y5td3qw5\sample.mp4
+2026-07-30 12:56:08,323 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_t02_nnak\sample.mp4
+2026-07-30 12:56:08,323 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-07-30 12:56:08,332 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uok0kz3c\sample.mp4
+2026-07-30 12:56:08,332 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uok0kz3c\out.fcpxml (クリップ 1 件 / 字幕・テーマ 1 件 / 1920x1080 60fps)
+2026-07-30 12:56:08,333 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uok0kz3c\out.fcpxml (タイムライン尺 5.00s)
+2026-07-30 12:56:08,333 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uok0kz3c\out.fcpxml
+2026-07-30 16:05:41,086 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-07-30 16:05:41,179 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_f56nra6l\sample.mp4
+2026-07-30 16:05:41,226 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2rlgt0dz\sample.mp4
+2026-07-30 16:05:41,261 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zn546hu9\sample.mp4
+2026-07-30 16:05:41,311 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ntgw7qfo\sample.mp4
+2026-07-30 16:05:41,311 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-07-30 16:05:41,313 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-07-30 16:05:41,348 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_rtvoolvk\sample.mp4
+2026-07-30 16:05:41,378 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_evlamxlt\sample.mp4
+2026-07-30 16:05:41,409 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_cawh1qnt\sample.mp4
+2026-07-30 16:05:41,436 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_cawh1qnt\sample.mp4
+2026-07-30 16:05:41,465 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lsan3s21\sample.mp4
+2026-07-30 16:05:41,465 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-07-30 16:05:41,495 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2rm3ute7\sample.mp4
+2026-07-30 16:05:41,599 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_sk17ix6z\sample.mp4
+2026-07-30 16:05:41,699 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0yfmsb_o\sample.mp4
+2026-07-30 16:05:41,750 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fkk65s5w\sample.mp4
+2026-07-30 16:05:41,780 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n5g38t89\sample.mp4
+2026-07-30 16:05:41,822 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_oilg97ss\sample.mp4
+2026-07-30 16:05:41,883 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_q5ge0ftk\sample.mp4
+2026-07-30 16:05:41,947 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_m5s1g7hq\sample.mp4
+2026-07-30 16:05:42,008 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_58_jm8ui\sample.mp4
+2026-07-30 16:05:42,008 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-07-30 16:05:42,045 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s7wkom40\sample.mp4
+2026-07-30 16:05:42,047 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s7wkom40\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-07-30 16:05:42,049 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-07-30 16:05:42,049 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s7wkom40\out2.fcpxml (タイムライン尺 5.00s)
+2026-07-30 16:05:42,131 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7rnddvy_\sample.mp4
+2026-07-30 16:05:42,132 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7rnddvy_\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-07-30 16:05:42,145 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7rnddvy_\out3.fcpxml (タイムライン尺 5.00s)
+2026-07-30 16:05:42,186 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\sample.mp4
+2026-07-30 16:05:42,188 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-07-30 16:05:42,203 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\out.srt (1 件)
+2026-07-30 16:05:42,204 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\out.srt (タイムライン尺 5.00s)
+2026-07-30 16:05:42,231 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6qwfom2z\out.fcpxml

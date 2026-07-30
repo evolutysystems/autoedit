@@ -317,6 +317,31 @@ DEFAULT_SETTINGS = {
             "mute_intro": False,        # イントロ 1.5 秒の音声を無音化するか
         },
     },
+    # DaVinci Resolve プロジェクトファイル出力 (resolve20 §6)
+    # 字幕一覧画面 (クリップ用) と結果画面 (アーカイブ用) の出力ボタンから使用する。
+    # UI には項目を出さず setting.json で管理する (追加のみ・既存キーは不変)。
+    "export": {
+        "resolve": {
+            "enabled": True,               # 出力ボタンの表示 (false でボタン非表示)
+            "format": "fcpxml",            # "fcpxml" のみ実装 ("edl_srt"/"otio" は将来拡張)
+            "fcpxml_version": "1.9",       # 生成する FCPXML のスキーマ版
+            "event_name": "Stretheus",     # FCPXML の event 名
+            "title_effect_uid": "",        # Text+ 用 effect UID (空= Basic Title 相当)
+            "clip_edit_points": "context",  # クリップ用の編集点取得 ("context"=保持値)
+            "include_intro_card": True,    # テーマ/タグ文字を出力に含めるか
+            "clip_prefix": "clip",         # クリップ用出力の接頭辞 (空文字で接頭辞なし)
+            "title": {                     # 位置変換の係数 (ハードコード回避)
+                "coord_space": "normalized",  # "normalized" | "pixel"
+                "origin": "center",           # Resolve 座標の原点
+            },
+            "subtitle": {                  # 字幕の出力方式 (resolve21 §6)
+                "mode": "caption",         # "caption"=字幕トラック / "title"=Text+ / "both"
+                "caption_format": "ITT",   # caption の書式 ("ITT" のみ実装)
+                "language": "ja",          # caption ロールの言語コード
+                "srt_sidecar": True,       # SRT サイドカーを併せて出力する
+            },
+        },
+    },
 }
 
 # スタイル定数
