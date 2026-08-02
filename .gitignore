@@ -8,3 +8,6 @@ src/ffmpeg/
 
 # Installer packages
 *.pkg
+
+# Twitch 取得物・認証トークン等の作業データ (巨大 VOD と機微情報のためリポジトリに含めない)
+src/settings/archive_work/
