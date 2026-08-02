@@ -18,6 +18,7 @@ from ..modules import (
     output_profile,
     silence_cutter,
     subtitle_generator,
+    volume_analyzer,
 )
 from ..modules.subtitle_generator import _format_ass_time, _hex_to_ass_color
 from ..pipeline.pipeline_context import PipelineContext
@@ -284,6 +285,37 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
 # prepare フェーズ (R2 flow17): 全クリップを切り出し→無音カット→文字起こし
 # ------------------------------------------------------------------
 
+# 音量解析でクリップごとのカット閾値を確定する (pipeline_runner._apply_volume_analysis の
+# ダイアログ無し版)。測定した最低dBをそのまま last_cut_db へ採用し、確認ダイアログは出さない。
+# clip_settings は deepcopy のため setting.json の保存値は変更しない (当該実行のみ有効)。
+# saved_db: 元設定の保存済み閾値。解析失敗/算出不能時はこの値へ戻して無音カットへ進む
+# (前クリップの測定値を引きずらないため毎回リセットする)。
+def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index):
+    # 無音カット無効時は閾値確認自体が不要のためスキップ (クリップ用と同一ルール)
+    if not clip_settings.get("silence_cut", {}).get("enabled", True):
+        return
+    va_cfg = clip_settings.setdefault("volume_analysis", {})
+    # 機能無効時は保存済み閾値のまま (クリップ用と同一ルール)
+    if not va_cfg.get("enabled", True):
+        return
+    if saved_db is not None:
+        va_cfg["last_cut_db"] = int(saved_db)
+    try:
+        analysis = volume_analyzer.analyze_min_speech_db(prepared_path, clip_settings)
+    except Exception:  # noqa: BLE001 (解析失敗でクリップを失わない → 保存値で継続)
+        _logger.exception("clip%d: 音量解析に失敗 → 保存済み閾値で継続", index)
+        return
+    measured = analysis.get("min_db")
+    if measured is None:
+        _logger.info("clip%d: 最低dBを算出できず → 保存済み閾値 %s dB で継続", index, saved_db)
+        return
+    va_cfg["last_cut_db"] = int(measured)
+    _logger.info(
+        "clip%d: 音量解析によりカット閾値 %d dB を採用 (測定 %d/%d 区間・ダイアログ無し)",
+        index, measured, analysis.get("measured_count", 0), analysis.get("region_count", 0),
+    )
+
+
 # 無音カットを最小 PipelineContext で実行する (extract_mode/fade/batch 等の既存挙動を流用)。
 # silence_cut.enabled=false のときは元パスをそのまま返す。
 # 戻り値: (無音カット後パス, クリップ内の残す区間 or None)
@@ -328,6 +360,8 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
     total = len(used)
     subtitle_cfg = clip_settings.get("subtitle", {})
     vertical_cfg = settings.get("vertical", {})
+    # 元設定の保存済みカット閾値 (クリップごとの音量解析が失敗した場合の戻し先)
+    saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
     for pos, clip in enumerate(used, 1):
         if progress_cb:
             progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音声正規化）")
@@ -340,6 +374,10 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
         # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
         normalized = loudness_normalizer.normalize_file(
             raw, os.path.join(clip_dir, "normalized.mp4"), settings)
+        # 音量解析: 正規化後のクリップからカット閾値を確定する (ダイアログ無し)
+        if progress_cb:
+            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音量解析）")
+        _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
         if progress_cb:
             progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（文字起こし）")
         prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
