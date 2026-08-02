@@ -2,15 +2,12 @@
 # 全クリップを先に文字起こしした後、1つの画面で一括表示・編集する。
 #   上   = 採点グラフ (ScoreGraphWidget)
 #   下左 = クリップ選択リスト + 字幕編集 (R1 の SubtitleEditorWidget を再利用)
-#   下右 = プレビュー (選択クリップ先頭フレームの静止画。ffmpeg 抽出→QLabel)
+#   下右 = プレビュー (SubtitlePreviewWidget / resolve23。字幕適用済み区間の再生。
+#          対象は prepared_path=無音カット後クリップで、字幕 items と時間軸が一致する)
 # 「完了」で各クリップの編集済み字幕・テーマ・使用可否を返し、まとめて焼き込みへ進む。
-import os
-import subprocess
-import tempfile
 import threading
 
 from PySide6.QtCore import Qt, QObject, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -24,21 +21,17 @@ from PySide6.QtWidgets import (
 )
 
 from ..export import resolve_export
-from ..modules import ffmpeg_runner
 from ..modules.subtitle_generator import _format_ass_time
 from ..utils.logger import get_logger
-from ..utils.proc import no_window_creationflags
 from .score_graph_widget import ScoreGraphWidget
 from .subtitle_editor_dialog import (
     RESOLVE_EXPORT_BUTTON_TEXT,
     SubtitleEditorWidget,
     run_resolve_export,
 )
+from .subtitle_preview_widget import SubtitlePreviewWidget
 
 _logger = get_logger(__name__)
-
-# プレビュー静止画の表示幅 (高さはアスペクト維持)
-_PREVIEW_WIDTH = 480
 
 
 # 「H:MM:SS.cc → H:MM:SS.cc」形式の区間表示
@@ -65,7 +58,6 @@ class ArchiveResultWindow(QDialog):
         self._curve = curve or []
         self._source_path = source_path
         self._settings = settings or {}
-        self._ffmpeg_cfg = self._settings.get("ffmpeg", {})
         self._default_font = default_font
         self._default_size = default_size
         self._font_families = font_families
@@ -77,9 +69,6 @@ class ArchiveResultWindow(QDialog):
             for p in self._prepared
         ]
         self._current = -1
-        # プレビュー抽出画像のキャッシュと一時ディレクトリ
-        self._preview_cache = {}
-        self._preview_dir = tempfile.mkdtemp(prefix="archive_preview_")
 
         self._build_ui()
         if self._prepared:
@@ -128,16 +117,14 @@ class ArchiveResultWindow(QDialog):
         )
         left_layout.addWidget(self.editor)
 
-        # 右: プレビュー (静止画)
+        # 右: プレビュー (字幕適用済み区間の再生 / resolve23)
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(QLabel("プレビュー (選択クリップ先頭)"))
-        self.preview_label = QLabel("プレビューを読み込み中…")
-        self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setMinimumSize(_PREVIEW_WIDTH, int(_PREVIEW_WIDTH * 9 / 16))
-        self.preview_label.setStyleSheet("background:#111; color:#aaa;")
-        right_layout.addWidget(self.preview_label)
+        self.preview = SubtitlePreviewWidget(self._settings, parent=right)
+        # 字幕編集テーブルと連動 (items 取得・行選択シーク)
+        self.preview.bind_editor(self.editor)
+        right_layout.addWidget(self.preview)
         right_layout.addStretch(1)
 
         bottom.addWidget(left)
@@ -190,56 +177,16 @@ class ArchiveResultWindow(QDialog):
             state = self._states[row]
             self.editor.set_items(state["items"])
             self.editor.set_theme(state["theme"])
-            self._update_preview(row)
+            # プレビュー対象を無音カット後クリップへ切り替える (字幕と時間軸が一致 / resolve23)
+            p = self._prepared[row]
+            self.preview.set_source(
+                p.get("prepared_path", ""), p.get("eff_cfg") or {}, p.get("profile"))
 
     # 現在クリップの編集結果 (字幕・テーマ) を states へ退避する
     def _save_current(self):
         if 0 <= self._current < len(self._states):
             self._states[self._current]["items"] = self.editor.result_items()
             self._states[self._current]["theme"] = self.editor.theme_value()
-
-    # 選択クリップの先頭フレームを ffmpeg で抽出しプレビュー表示する (静止画)
-    def _update_preview(self, row):
-        if not (0 <= row < len(self._prepared)):
-            return
-        clip = self._prepared[row]
-        idx = clip.get("index")
-        path = self._preview_cache.get(idx)
-        if path is None:
-            path = self._extract_preview(clip)
-            self._preview_cache[idx] = path or ""
-        if path and os.path.exists(path):
-            pixmap = QPixmap(path)
-            if not pixmap.isNull():
-                self.preview_label.setPixmap(
-                    pixmap.scaledToWidth(_PREVIEW_WIDTH, Qt.SmoothTransformation)
-                )
-                return
-        self.preview_label.setText("プレビューを表示できません")
-
-    # ffmpeg で先頭フレームを1枚抽出する (失敗時 None)
-    def _extract_preview(self, clip):
-        dest = os.path.join(self._preview_dir, f"preview_clip{clip.get('index')}.png")
-        ffmpeg = ffmpeg_runner.get_ffmpeg_exe(self._ffmpeg_cfg)
-        cmd = [
-            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", f"{float(clip.get('start', 0.0)):.3f}",
-            "-i", self._source_path,
-            "-frames:v", "1",
-            "-vf", f"scale={_PREVIEW_WIDTH}:-2",
-            dest,
-        ]
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                creationflags=no_window_creationflags(),
-            )
-            if result.returncode == 0 and os.path.exists(dest):
-                return dest
-            _logger.warning("プレビュー抽出失敗 (clip%s): %s", clip.get("index"), result.stderr)
-        except OSError as e:
-            _logger.warning("プレビュー抽出でエラー (clip%s): %s", clip.get("index"), e)
-        return None
 
     # 完了時: 全クリップの編集結果を返す
     # 戻り値: [{"index","items","theme","use"}]  (use=False は焼き込みで除外)
@@ -292,21 +239,10 @@ class ArchiveResultWindow(QDialog):
                 self._source_path, entries, self._settings, overwrite_confirm=confirm),
         )
 
-    # 後始末: プレビュー一時ディレクトリを削除する
-    def _cleanup(self):
-        try:
-            for name in os.listdir(self._preview_dir):
-                try:
-                    os.remove(os.path.join(self._preview_dir, name))
-                except OSError:
-                    pass
-            os.rmdir(self._preview_dir)
-        except OSError:
-            pass
-
     def done(self, code):
-        # ダイアログ終了時 (完了/キャンセル/×) にプレビュー一時領域を掃除する
-        self._cleanup()
+        # ダイアログ終了時 (完了/キャンセル/×) にプレビューの再生停止と一時領域掃除を行う。
+        # prepared_path は焼き込みで引き続き使うため削除しない (削除対象はプレビュー一時のみ)。
+        self.preview.shutdown()
         # 保持していた編集点を破棄する (次回実行へ持ち越さない / resolve20 §5.3 寿命管理)
         for p in self._prepared:
             p.pop("keep_segments", None)

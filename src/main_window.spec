@@ -34,6 +34,10 @@ a = Analysis(
         # アーカイブ結果画面の採点グラフ (flow17 R2 / resolve17 §4.7.1)。
         # Qt アドオンのため明示同梱する。CUDA/torch は従来どおり非同梱 (CPU-only 維持)。
         'PySide6.QtCharts',
+        # 字幕編集画面の動画プレビュー (resolve23 §5.1)。
+        # 未同梱環境では静止画フォールバックで動作するが、再生のため明示同梱する。
+        'PySide6.QtMultimedia',
+        'PySide6.QtMultimediaWidgets',
         # twitch-dl を本体exeの multi-call で動かすため CLI とその依存を明示同梱する (flow17 R3)。
         'twitchdl.cli',
     ] + collect_submodules('budoux')     # BudouX 遅延 import 対策 (request11)

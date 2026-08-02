@@ -214,6 +214,17 @@ DEFAULT_SETTINGS = {
         "two_pass": True,         # true=2パス測定+線形適用 (精度優先) / false=1パス dynamic
         "audio_bitrate": "192k",  # 適用パスの音声ビットレート
     },
+    # 字幕編集画面の動画プレビュー (resolve23) — 選択行の時刻から segment_sec 秒を
+    # 字幕焼き込み付きの低解像度 mp4 として生成し QtMultimedia で再生する。
+    # UI には項目を出さず setting.json で管理する。enabled=false で従来 UI のまま。
+    "preview": {
+        "enabled": True,
+        "segment_sec": 20,      # 1回のプレビュー生成区間長 (秒)
+        "width": 640,           # プレビュー生成解像度 (幅 px。高さはアスペクト維持)
+        "preset": "ultrafast",  # プレビュー用 x264 preset (速度優先)
+        "crf": 28,              # プレビュー用品質 (大=軽い)
+        "audio_enabled": True,  # プレビュー音声の既定 (ミュートボタンで切替可)
+    },
     "ffmpeg": {
         # 同梱 FFmpeg を PATH 非依存で参照する相対パス (error 20260708)。
         # 非凍結(開発)実行では ffmpeg_runner._resolve_exe が PATH の ffmpeg.exe を解決する。

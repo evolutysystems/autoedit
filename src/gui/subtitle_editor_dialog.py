@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QSplitter,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..exceptions import AutoEditError
 from ..export import resolve_export
+from .subtitle_preview_widget import SubtitlePreviewWidget, is_preview_enabled
 
 # 既存の ASS タイムスタンプ整形を再利用し、画面・ASS で表記を揃える (§8.3)
 from ..modules.subtitle_generator import _format_ass_time
@@ -66,6 +68,9 @@ _DEFAULT_ROLE = "streamer"
 # ウィンドウ既定サイズ
 _DIALOG_WIDTH = 720
 _DIALOG_HEIGHT = 520
+# プレビュー欄あり時の既定サイズ (resolve23 §5.3)
+_DIALOG_PREVIEW_WIDTH = 1120
+_DIALOG_PREVIEW_HEIGHT = 560
 
 # 改行挿入に使う修飾キー (Alt / Shift + Enter で改行)
 _NEWLINE_MODIFIERS = Qt.AltModifier | Qt.ShiftModifier
@@ -437,6 +442,12 @@ class SubtitleEditorWidget(QWidget):
             return ""
         return self.theme_edit.text().strip()
 
+    # 指定行の開始秒を返す (プレビューのシーク連動用 / resolve23)。範囲外は None。
+    def row_start(self, row):
+        if 0 <= row < len(self._items):
+            return float(self._items[row].get("start", 0.0))
+        return None
+
     # 指定行のフォント個別指定を返す (Blank は "" = デフォルト使用)
     def _font_at(self, row):
         combo = self._font_combos[row] if row < len(self._font_combos) else None
@@ -463,17 +474,22 @@ class SubtitleEditorWidget(QWidget):
 # export_context: DaVinci Resolve 出力の材料 (resolve20 §5.3)。
 #   {"source_path","keep_segments","settings","profile"}。既定 None = 出力ボタン非表示
 #   (既存呼び出しは無改修で従来どおり動作する)。
+# preview_context: 動画プレビューの材料 (resolve23 §5.3)。
+#   {"video_path","eff_cfg","profile","settings"}。既定 None = プレビュー欄非表示
+#   (video_path は items と時間軸が一致する無音カット後の中間動画)。
 class SubtitleEditorDialog(QDialog):
 
     def __init__(self, items, parent=None, default_font="", default_size=None,
                  font_families=None, show_theme_field=False, theme_placeholder="",
-                 theme_text="", export_context=None):
+                 theme_text="", export_context=None, preview_context=None):
         super().__init__(parent)
         self.setWindowTitle("字幕編集")
-        self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
 
         # Resolve 出力の材料 (元入力パス・編集点・設定)
         self._export_context = export_context or None
+        # 動画プレビューの材料 (resolve23。無効/未注入なら現行レイアウトのまま)
+        self._preview_context = preview_context or None
+        self.preview = None
 
         root = QVBoxLayout(self)
 
@@ -486,13 +502,40 @@ class SubtitleEditorDialog(QDialog):
         )
 
         # 説明ラベル (従来ダイアログの文言。「字幕決定」で焼き込みに進む旨)
-        root.addWidget(QLabel(
+        description = QLabel(
             "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
             "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
             "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
             f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self.editor._default_desc()})。"
-        ))
-        root.addWidget(self.editor)
+        )
+
+        if is_preview_enabled(self._preview_context):
+            # プレビューあり: 左=説明+テーブル / 右=プレビュー の横分割 (resolve23 §5.3)
+            self.resize(_DIALOG_PREVIEW_WIDTH, _DIALOG_PREVIEW_HEIGHT)
+            splitter = QSplitter(Qt.Horizontal)
+            left = QWidget()
+            left_layout = QVBoxLayout(left)
+            left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.addWidget(description)
+            left_layout.addWidget(self.editor)
+            splitter.addWidget(left)
+            self.preview = SubtitlePreviewWidget(
+                self._preview_context.get("settings") or {}, parent=self)
+            self.preview.bind_editor(self.editor)
+            self.preview.set_source(
+                self._preview_context.get("video_path", ""),
+                self._preview_context.get("eff_cfg") or {},
+                self._preview_context.get("profile"),
+            )
+            splitter.addWidget(self.preview)
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 2)
+            root.addWidget(splitter)
+        else:
+            # プレビューなし: 現行と完全同一のレイアウト・サイズ (完全後方互換)
+            self.resize(_DIALOG_WIDTH, _DIALOG_HEIGHT)
+            root.addWidget(description)
+            root.addWidget(self.editor)
 
         # DaVinci Resolve ファイル出力 / 決定 / キャンセル
         button_row = QHBoxLayout()
@@ -529,6 +572,13 @@ class SubtitleEditorDialog(QDialog):
             lambda confirm: resolve_export.export_clip_review(
                 self._export_context, self.result_items(), overwrite_confirm=confirm),
         )
+
+    # ダイアログ終了時 (決定/キャンセル/×) にプレビューの再生停止と一時領域掃除を行う
+    # (resolve23 §5.3。以降パイプラインが再開し中間動画が削除されても参照しない)
+    def done(self, code):
+        if self.preview is not None:
+            self.preview.shutdown()
+        super().done(code)
 
     # 後方互換: 既存コードが参照し得る theme_edit をエディタへ委譲する
     @property

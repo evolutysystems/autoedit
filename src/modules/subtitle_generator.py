@@ -830,6 +830,22 @@ def _attach_export_context(review_cb, context):
     })
 
 
+# 編集画面ブリッジへ動画プレビュー用の付随情報を渡す (resolve23 §5.3)
+# レビュー時点の動画 (無音カット後の中間動画) は items と時間軸が一致するため、
+# 字幕一覧画面の「字幕適用プレビュー」の再生素材として渡す。焼き込みには影響しない。
+# subtitle_cfg は build_effective_subtitle_cfg 適用済みの実効字幕設定を渡すこと。
+def _attach_preview_context(review_cb, context, subtitle_cfg):
+    setter = getattr(review_cb, "set_preview_context", None)
+    if not callable(setter):
+        return
+    setter({
+        "video_path": context.current_video_path(),
+        "eff_cfg": subtitle_cfg,
+        "profile": getattr(context, "output_profile", None),
+        "settings": context.settings,
+    })
+
+
 # 字幕編集画面 (レビュー) を適用する (resolve3 §6.2)
 # context にレビューコールバックが注入されていれば呼び出し、編集結果で置き換える。
 # 注入が無い (CLI/ヘッドレス) 場合は全件使用としてそのまま返す。
@@ -856,6 +872,8 @@ def _review_timeline(context, timeline, subtitle_cfg):
     # Resolve 出力 (resolve20 §5.3) 用の付随情報を編集画面ブリッジへ渡す。
     # ブリッジが対応していない実行経路 (CLI/テスト) では何もしない。
     _attach_export_context(review_cb, context)
+    # 動画プレビュー (resolve23) 用の付随情報も同様に渡す (未対応経路では何もしない)。
+    _attach_preview_context(review_cb, context, subtitle_cfg)
 
     edited = review_cb(items)  # 「字幕決定」まで待機し編集結果を返す
 

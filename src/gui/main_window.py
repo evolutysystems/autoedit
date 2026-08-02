@@ -123,6 +123,9 @@ class SubtitleReviewBridge(QObject):
         # Resolve 出力用の付随情報 (元入力パス・編集点・設定 / resolve20 §5.3)。
         # subtitle_generator が set_export_context で注入し、ダイアログ終了時に破棄する。
         self._export_context = None
+        # 動画プレビュー用の付随情報 (無音カット後動画・実効字幕設定 / resolve23 §5.3)。
+        # subtitle_generator が set_preview_context で注入し、ダイアログ終了時に破棄する。
+        self._preview_context = None
         # ワーカースレッドを待機させるためのイベントと結果共有領域
         self._event = threading.Event()
         self._result = None
@@ -144,6 +147,10 @@ class SubtitleReviewBridge(QObject):
     def set_export_context(self, payload):
         self._export_context = payload
 
+    # 動画プレビュー用の付随情報を受け取る (subtitle_generator._attach_preview_context から)
+    def set_preview_context(self, payload):
+        self._preview_context = payload
+
     # メインスレッドで実行されるスロット: ダイアログを開いて結果を共有領域へ格納
     def _on_review_requested(self, items):
         try:
@@ -157,6 +164,8 @@ class SubtitleReviewBridge(QObject):
                 theme_placeholder=self._theme_placeholder,
                 # DaVinci Resolve 出力の材料 (未注入なら出力ボタン非表示 / resolve20 §5.3)
                 export_context=self._export_context,
+                # 動画プレビューの材料 (未注入ならプレビュー欄非表示 / resolve23 §5.3)
+                preview_context=self._preview_context,
             )
             if dialog.exec() == SubtitleEditorDialog.Accepted:
                 self._result = dialog.result_items()
@@ -169,6 +178,8 @@ class SubtitleReviewBridge(QObject):
         finally:
             # ダイアログ終了時に編集点・元パスを破棄する (resolve20 §5.3 寿命管理)
             self._export_context = None
+            # プレビュー材料も同じ寿命で破棄する (中間動画パスを持ち越さない / resolve23)
+            self._preview_context = None
             # 例外有無に関わらずワーカーを再開させる (デッドロック防止)
             self._event.set()
 
