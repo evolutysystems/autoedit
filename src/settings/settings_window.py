@@ -204,6 +204,16 @@ DEFAULT_SETTINGS = {
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -28,
     },
+    # ラウドネス正規化 (resolve22) — YouTube 向けに音声レベルを揃える先頭工程。
+    # UI には項目を出さず setting.json で管理する (§10-6)。
+    "loudness": {
+        "enabled": True,          # 正規化 ON/OFF (false で従来挙動)
+        "target_i": -14.0,        # Integrated 目標 (LUFS) = YouTube 推奨
+        "target_tp": -1.0,        # True Peak 目標 (dBTP)
+        "target_lra": 11.0,       # Loudness Range 目標 (LU)
+        "two_pass": True,         # true=2パス測定+線形適用 (精度優先) / false=1パス dynamic
+        "audio_bitrate": "192k",  # 適用パスの音声ビットレート
+    },
     "ffmpeg": {
         # 同梱 FFmpeg を PATH 非依存で参照する相対パス (error 20260708)。
         # 非凍結(開発)実行では ffmpeg_runner._resolve_exe が PATH の ffmpeg.exe を解決する。

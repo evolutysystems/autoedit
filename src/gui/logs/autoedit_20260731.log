@@ -1,0 +1,126 @@
+2026-07-31 17:20:21,138 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-07-31 17:20:33,746 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-07-31 17:20:37,266 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-07-31 17:20:50,878 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-07-31 17:20:51,378 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-07-31 17:24:10,970 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2830249620.mp4
+2026-07-31 17:24:10,976 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-07-31 17:24:18,093 [INFO] src.archive.twitch_source: コメント取得完了: D:\develop\autoedit\src\settings\archive_work\chat_2830249620.json
+2026-07-31 17:24:18,129 [INFO] src.archive.comment_source: チャット読み込み: 301件 (D:\develop\autoedit\src\settings\archive_work\chat_2830249620.json)
+2026-07-31 17:24:18,145 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2830249620.mp4 (窓180s/スライド45s, コメント301件)
+2026-07-31 18:11:22,339 [INFO] src.archive.pipeline: コメント集計: 301件 / 平均2.44件/分
+2026-07-31 18:11:22,342 [INFO] src.archive.pipeline: 採点完了: 窓162件 → TOP9抽出
+2026-07-31 18:11:22,342 [INFO] src.archive.pipeline:   clip1: 1620.0-1800.0 点=59.5 (感情100.0/コメント10.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip2: 1980.0-2340.0 点=68.5 (感情100.0/コメント30.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip3: 2385.0-2565.0 点=59.5 (感情100.0/コメント10.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip4: 2745.0-2925.0 点=53.0 (感情86.6/コメント12.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip5: 3735.0-3915.0 点=53.4 (感情87.3/コメント12.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip6: 4455.0-4635.0 点=62.6 (感情99.9/コメント17.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip7: 4680.0-4860.0 点=66.2 (感情95.8/コメント30.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip8: 6480.0-6660.0 点=50.1 (感情87.1/コメント5.0)
+2026-07-31 18:11:22,343 [INFO] src.archive.pipeline:   clip9: 6750.0-6930.0 点=52.5 (感情91.3/コメント5.0)
+2026-07-31 18:11:28,474 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.4 LUFS / TP=-1.4 dBTP / LRA=17.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.3 dB)
+2026-07-31 18:11:37,017 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip1\normalized.mp4
+2026-07-31 18:11:37,017 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:12:08,686 [INFO] src.modules.silence_cutter: 検出された無音区間: 36 件
+2026-07-31 18:14:26,826 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip1\silence_cut.mp4
+2026-07-31 18:14:26,904 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:15:31,421 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:15:31,421 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:15:38,779 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:18:44,664 [INFO] src.modules.subtitle_generator: 音声認識完了 (46 セグメント)
+2026-07-31 18:18:44,778 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 46 件)
+2026-07-31 18:18:54,981 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.1 LUFS / TP=0.0 dBTP / LRA=13.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.9 dB)
+2026-07-31 18:19:12,009 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip2\normalized.mp4
+2026-07-31 18:19:12,011 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:20:20,544 [INFO] src.modules.silence_cutter: 検出された無音区間: 85 件
+2026-07-31 18:26:30,416 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip2\silence_cut.mp4
+2026-07-31 18:26:30,487 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:26:30,489 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:26:30,489 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:26:37,429 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:32:09,462 [INFO] src.modules.subtitle_generator: 音声認識完了 (91 セグメント)
+2026-07-31 18:32:09,602 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 91 件)
+2026-07-31 18:32:14,381 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-21.7 LUFS / TP=0.4 dBTP / LRA=14.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.6 dB)
+2026-07-31 18:32:22,226 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip3\normalized.mp4
+2026-07-31 18:32:22,226 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:32:57,675 [INFO] src.modules.silence_cutter: 検出された無音区間: 47 件
+2026-07-31 18:35:56,305 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip3\silence_cut.mp4
+2026-07-31 18:35:56,385 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:35:56,385 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:35:56,385 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:36:02,974 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:38:39,359 [INFO] src.modules.subtitle_generator: 音声認識完了 (57 セグメント)
+2026-07-31 18:38:39,475 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 57 件)
+2026-07-31 18:38:44,195 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.9 LUFS / TP=-3.6 dBTP / LRA=12.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.2 dB)
+2026-07-31 18:38:52,376 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip4\normalized.mp4
+2026-07-31 18:38:52,376 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:39:27,885 [INFO] src.modules.silence_cutter: 検出された無音区間: 43 件
+2026-07-31 18:42:23,246 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip4\silence_cut.mp4
+2026-07-31 18:42:23,320 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:42:23,320 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:42:23,320 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:42:30,111 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:45:24,055 [INFO] src.modules.subtitle_generator: 音声認識完了 (41 セグメント)
+2026-07-31 18:45:24,185 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 41 件)
+2026-07-31 18:45:29,222 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-21.8 LUFS / TP=0.1 dBTP / LRA=14.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-07-31 18:45:36,852 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip5\normalized.mp4
+2026-07-31 18:45:36,854 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:46:11,210 [INFO] src.modules.silence_cutter: 検出された無音区間: 33 件
+2026-07-31 18:48:27,739 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip5\silence_cut.mp4
+2026-07-31 18:48:27,819 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:48:27,819 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:48:27,819 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:48:34,312 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:50:38,276 [INFO] src.modules.subtitle_generator: 音声認識完了 (39 セグメント)
+2026-07-31 18:50:38,406 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 39 件)
+2026-07-31 18:50:43,502 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.0 LUFS / TP=-0.1 dBTP / LRA=13.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.6 dB)
+2026-07-31 18:50:51,585 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip6\normalized.mp4
+2026-07-31 18:50:51,585 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:51:25,940 [INFO] src.modules.silence_cutter: 検出された無音区間: 44 件
+2026-07-31 18:54:11,830 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip6\silence_cut.mp4
+2026-07-31 18:54:11,914 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 18:54:11,914 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 18:54:11,914 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 18:54:18,484 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 18:57:01,434 [INFO] src.modules.subtitle_generator: 音声認識完了 (60 セグメント)
+2026-07-31 18:57:01,565 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 60 件)
+2026-07-31 18:57:06,783 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-19.6 LUFS / TP=0.1 dBTP / LRA=15.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.6 dB)
+2026-07-31 18:57:15,549 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip7\normalized.mp4
+2026-07-31 18:57:15,550 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 18:58:00,839 [INFO] src.modules.silence_cutter: 検出された無音区間: 39 件
+2026-07-31 19:00:49,158 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip7\silence_cut.mp4
+2026-07-31 19:00:49,235 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 19:00:49,235 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 19:00:49,235 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 19:00:56,001 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 19:03:21,775 [INFO] src.modules.subtitle_generator: 音声認識完了 (48 セグメント)
+2026-07-31 19:03:21,883 [INFO] src.archive.clip_writer: clip7 prepare 完了 (字幕 48 件)
+2026-07-31 19:03:26,986 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-26.4 LUFS / TP=-1.4 dBTP / LRA=10.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.1 dB)
+2026-07-31 19:03:35,060 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip8\normalized.mp4
+2026-07-31 19:03:35,061 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 19:04:10,328 [INFO] src.modules.silence_cutter: 検出された無音区間: 46 件
+2026-07-31 19:07:31,046 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip8\silence_cut.mp4
+2026-07-31 19:07:31,133 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 19:07:31,134 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 19:07:31,134 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 19:07:37,688 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 19:10:30,201 [INFO] src.modules.subtitle_generator: 音声認識完了 (41 セグメント)
+2026-07-31 19:10:30,346 [INFO] src.archive.clip_writer: clip8 prepare 完了 (字幕 41 件)
+2026-07-31 19:10:35,572 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-25.0 LUFS / TP=-4.1 dBTP / LRA=10.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.3 dB)
+2026-07-31 19:10:44,211 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip9\normalized.mp4
+2026-07-31 19:10:44,214 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-07-31 19:11:18,742 [INFO] src.modules.silence_cutter: 検出された無音区間: 47 件
+2026-07-31 19:15:05,073 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_wtgtx37a\clip9\silence_cut.mp4
+2026-07-31 19:15:05,146 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 19:15:05,146 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-07-31 19:15:05,146 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-07-31 19:15:11,761 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-07-31 19:18:25,446 [INFO] src.modules.subtitle_generator: 音声認識完了 (55 セグメント)
+2026-07-31 19:18:25,581 [INFO] src.archive.clip_writer: clip9 prepare 完了 (字幕 55 件)
+2026-07-31 19:23:05,664 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-07-31 19:23:05,767 [INFO] src.export.resolve_export: Resolve 出力開始: D:/develop/autoedit/output\archive_vod_2830249620.fcpxml (クリップ 422 件 / 字幕 caption 478 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-07-31 19:23:05,826 [INFO] src.export.resolve_export: SRT サイドカー出力: D:/develop/autoedit/output\archive_vod_2830249620.srt (478 件)
+2026-07-31 19:23:05,826 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-07-31 19:23:05,826 [INFO] src.export.resolve_export: Resolve 出力完了: D:/develop/autoedit/output\archive_vod_2830249620.fcpxml / D:/develop/autoedit/output\archive_vod_2830249620.srt (タイムライン尺 811.55s)
+2026-07-31 22:03:59,755 [INFO] src.archive.clip_writer: 結果画面でキャンセル → 出力なし

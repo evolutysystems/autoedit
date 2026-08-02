@@ -183,6 +183,14 @@
             "mute_intro": false
         }
     },
+    "loudness": {
+        "enabled": true,
+        "target_i": -14.0,
+        "target_tp": -1.0,
+        "target_lra": 11.0,
+        "two_pass": true,
+        "audio_bitrate": "192k"
+    },
     "export": {
         "resolve": {
             "enabled": true,

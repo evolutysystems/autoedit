@@ -6,6 +6,7 @@ from ..exceptions import AutoEditError, InputError, PipelineCancelled
 from ..modules import (
     concat_processor,
     ffmpeg_runner,
+    loudness_normalizer,
     output_profile,
     output_writer,
     silence_cutter,
@@ -46,8 +47,14 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
     # 出力プロファイル(縦/横)を入力動画から1回だけ解決し、以降の全工程で共有する (request14)
     context.output_profile = output_profile.resolve_output_profile(input_path, settings)
     try:
-        # （新規）音量解析・カット閾値の確認 (無音カットの前) ── resolve7
-        context.progress_callback(0.0, "音量解析中…")
+        # ⓪ 音声解析・正規化 (YouTube 向けラウドネス正規化。最初の工程) ── resolve22
+        context.begin_step("音声解析・正規化")
+        loudness_normalizer.run(context)
+        context.end_step("音声解析・正規化")
+
+        # 音量解析・カット閾値の確認 (無音カットの前。正規化後の音声に対して実施) ── resolve7
+        context.progress_callback(
+            context.current_step / max(context.total_steps, 1), "音量解析中…")
         _apply_volume_analysis(context)
 
         # ① 無音カット
@@ -92,12 +99,12 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
 # コンテキストを準備する
 def _prepare_context(input_path, settings, progress_cb, subtitle_review_callback=None,
                      volume_analysis_callback=None):
-    # 進捗の総工程数は: 無音カット, テロップ, OP結合, ED結合 の 4
+    # 進捗の総工程数は: 音声解析・正規化, 無音カット, テロップ, OP結合, ED結合 の 5 (resolve22)
     return PipelineContext(
         input_path=input_path,
         settings=settings,
         progress_callback=progress_cb,
-        total_steps=4,
+        total_steps=5,
         subtitle_review_callback=subtitle_review_callback,
         volume_analysis_callback=volume_analysis_callback,
     )

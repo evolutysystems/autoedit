@@ -14,6 +14,7 @@ import tempfile
 from ..modules import (
     concat_processor,
     ffmpeg_runner,
+    loudness_normalizer,
     output_profile,
     silence_cutter,
     subtitle_generator,
@@ -329,13 +330,19 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
     vertical_cfg = settings.get("vertical", {})
     for pos, clip in enumerate(used, 1):
         if progress_cb:
-            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（文字起こし）")
+            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音声正規化）")
         # クリップ専用の作業サブフォルダ (無音カット出力名の衝突を防ぐ)
         clip_dir = os.path.join(workdir, f"clip{clip['index']}")
         os.makedirs(clip_dir, exist_ok=True)
         raw = os.path.join(clip_dir, "raw.mp4")
         _cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
-        prepared_path, keep_segments = _silence_cut(raw, clip_settings, clip_dir)
+        # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
+        # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
+        normalized = loudness_normalizer.normalize_file(
+            raw, os.path.join(clip_dir, "normalized.mp4"), settings)
+        if progress_cb:
+            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（文字起こし）")
+        prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
         profile = output_profile.resolve_output_profile(prepared_path, settings)
         eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
             subtitle_cfg, vertical_cfg, profile)
