@@ -377,6 +377,13 @@ def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False):
     return output_path
 
 
+# 複数の中間動画を 1 本へ連結する公開エントリ (ver3 renderer から再利用するための薄い委譲)
+# 連結時の既知対策 (+genpts / avoid_negative_ts / max_interleave_delta) を共有するため、
+# 新規に書き直さず _concat_demux をそのまま使う (resolve.md §2.5)。
+def concat_files(paths, output_path, ffmpeg_settings, reencode=False):
+    return _concat_demux(paths, output_path, ffmpeg_settings, reencode=reencode)
+
+
 # フィルタグラフを一時ファイルへ書き出しパスを返す
 # 出力先と同じディレクトリに置き、文字コードは UTF-8 で統一する
 def _write_filter_script(filter_complex, output_path):
@@ -469,6 +476,126 @@ def run(context):
 
     context.set_current_video_path(output_path)
     _logger.info("無音カット完了: %s", output_path)
+    return output_path
+
+
+# 編集点モードの公開エントリポイント (docs/request/ver3/resolve.md §7.2)
+# 無音区間を検出して「残す区間」を編集点として算出するだけで、実カットは一切行わない。
+# 閾値の決定ロジックは上の run() と完全に同一にしてあり、編集点の内容は
+# 従来の実カット結果と一致する (Timeline 経由でも同じ仕上がりになることの保証)。
+# 戻り値: keep_segments (元動画時間の [(start, end), ...]) と検出メタ情報の組
+def detect_edit_points(context):
+    settings = context.settings
+    silence_cfg = settings.get("silence_cut", {})
+    va_cfg = settings.get("volume_analysis", {})
+    ffmpeg_cfg = settings.get("ffmpeg", {})
+
+    input_path = context.current_video_path()
+    total_duration = ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg)
+
+    # 新方式(resolve7)と同一: 音量解析で確定した単一閾値を使う
+    noise_threshold_db = va_cfg.get("last_cut_db", -28)
+    min_silence_duration_sec = _coerce_float(
+        va_cfg.get("cut_min_silence_sec"), default=0.6)
+
+    if not silence_cfg.get("enabled", True):
+        # 無音カット OFF: 全長 1 区間を編集点とする (Timeline は成立させる / §7.2)
+        _logger.info("無音カット無効のため全長 1 区間を編集点とします")
+        keep_segments = [(0.0, total_duration)]
+        silence_ranges = []
+    else:
+        silence_ranges = detect_silence(
+            input_path, noise_threshold_db, min_silence_duration_sec, ffmpeg_cfg)
+        keep_segments = build_keep_segments(silence_ranges, total_duration)
+        if not keep_segments:
+            # 有音区間 0 件でも中断しない。Timeline 上で手編集して救済できるため (§10)
+            _logger.warning("有音区間が抽出できなかったため全長 1 区間として続行します")
+            keep_segments = [(0.0, total_duration)]
+
+    _logger.info(
+        "編集点検出: 無音 %d 件 / 残す区間 %d 件 (閾値=%sdB, 最小無音=%.2fs, 総尺=%.1fs)",
+        len(silence_ranges), len(keep_segments),
+        noise_threshold_db, min_silence_duration_sec, total_duration,
+    )
+
+    # 算出した編集点を context へ保持する (既存 API をそのまま使う / resolve20 §5.3)
+    setter = getattr(context, "set_keep_segments", None)
+    if callable(setter):
+        setter(keep_segments)
+
+    meta = {
+        "detector": "silencedetect",
+        "threshold_db": noise_threshold_db,
+        "min_silence_sec": min_silence_duration_sec,
+        "source_duration_sec": total_duration,
+    }
+    return keep_segments, meta
+
+
+# 残す区間の「音声のみ」を連結した一時ファイルを作る (§7.3)
+# 映像エンコードを伴わないため、従来の「実カット動画を作ってから認識」より軽い。
+# 得られる時間軸は「本編を詰めた後」= Timeline 時間 (OP を除く) と一致する。
+# この一時ファイルはプレビューの初回再生ソースとしても再利用する (§6.4-5)。
+def extract_audio_segments(input_path, keep_segments, output_path, ffmpeg_settings,
+                           on_progress=None):
+    if not keep_segments:
+        raise InputError("音声抽出の対象区間がありません")
+
+    out_dir = os.path.dirname(output_path) or "."
+    ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
+    audio_codec = ffmpeg_settings.get("audio_codec", "aac")
+    sample_rate = ffmpeg_settings.get("audio_sample_rate", 48000)
+    total = sum(float(e) - float(s) for s, e in keep_segments) or 1.0
+
+    seg_paths = []
+    done = 0.0
+    try:
+        for index, (start, end) in enumerate(keep_segments):
+            seg_duration = float(end) - float(start)
+            if seg_duration <= 0:
+                continue
+            seg_path = os.path.join(out_dir, f"asr_seg_{index:05d}.m4a")
+
+            def _seg_progress(ratio_in_seg, _kv, _base=done, _dur=seg_duration):
+                if on_progress is not None:
+                    on_progress((_base + ratio_in_seg * _dur) / total, _kv)
+
+            cmd = [
+                ffmpeg, "-y", "-hide_banner",
+                "-ss", f"{float(start):.3f}",
+                "-i", input_path,
+                "-t", f"{seg_duration:.3f}",
+                "-vn",                       # 映像を捨てる (これが軽さの理由)
+                "-map", "0:a:0",
+                "-c:a", audio_codec,
+                "-ar", str(sample_rate),
+                "-ac", "2",
+                seg_path,
+            ]
+            ffmpeg_runner.execute(
+                cmd, total_duration=seg_duration,
+                on_progress=_seg_progress if on_progress else None,
+                progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_settings),
+            )
+            seg_paths.append(seg_path)
+            done += seg_duration
+
+        # 区間音声を concat デマルチプレクサで連結する (既存関数を再利用)
+        _concat_demux(seg_paths, output_path, ffmpeg_settings, reencode=False)
+        if on_progress is not None:
+            on_progress(1.0, {})
+    finally:
+        for path in seg_paths:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    _logger.warning("区間音声の削除に失敗: %s", path)
+
+    _logger.info(
+        "認識用音声を抽出: %d 区間 → %.1fs (元 %.1fs)",
+        len(seg_paths), total, keep_segments[-1][1] if keep_segments else 0.0,
+    )
     return output_path
 
 

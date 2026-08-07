@@ -38,6 +38,10 @@ a = Analysis(
         # 未同梱環境では静止画フォールバックで動作するが、再生のため明示同梱する。
         'PySide6.QtMultimedia',
         'PySide6.QtMultimediaWidgets',
+        # Timeline 編集画面のフレーム取得 (ver3 resolve.md §6.4-1)。
+        # faster-whisper 経由で導入済みだが、遅延 import のため明示する。
+        # 未同梱でも ffmpeg フレーム抽出へフォールバックする。
+        'av',
         # twitch-dl を本体exeの multi-call で動かすため CLI とその依存を明示同梱する (flow17 R3)。
         'twitchdl.cli',
     ] + collect_submodules('budoux')     # BudouX 遅延 import 対策 (request11)

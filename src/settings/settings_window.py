@@ -186,6 +186,11 @@ DEFAULT_SETTINGS = {
     "silence_cut": {
         # 無音カット ON/OFF (resolve12)。既定 True で従来挙動を維持する。
         "enabled": True,
+        # カット方式 (ver3 resolve.md §7.1)。
+        #   "edit_points" = 実カットせず編集点(JSON)として保持し Timeline で扱う (新既定)
+        #   "physical"    = 従来どおり動画を実際にカットする
+        # timeline.enabled=false のときは値に関わらず physical として扱う。
+        "mode": "edit_points",
         "noise_threshold_db": -30,
         "min_silence_duration_sec": 0.6,
         "fade_enabled": False,
@@ -224,6 +229,66 @@ DEFAULT_SETTINGS = {
         "preset": "ultrafast",  # プレビュー用 x264 preset (速度優先)
         "crf": 28,              # プレビュー用品質 (大=軽い)
         "audio_enabled": True,  # プレビュー音声の既定 (ミュートボタンで切替可)
+    },
+    # Timeline 型クリップ編集画面 (ver3 / docs/request/ver3/resolve.md §9)
+    # 上=プレビュー / 下=Timeline の新編集画面と、編集点方式の無音カットを制御する。
+    # enabled=false で従来 UI (SubtitleEditorDialog) ・従来フローへ完全に戻る。
+    # UI には項目を出さず setting.json で管理する。
+    "timeline": {
+        "enabled": True,
+        "project_dir": "",                     # 空 = general.output_directory
+        "project_suffix": ".timeline.json",
+        "autosave_sec": 0,                     # 既定 0=無効 (読み戻し経路が無いため)
+        "keep_project_file": True,             # false なら「決定」後に削除する
+        # 設定の OP/ED を Timeline へ自動配置するか (§6.9)。
+        # false でも D&D による手動追加は可能。配置条件は concat_processor と同一。
+        "opening_ending": {
+            "auto_place": True,
+        },
+        "min_clip_sec": 0.05,                  # これ未満へはトリムできない
+        # Delete キー単独の割り当て。false=空白を残す (既定) / true=リップル。
+        # Shift+Delete は常にもう一方。両方とも右クリックメニューからも実行できる。
+        "ripple_delete": False,
+        "snap_enabled": True,
+        "snap_threshold_px": 8,
+        "default_zoom_px_per_sec": 40,
+        "zoom_min_px_per_sec": 2,
+        "zoom_max_px_per_sec": 400,
+        "ui": {
+            "split_ratio": 0.55,               # 上(プレビュー):下(Timeline) の初期比
+            "track_height_px": 56,
+            "subtitle_track_height_px": 40,
+            "header_width_px": 88,
+            "trim_handle_px": 6,
+            "ruler_min_label_px": 60,
+            "window_width": 1280,
+            "window_height": 820,
+        },
+        "preview": {
+            "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
+            "width": 960,                      # プレビュー描画の基準幅
+            "update_debounce_ms": 60,
+            "cache_frames": 8,
+            "high_quality_button": True,       # 「高精度プレビュー」ボタンの表示
+            "audio_enabled": True,             # 起動時のミュート状態 (false=ミュート)
+            "audio_volume": 0.8,               # 0.0〜1.0
+            "audio_chunk_sec": 30,             # 1 回に生成する音声チャンク長 (秒)
+            "audio_prefetch_sec": 8,           # 残りがこれを切ったら次チャンクを先読み
+            "play_fps": 15,                    # 再生中の映像更新レート上限
+        },
+        "media": {
+            "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"],
+            "image_extensions": [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"],
+            "default_image_duration_sec": 5.0,
+            "max_video_tracks": 8,
+        },
+        "render": {
+            # "black"=空白を黒+無音として出力 (既定) / "close"=空白を詰める
+            "gap_policy": "black",
+            "extract_mode": "seek",
+            "concat_reencode": False,
+            "overlay_enabled": True,           # false でオーバーレイ合成をスキップ (切り分け用)
+        },
     },
     "ffmpeg": {
         # 同梱 FFmpeg を PATH 非依存で参照する相対パス (error 20260708)。

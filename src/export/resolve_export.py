@@ -9,6 +9,7 @@ import os
 from ..archive import config as archive_config
 from ..exceptions import AutoEditError, ExportError
 from ..modules import ffmpeg_runner, output_profile, subtitle_generator
+from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from . import fcpxml_builder, srt_writer
 from .config import resolve_config
@@ -441,6 +442,94 @@ def build_clip_spec(source_path, keep_segments, items, settings, profile=None):
 # items の最終終了時刻を返す (総尺不明時のフォールバック)
 def _timeline_end(items):
     return max((float(i.get("end", 0.0)) for i in (items or [])), default=0.0)
+
+
+# ------------------------------------------------------------------
+# Timeline 用の spec 生成 (ver3 / resolve.md §8.5)
+# ------------------------------------------------------------------
+
+# Timeline (ver3) から spec を作る
+# 編集点と字幕という材料はクリップ用と同じなので、変換は既存関数をそのまま再利用する。
+# FCPXML は単一ソース前提のため、元動画以外のクリップ (OP/ED・追加メディア) は
+# 出力に含めず、含めなかった件数をログで明示する (黙って落とさない)。
+def build_timeline_spec(timeline, settings, profile=None):
+    source_path = (timeline.source or {}).get("input_path", "")
+    _validate_source(source_path)
+    cfg = resolve_config(settings)
+    profile = profile or {
+        "is_portrait": timeline.orientation == "portrait",
+        "orientation": timeline.orientation,
+        "width": timeline.width, "height": timeline.height,
+    }
+    eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
+        settings.get("subtitle", {}), settings.get("vertical", {}), profile)
+    font_profile = subtitle_generator.build_font_profile(eff_cfg)
+    canvas = (int(timeline.width), int(timeline.height))
+
+    stem = os.path.splitext(os.path.basename(source_path))[0]
+    spec = _base_spec(source_path, settings, profile, cfg, stem)
+
+    body_media_id = (timeline.source or {}).get("media_id")
+    all_clips = timeline.base_clips()
+    body_clips = [c for c in all_clips if c.media_id == body_media_id]
+    skipped = len(all_clips) - len(body_clips)
+    if skipped:
+        _logger.warning(
+            "元動画以外のクリップ %d 件 (オープニング/エンディング/追加メディア) は "
+            "FCPXML に含めません。Resolve 側で追加してください。", skipped)
+    if not body_clips:
+        raise ExportError("元動画のクリップが 1 つも残っていないため出力できません。")
+
+    segments = [(c.source_in, c.source_out) for c in body_clips]
+    spec["clips"] = _clips_from_segments(segments, "cut")
+
+    # 字幕は「出力する範囲だけで詰め直したタイムライン」の時刻へ写像する
+    items = _timeline_subtitle_items(timeline, segments, body_media_id)
+    mode = _subtitle_mode(cfg)
+    if mode in ("caption", "both"):
+        spec["captions"] = _captions_from_items(items, 0.0, font_profile, "字幕")
+    if mode in ("title", "both"):
+        spec["titles"] = _titles_from_items(
+            items, 0.0, font_profile, canvas, cfg["title"], "字幕")
+    spec["srt_entries"] = _srt_entries_from_items(items, 0.0, font_profile)
+    if spec["titles"]:
+        _warn_position_once()
+    return spec
+
+
+# 字幕クリップを「出力対象クリップだけを連結したタイムライン」の時刻へ直す
+# 元動画以外の上に載っている字幕 (OP 中のテロップなど) は出力しない。
+def _timeline_subtitle_items(timeline, segments, body_media_id):
+    full_map = TimeMap.from_clips(timeline.base_clips(), body_media_id=body_media_id)
+    export_map = TimeMap.from_segments(segments, media_id=body_media_id)
+
+    items = []
+    dropped = 0
+    for clip in timeline.subtitle_clips():
+        resolved = full_map.to_source(clip.timeline_start)
+        if resolved is None or resolved[0] != body_media_id:
+            dropped += 1
+            continue
+        start = export_map.to_timeline(resolved[1], media_id=body_media_id)
+        if start is None:
+            dropped += 1
+            continue
+        item = clip.to_item()
+        item["start"] = start
+        item["end"] = start + clip.duration
+        items.append(item)
+    if dropped:
+        _logger.warning("元動画上に無い字幕 %d 件は FCPXML に含めません", dropped)
+    return items
+
+
+# Timeline 用 (ver3): 編集画面から呼ぶ一括エクスポート
+# 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
+def export_timeline(timeline, settings, overwrite_confirm=None):
+    spec = build_timeline_spec(timeline, settings)
+    source_path = (timeline.source or {}).get("input_path", "")
+    dest = default_output_path(settings, source_path, resolve_config(settings)["clip_prefix"])
+    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm)
 
 
 # ------------------------------------------------------------------

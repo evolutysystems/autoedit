@@ -14,7 +14,7 @@ class PipelineContext:
     # 初期化
     def __init__(self, input_path, settings, progress_callback=None,
                  working_dir=None, total_steps=4, subtitle_review_callback=None,
-                 volume_analysis_callback=None):
+                 volume_analysis_callback=None, timeline_review_callback=None):
         self.input_path = input_path
         self.settings = settings
         self.progress_callback = progress_callback or _noop_progress
@@ -28,6 +28,11 @@ class PipelineContext:
         # 音量解析・カット閾値確認ダイアログのフック (GUI 実行時のみ注入)
         # 形式: callback(info) -> 確定dB(int) / None(変更しない) (resolve7 §3.2)
         self.volume_analysis_callback = volume_analysis_callback
+
+        # Timeline 編集画面フック (ver3 / GUI 実行時のみ注入。None なら編集画面なし)
+        # 形式: callback(payload) -> 編集後 Timeline / None(キャンセル)
+        # payload: {"timeline","settings","project_path","asr_audio_path"}
+        self.timeline_review_callback = timeline_review_callback
 
         # 作業ディレクトリ (未指定なら一時ディレクトリ生成)
         self._tempdir_obj = None
@@ -53,6 +58,13 @@ class PipelineContext:
         # その回の処理専用の一時データであり cleanup() でクリアする (寿命管理)。
         self._keep_segments = None
 
+        # Timeline (ver3)。編集情報の唯一のソースとして工程間を受け渡す。
+        # プロジェクト JSON のパスと、認識用に作った音声 (プレビューで再利用する)
+        # も同じ寿命で保持し、cleanup() で破棄する (回答 Q10: 永続化しない)。
+        self.timeline = None
+        self.project_path = None
+        self._asr_audio_path = None
+
     # 現在の処理対象動画パスを取得する
     def current_video_path(self):
         return self._current_video_path
@@ -72,6 +84,14 @@ class PipelineContext:
     # 保持中の編集点を破棄する (全処理完了時。次回実行へ持ち越さない / resolve20 §5.3)
     def clear_keep_segments(self):
         self._keep_segments = None
+
+    # 認識用に生成した音声ファイルのパスを取得する (プレビュー再生で再利用する / ver3 §6.4-5)
+    def asr_audio_path(self):
+        return self._asr_audio_path
+
+    # 認識用音声のパスを保持する (subtitle_generator が生成直後に呼ぶ)
+    def set_asr_audio_path(self, path):
+        self._asr_audio_path = path
 
     # 中間ファイル用パスを割り当てる
     def allocate_intermediate(self, filename):
@@ -109,6 +129,9 @@ class PipelineContext:
     def cleanup(self):
         # 保持していた Resolve 出力用の編集点を破棄する (resolve20 §5.3 寿命管理)
         self.clear_keep_segments()
+        # Timeline と認識用音声も同じ寿命で破棄する (ver3 / 回答 Q10)
+        self.timeline = None
+        self._asr_audio_path = None
 
         # 自動生成した一時ディレクトリは中身ごと削除する
         if self._tempdir_obj is not None:

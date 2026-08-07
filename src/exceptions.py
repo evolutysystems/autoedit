@@ -50,3 +50,10 @@ class ExportError(AutoEditError):
 # 認証失敗・所有判定不成立・twitch-dl 実行失敗などを表す。
 class TwitchError(AutoEditError):
     pass
+
+
+# Timeline (ver3) のモデル・プロジェクト JSON・レンダリングに関するエラー
+# (docs/request/ver3/resolve.md §10)。スキーマ不正・未知の schema_version・
+# 編集操作の前提違反などを表す。
+class TimelineError(AutoEditError):
+    pass

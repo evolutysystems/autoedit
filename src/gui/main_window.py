@@ -9,6 +9,7 @@
 # MainWindow は QTabWidget のホスト兼アプリ級の自動更新チェックを担う。
 import os
 import sys
+import tempfile
 import threading
 
 # パッケージ実行・単独スクリプト実行の両対応 (main.py と同方針)
@@ -17,8 +18,9 @@ if __package__ is None or __package__ == "":
     from src.exceptions import PipelineCancelled
     from src.gui.archive_tab import ArchiveTabWidget
     from src.gui.subtitle_editor_dialog import SubtitleEditorDialog
+    from src.gui.timeline.timeline_editor_dialog import TimelineEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
-    from src.pipeline.pipeline_runner import run_pipeline
+    from src.pipeline.pipeline_runner import is_timeline_mode, run_pipeline
     from src.settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -30,7 +32,7 @@ if __package__ is None or __package__ == "":
     from src.version import __version__
 else:
     from ..exceptions import PipelineCancelled
-    from ..pipeline.pipeline_runner import run_pipeline
+    from ..pipeline.pipeline_runner import is_timeline_mode, run_pipeline
     from ..settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -42,6 +44,7 @@ else:
     from ..version import __version__
     from .archive_tab import ArchiveTabWidget
     from .subtitle_editor_dialog import SubtitleEditorDialog
+    from .timeline.timeline_editor_dialog import TimelineEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
@@ -191,6 +194,57 @@ class SubtitleReviewBridge(QObject):
         return theme
 
 
+# Timeline 編集画面をワーカースレッド→メインスレッドで橋渡しする (ver3)
+# SubtitleReviewBridge と同じ機構 (threading.Event によるブロッキング同期)。
+# 既存の SubtitleReviewBridge は無改変で併存し、timeline.enabled=false のときは
+# 従来どおりそちらが使われる (R2)。
+class TimelineReviewBridge(QObject):
+
+    # メインスレッドへ画面表示を依頼するシグナル (payload dict を渡す)
+    review_requested = Signal(object)
+
+    def __init__(self, parent_window=None):
+        super().__init__()
+        self._parent_window = parent_window
+        self._event = threading.Event()
+        self._result = None
+        self.review_requested.connect(self._on_review_requested, Qt.QueuedConnection)
+
+    # ワーカースレッドから呼ばれる (run_pipeline の timeline_review_callback)
+    # payload: {"timeline","settings","project_path","asr_audio_path"}
+    # 戻り値: 編集後の Timeline / None (キャンセル)
+    def __call__(self, payload):
+        self._event.clear()
+        self._result = None
+        self.review_requested.emit(payload)
+        # ユーザー操作が終わるまでワーカースレッドをブロックする
+        self._event.wait()
+        return self._result
+
+    # メインスレッドで実行されるスロット
+    def _on_review_requested(self, payload):
+        try:
+            timeline = payload["timeline"]
+            # プレビュー用一時ファイルは中間ファイルと同じ作業ディレクトリへ置き、
+            # パイプライン終了時の cleanup で一緒に消えるようにする (回答 Q10)
+            work_dir = payload.get("working_dir") or tempfile.gettempdir()
+            dialog = TimelineEditorDialog(
+                timeline, payload["settings"], work_dir,
+                asr_audio_path=payload.get("asr_audio_path"),
+                parent=self._parent_window,
+            )
+            if dialog.exec() == TimelineEditorDialog.Accepted:
+                self._result = dialog.result_timeline()
+            else:
+                self._result = None  # キャンセル / × クローズ → 中断扱い
+        except Exception:  # noqa: BLE001 (画面生成の失敗でワーカーを固めない)
+            _logger.exception("Timeline 編集画面の表示に失敗しました")
+            self._result = None
+        finally:
+            # 例外有無に関わらずワーカーを再開させる (デッドロック防止)
+            self._event.set()
+
+
 # 音量解析の閾値確認ダイアログをワーカースレッド→メインスレッドで橋渡しする
 # resolve7 §5.3 に対応。SubtitleReviewBridge と同じ機構。
 class VolumeThresholdBridge(QObject):
@@ -263,12 +317,13 @@ class PipelineWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, input_path, settings, review_callback,
-                 volume_callback=None, parent=None):
+                 volume_callback=None, timeline_callback=None, parent=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
         self._review_callback = review_callback
         self._volume_callback = volume_callback
+        self._timeline_callback = timeline_callback
 
     # スレッド本体
     def run(self):
@@ -279,6 +334,7 @@ class PipelineWorker(QThread):
                 progress_cb=self._emit_progress,
                 subtitle_review_callback=self._review_callback,
                 volume_analysis_callback=self._volume_callback,
+                timeline_review_callback=self._timeline_callback,
             )
             self.finished_ok.emit(output)
         except PipelineCancelled:
@@ -354,6 +410,8 @@ class ClipTabWidget(QWidget):
         self._bridge = None
         # 音量解析ダイアログの橋渡し参照 (resolve7)
         self._volume_bridge = None
+        # Timeline 編集画面の橋渡し参照 (ver3)
+        self._timeline_bridge = None
         # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ)
         self._settings_window = None
         self._build_ui()
@@ -501,9 +559,17 @@ class ClipTabWidget(QWidget):
         # 音量解析・カット閾値確認フック (resolve7)
         self._volume_bridge = VolumeThresholdBridge(parent_window=self)
 
+        # Timeline 編集画面フック (ver3)。Timeline モードのときだけ注入する。
+        # 従来モードでは注入せず、既存の字幕編集画面がそのまま使われる (R2)。
+        self._timeline_bridge = (
+            TimelineReviewBridge(parent_window=self)
+            if is_timeline_mode(self._settings) else None
+        )
+
         self._worker = PipelineWorker(
             input_path, self._settings, self._bridge,
-            volume_callback=self._volume_bridge, parent=self,
+            volume_callback=self._volume_bridge,
+            timeline_callback=self._timeline_bridge, parent=self,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished_ok)

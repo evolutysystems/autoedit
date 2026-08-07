@@ -5,7 +5,7 @@
 #  ../StreamPipeline/dev と同一の faster-whisper を既定採用)
 import os
 
-from ..exceptions import FFmpegError, PipelineCancelled, SubtitleError
+from ..exceptions import AutoEditError, FFmpegError, PipelineCancelled, SubtitleError
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
 from . import ffmpeg_runner, silence_cutter
@@ -515,6 +515,37 @@ def _inline_font_override(font, font_size):
     return "{" + override + "}" if override else ""
 
 
+# 字幕の位置上書きタグを生成する (ver3 resolve.md §8.3)
+# entry["pos_x"]/["pos_y"] はキャンバス中心を原点とする正規化座標 (-1.0〜1.0、Y は上が正)。
+# 未指定 (キー無し / None) のときは空文字を返し、Style の alignment/margin に従う
+# = 既存の生成結果と完全に一致する (後方互換)。
+def _inline_position_override(entry, video_width, video_height):
+    x = entry.get("pos_x")
+    y = entry.get("pos_y")
+    if x is None or y is None:
+        return ""
+    # 正規化座標 → ピクセル (\pos はテキストのアンカー位置。\an5 で中央基準に揃える)
+    px = (float(x) + 1.0) * video_width / 2.0
+    py = (1.0 - float(y)) * video_height / 2.0
+    return f"\\an5\\pos({px:.1f},{py:.1f})"
+
+
+# 1 エントリぶんのインライン上書きタグ (位置 → フォント → サイズ の順) をまとめる
+# 何も指定が無ければ空文字を返す (既存挙動と同一)。
+def _inline_overrides(entry, video_width, video_height):
+    position = _inline_position_override(entry, video_width, video_height)
+    override = ""
+    font = entry.get("font", "")
+    if font:
+        override += f"\\fn{font}"
+    size = _to_int(entry.get("font_size"), None) if entry.get("font_size") not in (None, "") else None
+    if size is not None:
+        override += f"\\fs{size}"
+    if not position and not override:
+        return ""
+    return "{" + position + override + "}"
+
+
 # タイムラインから ASS 字幕ファイルを生成する
 # テロップ役割 (配信者/サブ/コメント) ごとに色違いの Style を定義し、
 # 各 Dialogue 行は entry["role"] に対応する Style を参照する (request10)。
@@ -554,11 +585,12 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         # 本文は既に \N 折返し済みのため、ラベルは独立行として折返しに巻き込まれない。
         if role == "comment" and font_profile.comment_label:
             text = f"{font_profile.comment_label}\\N{text}"
-        # 個別フォント/サイズの上書きタグを本文最先頭へ付与する (resolve16 §4.4)。
-        # ラベル部にも同フォントを適用するためコメントラベル付与より後に前置する (§8-5 確定)。
+        # 個別フォント/サイズ/位置の上書きタグを本文最先頭へ付与する
+        # (resolve16 §4.4 / ver3 §8.3)。ラベル部にも同フォントを適用するため
+        # コメントラベル付与より後に前置する (§8-5 確定)。
         entry_font = entry.get("font", "")
         entry_size = entry.get("font_size")
-        override = _inline_font_override(entry_font, entry_size)
+        override = _inline_overrides(entry, video_width, video_height)
         if override:
             text = override + text
             if entry_font:
@@ -1000,3 +1032,81 @@ def run(context):
     )
     context.set_current_video_path(output_path)
     return output_path
+
+
+# ==================================================================
+# Timeline (ver3) 経路の音声認識
+# ==================================================================
+
+# 編集点モード用の音声認識 (docs/request/ver3/resolve.md §7.3)
+# 残す区間の「音声のみ」を連結した一時ファイルに対して認識する。
+#   ・映像エンコードを伴わないため従来 (実カット動画を作ってから認識) より軽い
+#   ・得られる時刻は「本編を詰めた後の時間軸」= OP を除く Timeline 時間と一致する
+# 認識に失敗しても字幕を空にして続行する (パイプラインを止めない / §10)。
+# 戻り値: (items, 実効字幕設定)
+#   items = [{"start","end","text","use","role","font","font_size"}]
+def recognize_for_timeline(context, keep_segments):
+    settings = context.settings
+    subtitle_cfg = settings.get("subtitle", {})
+    ffmpeg_cfg = settings.get("ffmpeg", {})
+
+    # 出力プロファイル(縦/横)に応じた実効字幕設定 (request14)
+    profile = getattr(context, "output_profile", None)
+    eff_cfg = build_effective_subtitle_cfg(
+        subtitle_cfg, settings.get("vertical", {}), profile)
+
+    # テロップ ON/OFF
+    if not subtitle_cfg.get("enabled", True):
+        _logger.info("テロップ生成スキップ (subtitle.enabled=false)")
+        return [], eff_cfg
+
+    text_source = resolve_text_source(settings, eff_cfg)
+    if text_source is None:
+        _logger.info("音声認識エンジン無効のため字幕を作成しません")
+        return [], eff_cfg
+
+    # ── 認識用音声の抽出 (残す区間のみ・映像なし)
+    audio_path = context.allocate_intermediate("asr_audio.m4a")
+    try:
+        silence_cutter.extract_audio_segments(
+            context.current_video_path(), keep_segments, audio_path, ffmpeg_cfg,
+            on_progress=context.progress_subcallback("認識用音声を抽出中…"),
+        )
+    except AutoEditError:
+        _logger.exception("認識用音声の抽出に失敗したため字幕を作成しません")
+        return [], eff_cfg
+
+    # プレビューの初回再生ソースとして再利用する (§6.4-5)
+    setter = getattr(context, "set_asr_audio_path", None)
+    if callable(setter):
+        setter(audio_path)
+
+    # ── 音声認識
+    try:
+        timeline_items = text_source.extract(audio_path, eff_cfg.get("language", "ja"))
+    except Exception:  # noqa: BLE001 (認識失敗で処理全体を止めない / §10)
+        _logger.exception("音声認識に失敗したため字幕を作成しません")
+        return [], eff_cfg
+
+    if not timeline_items:
+        _logger.warning("テロップタイムラインが空のため字幕を作成しません")
+        return [], eff_cfg
+
+    # ── 表示タイミング整形 (既存ロジックをそのまま流用 / docs/error/20260627)
+    max_hold_sec = float(eff_cfg.get("display_max_hold_sec", 2.0))
+    min_duration_sec = float(eff_cfg.get("display_min_duration_sec", 0.5))
+    before_count = len(timeline_items)
+    timeline_items = adjust_display_timing(timeline_items, max_hold_sec, min_duration_sec)
+    _logger.info(
+        "テロップ表示タイミング整形: %d → %d 区間 (max_hold=%.1fs, min_dur=%.1fs)",
+        before_count, len(timeline_items), max_hold_sec, min_duration_sec,
+    )
+
+    # 編集画面が扱う item 形式へ揃える (初期値は全件使用・役割は配信者)
+    items = [
+        {"start": e["start"], "end": e["end"], "text": e["text"],
+         "use": True, "role": _DEFAULT_ROLE, "font": "", "font_size": None}
+        for e in timeline_items
+    ]
+    _logger.info("音声認識完了 (Timeline 用 %d 件)", len(items))
+    return items, eff_cfg
