@@ -30,6 +30,7 @@ from ..settings.settings_window import (
     resolve_fonts_dir,
 )
 from ..utils.logger import get_logger
+from . import theme
 from .archive_result_window import ArchiveResultBridge
 
 _logger = get_logger(__name__)
@@ -178,8 +179,14 @@ class ArchiveClipWorker(QThread):
 # アーカイブ切り抜き用タブ
 class ArchiveTabWidget(QWidget):
 
+    # 実行状態の変化を親へ通知する (ver3 resolve4 §5.7-4 / 回答 Q1)
+    # タブ外へ移した設定ボタンを無効化するために使う。
+    running_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        # 機能無効時は _build_disabled_ui() を通るため採点開始ボタンを持たない
+        self.analyze_button = None
         self._settings = load_settings()
         self._enabled = bool(self._settings.get("archive", {}).get("enabled", False))
         self._analyze_worker = None
@@ -196,12 +203,20 @@ class ArchiveTabWidget(QWidget):
         else:
             self._build_disabled_ui()
 
+    # アイコンをテーマの色で描き直す (ver3 resolve4 §5.10-3)
+    # QPixmap へ焼き込むため、OS の明暗が切り替わったら作り直す必要がある。
+    # 機能無効時は採点開始ボタンが存在しないため何もしない。
+    def refresh_theme(self):
+        if self.analyze_button is not None:
+            theme.refresh_primary_action_icon(self.analyze_button, theme.RUN_GLYPH)
+
     # 無効時 (archive.enabled=false) は準備中表示にする
     def _build_disabled_ui(self):
         root = QVBoxLayout(self)
         root.addStretch(1)
         note = QLabel("アーカイブ切り抜きは無効です (設定で有効化してください)。")
         note.setAlignment(Qt.AlignCenter)
+        theme.mark_note(note)
         root.addWidget(note)
         root.addStretch(1)
 
@@ -284,10 +299,17 @@ class ArchiveTabWidget(QWidget):
         option_row.addStretch(1)
         root.addLayout(option_row)
 
-        # 採点開始
-        self.analyze_button = QPushButton("採点開始")
+        # 採点開始 (このタブの主要動作 / resolve3 §5.2-2)。
+        # クリップ用タブの「実行」と同じ再生アイコン・同じ幅・同じ左寄せに揃える
+        # (ver3 resolve4 M2 / 回答 Q3)。用途はツールチップで示す。
+        button_row = QHBoxLayout()
+        self.analyze_button = QPushButton()
         self.analyze_button.clicked.connect(self._on_analyze)
-        root.addWidget(self.analyze_button)
+        theme.setup_primary_action_button(
+            self.analyze_button, theme.RUN_GLYPH, "採点開始")
+        button_row.addWidget(self.analyze_button)
+        button_row.addStretch(1)
+        root.addLayout(button_row)
 
         # 進捗 + ステータス
         self.progress_bar = QProgressBar()
@@ -515,6 +537,8 @@ class ArchiveTabWidget(QWidget):
         self._spinner_message = label
 
     def _set_running(self, running):
+        # タブ外の設定ボタンを無効化するため親へ通知する (ver3 resolve4 §5.7-4)
+        self.running_changed.emit(running)
         self.analyze_button.setEnabled(not running)
         self.browse_button.setEnabled(not running)
         self.input_edit.setEnabled(not running)

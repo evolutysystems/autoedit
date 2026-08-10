@@ -66,7 +66,9 @@
       "PowerShell(Select-String -Path D:\\\\develop\\\\autoedit\\\\src\\\\export\\\\resolve_export.py, D:\\\\develop\\\\autoedit\\\\src\\\\export\\\\fcpxml_builder.py, D:\\\\develop\\\\autoedit\\\\src\\\\modules\\\\ffmpeg_runner.py, D:\\\\develop\\\\autoedit\\\\src\\\\modules\\\\output_writer.py, D:\\\\develop\\\\autoedit\\\\src\\\\modules\\\\concat_processor.py -Pattern '^\\(def |class \\)' | ForEach-Object { \"$\\($_.Filename\\):$\\($_.LineNumber\\): $\\($_.Line\\)\" })",
       "Bash(QT_QPA_PLATFORM=offscreen PYTHONPATH=D:/develop/autoedit python -c ' *)",
       "Bash(QT_QPA_PLATFORM=offscreen PYTHONPATH=\"D:/develop/autoedit\" python \"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/a5417af3-bd50-483c-8166-a78b554bc992/scratchpad/smoke_gui.py\")",
-      "Bash(PYTHONPATH=\"D:/develop/autoedit\" python \"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/a5417af3-bd50-483c-8166-a78b554bc992/scratchpad/e2e_render.py\")"
+      "Bash(PYTHONPATH=\"D:/develop/autoedit\" python \"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/a5417af3-bd50-483c-8166-a78b554bc992/scratchpad/e2e_render.py\")",
+      "Bash(QT_QPA_PLATFORM=offscreen PYTHONPATH=\"D:/develop/autoedit\" python \"C:/Users/evolu/AppData/Local/Temp/claude/D--develop-autoedit/a5417af3-bd50-483c-8166-a78b554bc992/scratchpad/smoke_gui2.py\")",
+      "Bash(QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 python -)"
     ]
   }
 }

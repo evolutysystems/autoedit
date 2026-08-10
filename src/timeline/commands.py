@@ -8,8 +8,13 @@
 # 明示的な追随が要るのはクリップ個数が変わる Split と Delete の 2 つだけ。
 from ..utils.logger import get_logger
 from .model import (
+    BASE_SUBTITLE_TRACK_ID,
     BASE_Z_ORDER,
+    DEFAULT_ROLE,
+    DEFAULT_SUBTITLE_Z_ORDER,
+    ORIGIN_USER_SUBTITLE,
     TRACK_AUDIO,
+    TRACK_SUBTITLE,
     TRACK_VIDEO,
     Z_ORDER_STEP,
     AudioClip,
@@ -172,6 +177,119 @@ def _overlay_elements(timeline):
 
 
 # ------------------------------------------------------------------
+# 範囲リップル (resolve2 §5.4 / R8)
+# ------------------------------------------------------------------
+
+# 詰める対象のトラックを返す (設定 timeline.ripple_sync_tracks)
+#   sync_all=True  : 全トラック (既定。字幕・オーバーレイも一緒に詰める)
+#   sync_all=False : 操作したトラックのみ (旧挙動。切り戻し用)
+# 音声トラックは常に除外する: AudioClip は時刻を持たずリンク元の映像クリップから
+# 導出するため (resolve.md R18)、映像を詰めれば自動的に追従する。
+# ここで一緒に動かすと二重にずれる。
+def ripple_target_tracks(timeline, source_track, sync_all=True):
+    if not sync_all:
+        return [source_track] if source_track is not None else []
+    return [t for t in timeline.tracks if not t.is_audio()]
+
+
+# 区間 [start, end] を 1 クリップへ適用する (resolve2 §5.4-3 の規則 1〜6)
+# クリップは破壊的に更新する。尺が下限を割った場合は呼び出し側が捨てる。
+# 種別 (映像/画像/字幕) で処理を分けない。区間を跨ぐ場合も分割せず尺を縮める (回答 Q8)。
+# 戻り値: 変化があれば True
+def _apply_range_removal(clip, start, end, delta):
+    clip_start = clip.timeline_start
+    clip_end = clip.timeline_end
+    has_source = isinstance(clip, Clip)   # 字幕クリップは source_in/out を持たない
+
+    # 規則 1: 区間より前 → 何もしない
+    if clip_end <= start + _EPS:
+        return False
+
+    # 規則 2: 区間より後ろ → 詰める
+    if clip_start >= end - _EPS:
+        clip.timeline_start = clip_start - delta
+        return True
+
+    head = start - clip_start      # 区間より前に残る長さ
+    tail = clip_end - end          # 区間より後ろに残る長さ
+
+    # 規則 3: 区間に完全に含まれる → 削除 (尺を 0 にして呼び出し側で捨てる)
+    if head <= _EPS and tail <= _EPS:
+        clip.duration = 0.0
+        return True
+
+    # 規則 6: 区間を跨ぐ → 分割せず尺を delta 縮める (回答 Q8)
+    if head > _EPS and tail > _EPS:
+        clip.duration -= delta
+        if has_source:
+            clip.source_out -= delta
+        return True
+
+    # 規則 4: 頭だけかかる → 右端を start へトリム
+    if head > _EPS:
+        clip.duration = head
+        if has_source:
+            clip.source_out = clip.source_in + head
+        return True
+
+    # 規則 5: 尻だけかかる → 左端を end へトリムし、start の位置へ詰める
+    if has_source:
+        clip.source_in += (end - clip_start)
+        clip.source_out = clip.source_in + tail
+    clip.timeline_start = start
+    clip.duration = tail
+    return True
+
+
+# リンク先の映像クリップを失った音声クリップを落とす (R18 の明示的な追随)
+def _drop_orphan_audio_clips(timeline):
+    for track in timeline.audio_tracks():
+        track.clips = [
+            c for c in track.clips if timeline.clip_by_id(c.link_clip) is not None
+        ]
+
+
+# タイムライン上の区間 [start, end] を対象トラックから抜いて詰める (resolve2 §5.4)
+# リップル削除 (Delete) と A / D はいずれもこの処理へ帰着する。
+# 音声トラックは対象外 (V1 からの導出で自動的に追従するため)。
+# 戻り値: 何か変化があれば True
+def ripple_remove_range(timeline, start, end, tracks, min_clip_sec=0.05):
+    delta = float(end) - float(start)
+    if delta <= _EPS:
+        return False
+
+    changed = False
+    removed = shortened = moved = 0
+    for track in tracks:
+        if track.is_audio() or track.locked:
+            continue
+        survivors = []
+        for clip in track.clips:
+            was_start = clip.timeline_start
+            if not _apply_range_removal(clip, start, end, delta):
+                survivors.append(clip)
+                continue
+            changed = True
+            if clip.duration < min_clip_sec - _EPS:
+                removed += 1
+                continue
+            if abs(clip.timeline_start - was_start) > _EPS:
+                moved += 1
+            else:
+                shortened += 1
+            survivors.append(clip)
+        track.clips = survivors
+
+    _drop_orphan_audio_clips(timeline)
+    if changed:
+        _logger.info(
+            "リップル: %.3f〜%.3fs (%.2fs) を除去 / 削除 %d 件・短縮 %d 件・移動 %d 件",
+            start, end, delta, removed, shortened, moved,
+        )
+    return changed
+
+
+# ------------------------------------------------------------------
 # コマンド
 # ------------------------------------------------------------------
 
@@ -329,44 +447,107 @@ class SplitClip(Command):
 
 
 # クリップを削除する (R10 / R17)
-# ripple=False: 跡は空白として残る (既定) / ripple=True: 同一トラックの後続を詰める
+# ripple=False: 跡は空白として残る / ripple=True: 区間を抜いて全体を詰める (R8)
 # 【R18 の明示的な追随②】リンクしている音声クリップも同時に削除する。
 class DeleteClip(Command):
 
-    def __init__(self, clip_ids, ripple=False):
+    def __init__(self, clip_ids, ripple=False, min_clip_sec=0.05, sync_all=True):
         self._clip_ids = list(clip_ids or [])
         self._ripple = bool(ripple)
+        self._min_clip_sec = float(min_clip_sec)
+        self._sync_all = bool(sync_all)
         self.label = "リップル削除" if ripple else "クリップの削除"
 
     def apply(self, timeline):
-        changed = False
         # 後ろから消すことで、リップルのシフト量が前のクリップに影響しないようにする
-        targets = sorted(
+        ordered = sorted(
             (c for c in (timeline.clip_by_id(i) for i in self._clip_ids) if c is not None),
             key=lambda c: c.timeline_start, reverse=True,
         )
-        for clip in targets:
-            track = timeline.track_of_clip(clip.id)
-            if track is None or track.locked:
-                continue
-            start = clip.timeline_start
-            duration = clip.duration
-            track.remove_clip(clip.id)
+        clip_ids = [c.id for c in ordered]
+        if self._ripple:
+            return self._apply_ripple(timeline, clip_ids)
+        return self._apply_plain(timeline, clip_ids)
 
+    # 空白を残す削除: 該当クリップ (とリンク音声) を消すだけで他は動かさない
+    def _apply_plain(self, timeline, clip_ids):
+        changed = False
+        for clip_id in clip_ids:
+            clip = timeline.clip_by_id(clip_id)
+            track = timeline.track_of_clip(clip_id) if clip is not None else None
+            if clip is None or track is None or track.locked:
+                continue
+            track.remove_clip(clip_id)
             # リンク音声も一緒に消す (R18)
-            audio_clip = timeline.audio_clip_for(clip.id)
+            audio_clip = timeline.audio_clip_for(clip_id)
             if audio_clip is not None:
                 audio_track = timeline.track_of_clip(audio_clip.id)
                 if audio_track is not None:
                     audio_track.remove_clip(audio_clip.id)
-
-            if self._ripple:
-                # 同一トラックの後続を詰める (音声は導出のため自動的に追従する)
-                for other in track.clips:
-                    if other.timeline_start >= start - _EPS:
-                        other.timeline_start -= duration
             changed = True
         return changed
+
+    # リップル削除: クリップの占める区間を抜いて全トラックを詰める (R8 / §5.4)
+    def _apply_ripple(self, timeline, clip_ids):
+        changed = False
+        for clip_id in clip_ids:
+            # 直前の区間除去で消えている可能性があるため毎回引き直す
+            clip = timeline.clip_by_id(clip_id)
+            track = timeline.track_of_clip(clip_id) if clip is not None else None
+            if clip is None or track is None or track.locked:
+                continue
+            if ripple_remove_range(
+                timeline, clip.timeline_start, clip.timeline_end,
+                ripple_target_tracks(timeline, track, self._sync_all),
+                self._min_clip_sec,
+            ):
+                changed = True
+        return changed
+
+
+# 再生ヘッドを境にクリップの一部を削除して全体を詰める (resolve2 §5.3 / R4・R6)
+# side="before" : クリップ先頭〜再生ヘッド を削除 (A キー)
+# side="after"  : 再生ヘッド〜クリップ末尾 を削除 (D キー)
+# 抜く区間を決めたあとは範囲リップル (§5.4) に委譲する。
+class RippleTrimToPlayhead(Command):
+
+    def __init__(self, clip_id, at_sec, side, min_clip_sec=0.05, sync_all=True):
+        self._clip_id = clip_id
+        self._at_sec = float(at_sec)
+        self._side = side
+        self._min_clip_sec = float(min_clip_sec)
+        self._sync_all = bool(sync_all)
+        self.label = ("再生ヘッドより前をリップル削除" if side == "before"
+                      else "再生ヘッドより後ろをリップル削除")
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        track = timeline.track_of_clip(self._clip_id) if clip is not None else None
+        if clip is None or track is None or track.locked:
+            return False
+        # 再生ヘッドがクリップの中に無ければ何もしない
+        if not (clip.timeline_start + _EPS < self._at_sec < clip.timeline_end - _EPS):
+            return False
+
+        if self._side == "before":
+            start, end = clip.timeline_start, self._at_sec
+        else:
+            start, end = self._at_sec, clip.timeline_end
+
+        # 残りが最小尺を割る場合はクリップごとリップル削除する (回答 Q4)
+        remaining = clip.duration - (end - start)
+        if remaining < self._min_clip_sec:
+            _logger.info(
+                "残り尺が下限を割るためクリップごとリップル削除しました: %s", clip.id)
+            start, end = clip.timeline_start, clip.timeline_end
+
+        _logger.debug("リップルトリム: clip=%s side=%s delta=%.3fs",
+                      clip.id, self._side, end - start)
+        return ripple_remove_range(
+            timeline, start, end,
+            ripple_target_tracks(timeline, track, self._sync_all),
+            self._min_clip_sec,
+        )
 
 
 # メディアを Timeline へ追加する (R12)
@@ -465,6 +646,73 @@ class AddMediaClip(Command):
         elements = _overlay_elements(timeline)
         highest = max((e.z_order for e in elements), default=BASE_Z_ORDER)
         return highest + Z_ORDER_STEP
+
+
+# 字幕クリップを追加する (Timeline の右クリック「字幕追加」)
+# 右クリックした位置を開始として新しい字幕を 1 つ置く。
+# 同じトラック上の既存字幕とは重ねない (重なると ASS で同時に 2 行出てしまうため):
+#   ・クリックした位置が既存字幕の中 → 追加しない
+#   ・次の字幕まで既定の尺が入らない  → その手前まで縮めて置く
+class AddSubtitleClip(Command):
+
+    label = "字幕の追加"
+
+    def __init__(self, timeline_start, duration, text="", track_id=None,
+                 role=DEFAULT_ROLE, min_clip_sec=0.05):
+        self._start = max(float(timeline_start), 0.0)
+        self._duration = float(duration)
+        self._text = str(text or "")
+        self._track_id = track_id
+        self._role = role
+        self._min_clip_sec = float(min_clip_sec)
+        # 追加したクリップの ID (呼び出し側が選択状態にするため公開する)
+        self.created_clip_id = None
+        self.created_track_id = None
+
+    def apply(self, timeline):
+        track = self._resolve_track(timeline)
+        if track is None or track.locked:
+            return False
+        duration = self._available_duration(track)
+        if duration is None:
+            _logger.info("字幕を追加できる空きがありません (%.3f 秒)", self._start)
+            return False
+        clip = SubtitleClip(
+            timeline.next_id("s"), self._start, duration,
+            text=self._text, role=self._role,
+            z_order=DEFAULT_SUBTITLE_Z_ORDER,
+            origin={"type": ORIGIN_USER_SUBTITLE},
+        )
+        track.clips.append(clip)
+        self.created_clip_id = clip.id
+        return True
+
+    # 追加先の字幕トラックを決める (無ければ S1 を作る)
+    def _resolve_track(self, timeline):
+        if self._track_id:
+            track = timeline.track_by_id(self._track_id)
+            if track is not None and track.is_subtitle():
+                return track
+        track = timeline.base_subtitle_track()
+        if track is not None:
+            return track
+        track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
+        timeline.tracks.append(track)
+        self.created_track_id = track.id
+        return track
+
+    # 開始位置に置ける尺を返す (置けないときは None)
+    def _available_duration(self, track):
+        end = self._start + self._duration
+        for clip in sorted(track.clips, key=lambda c: c.timeline_start):
+            if clip.timeline_end <= self._start + _EPS:
+                continue
+            if clip.timeline_start <= self._start + _EPS:
+                return None          # クリックした位置が既存字幕の中
+            end = min(end, clip.timeline_start)
+            break
+        duration = end - self._start
+        return duration if duration >= self._min_clip_sec else None
 
 
 # 描画順を変更する (R8 / §6.5-2)

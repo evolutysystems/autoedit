@@ -4,9 +4,10 @@
 # 再生ヘッド移動・メディアの D&D を提供する。
 #
 # 描画と入力のみを担い、モデルの変更は必ず TimelineController (= コマンド) 経由で行う。
+import math
 import os
 
-from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtCore import QLine, QRect, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSlider,
@@ -19,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import theme
+from .waveform import WaveformCache
 from ...timeline import commands, media_probe
 from ...timeline.model import (
     ORIGIN_ENDING,
@@ -36,7 +39,13 @@ _TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
 # ルーラの高さ
 RULER_HEIGHT = 26
 
+# 右クリック「字幕追加」で置く字幕の初期テキスト。
+# 空文字にすると Timeline でもプレビューでも何も見えず、追加できたか分からないため入れる。
+NEW_SUBTITLE_TEXT = "新しい字幕"
+
 # クリップの色 (種別で見分けられるようにする)
+# ver3 resolve3 R10: クリップ・再生ヘッド・選択枠はガラス化の対象外。
+# 編集点の境界が今と同じ精度で判別できるよう、現状の不透明色をそのまま使う (§5.7-2)。
 _COLOR_BODY = QColor(58, 108, 168)          # 本編 (編集点由来)
 _COLOR_OPENING = QColor(126, 87, 168)       # オープニング
 _COLOR_ENDING = QColor(96, 87, 168)         # エンディング
@@ -44,13 +53,55 @@ _COLOR_OVERLAY = QColor(40, 132, 130)       # 追加メディア
 _COLOR_SUBTITLE = QColor(178, 130, 46)      # 字幕
 _COLOR_AUDIO = QColor(56, 130, 78)          # 音声
 _COLOR_DISABLED = QColor(96, 96, 96)        # 無効化されたクリップ
-_COLOR_SELECTED_BORDER = QColor(255, 214, 92)
-_COLOR_TRACK_BG = QColor(38, 38, 40)
-_COLOR_TRACK_BG_ALT = QColor(44, 44, 47)
-_COLOR_GRID = QColor(64, 64, 68)
-_COLOR_PLAYHEAD = QColor(232, 84, 84)
-_COLOR_TEXT = QColor(236, 236, 236)
-_COLOR_RULER_BG = QColor(30, 30, 32)
+_COLOR_SELECTED_BORDER = QColor(255, 214, 92)   # 選択枠 (琥珀。赤にすると再生ヘッドと紛れる)
+
+# 波形を描く最小のクリップ幅 (px)。これより細いと形が読めない
+_WAVE_MIN_PX = 4
+# 波形に RMS を重ねる最小の幅 (px)。これより細いと重なって見分けが付かない
+_WAVE_RMS_MIN_PX = 24
+_COLOR_PLAYHEAD = QColor(232, 84, 84)           # 再生ヘッド (位置を示す機能色)
+
+# 背景系の色 (ver3 resolve3 §5.7-1)。
+# 「Timeline の背景の黒色部分のみガラスにする」(R10) ため、下記だけをテーマから引く。
+# Timeline は OS の明暗に追従せず常にダーク基調 (§3-6-3)。
+# ui.theme = "system" のときは従来の不透明色へ完全に戻す (§7 の切り戻し)ため、
+# 旧定数を _LEGACY_ として残し、フォールバック値に使う。
+_LEGACY_TRACK_BG = QColor(38, 38, 40)
+_LEGACY_TRACK_BG_ALT = QColor(44, 44, 47)
+_LEGACY_GRID = QColor(64, 64, 68)
+_LEGACY_TEXT = QColor(236, 236, 236)
+_LEGACY_RULER_BG = QColor(30, 30, 32)
+
+
+# トラック領域の下地 (= 「Timeline の背景の黒色部分」)。半透明なのでウィンドウ背景が透ける。
+def _backdrop_color():
+    return theme.color("timeline.bg") if theme.is_enabled() else _LEGACY_TRACK_BG
+
+
+# 交互に敷くトラック行の色 (縞模様は維持する)。
+# 下地 (timeline.bg) と重ねた結果を 1 色へ畳んで返すため、塗りは 1 回で済む (§5.8)。
+def _row_color(index):
+    if not theme.is_enabled():
+        return _LEGACY_TRACK_BG if index % 2 == 0 else _LEGACY_TRACK_BG_ALT
+    token = "timeline.track" if index % 2 == 0 else "timeline.track.alt"
+    return theme.composite_color(token, "timeline.bg")
+
+
+# ルーラ・トラックヘッダの色 (同じく下地と畳んだ 1 色)
+def _ruler_color():
+    if not theme.is_enabled():
+        return _LEGACY_RULER_BG
+    return theme.composite_color("timeline.ruler", "timeline.bg")
+
+
+# 罫線
+def _grid_color():
+    return theme.color("timeline.grid") if theme.is_enabled() else _LEGACY_GRID
+
+
+# ラベル文字
+def _text_color():
+    return theme.color("timeline.text") if theme.is_enabled() else _LEGACY_TEXT
 
 # ドラッグの種類
 _DRAG_NONE = 0
@@ -129,7 +180,8 @@ class TimelineRuler(QWidget):
 
     def paintEvent(self, _event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), _COLOR_RULER_BG)
+        # 下地 (黒) とルーラ層を畳んだ 1 色で塗る。ガラスのため背景が透ける (§5.7-1)
+        painter.fillRect(self.rect(), _ruler_color())
         zoom = self._controller.zoom()
         if zoom <= 0:
             return
@@ -143,13 +195,15 @@ class TimelineRuler(QWidget):
         total = self._controller.timeline.duration_sec()
         with_hours = total >= 3600
 
-        painter.setPen(QPen(_COLOR_GRID))
+        grid_pen = QPen(_grid_color())
+        text_pen = QPen(_text_color())
+        painter.setPen(grid_pen)
         value = first
         while value <= self._offset + visible_sec + step:
             x = int((value - self._offset) * zoom)
-            painter.setPen(QPen(_COLOR_GRID))
+            painter.setPen(grid_pen)
             painter.drawLine(x, RULER_HEIGHT - 8, x, RULER_HEIGHT)
-            painter.setPen(QPen(_COLOR_TEXT))
+            painter.setPen(text_pen)
             painter.drawText(x + 3, RULER_HEIGHT - 10, format_time(value, with_hours))
             value += step
 
@@ -160,16 +214,22 @@ class TimelineRuler(QWidget):
             painter.drawLine(head_x, 0, head_x, RULER_HEIGHT)
 
     def mousePressEvent(self, event):
-        self._emit_seek(event.position().x())
+        self._emit_seek(event.position().x(), event.modifiers())
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            self._emit_seek(event.position().x())
+            self._emit_seek(event.position().x(), event.modifiers())
 
-    def _emit_seek(self, x):
+    # ルーラの操作でも編集点へ吸着させる (resolve2 §5.2-2 / R1)
+    # Alt 押下中は吸着しない。
+    def _emit_seek(self, x, modifiers=Qt.NoModifier):
         zoom = self._controller.zoom()
-        if zoom > 0:
-            self.seek_requested.emit(self._offset + x / zoom)
+        if zoom <= 0:
+            return
+        sec = self._offset + x / zoom
+        if not (modifiers & Qt.AltModifier):
+            sec = self._controller.snap_playhead_sec(sec)
+        self.seek_requested.emit(sec)
 
 
 # ラベルが詰まらない最小の目盛り刻みを選ぶ (固定刻みをハードコードしない / §6.7)
@@ -193,16 +253,16 @@ class TrackHeaderWidget(QWidget):
 
     def paintEvent(self, _event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), _COLOR_RULER_BG)
+        # ルーラと同じ見え方に揃える (下地と重ねた 1 色で塗る / §5.7-1)
+        painter.fillRect(self.rect(), _ruler_color())
         rows = build_rows(self._controller.timeline, self._controller.cfg)
         for index, row in enumerate(rows):
             rect = QRect(0, row["y"], self.width(), row["height"])
-            painter.fillRect(
-                rect, _COLOR_TRACK_BG if index % 2 == 0 else _COLOR_TRACK_BG_ALT)
-            painter.setPen(QPen(_COLOR_GRID))
+            painter.fillRect(rect, _row_color(index))
+            painter.setPen(QPen(_grid_color()))
             painter.drawLine(0, row["y"] + row["height"], self.width(),
                              row["y"] + row["height"])
-            painter.setPen(QPen(_COLOR_TEXT))
+            painter.setPen(QPen(_text_color()))
             painter.drawText(rect.adjusted(8, 0, -4, 0),
                              Qt.AlignVCenter | Qt.AlignLeft, row["track"].id)
 
@@ -220,6 +280,8 @@ class TimelineView(QWidget):
 
     # クリップのダブルクリック (字幕編集などを開く)
     clip_activated = Signal(str)
+    # 操作できなかったときの案内 (プレビュー下のステータスへ出す)
+    status_message = Signal(str)
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -230,6 +292,17 @@ class TimelineView(QWidget):
         self._drag_anchor_sec = 0.0
         self._drag_origin = 0.0
         self._drag_preview = None          # ドラッグ中の仮位置 (確定まで模型には触らない)
+        # クリップのアウトラインの太さ (ver3 resolve4 E5)。
+        # 長尺では 1,000 個超のクリップを毎フレーム描くため、設定の解決は 1 度だけ行う。
+        ui_cfg = controller.cfg["ui"]
+        self._outline_width = int(ui_cfg["clip_outline_width_px"])
+        self._outline_selected_width = int(ui_cfg["clip_outline_selected_width_px"])
+        # 音声クリップの波形。素材のデコードは裏で進み、伸びるたびに描き直す。
+        wave_cfg = controller.cfg["waveform"]
+        self._waveform_scale = wave_cfg["scale"]
+        self._waveform_db_floor = abs(float(wave_cfg["db_floor"])) or 48.0
+        self._waveform = WaveformCache(controller.settings, controller.cfg, parent=self)
+        self._waveform.changed.connect(self.update)
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -264,9 +337,17 @@ class TimelineView(QWidget):
 
     def paintEvent(self, _event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), _COLOR_TRACK_BG)
         timeline = self._controller.timeline
         rows = build_rows(timeline, self._controller.cfg)
+
+        # トラック領域の最背面に下地を敷く (= 「Timeline の背景の黒色部分」/ §5.7-1)。
+        # 完全な透明にはしない。下地が明るいとクリップの色が沈んで見分けにくくなるため。
+        # 各行は下地を畳み込んだ色で塗るため、ここではトラックが無い余白だけを塗る
+        # (同じ画素を 2 度合成しないようにして描画コストを増やさない / §5.8)。
+        filled_height = rows[-1]["y"] + rows[-1]["height"] if rows else 0
+        if filled_height < self.height():
+            painter.fillRect(0, filled_height, self.width(),
+                             self.height() - filled_height, _backdrop_color())
 
         for index, row in enumerate(rows):
             self._paint_row(painter, row, index, timeline)
@@ -280,8 +361,8 @@ class TimelineView(QWidget):
     def _paint_row(self, painter, row, index, timeline):
         track = row["track"]
         rect = QRect(0, row["y"], self.width(), row["height"])
-        painter.fillRect(rect, _COLOR_TRACK_BG if index % 2 == 0 else _COLOR_TRACK_BG_ALT)
-        painter.setPen(QPen(_COLOR_GRID))
+        painter.fillRect(rect, _row_color(index))
+        painter.setPen(QPen(_grid_color()))
         painter.drawLine(0, rect.bottom(), self.width(), rect.bottom())
 
         selected = set(self._controller.selected_ids())
@@ -315,15 +396,112 @@ class TimelineView(QWidget):
         rect = QRect(int(x1), top, max(int(x2 - x1), 2), height)
         color = self._clip_color(clip, track)
         painter.fillRect(rect, QBrush(color))
+
+        # 音声クリップは塗りの上に波形 (X=時間 / Y=音量) を重ねる。
+        # アウトライン・ラベルより先に描き、枠と文字が波形に埋もれないようにする。
+        if isinstance(clip, AudioClip):
+            self._paint_waveform(painter, clip, rect, color)
+
+        # アウトライン (ver3 resolve4 E5)。太さは設定から引く (値は __init__ で解決済み)。
+        # QPen は境界線を中心に描かれ、太さのぶん外側へはみ出す。隣のクリップへ
+        # 食い込むと編集点の境界が読めなくなるため、太さに応じて内側へ縮めて描く。
+        # 細いクリップでは塗りが潰れないよう太さを抑える。
+        width = self._outline_selected_width if is_selected else self._outline_width
+        limit = max(1, min(rect.width(), rect.height()) // 2)
+        if width > limit:
+            width = limit
         painter.setPen(QPen(_COLOR_SELECTED_BORDER if is_selected else color.darker(160),
-                            2 if is_selected else 1))
-        painter.drawRect(rect)
+                            width))
+        inset = width // 2
+        # inset=0 のときは矩形を作り直さない (長尺では 1,000 個超を毎フレーム描くため)
+        painter.drawRect(rect.adjusted(inset, inset, -inset, -inset) if inset else rect)
 
         # ラベル (幅に余裕があるときだけ)
         if rect.width() >= 40:
-            painter.setPen(QPen(_COLOR_TEXT))
+            painter.setPen(QPen(_text_color()))
             painter.drawText(rect.adjusted(5, 0, -5, 0),
                              Qt.AlignVCenter | Qt.AlignLeft, self._clip_label(clip, track))
+
+    # 音声クリップの背景へ波形を敷く (DaVinci Resolve と同じ、緑地に明るい波形)。
+    # 波形は素材内の時刻で引くため、クリップを動かしても切っても中身がずれない。
+    def _paint_waveform(self, painter, clip, rect, color):
+        timeline = self._controller.timeline
+        video = timeline.clip_by_id(clip.link_clip)
+        if video is None:
+            return
+        peaks = self._waveform.peaks_for(timeline.media_by_id(video.media_id))
+        if peaks is None:
+            return
+        zoom = self._controller.zoom()
+        if zoom <= 0 or rect.height() < 8:
+            return
+
+        # 画面に出ている範囲だけを列に落とす (長尺・高倍率でも描画量が画面幅で頭打ちになる)
+        left = max(rect.left(), 0)
+        right = min(rect.right(), self.width() - 1)
+        columns = right - left + 1
+        # 数 px しか無いクリップは波形を出しても読めない。縮小しきった長尺では
+        # この幅のクリップが数千個並ぶため、ここで落とすと描画コストが跳ねない。
+        if columns < _WAVE_MIN_PX:
+            return
+        source_start = video.source_in + (left - rect.left()) / zoom
+        source_end = video.source_in + (right + 1 - rect.left()) / zoom
+        # RMS は細いクリップでは重なって見えないので計算しない。
+        # 無音カット後は細いクリップが大量に並ぶため、ここが描画コストに効く。
+        result = peaks.columns(source_start, source_end, columns,
+                               with_rms=columns >= _WAVE_RMS_MIN_PX)
+        if result is None:
+            return
+        peak_values, rms_values = result
+
+        center = rect.top() + rect.height() / 2.0
+        half = rect.height() / 2.0 - 2.0
+        if half <= 1.0:
+            return
+        # 波形は塗りより明るくする。ミュート時は塗りが灰色になるため、
+        # ここで色を作れば波形も自動的に灰色系へ揃う。
+        peak_color = color.lighter(155)
+        peak_color.setAlpha(200)
+        # 音量 (gain) を波形へ反映する。メニューで dB を変えると形が上下に伸縮し、
+        # 実際に書き出される音の大きさが目で分かる。
+        gain = 10.0 ** (clip.gain_db / 20.0) if abs(clip.gain_db) > 1e-6 else 1.0
+        self._draw_wave_lines(painter, peak_values, left, center, half, peak_color, gain)
+        # RMS (実効値) を重ねると音の詰まり具合が読み取りやすくなる (numpy がある環境のみ)
+        if rms_values is not None:
+            painter.setOpacity(0.9)
+            self._draw_wave_lines(painter, rms_values, left, center, half,
+                                  color.lighter(215), gain)
+            painter.setOpacity(1.0)
+
+    # 列ごとの音量 (0.0〜1.0) を中心線から上下対称に立てる
+    def _draw_wave_lines(self, painter, values, left, center, half, color, gain=1.0):
+        log_scale = self._waveform_scale == "log"
+        floor_db = self._waveform_db_floor
+        lines = []
+        for index, value in enumerate(values):
+            level = float(value) * gain
+            if log_scale:
+                # dB 目盛り。底 (db_floor) 以下は高さ 0 にする
+                level = 0.0 if level <= 1e-6 else 1.0 + (20.0 * math.log10(level)) / floor_db
+            # gain を上げた分がトラックからはみ出さないよう、必ず 0〜1 へ収める
+            if level > 1.0:
+                level = 1.0
+            elif level < 0.0:
+                level = 0.0
+            offset = level * half
+            x = left + index
+            top = int(round(center - offset))
+            bottom = int(round(center + offset))
+            if bottom <= top:
+                bottom = top + 1     # 無音でも中心線は残す (クリップの存在が分かる)
+            lines.append(QLine(x, top, x, bottom))
+        if lines:
+            painter.setPen(QPen(color))
+            painter.drawLines(lines)
+
+    # 走っている波形デコードを止める (画面を閉じるとき)
+    def shutdown(self):
+        self._waveform.shutdown()
 
     def _clip_color(self, clip, track):
         if isinstance(clip, AudioClip):
@@ -362,6 +540,13 @@ class TimelineView(QWidget):
     # ------------------------------------------------------------------
     # ヒットテスト
     # ------------------------------------------------------------------
+
+    # 座標にあるトラック行を返す (トラックの外なら None)
+    def _row_at_pos(self, pos):
+        for row in build_rows(self._controller.timeline, self._controller.cfg):
+            if row["y"] <= pos.y() < row["y"] + row["height"]:
+                return row
+        return None
 
     # 座標にあるクリップとトラックを返す ((clip, track, row) / 無ければ None)
     def clip_at_pos(self, pos):
@@ -410,10 +595,11 @@ class TimelineView(QWidget):
         hit = self.clip_at_pos(pos)
 
         if hit is None:
-            # 空き領域 → 再生ヘッド移動 + 選択解除
+            # 空き領域 → 再生ヘッド移動 (編集点へ吸着) + 選択解除
             self._controller.clear_selection()
             self._drag = _DRAG_PLAYHEAD
-            self._controller.set_playhead(self.x_to_sec(pos.x()))
+            self._controller.set_playhead(
+                self._playhead_sec_at(pos.x(), event.modifiers()))
             return
 
         clip, track, _row = hit
@@ -456,17 +642,22 @@ class TimelineView(QWidget):
             return
 
         if self._drag == _DRAG_PLAYHEAD:
-            self._controller.set_playhead(self.x_to_sec(pos.x()))
+            self._controller.set_playhead(
+                self._playhead_sec_at(pos.x(), event.modifiers()))
             return
 
         clip = self._controller.timeline.clip_by_id(self._drag_clip_id)
         if clip is None:
             return
-        sec = self._snap(self.x_to_sec(pos.x()), exclude_id=clip.id)
+        no_snap = bool(event.modifiers() & Qt.AltModifier)
+        raw_sec = self.x_to_sec(pos.x())
+        sec = raw_sec if no_snap else self._snap(raw_sec, exclude_id=clip.id)
 
         if self._drag == _DRAG_MOVE:
-            delta = self.x_to_sec(pos.x()) - self._drag_anchor_sec
-            start = self._snap(max(self._drag_origin + delta, 0.0), exclude_id=clip.id)
+            delta = raw_sec - self._drag_anchor_sec
+            desired = max(self._drag_origin + delta, 0.0)
+            # 先頭・末尾の両方で吸着を試す (R2)
+            start = desired if no_snap else self._snap_move(desired, clip)
             self._drag_preview = {"id": clip.id, "start": max(start, 0.0),
                                   "duration": clip.duration}
         elif self._drag == _DRAG_TRIM_LEFT:
@@ -516,26 +707,29 @@ class TimelineView(QWidget):
         else:
             self.unsetCursor()
 
-    # ドラッグ中の吸着 (再生ヘッド・他クリップの端・先頭 / §6.6)
+    # ドラッグ中の吸着 (編集点・再生ヘッド・先頭/末尾 / resolve2 §5.2)
+    # 計算そのものは Controller に集約してある (クリップドラッグと再生ヘッドで共有)。
     def _snap(self, sec, exclude_id=None):
-        if not self._controller.cfg["snap_enabled"]:
+        return self._controller.snap_sec(sec, exclude_id=exclude_id)
+
+    # 移動時は先頭・末尾の両方で吸着を試し、ズレの小さい方を採る (resolve2 §5.2-3 / R2)
+    # 末尾を隣のクリップの先頭へ合わせたい場面で吸着が効くようになる。
+    def _snap_move(self, desired_start, clip):
+        head = self._controller.snap_sec(desired_start, exclude_id=clip.id)
+        tail = self._controller.snap_sec(
+            desired_start + clip.duration, exclude_id=clip.id) - clip.duration
+        if abs(head - desired_start) <= abs(tail - desired_start):
+            return head
+        return tail
+
+    # マウス座標から再生ヘッド位置を決める (編集点へ吸着させる / resolve2 §5.2-2 / R1)
+    # 再生ヘッド自身は吸着先から外す (自分へ吸着して動かなくなるため)。
+    # Alt 押下中は吸着しない (クリップ移動と同じ規約)。
+    def _playhead_sec_at(self, x, modifiers=Qt.NoModifier):
+        sec = self.x_to_sec(x)
+        if modifiers & Qt.AltModifier:
             return sec
-        zoom = self._controller.zoom()
-        if zoom <= 0:
-            return sec
-        threshold = self._controller.cfg["snap_threshold_px"] / zoom
-        candidates = [0.0, self._controller.playhead()]
-        timeline = self._controller.timeline
-        for track in timeline.tracks:
-            if track.is_audio():
-                continue
-            for clip in track.clips:
-                if clip.id == exclude_id:
-                    continue
-                candidates.append(clip.timeline_start)
-                candidates.append(clip.timeline_end)
-        best = min(candidates, key=lambda c: abs(c - sec), default=sec)
-        return best if abs(best - sec) <= threshold else sec
+        return self._controller.snap_playhead_sec(sec)
 
     # ------------------------------------------------------------------
     # 右クリックメニュー (§6.6)
@@ -548,7 +742,16 @@ class TimelineView(QWidget):
 
         if hit is None:
             menu.addAction("ここへ再生ヘッドを移動",
-                           lambda: self._controller.set_playhead(self.x_to_sec(pos.x())))
+                           lambda: self._controller.set_playhead(
+                               self._playhead_sec_at(pos.x())))
+            # 字幕トラックの空き領域なら、その位置へ新しい字幕を足せる
+            row = self._row_at_pos(pos)
+            track = row["track"] if row is not None else None
+            if track is not None and track.is_subtitle():
+                menu.addSeparator()
+                action = menu.addAction(
+                    "字幕追加", lambda: self._add_subtitle(pos, track))
+                action.setEnabled(not track.locked)
             menu.exec(event.globalPos())
             return
 
@@ -565,9 +768,23 @@ class TimelineView(QWidget):
         menu.addAction("ここで分割", lambda: self._controller.split_at_playhead(
             clip.id, at_sec))
         menu.addSeparator()
+        # 再生ヘッドを境にしたリップル削除 (A / D / resolve2 R4・R6)
+        before = menu.addAction(
+            "再生ヘッドより前をリップル削除\tA",
+            lambda: self._controller.ripple_trim_to_playhead("before"))
+        after = menu.addAction(
+            "再生ヘッドより後ろをリップル削除\tD",
+            lambda: self._controller.ripple_trim_to_playhead("after"))
+        # 再生ヘッドがクリップの中に無ければ実行できない
+        on_playhead = clip.timeline_start < self._controller.playhead() < clip.timeline_end
+        before.setEnabled(on_playhead)
+        after.setEnabled(on_playhead)
+        menu.addSeparator()
         # 削除は 2 種類を常に並べて出す (回答 Q5 / R17)
-        menu.addAction("削除", lambda: self._controller.delete_selected(ripple=False))
-        menu.addAction("リップル削除", lambda: self._controller.delete_selected(ripple=True))
+        menu.addAction("リップル削除\tDelete",
+                       lambda: self._controller.delete_selected(ripple=True))
+        menu.addAction("削除のみ (空白を残す)\tBackSpace",
+                       lambda: self._controller.delete_selected(ripple=False))
         menu.addSeparator()
         layer = menu.addMenu("レイヤー")
         base = self._controller.timeline.base_video_track()
@@ -584,6 +801,15 @@ class TimelineView(QWidget):
         menu.addAction("使用しない" if used else "使用する",
                        lambda: self._controller.set_clip_enabled(clip.id, not used))
         menu.exec(event.globalPos())
+
+    # 右クリックした位置へ新しい字幕クリップを足す
+    # 開始位置は編集点へ吸着させる (クリップ移動と同じ規約)。
+    def _add_subtitle(self, pos, track):
+        start = max(self._snap(self.x_to_sec(pos.x())), 0.0)
+        clip_id = self._controller.add_subtitle(
+            start, track_id=track.id, text=NEW_SUBTITLE_TEXT)
+        if clip_id is None:
+            self.status_message.emit("この位置には字幕を追加できません")
 
     # 音声クリップのメニュー: 削除は出さない (V1 側から消す / §6.3.4)
     def _build_audio_menu(self, menu, clip):
@@ -713,12 +939,17 @@ class TimelinePanel(QWidget):
         # ズーム操作
         zoom_row = QHBoxLayout()
         zoom_row.setContentsMargins(6, 2, 6, 2)
+        # ボタン幅は設定から引く (ver3 resolve4 E4)。テーマの QSS が左右に余白を持つため、
+        # 記号が見切れない幅を明示する。文字ボタン (全体) は自然な幅のままでよい。
+        zoom_button_width = int(self._controller.cfg["ui"]["zoom_button_width_px"])
         minus = QPushButton("－")
-        minus.setFixedWidth(32)
+        minus.setFixedWidth(zoom_button_width)
+        theme.mark_icon_button(minus)
         minus.setToolTip("Timeline を縮小 (Ctrl + ホイールでも操作できます)")
         minus.clicked.connect(lambda: self._controller.zoom_by(1 / 1.25))
         plus = QPushButton("＋")
-        plus.setFixedWidth(32)
+        plus.setFixedWidth(zoom_button_width)
+        theme.mark_icon_button(plus)
         plus.setToolTip("Timeline を拡大 (Ctrl + ホイールでも操作できます)")
         plus.clicked.connect(lambda: self._controller.zoom_by(1.25))
         fit = QPushButton("全体")
@@ -728,9 +959,10 @@ class TimelinePanel(QWidget):
         zoom_row.addWidget(plus)
         zoom_row.addWidget(fit)
         self.hint_label = QLabel(
-            "クリップ: ドラッグで移動 / 端をドラッグで長さ変更 / Ctrl+B で分割 / "
-            "Delete で削除・Shift+Delete でリップル削除")
-        self.hint_label.setStyleSheet("color:#888;")
+            "W 分割 / A 前をリップル削除 / D 後ろをリップル削除 / "
+            "Delete リップル削除・BackSpace 削除のみ / "
+            "Space 再生・Q 倍速逆再生・E 倍速再生 / Alt で吸着オフ")
+        theme.mark_note(self.hint_label)
         zoom_row.addWidget(self.hint_label, 1)
         root.addLayout(zoom_row)
 
@@ -765,12 +997,20 @@ class TimelinePanel(QWidget):
         total = self._controller.timeline.duration_sec()
         visible = self.view.visible_sec()
         maximum = max(total - visible, 0.0)
+        # 表示位置も新しい上限へ丸める。丸めないと、右端まで送ってから縮小・
+        # 画面幅の変化で上限が縮んだとき、スクロールバーだけが上限へ張り付いて
+        # 表示は Timeline の外に取り残される。そうなるとバーを動かしても値が
+        # 変わらず (= valueChanged が出ず) 左へ戻れなくなる。
+        offset = min(max(self.view.offset(), 0.0), maximum)
         self.scrollbar.blockSignals(True)
         self.scrollbar.setRange(0, int(maximum * 1000))
         self.scrollbar.setPageStep(int(max(visible, 0.1) * 1000))
         self.scrollbar.setSingleStep(int(max(visible / 10.0, 0.05) * 1000))
-        self.scrollbar.setValue(int(self.view.offset() * 1000))
+        self.scrollbar.setValue(int(offset * 1000))
         self.scrollbar.blockSignals(False)
+        # 信号を止めている間の valueChanged は届かないため、表示側へは自分で配る。
+        # これでバーの値と表示位置が常に一致する。
+        self._on_scroll(self.scrollbar.value())
 
     # 再生ヘッドが可視域外に出たら追従スクロールする (§6.7)
     def _ensure_visible(self, sec):
@@ -782,6 +1022,10 @@ class TimelinePanel(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_scrollbar()
+
+    # 裏で走っている処理を止める (画面を閉じるとき)
+    def shutdown(self):
+        self.view.shutdown()
 
     # Timeline 全体が収まるズームにする
     def zoom_to_fit(self):

@@ -1,0 +1,640 @@
+2026-08-10 10:13:33,778 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 10:13:33,783 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:13:33,783 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 10:13:33,804 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 10:13:33,806 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 10:13:33,806 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 10:13:33,820 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:13:33,820 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:13:33,832 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:13:33,846 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test__25xko8i\sample.mp4
+2026-08-10 10:13:33,877 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_yahhxt01\sample.mp4
+2026-08-10 10:13:33,893 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_tqb9m2a4\sample.mp4
+2026-08-10 10:13:33,910 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zayqz3tq\sample.mp4
+2026-08-10 10:13:33,910 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 10:13:33,910 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 10:13:33,937 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_npkbr5j5\sample.mp4
+2026-08-10 10:13:33,957 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_i_563jtc\sample.mp4
+2026-08-10 10:13:33,981 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_go4mxs07\sample.mp4
+2026-08-10 10:13:33,997 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_go4mxs07\sample.mp4
+2026-08-10 10:13:34,019 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xxcfep9_\sample.mp4
+2026-08-10 10:13:34,019 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 10:13:34,035 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_155x5i6m\sample.mp4
+2026-08-10 10:13:34,035 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_leud4ho8\sample.mp4
+2026-08-10 10:13:34,067 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ma11q8q0\sample.mp4
+2026-08-10 10:13:34,088 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zgn5xm_k\sample.mp4
+2026-08-10 10:13:34,107 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_qpnabc7h\sample.mp4
+2026-08-10 10:13:34,123 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9mwlew_s\sample.mp4
+2026-08-10 10:13:34,139 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0ns5j8tf\sample.mp4
+2026-08-10 10:13:34,164 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_drts9753\sample.mp4
+2026-08-10 10:13:34,174 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_bx49lq0g\sample.mp4
+2026-08-10 10:13:34,174 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 10:13:34,191 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r_0xtl9u\sample.mp4
+2026-08-10 10:13:34,191 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r_0xtl9u\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:13:34,200 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 10:13:34,200 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r_0xtl9u\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:13:34,221 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_08u1e3be\sample.mp4
+2026-08-10 10:13:34,221 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_08u1e3be\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:13:34,223 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_08u1e3be\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:13:34,242 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\sample.mp4
+2026-08-10 10:13:34,242 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:13:34,272 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\out.srt (1 件)
+2026-08-10 10:13:34,272 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\out.srt (タイムライン尺 5.00s)
+2026-08-10 10:13:34,298 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_110ptbm4\out.fcpxml
+2026-08-10 10:13:34,314 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 10:13:34,314 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,330 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,330 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 10:13:34,330 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 10:13:34,330 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,332 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,332 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,332 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:13:34,332 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 10:13:34,334 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,334 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,336 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:13:34,347 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_umqbm238\sample.timeline.json
+2026-08-10 10:13:34,370 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_pqhm1i34\sample.timeline.json
+2026-08-10 10:13:34,395 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 10:13:34,397 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 10:13:34,399 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:13:34,401 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 10:13:34,473 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 10:13:34,473 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:41:40,726 [WARNING] src.timeline.media_probe: ffprobe が失敗しました: D:\develop\autoedit\wave_test.mp4
+2026-08-10 10:46:08,624 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 10:46:08,624 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:46:08,643 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 10:46:08,645 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 10:46:08,646 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 10:46:08,646 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 10:46:08,651 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:46:08,651 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:46:08,656 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:46:08,668 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ozegdp6d\sample.mp4
+2026-08-10 10:46:08,670 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0i3hqs93\sample.mp4
+2026-08-10 10:46:08,670 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_osx0r0qg\sample.mp4
+2026-08-10 10:46:08,686 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xooujcy4\sample.mp4
+2026-08-10 10:46:08,686 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 10:46:08,686 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 10:46:08,695 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_p02zzh18\sample.mp4
+2026-08-10 10:46:08,702 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ffysd5jz\sample.mp4
+2026-08-10 10:46:08,718 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lco4ysgy\sample.mp4
+2026-08-10 10:46:08,718 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lco4ysgy\sample.mp4
+2026-08-10 10:46:08,718 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_a0f9lezl\sample.mp4
+2026-08-10 10:46:08,734 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 10:46:08,739 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_mrf1py0q\sample.mp4
+2026-08-10 10:46:08,750 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_blofeue7\sample.mp4
+2026-08-10 10:46:08,750 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_jp2k6hwa\sample.mp4
+2026-08-10 10:46:08,768 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_knnp7_ej\sample.mp4
+2026-08-10 10:46:08,777 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_8giw1m0t\sample.mp4
+2026-08-10 10:46:08,779 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_axmqbr61\sample.mp4
+2026-08-10 10:46:08,779 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wqhemkvq\sample.mp4
+2026-08-10 10:46:08,795 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9k5bgimk\sample.mp4
+2026-08-10 10:46:08,811 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_td6jax1o\sample.mp4
+2026-08-10 10:46:08,811 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 10:46:08,811 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_obi7hy50\sample.mp4
+2026-08-10 10:46:08,811 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_obi7hy50\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:46:08,811 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 10:46:08,811 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_obi7hy50\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:46:08,831 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5ks7rloi\sample.mp4
+2026-08-10 10:46:08,831 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5ks7rloi\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:46:08,831 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5ks7rloi\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:46:08,840 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\sample.mp4
+2026-08-10 10:46:08,840 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:46:08,843 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\out.srt (1 件)
+2026-08-10 10:46:08,843 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\out.srt (タイムライン尺 5.00s)
+2026-08-10 10:46:08,859 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ukmpew4z\out.fcpxml
+2026-08-10 10:46:08,866 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,866 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 10:46:08,875 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:46:08,876 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 10:46:08,877 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,877 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,877 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:46:08,882 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_e1vcrefy\sample.timeline.json
+2026-08-10 10:46:08,905 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_9brrzwlb\sample.timeline.json
+2026-08-10 10:46:08,916 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 10:46:08,916 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 10:46:08,916 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:46:08,916 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 10:46:08,921 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 10:46:08,921 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:48:31,147 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-10 10:48:43,010 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 10:48:43,015 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:48:43,021 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 10:48:43,023 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 10:48:43,023 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 10:48:43,023 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 10:48:43,029 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:48:43,031 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:48:43,035 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:48:43,045 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2k4srvyx\sample.mp4
+2026-08-10 10:48:43,054 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_6dc3go0n\sample.mp4
+2026-08-10 10:48:43,061 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fp6ltnpo\sample.mp4
+2026-08-10 10:48:43,070 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_cuzypdk_\sample.mp4
+2026-08-10 10:48:43,070 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 10:48:43,070 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 10:48:43,081 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_u4nzdrp9\sample.mp4
+2026-08-10 10:48:43,089 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zfjxoy_1\sample.mp4
+2026-08-10 10:48:43,098 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9wkjsjw1\sample.mp4
+2026-08-10 10:48:43,106 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9wkjsjw1\sample.mp4
+2026-08-10 10:48:43,114 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ypxi8wdq\sample.mp4
+2026-08-10 10:48:43,114 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 10:48:43,122 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zbmqahhj\sample.mp4
+2026-08-10 10:48:43,134 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_19roywz9\sample.mp4
+2026-08-10 10:48:43,144 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ou9jtr_7\sample.mp4
+2026-08-10 10:48:43,153 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_umnklohb\sample.mp4
+2026-08-10 10:48:43,161 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_f20bd4l6\sample.mp4
+2026-08-10 10:48:43,170 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ky69l64_\sample.mp4
+2026-08-10 10:48:43,176 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_20_ih02o\sample.mp4
+2026-08-10 10:48:43,176 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_c6kner41\sample.mp4
+2026-08-10 10:48:43,197 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_13qaobvf\sample.mp4
+2026-08-10 10:48:43,197 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 10:48:43,204 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vzobejdm\sample.mp4
+2026-08-10 10:48:43,204 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vzobejdm\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:48:43,206 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 10:48:43,206 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vzobejdm\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:48:43,215 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9yqld3c1\sample.mp4
+2026-08-10 10:48:43,216 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9yqld3c1\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:48:43,217 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9yqld3c1\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:48:43,226 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\sample.mp4
+2026-08-10 10:48:43,226 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:48:43,231 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\out.srt (1 件)
+2026-08-10 10:48:43,231 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\out.srt (タイムライン尺 5.00s)
+2026-08-10 10:48:43,233 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o_z4t_j8\out.fcpxml
+2026-08-10 10:48:43,242 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 10:48:43,243 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 10:48:43,243 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,244 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 10:48:43,247 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,249 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,249 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:48:43,253 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_xiuk02qw\sample.timeline.json
+2026-08-10 10:48:43,280 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_yjz98w8y\sample.timeline.json
+2026-08-10 10:48:43,285 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 10:48:43,286 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 10:48:43,287 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:48:43,288 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 10:48:43,291 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 10:48:43,291 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:48:43,298 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-10 10:50:25,353 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 10:50:25,356 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:50:25,362 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 10:50:25,363 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 10:50:25,363 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 10:50:25,365 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 10:50:25,370 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:50:25,370 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:50:25,374 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:50:25,384 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_m83_9asi\sample.mp4
+2026-08-10 10:50:25,390 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vrtkmsz1\sample.mp4
+2026-08-10 10:50:25,390 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_prugpp88\sample.mp4
+2026-08-10 10:50:25,410 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_1fctt3cu\sample.mp4
+2026-08-10 10:50:25,411 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 10:50:25,411 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 10:50:25,419 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_mlps7y8g\sample.mp4
+2026-08-10 10:50:25,420 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dpyb41ub\sample.mp4
+2026-08-10 10:50:25,435 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zwhkxlq2\sample.mp4
+2026-08-10 10:50:25,443 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zwhkxlq2\sample.mp4
+2026-08-10 10:50:25,455 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_p25cy0as\sample.mp4
+2026-08-10 10:50:25,455 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 10:50:25,455 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r8mg4loi\sample.mp4
+2026-08-10 10:50:25,467 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_yef__3oj\sample.mp4
+2026-08-10 10:50:25,467 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_hkkptf41\sample.mp4
+2026-08-10 10:50:25,489 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_3aorpgw4\sample.mp4
+2026-08-10 10:50:25,498 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9lrqewkv\sample.mp4
+2026-08-10 10:50:25,498 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_nqxsw5d2\sample.mp4
+2026-08-10 10:50:25,514 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r29v3p0_\sample.mp4
+2026-08-10 10:50:25,514 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wfcxgfzf\sample.mp4
+2026-08-10 10:50:25,531 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_q3r9rgu_\sample.mp4
+2026-08-10 10:50:25,532 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 10:50:25,541 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2re3udxg\sample.mp4
+2026-08-10 10:50:25,541 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2re3udxg\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:25,542 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 10:50:25,542 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2re3udxg\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:50:25,551 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test__x163nju\sample.mp4
+2026-08-10 10:50:25,551 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test__x163nju\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:25,552 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test__x163nju\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:50:25,560 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\sample.mp4
+2026-08-10 10:50:25,560 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:25,560 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\out.srt (1 件)
+2026-08-10 10:50:25,560 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\out.srt (タイムライン尺 5.00s)
+2026-08-10 10:50:25,560 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ksnwi3i1\out.fcpxml
+2026-08-10 10:50:25,575 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 10:50:25,575 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 10:50:25,575 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,577 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,579 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:25,585 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_ernivpkx\sample.timeline.json
+2026-08-10 10:50:25,608 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_6n0tq5_i\sample.timeline.json
+2026-08-10 10:50:25,613 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 10:50:25,615 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 10:50:25,615 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:50:25,617 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 10:50:25,617 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 10:50:25,617 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:50:25,623 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-10 10:50:54,063 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 10:50:54,063 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:50:54,063 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 10:50:54,076 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 10:50:54,076 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 10:50:54,078 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 10:50:54,084 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:50:54,084 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 10:50:54,089 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 10:50:54,099 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_yp9i12zm\sample.mp4
+2026-08-10 10:50:54,108 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zfao1k9t\sample.mp4
+2026-08-10 10:50:54,118 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fqk83lgi\sample.mp4
+2026-08-10 10:50:54,127 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9ovnl22a\sample.mp4
+2026-08-10 10:50:54,127 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 10:50:54,127 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 10:50:54,136 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_1u2ro5j9\sample.mp4
+2026-08-10 10:50:54,139 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9w8_hns3\sample.mp4
+2026-08-10 10:50:54,139 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fz20dm18\sample.mp4
+2026-08-10 10:50:54,155 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fz20dm18\sample.mp4
+2026-08-10 10:50:54,155 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_mad7ibby\sample.mp4
+2026-08-10 10:50:54,155 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 10:50:54,178 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_57a8zfw4\sample.mp4
+2026-08-10 10:50:54,187 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_qobixs72\sample.mp4
+2026-08-10 10:50:54,196 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_18tf67a8\sample.mp4
+2026-08-10 10:50:54,201 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_la74k34k\sample.mp4
+2026-08-10 10:50:54,201 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ashpqmd2\sample.mp4
+2026-08-10 10:50:54,217 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_8k_m7dfl\sample.mp4
+2026-08-10 10:50:54,217 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_e7_bs5ej\sample.mp4
+2026-08-10 10:50:54,237 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_r2jmft_y\sample.mp4
+2026-08-10 10:50:54,245 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_h94bwywh\sample.mp4
+2026-08-10 10:50:54,245 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 10:50:54,248 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_osj0hu96\sample.mp4
+2026-08-10 10:50:54,248 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_osj0hu96\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:54,248 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 10:50:54,248 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_osj0hu96\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:50:54,264 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o66ub0py\sample.mp4
+2026-08-10 10:50:54,264 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o66ub0py\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:54,264 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o66ub0py\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 10:50:54,264 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\sample.mp4
+2026-08-10 10:50:54,264 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 10:50:54,278 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\out.srt (1 件)
+2026-08-10 10:50:54,278 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\out.srt (タイムライン尺 5.00s)
+2026-08-10 10:50:54,280 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xl7lhv47\out.fcpxml
+2026-08-10 10:50:54,280 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,280 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 10:50:54,298 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_ki3_ybag\sample.timeline.json
+2026-08-10 10:50:54,308 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_hncpr2qx\sample.timeline.json
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 10:50:54,310 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 10:50:54,326 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-10 11:46:58,148 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 11:46:58,151 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 11:46:58,151 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 11:46:58,158 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 11:46:58,158 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 11:46:58,158 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 11:46:58,163 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 11:46:58,167 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 11:46:58,172 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 11:46:58,183 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_i7x0bch0\sample.mp4
+2026-08-10 11:46:58,193 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_x0m_bq4v\sample.mp4
+2026-08-10 11:46:58,203 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_34gp5wts\sample.mp4
+2026-08-10 11:46:58,211 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n2ucz1c7\sample.mp4
+2026-08-10 11:46:58,211 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 11:46:58,212 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 11:46:58,219 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_iz6qr3_w\sample.mp4
+2026-08-10 11:46:58,229 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_oypfm28u\sample.mp4
+2026-08-10 11:46:58,240 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_72_zhluj\sample.mp4
+2026-08-10 11:46:58,250 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_72_zhluj\sample.mp4
+2026-08-10 11:46:58,260 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_deijlede\sample.mp4
+2026-08-10 11:46:58,260 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 11:46:58,272 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ghm2n6db\sample.mp4
+2026-08-10 11:46:58,281 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vfbsdsn5\sample.mp4
+2026-08-10 11:46:58,292 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_mgri7fm7\sample.mp4
+2026-08-10 11:46:58,303 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_qfjcjjkr\sample.mp4
+2026-08-10 11:46:58,313 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test__uqimukp\sample.mp4
+2026-08-10 11:46:58,323 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_glr9vi0l\sample.mp4
+2026-08-10 11:46:58,334 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2hkpgv9e\sample.mp4
+2026-08-10 11:46:58,343 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_msigclv_\sample.mp4
+2026-08-10 11:46:58,351 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7mnty6gf\sample.mp4
+2026-08-10 11:46:58,351 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 11:46:58,364 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_aedu4ey8\sample.mp4
+2026-08-10 11:46:58,366 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_aedu4ey8\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:46:58,366 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 11:46:58,367 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_aedu4ey8\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 11:46:58,378 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xaxnh4v3\sample.mp4
+2026-08-10 11:46:58,378 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xaxnh4v3\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:46:58,379 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xaxnh4v3\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 11:46:58,391 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\sample.mp4
+2026-08-10 11:46:58,391 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:46:58,396 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\out.srt (1 件)
+2026-08-10 11:46:58,396 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\out.srt (タイムライン尺 5.00s)
+2026-08-10 11:46:58,398 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dbeura_r\out.fcpxml
+2026-08-10 11:46:58,413 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 11:46:58,413 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 11:46:58,413 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 11:46:58,414 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,414 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,414 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,414 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,414 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,415 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:46:58,416 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 11:46:58,417 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,417 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,418 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:46:58,424 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_v9w_geur\sample.timeline.json
+2026-08-10 11:46:58,455 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_u03er3xz\sample.timeline.json
+2026-08-10 11:46:58,466 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 11:46:58,468 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 11:46:58,469 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 11:46:58,476 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 11:46:58,487 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 11:46:58,487 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 11:46:58,496 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-10 11:49:26,585 [WARNING] src.timeline.frame_source: 素材を開けませんでした: <stdin> (Invalid argument: '<stdin>' returned 22)
+2026-08-10 11:51:48,216 [WARNING] src.timeline.frame_source: 素材を開けませんでした: D:/develop/autoedit/src/main.py ([Errno 1094995529] Invalid data found when processing input: 'D:/develop/autoedit/src/main.py')
+2026-08-10 11:52:35,725 [WARNING] src.timeline.frame_source: 素材を開けませんでした: x.mp4 ([Errno 2] No such file or directory: 'x.mp4')
+2026-08-10 11:52:43,417 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-10 11:52:43,419 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 11:52:43,424 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-10 11:52:43,424 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-10 11:52:43,429 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-10 11:52:43,429 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-10 11:52:43,435 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 11:52:43,435 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-10 11:52:43,443 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-10 11:52:43,454 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_mu6_hy7g\sample.mp4
+2026-08-10 11:52:43,467 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_sk62mrik\sample.mp4
+2026-08-10 11:52:43,479 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_jw443epy\sample.mp4
+2026-08-10 11:52:43,489 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0ctd0d52\sample.mp4
+2026-08-10 11:52:43,489 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-10 11:52:43,489 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-10 11:52:43,499 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_jeu6eulh\sample.mp4
+2026-08-10 11:52:43,507 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_dcksdh9c\sample.mp4
+2026-08-10 11:52:43,517 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_b2t20mno\sample.mp4
+2026-08-10 11:52:43,526 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_b2t20mno\sample.mp4
+2026-08-10 11:52:43,528 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lz6w26ck\sample.mp4
+2026-08-10 11:52:43,528 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-10 11:52:43,545 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_nqty9hac\sample.mp4
+2026-08-10 11:52:43,554 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fuitgk55\sample.mp4
+2026-08-10 11:52:43,558 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_hn65q3ar\sample.mp4
+2026-08-10 11:52:43,577 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ekuzfoec\sample.mp4
+2026-08-10 11:52:43,586 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0j89i619\sample.mp4
+2026-08-10 11:52:43,597 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_jhm73z0c\sample.mp4
+2026-08-10 11:52:43,610 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xf2fl86q\sample.mp4
+2026-08-10 11:52:43,624 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_08pi4y8z\sample.mp4
+2026-08-10 11:52:43,629 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_frshynqj\sample.mp4
+2026-08-10 11:52:43,629 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-10 11:52:43,645 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wbnodhgq\sample.mp4
+2026-08-10 11:52:43,645 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wbnodhgq\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:52:43,646 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-10 11:52:43,646 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_wbnodhgq\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-10 11:52:43,655 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2twrj2gb\sample.mp4
+2026-08-10 11:52:43,655 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2twrj2gb\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:52:43,656 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2twrj2gb\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-10 11:52:43,659 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\sample.mp4
+2026-08-10 11:52:43,659 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-10 11:52:43,669 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\out.srt (1 件)
+2026-08-10 11:52:43,669 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\out.srt (タイムライン尺 5.00s)
+2026-08-10 11:52:43,669 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n955hryq\out.fcpxml
+2026-08-10 11:52:43,680 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-10 11:52:43,681 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-10 11:52:43,681 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-10 11:52:43,682 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,682 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,682 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,682 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,682 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,683 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,684 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-10 11:52:43,685 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-10 11:52:43,685 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,685 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,686 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-10 11:52:43,693 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_kxl3k87w\sample.timeline.json
+2026-08-10 11:52:43,713 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_nrl7899v\sample.timeline.json
+2026-08-10 11:52:43,717 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-10 11:52:43,718 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-10 11:52:43,719 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-10 11:52:43,721 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-10 11:52:43,727 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-10 11:52:43,728 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-10 11:52:43,733 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0

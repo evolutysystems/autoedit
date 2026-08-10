@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -21,6 +22,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+# ガラスモーフィズムのテーマ (ver3 resolve3)。
+# デザイントークンと ui セクションの既定は src/gui/theme.py が唯一の出どころ (§4-2)。
+# 本ファイルは単独実行 (python src/settings/settings_window.py) もできるため、
+# パッケージ外から起動された場合はリポジトリルートを sys.path へ補ってから読み込む。
+try:
+    from src.gui import theme
+except ImportError:
+    sys.path.insert(
+        0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from src.gui import theme
+
+DEFAULT_UI_SETTINGS = theme.DEFAULT_UI_SETTINGS
 
 # モジュールロガー (フォント追加の INFO/WARNING 出力用 / resolve16 §6)
 # アプリ実行時は上位で構成済みハンドラへ伝播する。標準ライブラリのみ使用。
@@ -246,10 +260,24 @@ DEFAULT_SETTINGS = {
             "auto_place": True,
         },
         "min_clip_sec": 0.05,                  # これ未満へはトリムできない
-        # Delete キー単独の割り当て。false=空白を残す (既定) / true=リップル。
-        # Shift+Delete は常にもう一方。両方とも右クリックメニューからも実行できる。
-        "ripple_delete": False,
+        # Timeline の右クリック「字幕追加」で置く字幕の既定の尺 (秒)。
+        # 次の字幕まで入らない場合はその手前まで縮めて置く。
+        "default_subtitle_sec": 2.0,
+        # Delete キー単独の割り当て (ver3 resolve2 R7)。true=リップル削除 (既定) /
+        # false=空白を残す。Shift+Delete は常にもう一方。
+        # 両方とも右クリックメニューからも実行できる。
+        "ripple_delete": True,
+        # 旧既定 (false) からの移行を 1 度だけ行うための記録 (resolve2 §9)。
+        # 移行後にユーザーが false へ戻した場合、再び書き換えないようにする。
+        "ripple_delete_migrated": False,
+        # リップルで一緒に詰める対象 (resolve2 R8)。
+        # "all" = 全トラック (字幕・オーバーレイも詰める / 既定)
+        # "same" = 操作したトラックのみ (旧挙動。切り戻し用)
+        # 音声トラックは値に関わらず対象外 (V1 からの導出で自動的に追従するため)。
+        "ripple_sync_tracks": "all",
         "snap_enabled": True,
+        # 再生ヘッドを編集点へ吸着させる (resolve2 R1)。Alt 押下中は一時無効。
+        "snap_playhead": True,
         "snap_threshold_px": 8,
         "default_zoom_px_per_sec": 40,
         "zoom_min_px_per_sec": 2,
@@ -263,6 +291,13 @@ DEFAULT_SETTINGS = {
             "ruler_min_label_px": 60,
             "window_width": 1280,
             "window_height": 820,
+            # Timeline 左下のズームボタン (－ ＋) の幅 (ver3 resolve4 E4)。
+            # QSS の左右余白ぶん、記号が見切れない幅が要る。
+            "zoom_button_width_px": 40,
+            # クリップのアウトラインの太さ (ver3 resolve4 E5)。
+            # 太さは矩形の内側へ描くため、クリップの占有幅は変わらない。
+            "clip_outline_width_px": 2,
+            "clip_outline_selected_width_px": 3,
         },
         "preview": {
             "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
@@ -275,6 +310,40 @@ DEFAULT_SETTINGS = {
             "audio_chunk_sec": 30,             # 1 回に生成する音声チャンク長 (秒)
             "audio_prefetch_sec": 8,           # 残りがこれを切ったら次チャンクを先読み
             "play_fps": 15,                    # 再生中の映像更新レート上限
+            # 倍速再生 / 倍速逆再生 (ver3 resolve2 R10・R11)
+            "playback_rate": 2.0,              # Q / E の倍率 (「倍速」= 2.0)
+            "reverse_play_fps": 8,             # 倍速逆再生時の映像更新レート上限
+            # トランスポートのボタン幅 (ver3 resolve4 E2)。
+            # QSS の左右余白ぶん、記号が見切れない幅が要る。
+            "transport_button_width_px": 40,       # ⏮ ▶ ⏭ 🔊 (1 記号)
+            "transport_wide_button_width_px": 52,  # ◀◀ ▶▶ (2 記号ぶん広い)
+            # 「高精度プレビュー」ボタンの右側の余白 (ver3 resolve4 E3)
+            "transport_row_right_margin_px": 8,
+        },
+        # キー割り当て (ver3 resolve2 §6)。空文字で無効。
+        # S には何も割り当てないため項目自体を置かない。
+        "shortcuts": {
+            "split": "W",
+            "ripple_trim_before": "A",
+            "ripple_trim_after": "D",
+            "play_pause": "Space",
+            "play_fast_forward": "E",
+            "play_fast_backward": "Q",
+            "split_alt": "Ctrl+B",
+            "delete": "Delete",
+            "delete_alternate": "Shift+Delete",
+            # 選択中のノードを削除するだけ (後続を詰めない / ver3 resolve2 R12)
+            "delete_plain": "Backspace",
+            "undo": "Ctrl+Z",
+            "redo": "Ctrl+Y",
+            "redo_alt": "Ctrl+Shift+Z",
+            "step_backward": "Left",
+            "step_forward": "Right",
+            "go_start": "Home",
+            "go_end": "End",
+            "zoom_in": "Ctrl++",
+            "zoom_in_alt": "Ctrl+=",
+            "zoom_out": "Ctrl+-",
         },
         "media": {
             "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"],
@@ -428,14 +497,26 @@ DEFAULT_SETTINGS = {
             },
         },
     },
+    # 画面の見た目 (ガラスモーフィズム / resolve3 §6)。
+    # 既定の実体は src/gui/theme.py が持つ (デザイントークンの唯一の出どころ)。
+    # ui.theme = "system" で従来の Qt 既定へ完全に戻せる。
+    "ui": copy.deepcopy(DEFAULT_UI_SETTINGS),
 }
 
 # スタイル定数
 TITLE_FONT_SIZE = 14
+# 注意書きラベルの文字サイズ (旧 font-size:11px 直書きの置き換え / resolve3 §5.3)
+FONT_NOTE_POINT_SIZE = 8
 # 項目名ラベルの最小幅 (長い文言は自動で広がるため最小値のみ指定)
 COLUMN_LABEL_WIDTH = 100
 # 入力欄の最小幅 (横幅全体を支配するため小さめに設定して画面を縮小する)
 INPUT_FIELD_MIN_WIDTH = 160
+# カラー欄の最小幅 (ver3 resolve4 §5.6-1)。役割別の 3 色を横 1 行へ並べるため、
+# INPUT_FIELD_MIN_WIDTH より狭くする。書式が違うと必要幅も違うためグループごとに持つ。
+COLOR_FIELD_MIN_WIDTH = 104          # HTML #RRGGBB (7 文字 / 実測 102px)
+OUTLINE_COLOR_FIELD_MIN_WIDTH = 140  # ASS &HAABBGGRR (10 文字 / 実測 138px)
+# 役割別カラーの並び順と表示名 (テロップ/アウトラインで共通)
+COLOR_ROLE_LABELS = ("配信者", "サブ", "コメント")
 
 
 # setting.json を読み込み JSON(dict) を返す。読めない/壊れている場合は None。
@@ -504,14 +585,86 @@ def _normalize_legacy_values(merged):
                 if value != default:
                     ffmpeg[key] = default
                     changed = True
+    if _fill_timeline_nested_defaults(merged):
+        changed = True
+    if _fill_ui_nested_defaults(merged):
+        changed = True
+    if _migrate_ripple_delete(merged):
+        changed = True
     return changed
+
+
+# timeline セクションの入れ子 (ui / preview / media / render / shortcuts …) について、
+# 欠落キーを既定で補完する (ver3 resolve2 §6)。
+# _merge_with_defaults はセクション単位の浅いマージのため、入れ子辞書はユーザー値で
+# まるごと置き換わり、新バージョンで増えたキーが setting.json へ現れない。
+# ショートカットのように「利用者が編集する前提」の項目が見えないままになると困るため、
+# timeline セクションに限って 1 段深く補完する。既存値は上書きしない。
+def _fill_timeline_nested_defaults(merged):
+    return _fill_nested_defaults(merged, "timeline")
+
+
+# ui セクションの入れ子 (glass / background) についても欠落キーを既定で補完する
+# (ver3 resolve3 §6)。ガラスの不透明度や背景色は利用者が setting.json で
+# 調整する前提のため、新バージョンで増えたキーがファイル上に現れる必要がある。
+def _fill_ui_nested_defaults(merged):
+    return _fill_nested_defaults(merged, "ui")
+
+
+# 指定セクションの入れ子辞書について、欠落キーを既定で再帰的に補完する。
+# _merge_with_defaults はセクション単位の浅いマージのため、入れ子辞書はユーザー値で
+# まるごと置き換わり、新バージョンで増えたキーが setting.json へ現れない。
+# 既存値は上書きしない。変更があれば True を返す。
+def _fill_nested_defaults(merged, section):
+    current = merged.get(section)
+    defaults = DEFAULT_SETTINGS.get(section, {})
+    if not isinstance(current, dict):
+        return False
+    return _fill_dict_defaults(current, defaults)
+
+
+# 辞書へ既定値を再帰的に流し込む (既存値は温存する)
+def _fill_dict_defaults(current, defaults):
+    changed = False
+    for key, default_value in defaults.items():
+        if not isinstance(default_value, dict):
+            continue
+        value = current.get(key)
+        if not isinstance(value, dict):
+            continue
+        for sub_key, sub_default in default_value.items():
+            if sub_key not in value:
+                value[sub_key] = copy.deepcopy(sub_default)
+                changed = True
+        if _fill_dict_defaults(value, default_value):
+            changed = True
+    return changed
+
+
+# Delete キーの既定をリップル削除へ寄せる 1 回きりの移行 (ver3 resolve2 §9 / 回答 Q5)
+# 背景: ripple_delete は旧既定 false で既に setting.json へ書き込まれているため、
+#   DEFAULT_SETTINGS を true にしただけでは既存ユーザーの動作が変わらない。
+#   ここで 1 度だけ true へ寄せる。移行済みフラグを持たせることで、移行後に
+#   ユーザーが意図して false へ戻した場合に再び書き換えることはしない。
+def _migrate_ripple_delete(merged):
+    timeline = merged.get("timeline")
+    if not isinstance(timeline, dict):
+        return False
+    if timeline.get("ripple_delete_migrated"):
+        return False
+    timeline["ripple_delete_migrated"] = True
+    if timeline.get("ripple_delete") is False:
+        timeline["ripple_delete"] = True
+    return True
 
 
 # 読み込んだデータに不足項目があればデフォルトで補完する
 def _merge_with_defaults(data):
     merged = DEFAULT_SETTINGS.copy()
     for section, defaults in DEFAULT_SETTINGS.items():
-        merged[section] = defaults.copy()
+        # 入れ子ごと複製する。浅いコピーだと補完先の入れ子辞書が DEFAULT_SETTINGS と
+        # 同一実体になり、欠落キー補完 (_fill_nested_defaults) が既定を汚し得るため。
+        merged[section] = copy.deepcopy(defaults)
         if section in data and isinstance(data[section], dict):
             for key, value in data[section].items():
                 merged[section][key] = value
@@ -563,6 +716,9 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        # ガラスモーフィズムの背景を敷く (resolve3 §3-2)。QSS はアプリ全体へ
+        # 適用済みのため、ここでは背景グラデーションを描くだけでよい。
+        theme.install_window_background(self)
 
         # 入力ウィジェット参照を保持
         self.video_dir_edit = None
@@ -670,6 +826,8 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._build_subtitle_tab(), "字幕")
         tabs.addTab(self._build_vertical_tab(), "縦動画")
         tabs.addTab(self._build_archive_tab(), "アーカイブ")
+        # 先頭 (「一般」) タブ選択時のみペイン左上を四角にする (resolve4 S1)
+        theme.bind_tab_pane_corner(tabs)
         root_layout.addWidget(tabs)
 
         # 保存ボタン (全タブ共通・タブ外に配置)
@@ -829,25 +987,19 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.language_combo, row, 1)
         row += 1
 
-        # 配信者カラー (旧「文字色」= own_subtitle_color) — HTML #RRGGBB 形式 (アルファ無し)
+        # テロップ役割別カラー (配信者 / サブ / コメント) — HTML #RRGGBB 形式 (アルファ無し)
+        # 縦 3 行から横 1 行へ変更した (ver3 resolve4 S2)。参照名は変えないため
+        # 保存・読み込み (_load_to_ui / _collect_settings) には影響しない。
         self.color_edit = QLineEdit()
         self.color_edit.setPlaceholderText(PLACEHOLDER_COLOR)
-        grid.addWidget(self._make_column_label("配信者カラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.color_edit, with_alpha=False), row, 1)
-        row += 1
-
-        # サブカラー (sub_subtitle_color) — HTML #RRGGBB 形式 (アルファ無し)
         self.sub_color_edit = QLineEdit()
         self.sub_color_edit.setPlaceholderText(PLACEHOLDER_SUB_COLOR)
-        grid.addWidget(self._make_column_label("サブカラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.sub_color_edit, with_alpha=False), row, 1)
-        row += 1
-
-        # コメントカラー (comment_subtitle_color) — HTML #RRGGBB 形式 (アルファ無し)
         self.comment_color_edit = QLineEdit()
         self.comment_color_edit.setPlaceholderText(PLACEHOLDER_COMMENT_COLOR)
-        grid.addWidget(self._make_column_label("コメントカラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.comment_color_edit, with_alpha=False), row, 1)
+        grid.addWidget(self._make_column_label("テロップカラー"), row, 0)
+        grid.addLayout(self._make_color_role_row(
+            (self.color_edit, self.sub_color_edit, self.comment_color_edit),
+            with_alpha=False, field_width=COLOR_FIELD_MIN_WIDTH), row, 1)
         row += 1
 
         # フォントの大きさ (整数のみ)
@@ -878,7 +1030,11 @@ class SettingsWindow(QWidget):
 
         # 追加可能フォントの注意書き (同カラムに小さく記載 / resolve16 §4.2)
         font_note_label = QLabel(FONT_ADD_NOTE)
-        font_note_label.setStyleSheet("color:#888; font-size:11px;")
+        theme.mark_note(font_note_label)
+        # 文字サイズは QSS ではなくフォントで指定する (インライン指定の撤去 / resolve3 §5.3)
+        note_font = QFont(font_note_label.font())
+        note_font.setPointSize(FONT_NOTE_POINT_SIZE)
+        font_note_label.setFont(note_font)
         grid.addWidget(font_note_label, row, 1)
         row += 1
 
@@ -904,26 +1060,20 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.max_line_length_edit, row, 1)
         row += 1
 
-        # 配信者アウトラインカラー (旧「アウトラインの色」= outline_color)
-        # ASS 形式 &HAABBGGRR / アルファ有り
+        # アウトライン役割別カラー (配信者 / サブ / コメント)
+        # ASS 形式 &HAABBGGRR / アルファ有り。テロップカラーと同じく横 1 行へ並べる
+        # (ver3 resolve4 S3 / 回答 Q4)。書式が長いぶん入力欄は広めの幅を使う。
         self.outline_color_edit = QLineEdit()
         self.outline_color_edit.setPlaceholderText(PLACEHOLDER_OUTLINE_COLOR)
-        grid.addWidget(self._make_column_label("配信者アウトラインカラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.outline_color_edit, with_alpha=True), row, 1)
-        row += 1
-
-        # サブアウトラインカラー (sub_outline_color) — ASS 形式 &HAABBGGRR / アルファ有り
         self.sub_outline_color_edit = QLineEdit()
         self.sub_outline_color_edit.setPlaceholderText(PLACEHOLDER_OUTLINE_COLOR)
-        grid.addWidget(self._make_column_label("サブアウトラインカラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.sub_outline_color_edit, with_alpha=True), row, 1)
-        row += 1
-
-        # コメントアウトラインカラー (comment_outline_color) — ASS 形式 &HAABBGGRR / アルファ有り
         self.comment_outline_color_edit = QLineEdit()
         self.comment_outline_color_edit.setPlaceholderText(PLACEHOLDER_OUTLINE_COLOR)
-        grid.addWidget(self._make_column_label("コメントアウトラインカラー"), row, 0)
-        grid.addLayout(self._make_color_picker(self.comment_outline_color_edit, with_alpha=True), row, 1)
+        grid.addWidget(self._make_column_label("アウトラインカラー"), row, 0)
+        grid.addLayout(self._make_color_role_row(
+            (self.outline_color_edit, self.sub_outline_color_edit,
+             self.comment_outline_color_edit),
+            with_alpha=True, field_width=OUTLINE_COLOR_FIELD_MIN_WIDTH), row, 1)
         row += 1
 
         # アウトラインの太さ (整数のみ)
@@ -1095,7 +1245,7 @@ class SettingsWindow(QWidget):
             "メイン画面の「アーカイブ切り抜き」タブを使えるようにします。\n"
             "変更はアプリの再起動後に反映されます。"
         )
-        archive_note.setStyleSheet("color: #888; padding-bottom: 4px;")
+        theme.mark_note(archive_note)
         layout.addWidget(archive_note)
 
         self.archive_enabled_check = QCheckBox("アーカイブ切り抜きを有効にする")
@@ -1112,7 +1262,7 @@ class SettingsWindow(QWidget):
             "字幕一覧画面でテーマを入力したクリップに、開始前バッファを復元して\n"
             "ブラー+黒帯+中央テーマのイントロを付け、本編には左上へテーマを焼きます。"
         )
-        note.setStyleSheet("color: #888; padding-bottom: 4px;")
+        theme.mark_note(note)
         layout.addWidget(note)
 
         # 機能 ON/OFF (OFF 時はテーマ欄自体を出さない)
@@ -1233,7 +1383,8 @@ class SettingsWindow(QWidget):
         font.setBold(True)
         font.setPointSize(TITLE_FONT_SIZE)
         label.setFont(font)
-        label.setStyleSheet("padding-top: 8px; border-bottom: 1px solid #888;")
+        # 余白と下線は QSS 側 (#sectionTitle) が持つ (インライン指定の撤去 / resolve3 §5.3)
+        theme.mark_title(label)
         return label
 
     # 項目名ラベルを生成する
@@ -1304,8 +1455,11 @@ class SettingsWindow(QWidget):
 
     # 色入力欄 + カラーピッカー起動ボタン(色見本付き)を生成する
     # with_alpha=True のとき ASS(&HAABBGGRR) 形式、False のとき HTML(#RRGGBB) 形式として扱う
-    def _make_color_picker(self, line_edit, with_alpha):
-        line_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+    # field_width で入力欄の最小幅を変えられる (ver3 resolve4 S2 / S3)。
+    # 役割別カラーを横 3 列へ並べるときは既定より狭い値を渡す。
+    def _make_color_picker(self, line_edit, with_alpha, field_width=None):
+        line_edit.setMinimumWidth(
+            INPUT_FIELD_MIN_WIDTH if field_width is None else field_width)
         button = QPushButton()
         button.clicked.connect(lambda: self._choose_color(line_edit, with_alpha))
         # 入力欄の値が変わったら色見本を更新する(手入力にも追従)
@@ -1318,6 +1472,27 @@ class SettingsWindow(QWidget):
         layout.addWidget(line_edit)
         layout.addWidget(button)
         return layout
+
+    # 役割別カラー 3 種を横 1 行に組む (ver3 resolve4 S2 / S3)
+    # 各列は「役割名 (上) + 入力欄 + 色見本 (下)」の縦積みにして、
+    # 横に並べてもどの欄がどの役割か分かるようにする。
+    # line_edits は COLOR_ROLE_LABELS と同じ順 (配信者/サブ/コメント)。
+    def _make_color_role_row(self, line_edits, with_alpha, field_width):
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        for label_text, line_edit in zip(COLOR_ROLE_LABELS, line_edits):
+            column = QVBoxLayout()
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(2)
+            role_label = QLabel(label_text)
+            theme.mark_note(role_label)
+            column.addWidget(role_label)
+            # 幅は最小値のみ与える。固定にすると画面が狭いときに溢れるため。
+            column.addLayout(
+                self._make_color_picker(line_edit, with_alpha, field_width))
+            row.addLayout(column)
+        row.addStretch(1)
+        return row
 
     # カラーピッカーを開き、選択結果を所定形式の文字列で line_edit へ書き戻す
     def _choose_color(self, line_edit, with_alpha):
@@ -1363,11 +1538,18 @@ class SettingsWindow(QWidget):
         return "#{:02X}{:02X}{:02X}".format(color.red(), color.green(), color.blue())
 
     # ボタン上の色見本を現在の入力値で塗り替える(手入力・ピッカー双方に追従)
+    # ここはテーマの適用対象外 (resolve3 §5.5)。
+    # 塗りは「ユーザーが設定した字幕の色そのもの」を表示する機能であり、
+    # テーマで塗り替えると設定値が見えなくなる。枠線の色だけテーマから引く。
     def _update_swatch(self, button, line_edit, with_alpha):
         color = self._parse_color(line_edit.text(), with_alpha)
+        # 枠線は色面を縁取るためのものなので、明暗どちらでも見える不透明な色を使う
+        # (glass.border は半透明の白で、ライトでは下地に埋もれて縁取りにならない)
+        border = (theme.color("text.secondary").name() if theme.is_enabled() else "#888")
         # 不透明度はボタン背景では無視し、色相のみ提示(視認性優先)
         button.setStyleSheet(
-            f"background-color: {color.name()}; min-width: 28px; border: 1px solid #888;"
+            f"background-color: {color.name()}; min-width: 28px; "
+            f"border: 1px solid {border};"
         )
         button.setText("")  # 色面のみ。ラベルは項目名側で表現
 

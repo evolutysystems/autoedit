@@ -1,0 +1,104 @@
+2026-08-10 09:41:04,839 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 09:41:16,181 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-10 09:41:16,181 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/すごいのが周ってきた.mp4
+2026-08-10 09:41:17,159 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-10 09:41:19,946 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-14.3 dBTP / LRA=11.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.4 dB)
+2026-08-10 09:41:21,898 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_hcimh3a6\loudness_normalized.mp4
+2026-08-10 09:41:25,791 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-08-10 09:41:27,805 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -18 dB
+2026-08-10 09:41:29,915 [INFO] src.modules.silence_cutter: 編集点検出: 無音 2 件 / 残す区間 3 件 (閾値=-18dB, 最小無音=0.60s, 総尺=39.3s)
+2026-08-10 09:41:29,915 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 09:41:31,710 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 3 区間 → 37.8s (元 39.3s)
+2026-08-10 09:42:59,737 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 09:42:59,737 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 09:43:10,118 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 09:44:07,209 [INFO] src.modules.subtitle_generator: 音声認識完了 (12 セグメント)
+2026-08-10 09:44:07,328 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 12 → 12 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-10 09:44:07,328 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 12 件)
+2026-08-10 09:44:07,500 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-10 09:44:07,500 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-10 09:44:07,502 [INFO] src.timeline.builder: Timeline 構築: V1 3 クリップ (OP=無 / ED=無) / S1 12 字幕 / 全長 39.3s / 60fps 1080x1920
+2026-08-10 09:44:07,503 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\すごいのが周ってきた.timeline.json
+2026-08-10 09:44:07,524 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 09:44:07,524 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-10 10:14:25,926 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-08-10 10:16:01,282 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 10:16:07,665 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-10 10:16:07,665 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/すごいのが周ってきた.mp4
+2026-08-10 10:16:07,820 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-10 10:16:09,371 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-14.3 dBTP / LRA=11.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.4 dB)
+2026-08-10 10:16:11,293 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_3j95fqui\loudness_normalized.mp4
+2026-08-10 10:16:15,249 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-08-10 10:16:16,734 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -18 dB
+2026-08-10 10:16:18,812 [INFO] src.modules.silence_cutter: 編集点検出: 無音 2 件 / 残す区間 3 件 (閾値=-18dB, 最小無音=0.60s, 総尺=39.3s)
+2026-08-10 10:16:18,812 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 10:16:20,408 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 3 区間 → 37.8s (元 39.3s)
+2026-08-10 10:16:24,187 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 10:16:24,187 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 10:16:31,352 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 10:17:22,016 [INFO] src.modules.subtitle_generator: 音声認識完了 (12 セグメント)
+2026-08-10 10:17:22,127 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 12 → 12 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-10 10:17:22,127 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 12 件)
+2026-08-10 10:17:22,229 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-10 10:17:22,229 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-10 10:17:22,229 [INFO] src.timeline.builder: Timeline 構築: V1 3 クリップ (OP=無 / ED=無) / S1 12 字幕 / 全長 39.3s / 60fps 1080x1920
+2026-08-10 10:17:22,231 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\すごいのが周ってきた.timeline.json
+2026-08-10 10:17:22,231 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 10:17:22,231 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-10 10:21:56,482 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-08-10 10:55:40,933 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 10:55:50,371 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-10 10:55:50,372 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/すごいのが周ってきた.mp4
+2026-08-10 10:55:50,452 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-10 10:55:51,583 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-14.3 dBTP / LRA=11.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.4 dB)
+2026-08-10 10:55:53,182 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_w12r2525\loudness_normalized.mp4
+2026-08-10 10:55:57,136 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-08-10 10:55:59,539 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -18 dB
+2026-08-10 10:56:01,543 [INFO] src.modules.silence_cutter: 編集点検出: 無音 2 件 / 残す区間 3 件 (閾値=-18dB, 最小無音=0.60s, 総尺=39.3s)
+2026-08-10 10:56:01,543 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 10:56:02,727 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 3 区間 → 37.8s (元 39.3s)
+2026-08-10 10:56:05,762 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 10:56:05,763 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 10:56:12,410 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 10:57:01,373 [INFO] src.modules.subtitle_generator: 音声認識完了 (12 セグメント)
+2026-08-10 10:57:01,476 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 12 → 12 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-10 10:57:01,477 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 12 件)
+2026-08-10 10:57:01,557 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-10 10:57:01,557 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-10 10:57:01,558 [INFO] src.timeline.builder: Timeline 構築: V1 3 クリップ (OP=無 / ED=無) / S1 12 字幕 / 全長 39.3s / 60fps 1080x1920
+2026-08-10 10:57:01,559 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\すごいのが周ってきた.timeline.json
+2026-08-10 10:57:01,561 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 10:57:01,562 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-10 11:06:22,409 [INFO] src.timeline.commands: リップル: 14.180〜18.260s (4.08s) を除去 / 削除 1 件・短縮 0 件・移動 7 件
+2026-08-10 11:07:59,613 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 4 クリップ / オーバーレイ 0 件 / 字幕 9 件（使用 9 件）/ ギャップ 0 件
+2026-08-10 11:07:59,642 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\すごいのが周ってきた.timeline.json
+2026-08-10 11:07:59,642 [INFO] src.timeline.renderer: ベース映像構築: 4 クリップ / ギャップ 0 件 / 合計 33.7s
+2026-08-10 11:08:32,688 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 11:08:32,688 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-10 11:08:32,689 [INFO] src.timeline.renderer: 字幕焼き込み: 9 件
+2026-08-10 11:09:13,291 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\すごいのが周ってきた_edited.mp4
+2026-08-10 11:09:13,291 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\すごいのが周ってきた_edited.mp4
+2026-08-10 11:53:09,691 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 11:53:18,898 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-10 11:53:18,898 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/すごいのが周ってきた.mp4
+2026-08-10 11:53:18,966 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-10 11:53:20,289 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-14.3 dBTP / LRA=11.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.4 dB)
+2026-08-10 11:53:22,199 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_anlgciab\loudness_normalized.mp4
+2026-08-10 11:53:28,656 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-08-10 11:53:30,598 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -18 dB
+2026-08-10 11:53:34,059 [INFO] src.modules.silence_cutter: 編集点検出: 無音 2 件 / 残す区間 3 件 (閾値=-18dB, 最小無音=0.60s, 総尺=39.3s)
+2026-08-10 11:53:34,059 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 11:53:35,611 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 3 区間 → 37.8s (元 39.3s)
+2026-08-10 11:53:39,169 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 11:53:39,170 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 11:53:46,655 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 11:54:48,719 [INFO] src.modules.subtitle_generator: 音声認識完了 (12 セグメント)
+2026-08-10 11:54:48,862 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 12 → 12 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-10 11:54:48,863 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 12 件)
+2026-08-10 11:54:48,957 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-10 11:54:48,958 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-10 11:54:48,959 [INFO] src.timeline.builder: Timeline 構築: V1 3 クリップ (OP=無 / ED=無) / S1 12 字幕 / 全長 39.3s / 60fps 1080x1920
+2026-08-10 11:54:48,961 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\すごいのが周ってきた.timeline.json
+2026-08-10 11:54:48,963 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-10 11:54:48,964 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-10 11:55:08,742 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル

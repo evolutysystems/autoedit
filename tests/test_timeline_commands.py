@@ -228,6 +228,199 @@ class DeleteTest(unittest.TestCase):
         self.assertEqual([c.id for c in self.timeline.base_clips()], ["c3"])
         self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 0.0)
 
+    # BackSpace 相当 (削除するだけ) は設定に関わらず詰めない (R12)
+    def test_plain_delete_is_independent_of_setting(self):
+        for ripple_default in (True, False):
+            timeline = _build()
+            stack = commands.CommandStack()
+            # BackSpace のハンドラは常に ripple=False を渡す
+            stack.push(timeline, commands.DeleteClip(["c2"], ripple=False))
+            self.assertAlmostEqual(
+                timeline.clip_by_id("c3").timeline_start, 20.0,
+                f"ripple_delete={ripple_default} でも詰めてはいけない")
+            self.assertEqual(len(timeline.base_gaps()), 1)
+
+    # 削除するだけでもリンク音声は一緒に消える (R18)
+    def test_plain_delete_removes_linked_audio(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=False))
+        self.assertIsNone(self.timeline.audio_clip_for("c2"))
+        _assert_audio_in_sync(self, self.timeline)
+
+    # 選択が空なら何も起きない (BackSpace の空押し)
+    def test_delete_with_empty_selection_is_noop(self):
+        self.assertFalse(self.stack.push(self.timeline, commands.DeleteClip([])))
+        self.assertEqual(len(self.timeline.base_clips()), 3)
+
+
+class RippleRangeTest(unittest.TestCase):
+    """resolve2 §5.4: リップルは区間を全トラックから抜いて詰める (R8 / 回答 Q2・Q8)"""
+
+    def setUp(self):
+        # V1: c1[0,10] c2[10,20] c3[20,30] / V2: o1[5,25] (区間を跨ぐ)
+        # S1: s1[1,4](前) s2[11,13](区間内) s3[22,25](後ろ)
+        self.timeline = _build()
+        self.timeline.tracks.append(Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+            Clip("o1", "m1", 5.0, 20.0, 0.0, 20.0, z_order=10,
+                 origin={"type": "user_media"}),
+        ]))
+        subtitle_track = self.timeline.base_subtitle_track()
+        subtitle_track.clips.append(SubtitleClip("s2", 11.0, 2.0, "区間内"))
+        subtitle_track.clips.append(SubtitleClip("s3", 22.0, 3.0, "区間の後ろ"))
+        self.stack = commands.CommandStack()
+
+    # 区間より後ろの字幕・オーバーレイも一緒に詰まる (規則 2)
+    def test_ripple_shifts_all_tracks(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 10.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 12.0)
+
+    # 区間より前は動かない (規則 1)
+    def test_ripple_keeps_earlier_clips(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 1.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("c1").timeline_start, 0.0)
+
+    # 区間に完全に含まれる字幕は消える (規則 3)
+    def test_ripple_deletes_clips_inside_range(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.assertIsNone(self.timeline.clip_by_id("s2"))
+
+    # 区間を跨ぐクリップは分割せず尺を縮める (規則 6 / 回答 Q8)
+    def test_ripple_shortens_spanning_clip_without_split(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        overlay_track = self.timeline.track_by_id("V2")
+        self.assertEqual(len(overlay_track.clips), 1, "分割してはいけない")
+        overlay = self.timeline.clip_by_id("o1")
+        self.assertAlmostEqual(overlay.timeline_start, 5.0)
+        self.assertAlmostEqual(overlay.duration, 10.0)     # 20 - delta(10)
+        self.assertAlmostEqual(overlay.source_out, 10.0)
+
+    # 頭だけかかるクリップは右端が区間の開始まで縮む (規則 4)
+    def test_ripple_trims_clip_overlapping_head(self):
+        overlay = Clip("o2", "m1", 5.0, 8.0, 0.0, 8.0, origin={"type": "user_media"})
+        self.timeline.track_by_id("V2").clips = [overlay]
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.assertAlmostEqual(overlay.timeline_start, 5.0)
+        self.assertAlmostEqual(overlay.timeline_end, 10.0)
+        self.assertAlmostEqual(overlay.source_out, 5.0)
+
+    # 尻だけかかるクリップは左端が縮み、区間の開始位置へ詰まる (規則 5)
+    def test_ripple_trims_clip_overlapping_tail(self):
+        overlay = Clip("o3", "m1", 15.0, 10.0, 0.0, 10.0, origin={"type": "user_media"})
+        self.timeline.track_by_id("V2").clips = [overlay]
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.assertAlmostEqual(overlay.timeline_start, 10.0)
+        self.assertAlmostEqual(overlay.duration, 5.0)
+        self.assertAlmostEqual(overlay.source_in, 5.0)
+
+    # 音声トラックはリップルの対象外だが V1 からの導出で一致し続ける (R18)
+    def test_ripple_keeps_audio_in_sync(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        _assert_audio_in_sync(self, self.timeline)
+
+    # 空白を残す削除では他トラックが動かない (リップルとの違い)
+    def test_plain_delete_does_not_shift_other_tracks(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=False))
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 22.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 20.0)
+        self.assertIsNotNone(self.timeline.clip_by_id("s2"), "空白を残す削除では消えない")
+
+    # sync_all=False なら旧挙動 (操作したトラックのみ) に戻せる
+    def test_sync_all_false_restores_old_behaviour(self):
+        self.stack.push(self.timeline,
+                        commands.DeleteClip(["c2"], ripple=True, sync_all=False))
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 10.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 22.0)
+
+    # Undo で全トラックが元へ戻る
+    def test_undo_restores_all_tracks(self):
+        self.stack.push(self.timeline, commands.DeleteClip(["c2"], ripple=True))
+        self.stack.undo(self.timeline)
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 20.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 22.0)
+        self.assertIsNotNone(self.timeline.clip_by_id("s2"))
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").duration, 20.0)
+        _assert_audio_in_sync(self, self.timeline)
+
+
+class RippleTrimToPlayheadTest(unittest.TestCase):
+    """resolve2 §5.3: A / D = 再生ヘッドを境にした部分リップル削除 (R4・R6)"""
+
+    def setUp(self):
+        self.timeline = _build()
+        self.timeline.base_subtitle_track().clips.append(
+            SubtitleClip("s9", 25.0, 2.0, "後ろの字幕"))
+        self.stack = commands.CommandStack()
+
+    # A: 再生ヘッドより前を消す。source_in が進み、後続が詰まる。
+    def test_trim_before_playhead(self):
+        ok = self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 15.0, "before", _MIN))
+        self.assertTrue(ok)
+        clip = self.timeline.clip_by_id("c2")
+        self.assertAlmostEqual(clip.timeline_start, 10.0)
+        self.assertAlmostEqual(clip.duration, 5.0)
+        self.assertAlmostEqual(clip.source_in, 25.0)   # 20.0 + 5.0
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 15.0)
+        _assert_audio_in_sync(self, self.timeline)
+
+    # D: 再生ヘッドより後ろを消す。source_out が戻り、後続が詰まる。
+    def test_trim_after_playhead(self):
+        ok = self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 15.0, "after", _MIN))
+        self.assertTrue(ok)
+        clip = self.timeline.clip_by_id("c2")
+        self.assertAlmostEqual(clip.timeline_start, 10.0)
+        self.assertAlmostEqual(clip.duration, 5.0)
+        self.assertAlmostEqual(clip.source_in, 20.0)
+        self.assertAlmostEqual(clip.source_out, 25.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 15.0)
+        _assert_audio_in_sync(self, self.timeline)
+
+    # 全トラックが一緒に詰まる (R8)
+    def test_trim_shifts_all_tracks(self):
+        self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 15.0, "after", _MIN))
+        self.assertAlmostEqual(self.timeline.clip_by_id("s9").timeline_start, 20.0)
+
+    # 再生ヘッドがクリップの外なら何もしない
+    def test_playhead_outside_clip_is_noop(self):
+        self.assertFalse(self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 25.0, "before", _MIN)))
+        self.assertEqual(len(self.timeline.base_clips()), 3)
+
+    # 再生ヘッドがクリップの端ちょうどなら何もしない
+    def test_playhead_at_edge_is_noop(self):
+        self.assertFalse(self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 10.0, "before", _MIN)))
+
+    # 残りが最小尺を割る場合はクリップごとリップル削除する (回答 Q4)
+    def test_remainder_below_min_deletes_whole_clip(self):
+        self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 19.99, "before", _MIN))
+        self.assertIsNone(self.timeline.clip_by_id("c2"))
+        self.assertEqual([c.id for c in self.timeline.base_clips()], ["c1", "c3"])
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 10.0)
+        _assert_audio_in_sync(self, self.timeline)
+
+    # 字幕クリップにも効く (回答 Q7)
+    def test_works_on_subtitle_clip(self):
+        ok = self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "s9", 26.0, "after", _MIN))
+        self.assertTrue(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s9").duration, 1.0)
+
+    # 1 回の Undo で全トラックぶん戻る
+    def test_undo_restores_everything(self):
+        self.stack.push(self.timeline, commands.RippleTrimToPlayhead(
+            "c2", 15.0, "after", _MIN))
+        self.stack.undo(self.timeline)
+        clip = self.timeline.clip_by_id("c2")
+        self.assertAlmostEqual(clip.duration, 10.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("c3").timeline_start, 20.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s9").timeline_start, 25.0)
+        _assert_audio_in_sync(self, self.timeline)
+
 
 class LayerTest(unittest.TestCase):
 
@@ -330,6 +523,71 @@ class AddMediaTest(unittest.TestCase):
         self.assertEqual(
             self.timeline.overlay_elements(include_disabled=True)[-1].id,
             command.created_clip_id)
+
+
+# 右クリック「字幕追加」(AddSubtitleClip)
+# S1 には s1 (1.0〜4.0 秒) が 1 つだけ載っている状態から始める。
+class AddSubtitleTest(unittest.TestCase):
+
+    def setUp(self):
+        self.timeline = _build()
+        self.stack = commands.CommandStack()
+
+    def _subtitle_track(self):
+        return self.timeline.base_subtitle_track()
+
+    # 空いている位置へ既定の尺で置ける
+    def test_add_into_free_space(self):
+        command = commands.AddSubtitleClip(10.0, 2.0, text="あ", min_clip_sec=_MIN)
+        self.assertTrue(self.stack.push(self.timeline, command))
+        clip = self.timeline.clip_by_id(command.created_clip_id)
+        self.assertIsInstance(clip, SubtitleClip)
+        self.assertEqual(self._subtitle_track().clip_by_id(clip.id), clip)
+        self.assertAlmostEqual(clip.timeline_start, 10.0)
+        self.assertAlmostEqual(clip.duration, 2.0)
+        self.assertEqual(clip.text, "あ")
+
+    # 次の字幕に届く位置では、その手前まで縮めて置く (重ねない)
+    def test_duration_is_clamped_by_next_clip(self):
+        command = commands.AddSubtitleClip(0.0, 2.0, min_clip_sec=_MIN)
+        self.assertTrue(self.stack.push(self.timeline, command))
+        clip = self.timeline.clip_by_id(command.created_clip_id)
+        self.assertAlmostEqual(clip.timeline_end, 1.0)
+
+    # 既存字幕の中では追加しない (履歴も汚さない)
+    def test_reject_inside_existing_clip(self):
+        self.assertFalse(self.stack.push(
+            self.timeline, commands.AddSubtitleClip(2.0, 2.0, min_clip_sec=_MIN)))
+        self.assertEqual(len(self._subtitle_track().clips), 1)
+        self.assertFalse(self.stack.can_undo())
+
+    # 最小尺ぶんの空きも無ければ追加しない
+    def test_reject_when_gap_is_too_small(self):
+        self.assertFalse(self.stack.push(
+            self.timeline, commands.AddSubtitleClip(0.99, 2.0, min_clip_sec=_MIN)))
+
+    # 字幕トラックが無ければ S1 を作って載せる
+    def test_creates_subtitle_track_when_missing(self):
+        self.timeline.tracks = [t for t in self.timeline.tracks if not t.is_subtitle()]
+        command = commands.AddSubtitleClip(5.0, 2.0, min_clip_sec=_MIN)
+        self.assertTrue(self.stack.push(self.timeline, command))
+        self.assertEqual(command.created_track_id, "S1")
+        self.assertEqual(len(self.timeline.subtitle_tracks()), 1)
+
+    # 追加は Undo で消える (トラックの中身が元へ戻る)
+    def test_undo_removes_added_clip(self):
+        command = commands.AddSubtitleClip(10.0, 2.0, min_clip_sec=_MIN)
+        self.stack.push(self.timeline, command)
+        self.stack.undo(self.timeline)
+        self.assertIsNone(self.timeline.clip_by_id(command.created_clip_id))
+        self.assertEqual(len(self._subtitle_track().clips), 1)
+
+    # 追加後も時系列順が保たれる (normalize が効く)
+    def test_clips_stay_sorted(self):
+        self.stack.push(self.timeline, commands.AddSubtitleClip(10.0, 2.0, min_clip_sec=_MIN))
+        self.stack.push(self.timeline, commands.AddSubtitleClip(6.0, 2.0, min_clip_sec=_MIN))
+        starts = [c.timeline_start for c in self._subtitle_track().clips]
+        self.assertEqual(starts, sorted(starts))
 
 
 class UndoRedoTest(unittest.TestCase):

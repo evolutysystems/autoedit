@@ -134,6 +134,10 @@ class TimelineController(QObject):
     # 編集操作 (UI からはこれらを呼ぶ)
     # ------------------------------------------------------------------
 
+    # リップルで一緒に詰める対象が全トラックか (設定 timeline.ripple_sync_tracks)
+    def _sync_all(self):
+        return str(self._cfg.get("ripple_sync_tracks", "all")).strip().lower() != "same"
+
     def move_clip(self, clip_id, new_start):
         return self.execute(
             commands.MoveClip(clip_id, new_start, self._cfg["min_clip_sec"]))
@@ -153,15 +157,46 @@ class TimelineController(QObject):
         return changed
 
     # 削除。ripple 未指定時は設定 (timeline.ripple_delete) に従う。
+    # ripple=True のときは全トラックを一緒に詰める (R8 / resolve2 §5.4)。
     def delete_selected(self, ripple=None):
         if not self._selected_ids:
             return False
         if ripple is None:
             ripple = self._cfg["ripple_delete"]
-        return self.execute(commands.DeleteClip(self._selected_ids, ripple=ripple))
+        return self.delete_clips(self._selected_ids, ripple=ripple)
 
     def delete_clips(self, clip_ids, ripple=False):
-        return self.execute(commands.DeleteClip(clip_ids, ripple=ripple))
+        return self.execute(commands.DeleteClip(
+            clip_ids, ripple=ripple,
+            min_clip_sec=self._cfg["min_clip_sec"], sync_all=self._sync_all()))
+
+    # 再生ヘッドを境に、選択クリップの前 / 後ろをリップル削除する (R4・R6)
+    # side="before" (A キー) / "after" (D キー)
+    # 戻り値: 実行できたら True。対象が無ければ False (画面側で案内を出す)
+    def ripple_trim_to_playhead(self, side):
+        clip = self.clip_at_playhead()
+        if clip is None:
+            return False
+        return self.execute(commands.RippleTrimToPlayhead(
+            clip.id, self._playhead, side,
+            min_clip_sec=self._cfg["min_clip_sec"], sync_all=self._sync_all()))
+
+    # 再生ヘッド上のクリップを返す (resolve2 §5.3-3 / 回答 Q3)
+    # 1. 選択中のクリップが再生ヘッドを含んでいればそれ
+    # 2. 無ければベース映像トラック (V1) で再生ヘッドを含むクリップ
+    # 3. それも無ければ None
+    def clip_at_playhead(self):
+        for clip_id in self._selected_ids:
+            clip = self._timeline.clip_by_id(clip_id)
+            if clip is not None and self._contains(clip, self._playhead):
+                return clip
+        base = self._timeline.base_video_track()
+        if base is None:
+            return None
+        for clip in base.clips:
+            if self._contains(clip, self._playhead):
+                return clip
+        return None
 
     def change_layer(self, clip_id, direction):
         return self.execute(commands.ChangeZOrder(clip_id, direction))
@@ -186,6 +221,19 @@ class TimelineController(QObject):
         command = commands.AddMediaClip(
             media, timeline_start, duration, track_id=track_id,
             max_video_tracks=self._cfg["media"]["max_video_tracks"],
+        )
+        if not self.execute(command):
+            return None
+        self.select([command.created_clip_id])
+        return command.created_clip_id
+
+    # 字幕クリップを追加する。追加できたら新しいクリップ ID を返す (置けなければ None)。
+    # duration 省略時は設定 (timeline.default_subtitle_sec) の尺を使う。
+    def add_subtitle(self, timeline_start, duration=None, track_id=None, text=""):
+        command = commands.AddSubtitleClip(
+            timeline_start,
+            self._cfg["default_subtitle_sec"] if duration is None else duration,
+            text=text, track_id=track_id, min_clip_sec=self._cfg["min_clip_sec"],
         )
         if not self.execute(command):
             return None
@@ -228,6 +276,50 @@ class TimelineController(QObject):
     def step_playhead(self, frames):
         delta = frames / float(self._timeline.fps or 60)
         self.set_playhead(self._playhead + delta)
+
+    # ------------------------------------------------------------------
+    # 吸着 (resolve2 §5.2 / R1・R2)
+    # ------------------------------------------------------------------
+
+    # 吸着先の候補 (編集点の集合) を返す
+    #   ・タイムラインの先頭と全長
+    #   ・非音声トラックの全クリップの開始・終了 (= 編集点)
+    #   ・再生ヘッド (include_playhead=True のとき)
+    # 音声トラックは V1 からの導出のため候補に含めない (同じ値が重複するだけ)。
+    def snap_targets(self, exclude_id=None, include_playhead=True):
+        targets = [0.0, self._timeline.duration_sec()]
+        if include_playhead:
+            targets.append(self._playhead)
+        for track in self._timeline.tracks:
+            if track.is_audio():
+                continue
+            for clip in track.clips:
+                if clip.id == exclude_id:
+                    continue
+                targets.append(clip.timeline_start)
+                targets.append(clip.timeline_end)
+        return targets
+
+    # 指定秒を近くの編集点へ吸着させる
+    # exclude_id       : ドラッグ中のクリップ (自分自身の端へは吸着しない)
+    # include_playhead : 再生ヘッドを吸着先に含めるか
+    #                    (再生ヘッド自身を動かすときは自分へ吸着しないよう False)
+    # 戻り値: 吸着後の秒。閾値の外なら元の値をそのまま返す。
+    def snap_sec(self, sec, exclude_id=None, include_playhead=True):
+        if not self._cfg["snap_enabled"] or self._zoom <= 0:
+            return sec
+        threshold = self._cfg["snap_threshold_px"] / self._zoom
+        targets = self.snap_targets(exclude_id, include_playhead)
+        if not targets:
+            return sec
+        best = min(targets, key=lambda c: abs(c - sec))
+        return best if abs(best - sec) <= threshold else sec
+
+    # 再生ヘッド用の吸着 (設定 timeline.snap_playhead で個別に無効化できる)
+    def snap_playhead_sec(self, sec):
+        if not self._cfg["snap_playhead"]:
+            return sec
+        return self.snap_sec(sec, include_playhead=False)
 
     def set_zoom(self, px_per_sec):
         value = min(max(float(px_per_sec), self._cfg["zoom_min_px_per_sec"]),

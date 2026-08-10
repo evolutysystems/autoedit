@@ -27,6 +27,7 @@ if __package__ is None or __package__ == "":
         register_fonts_in_dir,
         resolve_fonts_dir,
     )
+    from src.gui import theme
     from src.utils import updater
     from src.utils.logger import get_logger
     from src.version import __version__
@@ -42,13 +43,14 @@ else:
     from ..utils import updater
     from ..utils.logger import get_logger
     from ..version import __version__
+    from . import theme
     from .archive_tab import ArchiveTabWidget
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .timeline.timeline_editor_dialog import TimelineEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -78,28 +80,10 @@ _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇"
 _SPINNER_INTERVAL_MS = 120
 
 # ボタンのアイコン化 (設定/実行を文言ではなくアイコン表示にする)
-# 画像素材を追加せず、Unicode 記号を描画して QIcon 化する。記号は定数で管理する。
-_BUTTON_ICON_PX = 18          # アイコン描画サイズ (px)
-_SETTINGS_GLYPH = "⚙"    # ⚙ 設定 (歯車)
-_RUN_GLYPH = "▶"         # ▶ 実行 (再生)
-# 記号グリフを確実に描画するためのフォント候補 (Windows 標準の記号フォント)。
-# 既定 UI フォントは歯車(U+2699)等を持たない場合があるため明示する。
-_ICON_FONT_FAMILIES = ["Segoe UI Symbol", "Segoe UI Emoji", "Segoe UI"]
-
-
-# Unicode 記号を指定色で描画して QIcon 化する (ボタンをアイコン表示にするためのヘルパ)
-def _glyph_icon(glyph, color):
-    pixmap = QPixmap(_BUTTON_ICON_PX, _BUTTON_ICON_PX)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setPen(color)
-    font = painter.font()
-    font.setFamilies(_ICON_FONT_FAMILIES)
-    font.setPointSizeF(_BUTTON_ICON_PX * 0.72)
-    painter.setFont(font)
-    painter.drawText(pixmap.rect(), Qt.AlignCenter, glyph)
-    painter.end()
-    return QIcon(pixmap)
+# 画像素材を追加せず Unicode 記号を描画して QIcon 化する。
+# 記号・サイズ・描画処理は theme へ移した (ver3 resolve4 §3-5)。
+# アーカイブ用タブからも同じ再生アイコンを使うため、双方から import できる場所に置く必要がある
+# (archive_tab から main_window は import できない = 循環するため)。
 
 
 # ワーカースレッドとメインスレッドの橋渡し (字幕編集画面の表示)
@@ -403,6 +387,10 @@ class UpdateDownloadWorker(QThread):
 # ドラッグ&ドロップ・字幕編集/音量解析の橋渡し) をそのまま移設したもの。挙動は不変。
 class ClipTabWidget(QWidget):
 
+    # 実行状態の変化を親へ通知する (ver3 resolve4 §5.7-4 / 回答 Q1)
+    # タブ外へ移した設定ボタンを無効化するために使う。タブ自身の無効化は従来どおり。
+    running_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = load_settings()
@@ -412,8 +400,6 @@ class ClipTabWidget(QWidget):
         self._volume_bridge = None
         # Timeline 編集画面の橋渡し参照 (ver3)
         self._timeline_bridge = None
-        # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ)
-        self._settings_window = None
         self._build_ui()
         # このタブ上で動画ファイルのドロップを受け付ける (resolve12)
         self.setAcceptDrops(True)
@@ -421,10 +407,6 @@ class ClipTabWidget(QWidget):
     # 画面構築
     def _build_ui(self):
         root = QVBoxLayout(self)
-
-        # ボタンアイコンの描画色はパレットのボタン文字色に合わせる (ライト/ダーク両対応)
-        icon_color = self.palette().color(QPalette.ButtonText)
-        icon_size = QSize(_BUTTON_ICON_PX, _BUTTON_ICON_PX)
 
         # 入力動画選択 ("入力動画:" のラベルは廃止し、入力欄のプレースホルダで案内する)
         input_row = QHBoxLayout()
@@ -437,25 +419,16 @@ class ClipTabWidget(QWidget):
         input_row.addWidget(self.browse_button)
         root.addLayout(input_row)
 
-        # 設定・実行ボタンは横並びで配置する
-        button_row = QHBoxLayout()
-
-        # 設定画面を開くボタン (文言ではなく歯車アイコン。用途はツールチップで示す)
-        self.settings_button = QPushButton()
-        self.settings_button.setIcon(_glyph_icon(_SETTINGS_GLYPH, icon_color))
-        self.settings_button.setIconSize(icon_size)
-        self.settings_button.setToolTip("設定")
-        self.settings_button.clicked.connect(self._on_open_settings)
-        button_row.addWidget(self.settings_button)
-
         # 実行ボタン (文言ではなく再生アイコン。用途はツールチップで示す)
+        # アプリの主要動作のためアクセント塗り (primaryButton) にする (resolve3 §5.2-2)。
+        # 設定ボタンはタブ外へ移したため、この列には実行ボタンだけが残る (resolve4 M3)。
+        # 幅を明示しないと列いっぱいに広がって間延びする (resolve4 §5.10-2)。
+        button_row = QHBoxLayout()
         self.run_button = QPushButton()
-        self.run_button.setIcon(_glyph_icon(_RUN_GLYPH, icon_color))
-        self.run_button.setIconSize(icon_size)
-        self.run_button.setToolTip("実行")
         self.run_button.clicked.connect(self._on_run)
+        theme.setup_primary_action_button(self.run_button, theme.RUN_GLYPH, "実行")
         button_row.addWidget(self.run_button)
-
+        button_row.addStretch(1)
         root.addLayout(button_row)
 
         # 進捗バー + ステータス
@@ -473,21 +446,16 @@ class ClipTabWidget(QWidget):
         self._spinner_timer.setInterval(_SPINNER_INTERVAL_MS)
         self._spinner_timer.timeout.connect(self._tick_spinner)
 
+    # アイコンをテーマの色で描き直す (resolve3 §5.10-2)
+    # ボタンアイコンは QPixmap へ焼き込むため、OS の明暗が切り替わったら作り直す必要がある。
+    def refresh_theme(self):
+        theme.refresh_primary_action_icon(self.run_button, theme.RUN_GLYPH)
+
     # スピナーを1コマ進めて status_label を更新する (QTimer 駆動)
     def _tick_spinner(self):
         frame = _SPINNER_FRAMES[self._spinner_index % len(_SPINNER_FRAMES)]
         self._spinner_index += 1
         self.status_label.setText(f"{frame} {self._spinner_message}")
-
-    # 設定画面を開く (別ウィンドウとして表示する)
-    def _on_open_settings(self):
-        # 既に開いている場合は前面に出すだけ
-        if self._settings_window is not None and self._settings_window.isVisible():
-            self._settings_window.raise_()
-            self._settings_window.activateWindow()
-            return
-        self._settings_window = SettingsWindow()
-        self._settings_window.show()
 
     # 入力動画をファイルダイアログで選択する
     def _on_browse(self):
@@ -590,6 +558,8 @@ class ClipTabWidget(QWidget):
             self._spinner_timer.start()
         else:
             self._spinner_timer.stop()
+        # タブ外の設定ボタンを無効化するため親へ通知する (resolve4 §5.7-4)
+        self.running_changed.emit(running)
 
     # 進捗更新 (メインスレッド)
     # ラベルはスピナーが描画するためメッセージ更新のみ行う (ちらつき防止)
@@ -631,9 +601,55 @@ class MainWindow(QWidget):
         self._update_check_worker = None
         self._update_download_worker = None
         self._update_progress = None
+        # ネイティブ背景効果は表示後 (winId() が有効になってから) に 1 度だけ要求する
+        self._backdrop_requested = False
+        # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ / resolve4 M3)
+        self._settings_window = None
+        # 実行中のタブ (resolve4 §5.7-4)。空でないあいだ設定ボタンを無効化する。
+        self._running_tabs = set()
         self._build_ui()
 
-    # タブを構築する (現行クリップ機能 + アーカイブ切り抜き準備中)
+        # ガラスモーフィズム (ver3 resolve3 §5.9)
+        # 背景のグラデーションを描き、OS の明暗切り替えに追随する。
+        theme.install_window_background(self)
+        theme.watch_color_scheme(QApplication.instance(), self._on_theme_changed,
+                                 self._settings)
+
+    # OS のライト/ダーク設定が切り替わったときの貼り替え (R8 / resolve3 §5.10-2)
+    # QSS・パレット・自前描画の色キャッシュを作り直して再描画するだけで、
+    # 編集中の状態 (Timeline の内容・選択・Undo 履歴) は一切失われない。
+    def _on_theme_changed(self):
+        app = QApplication.instance()
+        before = theme.mode(self._settings)
+        theme.invalidate_cache()
+        after = theme.mode(self._settings)
+        _logger.info("OS の配色が変わったためテーマを貼り替えます: %s → %s",
+                     "ライト" if before == "light" else "ダーク",
+                     "ライト" if after == "light" else "ダーク")
+        theme.apply(app, self._settings)
+        # タイトルバーの明暗も追随させる
+        self._backdrop_requested = False
+        self._apply_native_backdrop()
+        # QPixmap へ焼き込んだアイコンはテーマ追随しないため描き直す (resolve4 §5.10-3)
+        self.clip_tab.refresh_theme()
+        self.archive_tab.refresh_theme()
+        self._refresh_settings_icon()
+        theme.refresh_all_windows(app)
+
+    # 表示後にネイティブのすりガラスを要求する (resolve3 §5.4)
+    # winId() が有効になってからでないと DWM へ渡せないため showEvent で行う。
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_native_backdrop()
+
+    # ネイティブ背景効果を 1 度だけ要求する (失敗してもグラデーション背景で成立する)
+    def _apply_native_backdrop(self):
+        if self._backdrop_requested:
+            return
+        self._backdrop_requested = True
+        theme.apply_native_backdrop(self, self._settings)
+
+    # タブを構築する (現行クリップ機能 + アーカイブ切り抜き)
     def _build_ui(self):
         root = QVBoxLayout(self)
         self.tabs = QTabWidget()
@@ -643,7 +659,57 @@ class MainWindow(QWidget):
         # アーカイブ切り抜き用タブ (R0: 準備中)
         self.archive_tab = ArchiveTabWidget()
         self.tabs.addTab(self.archive_tab, "アーカイブ切り抜き用")
+        # 先頭 (クリップ用) タブ選択時のみペイン左上を四角にする (resolve4 M1)
+        theme.bind_tab_pane_corner(self.tabs)
+
+        # 設定ボタンはタブの外 (右上) へ置く (resolve4 M3)。
+        # タブ内に置くとそのタブを選んでいる間しか設定を開けないため、
+        # どのタブを選んでいても開けるようコーナーウィジェットにする。
+        self.settings_button = QPushButton()
+        self.settings_button.setIconSize(QSize(theme.BUTTON_ICON_PX, theme.BUTTON_ICON_PX))
+        self.settings_button.setToolTip("設定")
+        theme.mark_icon_button(self.settings_button)
+        self.settings_button.clicked.connect(self._on_open_settings)
+        self.tabs.setCornerWidget(self.settings_button, Qt.TopRightCorner)
+        self._refresh_settings_icon()
+
+        # どちらかのタブが実行中なら設定ボタンを無効化する (resolve4 §5.7-4 / 回答 Q1)
+        self.clip_tab.running_changed.connect(
+            lambda running: self._on_tab_running_changed("clip", running))
+        self.archive_tab.running_changed.connect(
+            lambda running: self._on_tab_running_changed("archive", running))
+
         root.addWidget(self.tabs)
+
+    # 設定画面を開く (別ウィンドウとして表示する)
+    # resolve4 M3: ClipTabWidget から移設。どのタブを選んでいても開ける。
+    def _on_open_settings(self):
+        # 既に開いている場合は前面に出すだけ
+        if self._settings_window is not None and self._settings_window.isVisible():
+            self._settings_window.raise_()
+            self._settings_window.activateWindow()
+            return
+        self._settings_window = SettingsWindow()
+        self._settings_window.show()
+
+    # タブの実行状態が変わったときに設定ボタンの可否を更新する (resolve4 §5.7-4)
+    # 実行中のタブを集合で持つのは、一方が終わってももう一方が実行中なら
+    # 有効化してはいけないため (bool 1 個だと取りこぼす)。
+    def _on_tab_running_changed(self, tab_key, running):
+        if running:
+            self._running_tabs.add(tab_key)
+        else:
+            self._running_tabs.discard(tab_key)
+        self.settings_button.setEnabled(not self._running_tabs)
+
+    # 設定ボタンのアイコンを現在のテーマ色で描き直す (resolve3 §5.10-2)
+    def _refresh_settings_icon(self):
+        if theme.is_enabled():
+            icon_color = theme.color("text.primary")
+        else:
+            # ui.theme = "system" では従来どおりパレットのボタン文字色を使う
+            icon_color = self.settings_button.palette().color(QPalette.ButtonText)
+        self.settings_button.setIcon(theme.glyph_icon(theme.SETTINGS_GLYPH, icon_color))
 
     # ===== 自動更新 (request_autoupdate.md §6) =====
 
@@ -754,6 +820,10 @@ def main():
     icon_path = _resolve_app_icon_path()
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))
+    # ガラスモーフィズムのテーマを適用する (ver3 resolve3 §5.9)。
+    # QApplication へ 1 回当てるだけで、以後に作られるダイアログにも自動で効く。
+    # ui.theme = "system" のときは何も当てず従来の Qt 既定で起動する。
+    theme.apply(app, load_settings())
     window = MainWindow()
     window.show()
     # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)

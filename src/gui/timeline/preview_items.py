@@ -18,7 +18,9 @@ _ALIGN_RIGHT = (3, 6, 9)
 _ALIGN_BOTTOM = (1, 2, 3)
 _ALIGN_TOP = (7, 8, 9)
 
-# 選択枠の色
+# 選択枠の色 (琥珀)
+# ver3 resolve3 §5.6: 映像の上に置く操作用の目印のため、アクセント (赤) へ寄せない。
+# 赤にすると赤い映像の上で見失い、Timeline では再生ヘッドとも紛れる (§10-Q10)。
 _SELECTION_COLOR = QColor(255, 214, 92)
 
 

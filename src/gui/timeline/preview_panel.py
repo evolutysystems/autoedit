@@ -47,6 +47,7 @@ from ...timeline.frame_source import create_frame_source, is_pyav_available
 from ...timeline.model import SubtitleClip
 from ...utils.logger import get_logger
 from ...utils.proc import no_window_creationflags
+from .. import theme
 from .preview_items import (
     BaseFrameItem,
     ImageOverlayItem,
@@ -172,8 +173,15 @@ class PreviewPanel(QWidget):
             controller.timeline, self._settings, work_dir, asr_audio_path)
         self._audio_worker = None
         self._audio_job = 0
+        # 完了したら再生を始めるジョブ ID (先読みジョブと区別する)
+        self._autoplay_job = 0
         self._chunk_start = 0.0
-        self._playing = False
+        # 再生状態は速度 1 つで持つ (resolve2 §4-9)
+        #   0.0=停止 / +1.0=通常再生 / +N=倍速再生 / -N=倍速逆再生
+        self._rate = 0.0
+        self._pending_rate = 0.0     # 音声チャンク生成の完了後に適用する速度
+        self._silent_timer = None
+        self._reverse_timer = None
         self._last_frame_at = 0.0
 
         self._overlay_items = {}
@@ -199,30 +207,62 @@ class PreviewPanel(QWidget):
 
         self._view = _PreviewGraphicsView(self, self._scene)
         self._view.setRenderHints(self._view.renderHints())
+        # 映像の周囲は黒のまま (焼き込み結果の色判断を誤らせないため / resolve3 §5.6)。
+        # 枠だけをガラスにし、映像そのものには一切手を入れない。
         self._view.setBackgroundBrush(Qt.black)
+        theme.mark_preview_canvas(self._view)
         root.addWidget(self._view, 1)
 
         self._base_item = BaseFrameItem()
         self._base_item.show_blank(self._canvas)
         self._scene.addItem(self._base_item)
 
-        # トランスポート
+        # トランスポート (resolve2 §5.6-4)
+        # ボタン幅は設定から引く (ver3 resolve4 E2)。テーマの QSS が左右に余白を持つため、
+        # 記号が見切れない幅を明示する。2 記号のボタン (◀◀ ▶▶) だけ広い値を使う。
+        icon_width = int(self._cfg["transport_button_width_px"])
+        wide_width = int(self._cfg["transport_wide_button_width_px"])
+
         row = QHBoxLayout()
-        self.play_button = QPushButton("▶")
-        self.play_button.setFixedWidth(36)
-        self.play_button.setToolTip("再生 / 一時停止 (Space)")
-        self.play_button.clicked.connect(self.toggle_play)
-        row.addWidget(self.play_button)
+        # 「高精度プレビュー」が列の末尾に来るため、列の右余白がそのまま右余白になる (E3)
+        row.setContentsMargins(0, 0, int(self._cfg["transport_row_right_margin_px"]), 0)
 
         prev_button = QPushButton("⏮")
-        prev_button.setFixedWidth(32)
-        prev_button.setToolTip("先頭へ")
+        prev_button.setFixedWidth(icon_width)
+        theme.mark_icon_button(prev_button)
+        prev_button.setToolTip("先頭へ (Home)")
         prev_button.clicked.connect(lambda: self._controller.set_playhead(0.0))
         row.addWidget(prev_button)
 
+        rate = float(self._cfg["playback_rate"])
+        self.backward_button = QPushButton("◀◀")
+        self.backward_button.setFixedWidth(wide_width)
+        theme.mark_icon_button(self.backward_button)
+        self.backward_button.setCheckable(True)
+        self.backward_button.setToolTip(f"{rate:g} 倍速逆再生 (Q) ※音声は出ません")
+        self.backward_button.clicked.connect(lambda: self.toggle_rate(-rate))
+        row.addWidget(self.backward_button)
+
+        self.play_button = QPushButton("▶")
+        self.play_button.setFixedWidth(icon_width)
+        theme.mark_icon_button(self.play_button)
+        self.play_button.setCheckable(True)
+        self.play_button.setToolTip("再生 / 停止 (Space)")
+        self.play_button.clicked.connect(self.toggle_play)
+        row.addWidget(self.play_button)
+
+        self.forward_button = QPushButton("▶▶")
+        self.forward_button.setFixedWidth(wide_width)
+        theme.mark_icon_button(self.forward_button)
+        self.forward_button.setCheckable(True)
+        self.forward_button.setToolTip(f"{rate:g} 倍速再生 (E)")
+        self.forward_button.clicked.connect(lambda: self.toggle_rate(+rate))
+        row.addWidget(self.forward_button)
+
         next_button = QPushButton("⏭")
-        next_button.setFixedWidth(32)
-        next_button.setToolTip("末尾へ")
+        next_button.setFixedWidth(icon_width)
+        theme.mark_icon_button(next_button)
+        next_button.setToolTip("末尾へ (End)")
         next_button.clicked.connect(
             lambda: self._controller.set_playhead(
                 self._controller.timeline.duration_sec()))
@@ -246,7 +286,8 @@ class PreviewPanel(QWidget):
             self._player.mediaStatusChanged.connect(self._on_audio_status)
 
             self.mute_button = QPushButton("🔊" if self._cfg["audio_enabled"] else "🔇")
-            self.mute_button.setFixedWidth(32)
+            self.mute_button.setFixedWidth(icon_width)
+            theme.mark_icon_button(self.mute_button)
             self.mute_button.setToolTip("ミュート切り替え")
             self.mute_button.clicked.connect(self._toggle_mute)
             row.addWidget(self.mute_button)
@@ -261,7 +302,12 @@ class PreviewPanel(QWidget):
         else:
             self.mute_button = None
             self.volume_slider = None
+            # 音声を伴う再生 (通常再生・倍速再生) は使えない。
+            # 倍速逆再生は音声を使わないためそのまま動く (resolve2 §7)。
+            self.play_button.setEnabled(False)
+            self.forward_button.setEnabled(False)
             _logger.info("QtMultimedia が利用できないためプレビュー音声を無効にします")
+            _logger.info("QtMultimedia が利用できないため倍速再生を無効にします")
 
         if self._cfg["high_quality_button"]:
             hq_button = QPushButton("高精度プレビュー")
@@ -273,7 +319,7 @@ class PreviewPanel(QWidget):
         root.addLayout(row)
 
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color:#888;")
+        theme.mark_note(self.status_label)
         root.addWidget(self.status_label)
 
         if not is_pyav_available():
@@ -297,6 +343,10 @@ class PreviewPanel(QWidget):
         self._request_frame()
         self._rebuild_overlays()
         self._update_time_label()
+
+    # 状態表示を更新する (再生状態・失敗の案内など。画面側からも呼ぶ)
+    def set_status(self, text):
+        self.status_label.setText(text or "")
 
     def _update_time_label(self):
         total = self._controller.timeline.duration_sec()
@@ -428,33 +478,84 @@ class PreviewPanel(QWidget):
         menu.exec(global_pos)
 
     # ------------------------------------------------------------------
-    # 音声再生 (§6.4-5)
+    # 再生制御 (§6.4-5 / resolve2 §5.6)
     # ------------------------------------------------------------------
+    # 再生状態は速度 self._rate 1 つで持つ (resolve2 §4-9):
+    #   0.0 = 停止 / +1.0 = 通常再生 / +N = 倍速再生 / -N = 倍速逆再生
+    # 符号が向き、絶対値が速さ、ゼロが停止を表す。
 
+    # 再生中か (playing_changed の判定と外部からの参照用)
+    def is_playing(self):
+        return abs(self._rate) > 1e-6
+
+    # 通常再生 / 停止のトグル (Space)
     def toggle_play(self):
-        if self._playing:
-            self.pause()
-        else:
-            self.play()
+        self.toggle_rate(1.0)
 
-    def play(self):
+    # 指定速度へ切り替える。同じ速度で再生中なら停止する (トグル / resolve2 §3-6-3)
+    #   rate > 0 : QMediaPlayer で再生 (音声あり)
+    #   rate < 0 : QTimer で再生ヘッドを後退 (音声なし / resolve2 §3-6-2)
+    def toggle_rate(self, rate):
+        rate = float(rate)
+        if abs(self._rate - rate) < 1e-6:
+            self.pause()
+            return
+        self.pause()                        # いったん止めてから切り替える
+        if rate > 0:
+            self._play_forward(rate)
+        elif rate < 0:
+            self._play_backward(-rate)
+
+    # 前進再生 (通常・倍速とも。速度だけが違う)
+    def _play_forward(self, rate):
         if self._player is None:
-            self.status_label.setText("音声を再生できない環境のため再生できません")
+            self.set_status("音声を再生できない環境のため再生できません")
             return
         total = self._controller.timeline.duration_sec()
         if self._controller.playhead() >= total - 0.05:
             self._controller.set_playhead(0.0)
 
+        self._pending_rate = rate
         start = self._controller.playhead()
         hit = self._audio_source.cached(start, self._cfg["audio_chunk_sec"])
         if hit is not None:
             self._start_playback(*hit)
             return
         # チャンクが無い → 生成してから再生する
-        self.status_label.setText("音声を準備中…")
+        self.set_status("音声を準備中…")
+        self._request_chunk(start)
+
+    # 倍速逆再生 (音声なし / resolve2 §5.6-3)
+    # QMediaPlayer は負の再生レートに対応していないため、QTimer で再生ヘッドを戻す。
+    def _play_backward(self, rate):
+        interval = int(1000 / max(int(self._cfg["reverse_play_fps"]), 1))
+        self._reverse_timer = QTimer(self)
+        self._reverse_timer.setInterval(interval)
+        self._reverse_timer.timeout.connect(
+            lambda: self._step_backward(rate, interval))
+        self._reverse_timer.start()
+        self._set_rate(-rate)
+        self.set_status(f"{rate:g} 倍速逆再生中 (音声なし)")
+        _logger.debug("再生速度: %.1f 倍 (逆再生・音声なし)", rate)
+
+    # 1 ティックぶん再生ヘッドを戻す。先頭に達したら停止する。
+    def _step_backward(self, rate, interval_ms):
+        target = self._controller.playhead() - rate * interval_ms / 1000.0
+        if target <= 0.0:
+            self._controller.set_playhead(0.0)
+            self.pause()
+            return
+        self._controller.set_playhead(target)
+
+    # 音声チャンクの生成を依頼する
+    # autoplay=True  : 生成できたらその場から再生を始める
+    # autoplay=False : 先読み。生成するだけで再生位置は動かさない
+    def _request_chunk(self, start_sec, autoplay=True):
         self._audio_job += 1
+        if autoplay:
+            self._autoplay_job = self._audio_job
         self._audio_worker = _AudioWorker(
-            self._audio_source, self._audio_job, start,
+            self._audio_source, self._audio_job, start_sec,
             self._cfg["audio_chunk_sec"], parent=self)
         self._audio_worker.chunk_ready.connect(self._on_chunk_ready)
         self._audio_worker.chunk_failed.connect(self._on_chunk_failed)
@@ -463,52 +564,82 @@ class PreviewPanel(QWidget):
     def _on_chunk_ready(self, job_id, path, chunk_start):
         if job_id != self._audio_job:
             return
-        self.status_label.setText("")
+        self.set_status("")
+        # 先読みで作っただけのチャンクでは再生位置を動かさない
+        # (動かすと再生が数秒先へ飛んでしまう)
+        if job_id != self._autoplay_job:
+            return
+        # 生成待ちの間に停止された場合は再生を始めない
+        if not self._pending_rate:
+            return
         self._start_playback(path, chunk_start)
 
     def _on_chunk_failed(self, job_id):
         if job_id != self._audio_job:
             return
-        self.status_label.setText("音声を再生できません (無音で再生します)")
+        if job_id != self._autoplay_job:
+            _logger.debug("音声チャンクの先読みに失敗しました (再生は継続します)")
+            return
+        if not self._pending_rate:
+            return
+        self.set_status("音声を再生できません (無音で再生します)")
         self._start_silent_playback()
 
     def _start_playback(self, path, chunk_start):
+        rate = self._pending_rate or 1.0
         self._chunk_start = float(chunk_start)
         offset_ms = int(max(self._controller.playhead() - self._chunk_start, 0.0) * 1000)
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.setPosition(offset_ms)
+        self._player.setPlaybackRate(rate)   # 倍速再生はこの 1 行が本体 (resolve2 §3-6-1)
         self._player.play()
-        self._set_playing(True)
+        self._set_rate(rate)
+        if abs(rate - 1.0) > 1e-6:
+            _logger.debug("再生速度: %.1f 倍 (前進)", rate)
 
     # 音声が使えないときはタイマーで再生ヘッドだけを進める (§6.4-5 利用不可時)
     def _start_silent_playback(self):
+        rate = self._pending_rate or 1.0
         self._silent_timer = QTimer(self)
         interval = int(1000 / max(int(self._cfg["play_fps"]), 1))
         self._silent_timer.setInterval(interval)
         self._silent_timer.timeout.connect(
-            lambda: self._controller.step_playhead(
-                self._controller.timeline.fps / max(int(self._cfg["play_fps"]), 1)))
+            lambda: self._controller.set_playhead(
+                self._controller.playhead() + rate * interval / 1000.0))
         self._silent_timer.start()
-        self._set_playing(True)
+        self._set_rate(rate)
 
     def pause(self):
         if self._player is not None:
             self._player.pause()
-        timer = getattr(self, "_silent_timer", None)
-        if timer is not None:
-            timer.stop()
-        self._set_playing(False)
+        for name in ("_silent_timer", "_reverse_timer"):
+            timer = getattr(self, name, None)
+            if timer is not None:
+                timer.stop()
+                setattr(self, name, None)
+        self._pending_rate = 0.0
+        self._set_rate(0.0)
 
-    def _set_playing(self, playing):
-        if self._playing == playing:
+    # 速度を切り替え、ボタン表示と playing_changed を更新する
+    def _set_rate(self, rate):
+        rate = float(rate)
+        if abs(self._rate - rate) < 1e-6:
             return
-        self._playing = playing
-        self.play_button.setText("⏸" if playing else "▶")
-        self.playing_changed.emit(playing)
+        was_playing = self.is_playing()
+        self._rate = rate
+        playing = self.is_playing()
+        self.play_button.setText("⏸" if abs(rate - 1.0) < 1e-6 else "▶")
+        self.play_button.setChecked(abs(rate - 1.0) < 1e-6)
+        self.forward_button.setChecked(rate > 1.0 + 1e-6)
+        self.backward_button.setChecked(rate < -1e-6)
+        if not playing:
+            self.set_status("")
+        if playing != was_playing:
+            self.playing_changed.emit(playing)
 
     # 音声位置がマスタークロック。ここから再生ヘッドを進める。
     def _on_audio_position(self, position_ms):
-        if not self._playing:
+        if self._rate <= 0:
             return
         sec = self._chunk_start + position_ms / 1000.0
         total = self._controller.timeline.duration_sec()
@@ -533,31 +664,32 @@ class PreviewPanel(QWidget):
             return
         if self._audio_worker is not None and self._audio_worker.isRunning():
             return
-        self._audio_job += 1
-        self._audio_worker = _AudioWorker(
-            self._audio_source, self._audio_job, next_start,
-            self._cfg["audio_chunk_sec"], parent=self)
-        self._audio_worker.chunk_ready.connect(self._on_chunk_ready)
-        self._audio_worker.chunk_failed.connect(self._on_chunk_failed)
-        self._audio_worker.start()
+        # 先読み: 生成だけ済ませておき、現在のチャンクが終わってから使う
+        self._request_chunk(next_start, autoplay=False)
 
     def _on_audio_status(self, status):
-        if not self._playing or self._player is None:
+        if self._rate <= 0 or self._player is None:
             return
         if status == QMediaPlayer.EndOfMedia:
-            # チャンクの終端 → 次のチャンクから続ける
+            # チャンクの終端 → 同じ速度のまま次のチャンクから続ける
             next_start = self._chunk_start + self._player.duration() / 1000.0
             if next_start >= self._controller.timeline.duration_sec() - 0.05:
                 self.pause()
                 return
+            rate = self._rate
             self._controller.set_playhead(next_start)
-            self.play()
+            self._pending_rate = rate
+            hit = self._audio_source.cached(next_start, self._cfg["audio_chunk_sec"])
+            if hit is not None:
+                self._start_playback(*hit)
+            else:
+                self._request_chunk(next_start)
 
     def _on_audio_error(self, error, error_string):
         if _MULTIMEDIA_AVAILABLE and error == QMediaPlayer.NoError:
             return
         _logger.warning("プレビュー音声の再生エラー: %s", error_string)
-        self.status_label.setText("音声を再生できません (無音で再生します)")
+        self.set_status("音声を再生できません (無音で再生します)")
         self._start_silent_playback()
 
     def _toggle_mute(self):
@@ -575,7 +707,7 @@ class PreviewPanel(QWidget):
     def _show_high_quality(self):
         resolved = self._controller.source_at_playhead()
         if resolved is None:
-            self.status_label.setText("この位置には映像がありません")
+            self.set_status("この位置には映像がありません")
             return
         media, source_sec = resolved
         playhead = self._controller.playhead()
@@ -615,10 +747,10 @@ class PreviewPanel(QWidget):
             result = subprocess.run(
                 cmd, capture_output=True, creationflags=no_window_creationflags())
         except OSError as e:
-            self.status_label.setText(f"高精度プレビューに失敗しました: {e}")
+            self.set_status(f"高精度プレビューに失敗しました: {e}")
             return
         if result.returncode != 0 or not os.path.exists(out_path):
-            self.status_label.setText("高精度プレビューに失敗しました")
+            self.set_status("高精度プレビューに失敗しました")
             return
         _HighQualityDialog(out_path, self).exec()
 
@@ -664,6 +796,8 @@ class _HighQualityDialog(QDialog):
     def __init__(self, image_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle("高精度プレビュー (本番と同じ描画)")
+        # 本番と同じ描画の確認窓のため、画像そのものには手を加えない (resolve3 §5.6)
+        theme.install_window_background(self)
         layout = QVBoxLayout(self)
         label = QLabel()
         pixmap = QPixmap(image_path)
@@ -675,7 +809,7 @@ class _HighQualityDialog(QDialog):
             "この画像は本番と同じ ASS 描画です。編集画面上の字幕は Qt による近似表示のため、"
             "縁取りや影の見え方が異なります。")
         note.setWordWrap(True)
-        note.setStyleSheet("color:#888;")
+        theme.mark_note(note)
         layout.addWidget(note)
         close_button = QPushButton("閉じる")
         close_button.clicked.connect(self.accept)

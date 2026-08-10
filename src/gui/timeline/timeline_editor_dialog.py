@@ -4,9 +4,11 @@
 #
 # 現行の字幕編集画面 (SubtitleEditorDialog) は削除せず残してあり、
 # setting.json の timeline.enabled=false でそちらへ戻せる (R2)。
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -25,6 +28,7 @@ from PySide6.QtWidgets import (
 from ...export import resolve_export
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
+from .. import theme
 from ..subtitle_editor_dialog import RESOLVE_EXPORT_BUTTON_TEXT, run_resolve_export
 from .preview_panel import PreviewPanel
 from .timeline_controller import TimelineController
@@ -34,6 +38,11 @@ _logger = get_logger(__name__)
 
 # 字幕の役割 (既存 subtitle_editor_dialog と同じ選択肢)
 _ROLE_CHOICES = [("配信者", "streamer"), ("サブ", "sub"), ("コメント", "comment")]
+
+# フォント一覧の先頭に置く「指定なし」= setting.json の字幕フォントに従う
+_FONT_DEFAULT_LABEL = "(設定のフォント)"
+# 一覧の各項目をそのフォント自身で描くときの文字サイズ (字幕編集画面と同じ)
+_FONT_PREVIEW_POINT_SIZE = 12
 
 
 class TimelineEditorDialog(QDialog):
@@ -47,6 +56,8 @@ class TimelineEditorDialog(QDialog):
         self.setWindowTitle("Timeline 編集")
         self._timeline = timeline
         self._settings = settings
+        # 背景グラデーションを敷く (この上に Timeline の半透明な下地が乗る / resolve3 §3-2)
+        theme.install_window_background(self)
 
         self.controller = TimelineController(timeline, settings, parent=self)
         ui_cfg = self.controller.cfg["ui"]
@@ -58,6 +69,8 @@ class TimelineEditorDialog(QDialog):
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.timeline_changed.connect(self._on_timeline_changed)
         self.preview.playing_changed.connect(self._on_playing_changed)
+        # Timeline 側で実行できなかった操作の案内をプレビュー下へ出す
+        self.timeline_panel.view.status_message.connect(self.preview.set_status)
         self._on_selection_changed(None)
 
     # ------------------------------------------------------------------
@@ -109,15 +122,19 @@ class TimelineEditorDialog(QDialog):
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
 
+        # 「決定」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する破壊的動作
+        # として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)
         self.decide_button = QPushButton("決定")
         # 既定ボタンにしない: Enter / Space の取りこぼしで書き出しが始まると
         # 長い処理が意図せず走ってしまうため、必ずクリックで実行させる。
         self.decide_button.setAutoDefault(False)
         self.decide_button.setToolTip("Timeline の内容を反映した動画を書き出します")
         self.decide_button.clicked.connect(self.accept)
+        theme.mark_primary(self.decide_button)
         self.cancel_button = QPushButton("キャンセル")
         self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.reject)
+        theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)
         button_row.addWidget(self.cancel_button)
         root.addLayout(button_row)
@@ -128,29 +145,64 @@ class TimelineEditorDialog(QDialog):
     # ショートカット (§6.6 / §6.7)
     # ------------------------------------------------------------------
 
+    # キー割り当ては setting.json (timeline.shortcuts) から読む (resolve2 §5.5-2)
+    # 登録したショートカットは文字入力欄にフォーカスがある間すべて無効化する
+    # (回答 Q6 / _ShortcutGuard)。Backspace・Delete・矢印・Ctrl+Z なども対象で、
+    # 入力欄では本来の文字編集として働く。
     def _register_shortcuts(self):
-        def bind(sequence, handler):
-            shortcut = QShortcut(QKeySequence(sequence), self)
+        keys = self.controller.cfg["shortcuts"]
+        registered = []
+        used = {}
+
+        def bind(action, handler):
+            sequence = keys.get(action, "")
+            if not sequence:
+                return None          # 空文字は「割り当てなし」(S など)
+            key = QKeySequence(sequence)
+            if key.isEmpty():
+                _logger.warning(
+                    "ショートカットのキー指定が不正です: timeline.shortcuts.%s=%r",
+                    action, sequence)
+                return None
+            if sequence in used:
+                _logger.warning(
+                    "ショートカットのキーが重複しています: %r (%s と %s)",
+                    sequence, used[sequence], action)
+            used[sequence] = action
+            shortcut = QShortcut(key, self)
             shortcut.activated.connect(handler)
+            registered.append(shortcut)
             return shortcut
 
-        bind("Ctrl+B", lambda: self.controller.split_at_playhead())
-        bind("Delete", self._delete_default)
-        bind("Shift+Delete", self._delete_alternate)
-        bind("Ctrl+Z", self._undo)
-        bind("Ctrl+Y", self._redo)
-        bind("Ctrl+Shift+Z", self._redo)
-        bind("Space", self.preview.toggle_play)
-        bind("Left", lambda: self.controller.step_playhead(-1))
-        bind("Right", lambda: self.controller.step_playhead(1))
-        bind("Home", lambda: self.controller.set_playhead(0.0))
-        bind("End", lambda: self.controller.set_playhead(
+        # 編集
+        bind("split", lambda: self.controller.split_at_playhead())
+        bind("split_alt", lambda: self.controller.split_at_playhead())
+        bind("ripple_trim_before", self._ripple_trim_before)
+        bind("ripple_trim_after", self._ripple_trim_after)
+        # 削除 (3 種)
+        bind("delete", self._delete_default)
+        bind("delete_alternate", self._delete_alternate)
+        bind("delete_plain", self._delete_plain)
+        # 再生
+        bind("play_pause", self.preview.toggle_play)
+        bind("play_fast_forward", self._play_fast_forward)
+        bind("play_fast_backward", self._play_fast_backward)
+        # 履歴・移動・ズーム
+        bind("undo", self._undo)
+        bind("redo", self._redo)
+        bind("redo_alt", self._redo)
+        bind("step_backward", lambda: self.controller.step_playhead(-1))
+        bind("step_forward", lambda: self.controller.step_playhead(1))
+        bind("go_start", lambda: self.controller.set_playhead(0.0))
+        bind("go_end", lambda: self.controller.set_playhead(
             self.controller.timeline.duration_sec()))
-        bind("Ctrl++", lambda: self.controller.zoom_by(1.25))
-        bind("Ctrl+=", lambda: self.controller.zoom_by(1.25))
-        bind("Ctrl+-", lambda: self.controller.zoom_by(1 / 1.25))
+        bind("zoom_in", lambda: self.controller.zoom_by(1.25))
+        bind("zoom_in_alt", lambda: self.controller.zoom_by(1.25))
+        bind("zoom_out", lambda: self.controller.zoom_by(1 / 1.25))
 
-    # Delete キー単独: 設定 (timeline.ripple_delete) に従う (既定 = 空白を残す)
+        self._shortcut_guard = _ShortcutGuard(registered, self)
+
+    # Delete キー単独: 設定 (timeline.ripple_delete) に従う (既定 = リップル削除)
     def _delete_default(self):
         self.controller.delete_selected(ripple=self.controller.cfg["ripple_delete"])
 
@@ -158,6 +210,32 @@ class TimelineEditorDialog(QDialog):
     def _delete_alternate(self):
         self.controller.delete_selected(
             ripple=not self.controller.cfg["ripple_delete"])
+
+    # BackSpace: 設定に関わらず「選択中のノードを削除するだけ」(R12)
+    # 後続を詰めない = 跡は空白として残る。
+    def _delete_plain(self):
+        self.controller.delete_selected(ripple=False)
+
+    # A: 再生ヘッドより前をリップル削除
+    def _ripple_trim_before(self):
+        self._run_ripple_trim("before")
+
+    # D: 再生ヘッドより後ろをリップル削除
+    def _ripple_trim_after(self):
+        self._run_ripple_trim("after")
+
+    # 対象が無ければ画面へ案内を出す (エラーにはしない / resolve2 §7)
+    def _run_ripple_trim(self, side):
+        if not self.controller.ripple_trim_to_playhead(side):
+            self.preview.set_status("再生ヘッド上にクリップがありません")
+
+    # E: 倍速再生 (トグル)
+    def _play_fast_forward(self):
+        self.preview.toggle_rate(+self.controller.cfg["preview"]["playback_rate"])
+
+    # Q: 倍速逆再生 (トグル・音声なし)
+    def _play_fast_backward(self):
+        self.preview.toggle_rate(-self.controller.cfg["preview"]["playback_rate"])
 
     def _undo(self):
         self.controller.undo()
@@ -249,7 +327,44 @@ class TimelineEditorDialog(QDialog):
             self.preview.shutdown()
         except Exception:  # noqa: BLE001 (後片付けの失敗で終了を妨げない)
             _logger.exception("プレビューの後片付けに失敗しました")
+        try:
+            self.timeline_panel.shutdown()
+        except Exception:  # noqa: BLE001 (同上)
+            _logger.exception("Timeline の後片付けに失敗しました")
         super().done(code)
+
+
+# 文字入力欄にフォーカスがある間、登録済みショートカットをすべて無効化する
+# (resolve2 §5.5-3 / 回答 Q6:「入力欄にフォーカスがあるときはショートカットキーとしての
+#  役割を果たさないようにしてほしい」)
+# 防ぐ事故の例:
+#   ・「わ」と打とうとして W でクリップが分割される
+#   ・Space が打てない
+#   ・BackSpace / Delete で文字ではなくクリップが消える
+#   ・矢印キーで文字カーソルではなく再生ヘッドが動く
+#   ・Ctrl+Z で入力ではなくタイムライン編集が取り消される
+class _ShortcutGuard(QObject):
+
+    _EDITORS = (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)
+
+    def __init__(self, shortcuts, parent=None):
+        super().__init__(parent)
+        self._shortcuts = list(shortcuts)
+        application = QApplication.instance()
+        if application is not None:
+            application.focusChanged.connect(self._on_focus_changed)
+
+    # キー入力を本来の意味で使う欄かどうか
+    # コンボボックスは編集不可のものも含める。一覧から選ぶ操作では頭文字で
+    # 項目を手繰るのが普通で (フォントは 400 件近くある)、W や A がショートカットへ
+    # 吸われるとその文字で始まるフォントを選べなくなるため。
+    def _is_editor(self, widget):
+        return isinstance(widget, self._EDITORS) or isinstance(widget, QComboBox)
+
+    def _on_focus_changed(self, _old, new):
+        editing = self._is_editor(new)
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(not editing)
 
 
 # フォーカスが外れたときにだけ確定を通知する複数行入力欄
@@ -281,13 +396,20 @@ class _InspectorPanel(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
 
+        # インスペクタは文字と入力欄を載せる面のため濃いめのガラスにする (resolve3 §3-4)。
+        # 分割ウィンドウの一区画として周囲と接するため角丸は付けない (resolve4 E1)。
+        theme.mark_panel(self, strong=True, rounded=False)
+
         self.title_label = QLabel("選択なし")
-        self.title_label.setStyleSheet("font-weight:bold;")
+        # 太字は QSS ではなくフォントで指定する (インライン指定の撤去 / §5.3)
+        title_font = QFont(self.title_label.font())
+        title_font.setBold(True)
+        self.title_label.setFont(title_font)
         root.addWidget(self.title_label)
 
         self.info_label = QLabel("")
         self.info_label.setWordWrap(True)
-        self.info_label.setStyleSheet("color:#888;")
+        theme.mark_note(self.info_label)
         root.addWidget(self.info_label)
 
         # 字幕用の編集欄
@@ -308,10 +430,20 @@ class _InspectorPanel(QWidget):
         self.role_combo.currentIndexChanged.connect(self._on_role_changed)
         form.addRow("役割", self.role_combo)
 
-        self.font_edit = QLineEdit()
-        self.font_edit.setPlaceholderText("空欄=設定のフォント")
-        self.font_edit.editingFinished.connect(self._on_font_changed)
-        form.addRow("フォント", self.font_edit)
+        # フォントは名前の直接入力ではなく一覧から選ぶ (設定画面・字幕編集画面と同じ形式)。
+        # 先頭の空項目は「設定のフォントに従う」= font 未指定を表す。
+        self.font_combo = QComboBox()
+        self.font_combo.addItem(_FONT_DEFAULT_LABEL, "")
+        for family in QFontDatabase.families():
+            self.font_combo.addItem(family, family)
+            # 各項目を自フォントで描画してプレビュー代わりにする (resolve16 §4.1)
+            self.font_combo.setItemData(
+                self.font_combo.count() - 1,
+                QFont(family, _FONT_PREVIEW_POINT_SIZE), Qt.FontRole)
+        # activated = 利用者が選び直したときだけ。currentIndexChanged だと
+        # 一覧を矢印キーで見て回るだけで Undo 履歴が埋まってしまう。
+        self.font_combo.activated.connect(self._on_font_changed)
+        form.addRow("フォント", self.font_combo)
 
         self.size_spin = QDoubleSpinBox()
         self.size_spin.setDecimals(0)
@@ -353,10 +485,22 @@ class _InspectorPanel(QWidget):
                 self.text_edit.setPlainText(clip.text.replace("\\N", "\n"))
                 index = self.role_combo.findData(clip.role)
                 self.role_combo.setCurrentIndex(max(index, 0))
-                self.font_edit.setText(clip.font or "")
+                self._set_font(clip.font or "")
                 self.size_spin.setValue(float(clip.font_size or 0))
         finally:
             self._updating = False
+
+    # フォントを選択状態にする。一覧に無い指定 (別 PC で作った案件・未導入のフォント)
+    # は項目を足してから選ぶ。黙って「設定のフォント」へ戻すと指定が失われるため。
+    def _set_font(self, family):
+        if not family:
+            self.font_combo.setCurrentIndex(0)
+            return
+        index = self.font_combo.findData(family)
+        if index < 0:
+            self.font_combo.addItem(family, family)
+            index = self.font_combo.count() - 1
+        self.font_combo.setCurrentIndex(index)
 
     # 表示を作り直す (編集後)
     def refresh(self):
@@ -414,7 +558,8 @@ class _InspectorPanel(QWidget):
     def _on_font_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):
             return
-        self._controller.edit_subtitle(self._clip.id, font=self.font_edit.text().strip())
+        self._controller.edit_subtitle(
+            self._clip.id, font=self.font_combo.currentData() or "")
 
     def _on_size_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):

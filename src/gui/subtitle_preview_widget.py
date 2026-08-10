@@ -36,6 +36,7 @@ from ..modules.subtitle_generator import build_font_profile, build_subtitle_file
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
+from . import theme
 
 _logger = get_logger(__name__)
 
@@ -166,7 +167,8 @@ class SubtitlePreviewWidget(QWidget):
         self._static_label = QLabel("プレビューを読み込み中…")
         self._static_label.setAlignment(Qt.AlignCenter)
         self._static_label.setMinimumSize(_DISPLAY_WIDTH, int(_DISPLAY_WIDTH * 9 / 16))
-        self._static_label.setStyleSheet("background:#111; color:#aaa;")
+        # 映像領域はテーマで塗り替えない (常に黒 / resolve3 §5.6)
+        theme.mark_preview_canvas(self._static_label)
         self._stack.addWidget(self._static_label)
 
         self._player = None
@@ -213,7 +215,7 @@ class SubtitlePreviewWidget(QWidget):
             self.update_button.clicked.connect(self._on_update_clicked)
             update_row.addWidget(self.update_button)
             self.status_label = QLabel("")
-            self.status_label.setStyleSheet("color:#888;")
+            theme.mark_note(self.status_label)
             update_row.addWidget(self.status_label, 1)
             root.addLayout(update_row)
         else:

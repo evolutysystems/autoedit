@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from . import theme
+
 # ウィンドウ既定幅
 _DIALOG_MIN_WIDTH = 380
 
@@ -29,6 +31,8 @@ class VolumeThresholdDialog(QDialog):
         self.setWindowTitle("音量解析 — カット閾値の確認")
         self.setMinimumWidth(_DIALOG_MIN_WIDTH)
         self._initial_db = int(initial_db)
+        # ガラスダイアログ化 (resolve3 §5.1)。QSS はアプリ全体へ適用済み。
+        theme.install_window_background(self)
         self._build_ui(measured_db, region_count)
 
     # 画面構築
@@ -63,6 +67,8 @@ class VolumeThresholdDialog(QDialog):
         self.ok_button = QPushButton("OK")
         self.ok_button.setDefault(True)
         self.ok_button.clicked.connect(self.accept)
+        # 確定は主要動作 (アクセント塗り / resolve3 §5.2-2)
+        theme.mark_primary(self.ok_button)
         self.keep_button = QPushButton("変更しない")
         self.keep_button.clicked.connect(self.reject)
         button_row.addWidget(self.ok_button)

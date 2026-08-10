@@ -10,8 +10,10 @@ from PySide6.QtCharts import (
     QValueAxis,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QBrush, QPainter, QPen
 from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+from . import theme
 
 
 # 窓スコア (curve 要素) の中央時刻を返す
@@ -40,6 +42,31 @@ class ScoreGraphWidget(QWidget):
         self._view = QChartView(self._chart)
         self._view.setRenderHint(QPainter.Antialiasing)
         layout.addWidget(self._view)
+        self._apply_theme()
+
+    # グラフの配色をテーマへ揃える (resolve3 §5.1)。
+    # QtCharts は QSS が効かないため、背景・文字色・系列色を API で指定する。
+    # ui.theme = "system" のときは何もせず QtCharts の既定配色のままにする。
+    def _apply_theme(self):
+        if not theme.is_enabled():
+            return
+        # 背景はウィンドウのガラスを透かす (グラフ自体は塗らない)
+        self._chart.setBackgroundBrush(QBrush(Qt.transparent))
+        self._chart.setPlotAreaBackgroundVisible(False)
+        self._chart.setBackgroundRoundness(0)
+        text_color = theme.color("text.primary")
+        self._chart.setTitleBrush(QBrush(text_color))
+        self._view.setBackgroundBrush(QBrush(Qt.transparent))
+        self._view.setFrameShape(QChartView.NoFrame)
+
+    # 軸をテーマ色で塗る (目盛り線は控えめ・文字は本文色)
+    def _style_axis(self, axis):
+        if not theme.is_enabled():
+            return
+        axis.setLabelsBrush(QBrush(theme.color("text.primary")))
+        axis.setTitleBrush(QBrush(theme.color("text.primary")))
+        axis.setLinePen(QPen(theme.color("text.secondary")))
+        axis.setGridLinePen(QPen(theme.color("glass.border")))
 
     # 窓スコア列 curve と TOP5 clips を描画する
     # curve: [{"start","end","total",...}] / clips: [{"index","start","end","score"}]
@@ -66,6 +93,9 @@ class ScoreGraphWidget(QWidget):
             min_score = min(min_score, y)
             max_score = max(max_score, y)
         line.clicked.connect(self._on_series_clicked)
+        # 折れ線は控えめな色、TOP5 マーカはアクセント (赤) で目立たせる (resolve3 §5.1)
+        if theme.is_enabled():
+            line.setPen(QPen(theme.color("text.secondary"), 2))
         self._chart.addSeries(line)
 
         # TOP5 マーカ (散布)
@@ -80,6 +110,9 @@ class ScoreGraphWidget(QWidget):
             min_score = min(min_score, y)
             max_score = max(max_score, y)
         scatter.clicked.connect(self._on_series_clicked)
+        if theme.is_enabled():
+            scatter.setBrush(QBrush(theme.color("accent")))
+            scatter.setPen(QPen(theme.color("text.primary"), 1))
         self._chart.addSeries(scatter)
 
         # 軸 (時間 / スコア)。スコアは上下に少し余白を持たせる。
@@ -91,6 +124,8 @@ class ScoreGraphWidget(QWidget):
         margin = max(1.0, (max_score - min_score) * 0.1)
         axis_y.setRange(min_score - margin, max_score + margin)
 
+        self._style_axis(axis_x)
+        self._style_axis(axis_y)
         self._chart.addAxis(axis_x, Qt.AlignBottom)
         self._chart.addAxis(axis_y, Qt.AlignLeft)
         for series in self._chart.series():

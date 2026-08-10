@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 # 既存の時間整形を再利用し表記を揃える
 from ..modules.subtitle_generator import _format_ass_time
+from . import theme
 
 # 列定義
 _COL_USE = 0
@@ -39,6 +40,8 @@ class ArchiveResultDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("採点結果 (TOP5)")
         self.resize(560, 360)
+        # ガラスモーフィズムの背景を敷く (resolve3 §3-2)
+        theme.install_window_background(self)
         self._clips = [dict(c) for c in clips]
         self._build_ui()
         self._populate()
@@ -64,11 +67,14 @@ class ArchiveResultDialog(QDialog):
 
         button_row = QHBoxLayout()
         button_row.addStretch(1)
+        # 「完了」は主要動作、「キャンセル」は処理を中断する破壊的動作 (resolve3 §5.2-2/3)
         self.decide_button = QPushButton("完了")
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
+        theme.mark_primary(self.decide_button)
         self.cancel_button = QPushButton("キャンセル")
         self.cancel_button.clicked.connect(self.reject)
+        theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)
         button_row.addWidget(self.cancel_button)
         root.addLayout(button_row)

@@ -20,6 +20,8 @@ ORIGIN_OPENING = "opening"
 ORIGIN_ENDING = "ending"
 ORIGIN_ASR = "asr"
 ORIGIN_USER_MEDIA = "user_media"
+# Timeline の右クリックメニューから手で足した字幕 (認識由来と区別するための記録)
+ORIGIN_USER_SUBTITLE = "user_subtitle"
 
 # ── 字幕の役割 (既存 subtitle_generator と同じキー)
 DEFAULT_ROLE = "streamer"

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..export import resolve_export
 from ..modules.subtitle_generator import _format_ass_time
 from ..utils.logger import get_logger
+from . import theme
 from .score_graph_widget import ScoreGraphWidget
 from .subtitle_editor_dialog import (
     RESOLVE_EXPORT_BUTTON_TEXT,
@@ -53,6 +54,8 @@ class ArchiveResultWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("採点結果 (切り抜き＋字幕焼き込み)")
         self.resize(1000, 720)
+        # ガラスモーフィズムの背景を敷く (resolve3 §3-2)
+        theme.install_window_background(self)
 
         self._prepared = list(prepared or [])
         self._curve = curve or []
@@ -153,11 +156,16 @@ class ArchiveResultWindow(QDialog):
             )
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
+        # 「完了」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する
+        # 破壊的動作として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)。
+        # 文言が長いためグラデーションではなく単色になる (§5.2-2)。
         self.decide_button = QPushButton("完了（切り抜き＋字幕焼き込み）")
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
+        theme.mark_primary(self.decide_button, solid=True)
         self.cancel_button = QPushButton("キャンセル")
         self.cancel_button.clicked.connect(self.reject)
+        theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)
         button_row.addWidget(self.cancel_button)
         root.addLayout(button_row)

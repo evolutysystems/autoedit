@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..exceptions import AutoEditError
 from ..export import resolve_export
+from . import theme
 from .subtitle_preview_widget import SubtitlePreviewWidget, is_preview_enabled
 
 # 既存の ASS タイムスタンプ整形を再利用し、画面・ASS で表記を揃える (§8.3)
@@ -484,6 +485,8 @@ class SubtitleEditorDialog(QDialog):
                  theme_text="", export_context=None, preview_context=None):
         super().__init__(parent)
         self.setWindowTitle("字幕編集")
+        # ガラスモーフィズムの背景を敷く (resolve3 §3-2)
+        theme.install_window_background(self)
 
         # Resolve 出力の材料 (元入力パス・編集点・設定)
         self._export_context = export_context or None
@@ -550,11 +553,15 @@ class SubtitleEditorDialog(QDialog):
             )
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
+        # 「字幕決定」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する
+        # 破壊的動作として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)
         self.decide_button = QPushButton("字幕決定")
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
+        theme.mark_primary(self.decide_button)
         self.cancel_button = QPushButton("キャンセル")
         self.cancel_button.clicked.connect(self.reject)
+        theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)
         button_row.addWidget(self.cancel_button)
         root.addLayout(button_row)
