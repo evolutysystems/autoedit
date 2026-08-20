@@ -736,6 +736,8 @@ def _normalize_legacy_values(merged):
                 if value != default:
                     ffmpeg[key] = default
                     changed = True
+    if _fill_twitch_client_id(merged):
+        changed = True
     if _fill_timeline_nested_defaults(merged):
         changed = True
     if _fill_ui_nested_defaults(merged):
@@ -743,6 +745,30 @@ def _normalize_legacy_values(merged):
     if _migrate_ripple_delete(merged):
         changed = True
     return changed
+
+
+# 空のままの Twitch Client-ID を既定 (アプリが配布する公開値) で補う (error 20260820)
+# 背景: Client-ID は長らく配布 setting.json にしか無かった。更新インストールでは
+#   インストーラが旧 setting.json を復元し、_merge_with_defaults はキーが在れば
+#   既存値 (空文字) を温存するため、新しい既定が永久に届かず
+#   「Twitch の Client-ID が未設定です」となる。FFmpeg のレガシー値と同じ扱いで、
+#   空のときだけ既定へ寄せて次回起動で自己修復させる。
+#   利用者が自前の Client-ID を入れている場合は空ではないため上書きしない。
+def _fill_twitch_client_id(merged):
+    archive = merged.get("archive")
+    if not isinstance(archive, dict):
+        return False
+    auth = archive.get("auth")
+    if not isinstance(auth, dict):
+        return False
+    default = DEFAULT_SETTINGS["archive"]["auth"]["client_id"]
+    if not default:
+        return False
+    if str(auth.get("client_id", "") or "").strip():
+        return False
+    auth["client_id"] = default
+    _logger.info("Twitch の Client-ID が未設定のため既定値を設定しました")
+    return True
 
 
 # timeline セクションの入れ子 (ui / preview / media / render / shortcuts …) について、
