@@ -558,7 +558,7 @@ DEFAULT_SETTINGS = {
         # client_id は dev.twitch.tv で登録したアプリの値を設定する (Client-Secret は不要)。
         # リダイレクトURL には http://localhost:<redirect_port> を登録すること。
         "auth": {
-            "client_id": "",           # OAuth 用 Client-ID (未設定ならログイン不可)
+            "client_id": "mcu1dwig8t6bmv87xp6s08y2s757r5",           # OAuth 用 Client-ID (未設定ならログイン不可)
             "client_secret": "",       # 未使用 (インプリシットフローでは不要。後方互換で保持)
             "redirect_port": 3737,     # ローカル redirect 受信ポート
             "owner_only": True,        # 自分が所有する VOD のみ許可 (resolve17 §8-1)
