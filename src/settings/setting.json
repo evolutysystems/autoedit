@@ -119,13 +119,7 @@
             "missing_media_policy": "renormalize",
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
-            "recent": [
-                "D:/develop/autoedit/output\\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json",
-                "D:/develop/autoedit/output\\kaidemiru.timeline.json",
-                "D:/develop/autoedit/output\\rouryu.timeline.json",
-                "D:/develop/autoedit/output\\gomikasu.timeline.json",
-                "D:/develop/autoedit/output\\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json"
-            ],
+            "recent": [],
             "archive_suffix": ".archive",
             "recent_archive": [],
             "keep_audio": true,
