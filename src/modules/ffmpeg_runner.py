@@ -228,3 +228,25 @@ def build_encode_options(ffmpeg_settings):
         "-crf", str(ffmpeg_settings.get("crf", 20)),
         "-c:a", ffmpeg_settings.get("audio_codec", "aac"),
     ]
+
+
+# 中間ファイル (連結前の部品) 用のエンコード設定を返す (20260812 resolve3 §5.2)
+# 音声を非圧縮にするのは、AAC のエンコーダ遅延 (1024 サンプル = 21.3ms) が部品ごとに
+# 尺へ乗り、concat デマルチプレクサでの連結時に部品数ぶん累積するためである。
+# 最終出力は焼き込み (または最終化) の 1 回だけ AAC 化されるので、遅延も 1 回しか乗らない。
+# audio_codec が空 / None のときは build_encode_options と完全に同一の内容を返す (切り戻し経路)。
+def build_intermediate_encode_options(ffmpeg_settings, audio_codec=None):
+    options = build_encode_options(ffmpeg_settings)
+    if not audio_codec:
+        return options
+    # 末尾の "-c:a <codec>" の値だけを差し替える
+    return options[:-1] + [str(audio_codec)]
+
+
+# 中間ファイルの拡張子を決める (20260812 resolve3 §5.2)
+# pcm_s16le は MP4 マルチプレクサがタグを持たず格納できない
+# ("Could not find tag for codec pcm_s16le") ため、非圧縮のときだけ container を使う。
+def intermediate_suffix(audio_codec, container=".mov", default=".mp4"):
+    if str(audio_codec or "").startswith("pcm_"):
+        return container or ".mov"
+    return default

@@ -6,6 +6,8 @@
 # R18 (§6.3.4): 音声クリップは時刻を持たず V1 から導出するため、
 # 移動・トリム・リップルは追随処理なしで自動的に一致する。
 # 明示的な追随が要るのはクリップ個数が変わる Split と Delete の 2 つだけ。
+import copy
+
 from ..utils.logger import get_logger
 from .model import (
     BASE_SUBTITLE_TRACK_ID,
@@ -59,6 +61,10 @@ def _snapshot(timeline):
             for t in timeline.tracks
         ],
         "media_pool": list(timeline.media_pool),
+        # source も控える (ver3 resolve9 §3-3)。アーカイブ用のテーマは
+        # source.archive.clips[].theme にあり、コマンドで書き換えるため
+        # Undo で戻せる必要がある。クリップ用は小さな辞書のため負担にならない。
+        "source": copy.deepcopy(timeline.source),
     }
 
 
@@ -70,6 +76,8 @@ def _restore(timeline, snapshot):
         for t in snapshot["tracks"]
     ]
     timeline.media_pool = list(snapshot["media_pool"])
+    if "source" in snapshot:
+        timeline.source = snapshot["source"]
 
 
 # 編集履歴 (Undo/Redo)
@@ -79,6 +87,9 @@ class CommandStack:
         self._limit = max(int(limit), 1)
         self._undo = []
         self._redo = []
+        # 保存済みの位置 (= その時点の undo スタックの深さ / resolve7 §5.6)。
+        # None は「もう保存時の状態には戻れない」ことを表す。
+        self._clean_depth = 0
 
     # コマンドを実行して履歴へ積む。変化が無ければ False を返し履歴も汚さない。
     def push(self, timeline, command):
@@ -92,9 +103,19 @@ class CommandStack:
         if not changed:
             return False
         timeline.normalize()
+        # 保存点より浅い位置から新しい操作を積む = 保存点を含む枝を捨てた。
+        # 以後どう操作しても保存時の状態へは戻れないため印を無効化する (resolve7 §5.6)。
+        if self._clean_depth is not None and len(self._undo) < self._clean_depth:
+            self._clean_depth = None
         self._undo.append((command.label, snapshot))
         if len(self._undo) > self._limit:
             self._undo.pop(0)
+            # 先頭を捨てると深さの基準がずれるため保存点も 1 つ手前へ寄せる。
+            # 0 を下回ったら保存点そのものが履歴から消えたということ。
+            if self._clean_depth is not None:
+                self._clean_depth -= 1
+                if self._clean_depth < 0:
+                    self._clean_depth = None
         self._redo.clear()
         _logger.debug("編集: %s", command.label)
         return True
@@ -126,8 +147,20 @@ class CommandStack:
         return label
 
     def clear(self):
+        # 履歴を捨てても「今が保存済みの状態か」は変わらない。
+        # 保存済みなら深さ 0 を新しい保存点にし、未保存なら二度と一致させない。
+        was_clean = self.is_clean()
         self._undo.clear()
         self._redo.clear()
+        self._clean_depth = 0 if was_clean else None
+
+    # 現在が保存済みの状態か (Undo で保存点まで戻った場合も True になる / resolve7 §5.6)
+    def is_clean(self):
+        return self._clean_depth is not None and self._clean_depth == len(self._undo)
+
+    # 保存できた時点を「保存点」として覚える
+    def mark_clean(self):
+        self._clean_depth = len(self._undo)
 
     # 次に取り消される操作のラベル (メニュー表示用)
     def undo_label(self):
@@ -317,6 +350,12 @@ class MoveClip(Command):
         clip = timeline.clip_by_id(self._clip_id)
         track = timeline.track_of_clip(self._clip_id)
         if clip is None or track is None or track.locked:
+            return False
+        # 要求位置が現在位置と同じなら何もしない。
+        # clamp を先に通すと、すでに他クリップと重なっている場合に
+        # 「重なりの解消」として別の位置へ動いてしまう
+        # (docs/error/20260812/Analyze.md §5-2)
+        if abs(float(self._new_start) - clip.timeline_start) <= _EPS:
             return False
         target = _clamp_position(track, clip, self._new_start, self._min_clip_sec)
         if abs(target - clip.timeline_start) <= _EPS:
@@ -557,13 +596,16 @@ class AddMediaClip(Command):
     label = "メディアの追加"
 
     def __init__(self, media, timeline_start, duration, track_id=None,
-                 max_video_tracks=8, origin_type="user_media"):
+                 max_video_tracks=8, origin_type="user_media", scale=None):
         self._media = media
         self._start = float(timeline_start)
         self._duration = float(duration)
         self._track_id = track_id
         self._max_video_tracks = int(max_video_tracks)
         self._origin_type = origin_type
+        # 置いた直後の大きさ (キャンバス幅に対する比率 / resolve7 §7 default_scale_mode)。
+        # None は従来どおり 1.0 = キャンバス幅いっぱい。
+        self._scale = None if scale is None else float(scale)
         # 追加したクリップの ID (呼び出し側が選択状態にするため公開する)
         self.created_clip_id = None
         self.created_track_id = None
@@ -587,7 +629,7 @@ class AddMediaClip(Command):
             timeline.next_id("c"), media.id, self._start, self._duration,
             source_in=0.0, source_out=self._duration,
             z_order=self._next_z_order(timeline),
-            transform=Transform(),
+            transform=Transform(scale=1.0 if self._scale is None else self._scale),
             origin={"type": self._origin_type},
         )
         track.clips.append(clip)
@@ -785,6 +827,38 @@ class MoveOverlay(Command):
         return True
 
 
+# プレビュー上の四隅ハンドル / インスペクタで大きさを変える (resolve7 §3-1)
+# 縦横比は transform.scale がスカラー 1 つであることで構造的に保たれるため、
+# 「固定を実装する」のではなく「固定でない指定を UI から与えない」だけでよい。
+# ドラッグ確定時に 1 回だけ積む (ドラッグ中は積まない = 履歴を汚さない / MoveOverlay と同じ)。
+class ResizeOverlay(Command):
+
+    label = "大きさの変更"
+
+    # scale: キャンバス幅に対する比率 (1.0 = キャンバス幅いっぱい)
+    def __init__(self, clip_id, scale, min_scale=0.02, max_scale=4.0):
+        self._clip_id = clip_id
+        self._scale = float(scale)
+        self._min = float(min_scale)
+        self._max = float(max_scale)
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        # 字幕の大きさはフォントサイズで表すため、ここでは扱わない (transform は位置のみ)
+        if clip is None or isinstance(clip, SubtitleClip) or not hasattr(clip, "transform"):
+            return False
+        # ベース (V1) のクリップはキャンバスへ合わせて描かれ transform を見ない (renderer)
+        track = timeline.track_of_clip(clip.id)
+        base = timeline.base_video_track()
+        if track is None or (base is not None and track.id == base.id):
+            return False
+        value = min(max(self._scale, self._min), self._max)
+        if abs(float(clip.transform.scale or 1.0) - value) <= _EPS:
+            return False
+        clip.transform.scale = value
+        return True
+
+
 # 字幕の内容を変更する
 class EditSubtitle(Command):
 
@@ -805,6 +879,33 @@ class EditSubtitle(Command):
             if getattr(clip, key) != value:
                 setattr(clip, key, value)
                 changed = True
+        return changed
+
+
+# 複数の字幕クリップをまとめて変更する (ver3 resolve6 §3-10 / §5.10)
+# Undo はスナップショット方式のため、N 件の変更がまとめて 1 手で戻る。
+# 選択には映像・音声クリップも混ざり得るので、字幕以外の ID は黙って読み飛ばす。
+class EditSubtitles(Command):
+
+    def __init__(self, clip_ids, **fields):
+        self._clip_ids = [i for i in (clip_ids or []) if i]
+        self._fields = fields
+        # 何件に効く操作なのかを履歴ボタンへ出す (「元に戻す: 字幕の編集（3 件）」)
+        self.label = ("字幕の編集" if len(self._clip_ids) <= 1
+                      else f"字幕の編集（{len(self._clip_ids)} 件）")
+
+    def apply(self, timeline):
+        changed = False
+        for clip_id in self._clip_ids:
+            clip = timeline.clip_by_id(clip_id)
+            if not isinstance(clip, SubtitleClip):
+                continue
+            for key, value in self._fields.items():
+                if not hasattr(clip, key):
+                    continue
+                if getattr(clip, key) != value:
+                    setattr(clip, key, value)
+                    changed = True
         return changed
 
 

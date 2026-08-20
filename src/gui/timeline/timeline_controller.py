@@ -23,6 +23,10 @@ class TimelineController(QObject):
     playhead_moved = Signal(float)
     # ズーム・スクロール
     view_changed = Signal()
+    # 再生ヘッドのドラッグ中か (スクラブ音声の開始・終了 / resolve7 §3-8)
+    scrub_changed = Signal(bool)
+    # 保存状態の変化 (タイトルの * を出し入れするため / resolve7 §5.6)
+    saved_state_changed = Signal()
 
     def __init__(self, timeline, settings, parent=None):
         super().__init__(parent)
@@ -35,6 +39,8 @@ class TimelineController(QObject):
         self._zoom = float(timeline.zoom_px_per_sec or self._cfg["default_zoom_px_per_sec"])
         # 編集が一度でも入ったか (プレビュー音声の初回再利用の可否判定に使う)
         self._dirty = False
+        # 再生ヘッドをドラッグ中か (resolve7 §5.12)
+        self._scrubbing = False
 
     # ------------------------------------------------------------------
     # 参照
@@ -54,6 +60,16 @@ class TimelineController(QObject):
 
     def is_dirty(self):
         return self._dirty
+
+    # 未保存の編集があるか (閉じるときの確認に使う / resolve7 §5.6)
+    # is_dirty() は「一度でも編集したか」で戻せない別概念のため、両方を残す。
+    def is_modified(self):
+        return not self._stack.is_clean()
+
+    # 保存できた時点で呼ぶ (以後 Undo で戻ってきたときも「保存済み」と判定できる)
+    def mark_saved(self):
+        self._stack.mark_clean()
+        self.saved_state_changed.emit()
 
     def playhead(self):
         return self._playhead
@@ -204,8 +220,18 @@ class TimelineController(QObject):
     def move_overlay(self, clip_id, x, y):
         return self.execute(commands.MoveOverlay(clip_id, x, y))
 
+    # オーバーレイの大きさを変える (resolve7 §5.2)。scale はキャンバス幅に対する比率。
+    def resize_overlay(self, clip_id, scale):
+        overlay = self._cfg["overlay"]
+        return self.execute(commands.ResizeOverlay(
+            clip_id, scale, overlay["min_scale"], overlay["max_scale"]))
+
     def edit_subtitle(self, clip_id, **fields):
         return self.execute(commands.EditSubtitle(clip_id, **fields))
+
+    # 複数の字幕へまとめて適用する (色の一括変更 / ver3 resolve6 §3-10)
+    def edit_subtitles(self, clip_ids, **fields):
+        return self.execute(commands.EditSubtitles(clip_ids, **fields))
 
     def set_clip_enabled(self, clip_id, enabled):
         return self.execute(commands.SetClipEnabled(clip_id, enabled))
@@ -216,11 +242,24 @@ class TimelineController(QObject):
     def set_audio_gain(self, audio_clip_id, gain_db):
         return self.execute(commands.SetAudioGain(audio_clip_id, gain_db))
 
+    # 置いた直後の大きさを決める (resolve7 §7 overlay.default_scale_mode)
+    #   "fit_width" (既定) … 従来どおりキャンバス幅いっぱい (None を返して既定に任せる)
+    #   "native"          … 素材のピクセル数どおり (キャンバスより大きければ幅いっぱいに収める)
+    def _initial_overlay_scale(self, media):
+        if str(self._cfg["overlay"]["default_scale_mode"]) != "native":
+            return None
+        width = int(getattr(media, "width", 0) or 0)
+        canvas = int(self._timeline.width or 0)
+        if width <= 0 or canvas <= 0:
+            return None
+        return min(float(width) / float(canvas), 1.0)
+
     # メディアを追加する。追加できたら新しいクリップ ID を返す。
     def add_media(self, media, timeline_start, duration, track_id=None):
         command = commands.AddMediaClip(
             media, timeline_start, duration, track_id=track_id,
             max_video_tracks=self._cfg["media"]["max_video_tracks"],
+            scale=self._initial_overlay_scale(media),
         )
         if not self.execute(command):
             return None
@@ -276,6 +315,29 @@ class TimelineController(QObject):
     def step_playhead(self, frames):
         delta = frames / float(self._timeline.fps or 60)
         self.set_playhead(self._playhead + delta)
+
+    # ------------------------------------------------------------------
+    # スクラブ (再生ヘッドのドラッグ / resolve7 §5.12)
+    # ------------------------------------------------------------------
+    # ドラッグ経路はルーラとトラック area の 2 つある。両方に音の制御を書かず、
+    # ここへ「掴んだ・離した」を集約し、音は PreviewPanel が受け持つ。
+
+    # 再生ヘッドを掴んだ
+    def begin_scrub(self):
+        if self._scrubbing:
+            return
+        self._scrubbing = True
+        self.scrub_changed.emit(True)
+
+    # 離した (取りこぼしに備え PreviewPanel 側からも呼べるようにしておく)
+    def end_scrub(self):
+        if not self._scrubbing:
+            return
+        self._scrubbing = False
+        self.scrub_changed.emit(False)
+
+    def is_scrubbing(self):
+        return self._scrubbing
 
     # ------------------------------------------------------------------
     # 吸着 (resolve2 §5.2 / R1・R2)

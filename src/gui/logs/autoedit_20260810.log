@@ -102,3 +102,257 @@
 2026-08-10 11:54:48,963 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
 2026-08-10 11:54:48,964 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
 2026-08-10 11:55:08,742 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-08-10 16:54:54,682 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 16:55:02,031 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-10 16:55:05,066 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-10 16:55:39,878 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-10 16:55:40,349 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-10 16:55:44,233 [ERROR] src.gui.archive_tab: アーカイブ採点に失敗
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 87, in run
+    input_path, comments = self._prepare_source()
+                           ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 98, in _prepare_source
+    return self._fetch_twitch()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 128, in _fetch_twitch
+    input_path = twitch_source.download_vod(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 147, in download_vod
+    _run(argv, progress_cb, label="VOD取得中…", env=_twitchdl_env(ffmpeg_dir))
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 121, in _run
+    raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + "\n".join(tail[-5:]))
+src.exceptions.TwitchError: twitch-dl の実行に失敗しました (code 1)。
+Target: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4
+Fetching chapters...
+Fetching access token...
+Fetching playlists...
+Error: Source quality not found, please report an issue on github.
+2026-08-10 16:56:12,779 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-10 16:56:13,278 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-10 16:56:16,694 [ERROR] src.gui.archive_tab: アーカイブ採点に失敗
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 87, in run
+    input_path, comments = self._prepare_source()
+                           ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 98, in _prepare_source
+    return self._fetch_twitch()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 128, in _fetch_twitch
+    input_path = twitch_source.download_vod(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 147, in download_vod
+    _run(argv, progress_cb, label="VOD取得中…", env=_twitchdl_env(ffmpeg_dir))
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 121, in _run
+    raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + "\n".join(tail[-5:]))
+src.exceptions.TwitchError: twitch-dl の実行に失敗しました (code 1)。
+Target: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4
+Fetching chapters...
+Fetching access token...
+Fetching playlists...
+Error: Source quality not found, please report an issue on github.
+2026-08-10 16:58:05,352 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 16:58:09,820 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-10 16:58:13,151 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-10 16:58:22,638 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-10 16:58:23,111 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-10 16:58:26,695 [ERROR] src.gui.archive_tab: アーカイブ採点に失敗
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 87, in run
+    input_path, comments = self._prepare_source()
+                           ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 98, in _prepare_source
+    return self._fetch_twitch()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 128, in _fetch_twitch
+    input_path = twitch_source.download_vod(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 147, in download_vod
+    _run(argv, progress_cb, label="VOD取得中…", env=_twitchdl_env(ffmpeg_dir))
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 121, in _run
+    raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + "\n".join(tail[-5:]))
+src.exceptions.TwitchError: twitch-dl の実行に失敗しました (code 1)。
+Target: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4
+Fetching chapters...
+Fetching access token...
+Fetching playlists...
+Error: Source quality not found, please report an issue on github.
+2026-08-10 17:00:25,402 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-10 17:00:25,856 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-10 17:00:29,384 [ERROR] src.gui.archive_tab: アーカイブ採点に失敗
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 87, in run
+    input_path, comments = self._prepare_source()
+                           ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 98, in _prepare_source
+    return self._fetch_twitch()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\gui\archive_tab.py", line 128, in _fetch_twitch
+    input_path = twitch_source.download_vod(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 147, in download_vod
+    _run(argv, progress_cb, label="VOD取得中…", env=_twitchdl_env(ffmpeg_dir))
+  File "D:\develop\autoedit\src\archive\twitch_source.py", line 121, in _run
+    raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + "\n".join(tail[-5:]))
+src.exceptions.TwitchError: twitch-dl の実行に失敗しました (code 1)。
+Target: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4
+Fetching chapters...
+Fetching access token...
+Fetching playlists...
+Error: Source quality not found, please report an issue on github.
+2026-08-10 17:33:54,195 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-10 17:34:03,588 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-10 17:34:07,577 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-10 17:34:17,136 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-10 17:34:21,264 [INFO] src.archive.twitch_source: 利用できる画質: 1080p60, 720p60, 360p, Audio Only
+2026-08-10 17:34:21,264 [INFO] src.archive.twitch_source: source 画質が無いため 1080p60 で取得します (利用可能: 1080p60, 720p60, 360p, Audio Only)
+2026-08-10 17:34:21,270 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-10 17:37:30,360 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4 (画質 1080p60)
+2026-08-10 17:37:30,365 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-08-10 17:37:35,629 [INFO] src.archive.twitch_source: コメント取得完了: D:\develop\autoedit\src\settings\archive_work\chat_2833484601.json
+2026-08-10 17:37:35,669 [INFO] src.archive.comment_source: チャット読み込み: 285件 (D:\develop\autoedit\src\settings\archive_work\chat_2833484601.json)
+2026-08-10 17:37:35,677 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2833484601.mp4 (窓180s/スライド45s, コメント285件)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline: コメント集計: 285件 / 平均2.41件/分
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline: 採点完了: 窓155件 → TOP10抽出
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip1: 945.0-1125.0 点=58.4 (感情98.1/コメント10.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip2: 1170.0-1350.0 点=60.0 (感情100.0/コメント11.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip3: 1485.0-1665.0 点=61.8 (感情100.0/コメント15.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip4: 1890.0-2070.0 点=52.1 (感情86.5/コメント10.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip5: 2880.0-3060.0 点=54.9 (感情99.8/コメント0.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip6: 3105.0-3285.0 点=56.5 (感情93.7/コメント11.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip7: 3645.0-3825.0 点=54.8 (感情97.1/コメント3.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip8: 4680.0-4860.0 点=52.9 (感情88.0/コメント10.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip9: 6255.0-6435.0 点=61.8 (感情100.0/コメント15.0)
+2026-08-10 18:00:32,008 [INFO] src.archive.pipeline:   clip10: 6840.0-7020.0 点=52.1 (感情86.5/コメント10.0)
+2026-08-10 18:00:39,316 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-19.7 LUFS / TP=-0.1 dBTP / LRA=17.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-10 18:00:48,884 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip1\normalized.mp4
+2026-08-10 18:01:14,786 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-23 (mean, 測定 25/25 区間)
+2026-08-10 18:01:14,786 [INFO] src.archive.clip_writer: clip1: 音量解析によりカット閾値 -23 dB を採用 (測定 25/25 区間・ダイアログ無し)
+2026-08-10 18:01:14,786 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-08-10 18:01:31,469 [INFO] src.modules.silence_cutter: 検出された無音区間: 38 件
+2026-08-10 18:02:48,653 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip1\silence_cut.mp4
+2026-08-10 18:02:48,777 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:03:03,589 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:03:03,589 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:03:11,738 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:05:30,854 [INFO] src.modules.subtitle_generator: 音声認識完了 (36 セグメント)
+2026-08-10 18:05:31,106 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 36 件)
+2026-08-10 18:05:38,207 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.9 LUFS / TP=-0.5 dBTP / LRA=12.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.2 dB)
+2026-08-10 18:05:48,104 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip2\normalized.mp4
+2026-08-10 18:06:18,410 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-23 (mean, 測定 37/37 区間)
+2026-08-10 18:06:18,410 [INFO] src.archive.clip_writer: clip2: 音量解析によりカット閾値 -23 dB を採用 (測定 37/37 区間・ダイアログ無し)
+2026-08-10 18:06:18,410 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-23dB, min=0.600s, fade=False
+2026-08-10 18:06:34,505 [INFO] src.modules.silence_cutter: 検出された無音区間: 39 件
+2026-08-10 18:08:14,744 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip2\silence_cut.mp4
+2026-08-10 18:08:14,847 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:08:14,847 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:08:14,847 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:08:21,860 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:11:07,991 [INFO] src.modules.subtitle_generator: 音声認識完了 (49 セグメント)
+2026-08-10 18:11:08,259 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 49 件)
+2026-08-10 18:11:16,650 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.5 LUFS / TP=-0.1 dBTP / LRA=10.5 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-10 18:11:28,166 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip3\normalized.mp4
+2026-08-10 18:12:01,402 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-25 (mean, 測定 41/41 区間)
+2026-08-10 18:12:01,402 [INFO] src.archive.clip_writer: clip3: 音量解析によりカット閾値 -25 dB を採用 (測定 41/41 区間・ダイアログ無し)
+2026-08-10 18:12:01,402 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-25dB, min=0.600s, fade=False
+2026-08-10 18:12:17,444 [INFO] src.modules.silence_cutter: 検出された無音区間: 50 件
+2026-08-10 18:14:20,415 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip3\silence_cut.mp4
+2026-08-10 18:14:20,500 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:14:20,500 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:14:20,500 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:14:26,978 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:17:43,520 [INFO] src.modules.subtitle_generator: 音声認識完了 (55 セグメント)
+2026-08-10 18:17:43,732 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 55 件)
+2026-08-10 18:17:50,968 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-21.7 LUFS / TP=-0.4 dBTP / LRA=11.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-10 18:18:01,575 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip4\normalized.mp4
+2026-08-10 18:18:31,010 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-19 (mean, 測定 35/35 区間)
+2026-08-10 18:18:31,010 [INFO] src.archive.clip_writer: clip4: 音量解析によりカット閾値 -19 dB を採用 (測定 35/35 区間・ダイアログ無し)
+2026-08-10 18:18:31,010 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-19dB, min=0.600s, fade=False
+2026-08-10 18:18:47,263 [INFO] src.modules.silence_cutter: 検出された無音区間: 44 件
+2026-08-10 18:20:22,301 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip4\silence_cut.mp4
+2026-08-10 18:20:22,392 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:20:22,392 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:20:22,392 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:20:29,323 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:23:13,521 [INFO] src.modules.subtitle_generator: 音声認識完了 (57 セグメント)
+2026-08-10 18:23:13,727 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 57 件)
+2026-08-10 18:23:20,972 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-21.0 LUFS / TP=0.1 dBTP / LRA=13.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-10 18:23:30,265 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip5\normalized.mp4
+2026-08-10 18:23:57,598 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-20 (mean, 測定 35/35 区間)
+2026-08-10 18:23:57,598 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -20 dB を採用 (測定 35/35 区間・ダイアログ無し)
+2026-08-10 18:23:57,598 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-20dB, min=0.600s, fade=False
+2026-08-10 18:24:13,222 [INFO] src.modules.silence_cutter: 検出された無音区間: 49 件
+2026-08-10 18:25:46,229 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip5\silence_cut.mp4
+2026-08-10 18:25:46,311 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:25:46,311 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:25:46,315 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:25:53,138 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:28:31,293 [INFO] src.modules.subtitle_generator: 音声認識完了 (50 セグメント)
+2026-08-10 18:28:31,508 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 50 件)
+2026-08-10 18:28:38,809 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.8 LUFS / TP=0.1 dBTP / LRA=10.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-10 18:28:48,350 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip6\normalized.mp4
+2026-08-10 18:29:18,679 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-21 (mean, 測定 42/42 区間)
+2026-08-10 18:29:18,679 [INFO] src.archive.clip_writer: clip6: 音量解析によりカット閾値 -21 dB を採用 (測定 42/42 区間・ダイアログ無し)
+2026-08-10 18:29:18,679 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-21dB, min=0.600s, fade=False
+2026-08-10 18:29:34,276 [INFO] src.modules.silence_cutter: 検出された無音区間: 49 件
+2026-08-10 18:31:21,892 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip6\silence_cut.mp4
+2026-08-10 18:31:21,986 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:31:21,986 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:31:21,988 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:31:28,695 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:34:05,159 [INFO] src.modules.subtitle_generator: 音声認識完了 (41 セグメント)
+2026-08-10 18:34:05,381 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 41 件)
+2026-08-10 18:34:12,598 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-21.6 LUFS / TP=-0.5 dBTP / LRA=19.9 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.6 dB)
+2026-08-10 18:34:21,662 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip7\normalized.mp4
+2026-08-10 18:34:49,071 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 33/33 区間)
+2026-08-10 18:34:49,071 [INFO] src.archive.clip_writer: clip7: 音量解析によりカット閾値 -22 dB を採用 (測定 33/33 区間・ダイアログ無し)
+2026-08-10 18:34:49,071 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-22dB, min=0.600s, fade=False
+2026-08-10 18:35:04,559 [INFO] src.modules.silence_cutter: 検出された無音区間: 36 件
+2026-08-10 18:36:30,142 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip7\silence_cut.mp4
+2026-08-10 18:36:30,222 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:36:30,222 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:36:30,222 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:36:37,094 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:41:44,948 [INFO] src.modules.subtitle_generator: 音声認識完了 (60 セグメント)
+2026-08-10 18:41:45,176 [INFO] src.archive.clip_writer: clip7 prepare 完了 (字幕 60 件)
+2026-08-10 18:41:52,277 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.1 LUFS / TP=0.1 dBTP / LRA=12.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.2 dB)
+2026-08-10 18:42:01,375 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip8\normalized.mp4
+2026-08-10 18:42:29,132 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-19 (mean, 測定 30/30 区間)
+2026-08-10 18:42:29,132 [INFO] src.archive.clip_writer: clip8: 音量解析によりカット閾値 -19 dB を採用 (測定 30/30 区間・ダイアログ無し)
+2026-08-10 18:42:29,132 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-19dB, min=0.600s, fade=False
+2026-08-10 18:42:45,219 [INFO] src.modules.silence_cutter: 検出された無音区間: 33 件
+2026-08-10 18:44:13,523 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip8\silence_cut.mp4
+2026-08-10 18:44:13,603 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:44:13,603 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:44:13,603 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:44:20,142 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:46:30,013 [INFO] src.modules.subtitle_generator: 音声認識完了 (34 セグメント)
+2026-08-10 18:46:30,233 [INFO] src.archive.clip_writer: clip8 prepare 完了 (字幕 34 件)
+2026-08-10 18:46:37,211 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.6 LUFS / TP=0.1 dBTP / LRA=10.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.3 dB)
+2026-08-10 18:46:46,864 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip9\normalized.mp4
+2026-08-10 18:47:20,836 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 44/44 区間)
+2026-08-10 18:47:20,836 [INFO] src.archive.clip_writer: clip9: 音量解析によりカット閾値 -22 dB を採用 (測定 44/44 区間・ダイアログ無し)
+2026-08-10 18:47:20,836 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-22dB, min=0.600s, fade=False
+2026-08-10 18:47:36,692 [INFO] src.modules.silence_cutter: 検出された無音区間: 36 件
+2026-08-10 18:49:38,806 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip9\silence_cut.mp4
+2026-08-10 18:49:38,899 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:49:38,899 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:49:38,899 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:49:45,528 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:52:52,535 [INFO] src.modules.subtitle_generator: 音声認識完了 (54 セグメント)
+2026-08-10 18:52:52,749 [INFO] src.archive.clip_writer: clip9 prepare 完了 (字幕 54 件)
+2026-08-10 18:52:59,287 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-22.3 LUFS / TP=-0.0 dBTP / LRA=11.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.1 dB)
+2026-08-10 18:53:08,502 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip10\normalized.mp4
+2026-08-10 18:53:41,312 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-20 (mean, 測定 27/27 区間)
+2026-08-10 18:53:41,312 [INFO] src.archive.clip_writer: clip10: 音量解析によりカット閾値 -20 dB を採用 (測定 27/27 区間・ダイアログ無し)
+2026-08-10 18:53:41,312 [INFO] src.modules.silence_cutter: 無音カット開始: threshold=-20dB, min=0.600s, fade=False
+2026-08-10 18:54:01,374 [INFO] src.modules.silence_cutter: 検出された無音区間: 37 件
+2026-08-10 18:55:53,799 [INFO] src.modules.silence_cutter: 無音カット完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_bicejxu3\clip10\silence_cut.mp4
+2026-08-10 18:55:53,969 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-08-10 18:55:53,969 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-10 18:55:53,969 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-10 18:56:08,505 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-10 18:59:25,321 [INFO] src.modules.subtitle_generator: 音声認識完了 (37 セグメント)
+2026-08-10 18:59:25,555 [INFO] src.archive.clip_writer: clip10 prepare 完了 (字幕 37 件)
+2026-08-10 18:59:26,431 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 10 クリップ / V1 409 本 / S1 473 件 / 全長 770.6s
+2026-08-11 00:13:34,173 [INFO] src.archive.clip_writer: 結果画面でキャンセル → 出力なし

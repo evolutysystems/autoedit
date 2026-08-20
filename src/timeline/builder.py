@@ -62,6 +62,9 @@ _DEFAULT_SHORTCUTS = {
     "zoom_in": "Ctrl++",
     "zoom_in_alt": "Ctrl+=",
     "zoom_out": "Ctrl+-",
+    # プロジェクトの保存 (ver3 resolve7 §5.7)
+    "save": "Ctrl+S",
+    "save_as": "Ctrl+Shift+S",
 }
 
 # キー割り当てを既定で補完する (欠落キーは既定へ戻す)
@@ -99,6 +102,50 @@ def _positive_int(value, default):
     return result
 
 
+# 再生中のフレーム間引き指定を検証する (ver3 resolve6 §7)。
+# 想定外の値は「間引かない」(none) へ寄せる。絵が欠ける設定のため、
+# 打ち間違いで黙って有効にならないようにする。
+def _skip_frame(value):
+    mode = str(value or "none").strip().lower()
+    if mode in ("none", "nonref", "bidir"):
+        return mode
+    _logger.warning("フレーム間引きの設定が不正なため none を使用します: %r", value)
+    return "none"
+
+
+# プロジェクト一覧画面の設定を既定値で補完して返す (ver3 resolve9 §5.12)
+def _library_config(values):
+    cfg = values if isinstance(values, dict) else {}
+    sort = str(cfg.get("sort", "updated_desc") or "updated_desc").strip().lower()
+    if sort not in ("updated_desc", "name_asc", "size_desc"):
+        _logger.warning("一覧の並び順が不正なため updated_desc を使用します: %r",
+                        cfg.get("sort"))
+        sort = "updated_desc"
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "window_width": _positive_int(cfg.get("window_width"), 980),
+        "window_height": _positive_int(cfg.get("window_height"), 620),
+        "extra_dirs": [str(p) for p in (cfg.get("extra_dirs") or []) if p],
+        "scan_recursive": bool(cfg.get("scan_recursive", False)),
+        "max_items": _positive_int(cfg.get("max_items"), 100),
+        "sort": sort,
+        "thumbnail_count": _positive_int(cfg.get("thumbnail_count"), 3),
+        "thumbnail_width_px": _positive_int(cfg.get("thumbnail_width_px"), 160),
+        "thumbnail_dir": str(cfg.get("thumbnail_dir", "project_thumbs")
+                             or "project_thumbs"),
+        "thumbnail_cache_limit": _positive_int(cfg.get("thumbnail_cache_limit"), 200),
+    }
+
+
+# ドックの配置指定を検証する (ver3 resolve5 §7)。想定外の値は既定 "top" へ寄せる。
+def _dock_area(value):
+    area = str(value or "top").strip().lower()
+    if area in ("top", "bottom", "left", "right"):
+        return area
+    _logger.warning("ドック配置の設定が不正なため既定 top を使用します: %r", value)
+    return "top"
+
+
 # timeline セクションの設定を既定値で補完して返す (§9)
 def timeline_config(settings):
     cfg = (settings or {}).get("timeline", {}) or {}
@@ -107,6 +154,8 @@ def timeline_config(settings):
     render = cfg.get("render", {}) or {}
     opening_ending = cfg.get("opening_ending", {}) or {}
     waveform = cfg.get("waveform", {}) or {}
+    overlay = cfg.get("overlay", {}) or {}
+    project = cfg.get("project", {}) or {}
     return {
         "enabled": bool(cfg.get("enabled", True)),
         "project_dir": str(cfg.get("project_dir", "") or ""),
@@ -121,6 +170,48 @@ def timeline_config(settings):
         "ripple_delete": bool(cfg.get("ripple_delete", True)),
         # リップルで一緒に詰める対象 (resolve2 R8)。"all"=全トラック (既定) / "same"=同一のみ
         "ripple_sync_tracks": str(cfg.get("ripple_sync_tracks", "all") or "all"),
+        # オーバーレイの大きさ (ver3 resolve7 §5.2/§5.3)
+        "overlay": {
+            "min_scale": _positive_float(overlay.get("min_scale"), 0.02),
+            "max_scale": _positive_float(overlay.get("max_scale"), 4.0),
+            "resize_handle_px": _positive_int(overlay.get("resize_handle_px"), 10),
+            "scale_step_percent": _positive_float(
+                overlay.get("scale_step_percent"), 1.0),
+            # "fit_width" (既定・現行の挙動) / "native" (素材の原寸)
+            "default_scale_mode": ("native"
+                                   if str(overlay.get("default_scale_mode", "")).strip()
+                                   == "native" else "fit_width"),
+        },
+        # プロジェクトの保存・再編集 (ver3 resolve7 §5.7〜§5.11)
+        "project": {
+            "save_button": bool(project.get("save_button", True)),
+            "confirm_on_close": bool(project.get("confirm_on_close", True)),
+            "keep_media": bool(project.get("keep_media", False)),
+            "media_dir_suffix": str(project.get("media_dir_suffix", ".media")
+                                    or ".media"),
+            "autosave_suffix": str(project.get("autosave_suffix", ".autosave.json")
+                                   or ".autosave.json"),
+            # 素材が見つからないときの方針 ("renormalize" / "use_source")
+            "missing_media_policy": ("use_source"
+                                     if str(project.get("missing_media_policy", "")).strip()
+                                     == "use_source" else "renormalize"),
+            "recent_limit": _positive_int(project.get("recent_limit"), 10),
+            "recent": [str(p) for p in (project.get("recent") or []) if p],
+            # アーカイブ切り抜き用の保存・一覧 (ver3 resolve9 §3-4 / §3-5)
+            "archive_suffix": str(project.get("archive_suffix", ".archive") or ".archive"),
+            "recent_archive": [str(p) for p in (project.get("recent_archive") or []) if p],
+            # 保存時に正規化済み音声をプロジェクトの隣へ残す (ver3 resolve9 §3-1 案D)
+            "keep_audio": bool(project.get("keep_audio", True)),
+            "sidecar_tolerance_sec": _positive_float(
+                project.get("sidecar_tolerance_sec"), 0.5),
+            # 削除・リネーム (ver3 resolve9 §3-6 / §3-7 / §3-10)
+            "delete_button": bool(project.get("delete_button", True)),
+            "delete_to_trash": bool(project.get("delete_to_trash", True)),
+            "delete_media_dir": bool(project.get("delete_media_dir", True)),
+            "rename_enabled": bool(project.get("rename_enabled", True)),
+            # プロジェクト一覧画面 (ver3 resolve9 §5.12)
+            "library": _library_config(project.get("library", {})),
+        },
         "snap_enabled": bool(cfg.get("snap_enabled", True)),
         # 再生ヘッドを編集点へ吸着させる (resolve2 R1)
         "snap_playhead": bool(cfg.get("snap_playhead", True)),
@@ -146,6 +237,17 @@ def timeline_config(settings):
             "clip_outline_width_px": _positive_int(ui.get("clip_outline_width_px"), 2),
             "clip_outline_selected_width_px": _positive_int(
                 ui.get("clip_outline_selected_width_px"), 3),
+            # アーカイブ用画面 (ver3 resolve5)。採点グラフのドック配置と
+            # クリップバーの寸法。dock_state は利用者が動かした結果の記憶。
+            "archive_graph_dock_area": _dock_area(ui.get("archive_graph_dock_area")),
+            "archive_graph_dock_height_px": _positive_int(
+                ui.get("archive_graph_dock_height_px"), 220),
+            "archive_clip_selector_width_px": _positive_int(
+                ui.get("archive_clip_selector_width_px"), 260),
+            "archive_dock_state": str(ui.get("archive_dock_state", "") or ""),
+            # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §5.5)
+            "subtitle_color_swatch_width_px": _positive_int(
+                ui.get("subtitle_color_swatch_width_px"), 28),
         },
         # 音声クリップの波形表示 (X = 時間 / Y = 音量)
         "waveform": {
@@ -187,12 +289,61 @@ def timeline_config(settings):
             # 0 を許すため下限は 0 とする。
             "transport_row_right_margin_px": max(
                 0, int(preview.get("transport_row_right_margin_px", 8) or 0)),
+            # ── 再生の応答改善 (ver3 resolve6 §7) ──────────────────
+            # 連続再生で seek せずに読み進める距離 (秒)。0 = 常に seek (従来動作)
+            "sequential_decode_sec": max(
+                0.0, float(preview.get("sequential_decode_sec", 2.0) or 0.0)),
+            # 再生中だけ映像を縮小する幅 (0 = 原寸)
+            "playback_width": max(0, int(preview.get("playback_width", 960) or 0)),
+            # 再生中のフレーム間引き ("none"/"nonref"/"bidir")
+            "playback_skip_frame": _skip_frame(preview.get("playback_skip_frame")),
+            # PyAV 非搭載時に常駐 ffmpeg のパイプ読み出しで再生するか
+            "frame_pipe_fallback": bool(preview.get("frame_pipe_fallback", True)),
+            # 音声チャンクの作り方 ("single_process"/"per_piece")
+            "audio_build_mode": ("per_piece"
+                                 if str(preview.get("audio_build_mode", "")).strip()
+                                 == "per_piece" else "single_process"),
+            # 起動用の短いチャンク長 (秒)。チャンク長を超えないよう後段で丸める
+            "audio_startup_chunk_sec": _positive_float(
+                preview.get("audio_startup_chunk_sec"), 6.0),
+            "audio_chunk_cache": _positive_int(preview.get("audio_chunk_cache"), 3),
+            # プレビュー音声の品質 (0 / 空文字なら ffmpeg セクションの値を使う)
+            "audio_sample_rate": max(0, int(preview.get("audio_sample_rate", 24000) or 0)),
+            "audio_channels": max(0, int(preview.get("audio_channels", 1) or 0)),
+            "audio_codec": str(preview.get("audio_codec", "pcm_s16le") or ""),
+            # 画面を開いた直後に起動用チャンクを先読みするか
+            "audio_prefetch_on_open": bool(preview.get("audio_prefetch_on_open", True)),
+            # ── スクラブ (再生ヘッドドラッグ中の音声 / ver3 resolve7 §3-7) ──
+            "scrub_audio_enabled": bool(preview.get("scrub_audio_enabled", True)),
+            "scrub_interval_ms": _positive_int(preview.get("scrub_interval_ms"), 60),
+            "scrub_chunk_sec": _positive_float(preview.get("scrub_chunk_sec"), 4.0),
+            "scrub_hold_ms": _positive_int(preview.get("scrub_hold_ms"), 120),
+            "scrub_min_delta_sec": _positive_float(
+                preview.get("scrub_min_delta_sec"), 0.01),
+            # 0 (無音) も指定できるよう下限は 0 とする
+            "scrub_volume": max(0.0, float(preview.get("scrub_volume", 0.8) or 0.0)),
+            # "grain" (既定・等倍) / "match" (ドラッグ速度へ追従)
+            "scrub_rate_mode": ("match"
+                                if str(preview.get("scrub_rate_mode", "")).strip() == "match"
+                                else "grain"),
+            "scrub_low_quality_frames": bool(
+                preview.get("scrub_low_quality_frames", True)),
         },
         "render": {
             "gap_policy": str(render.get("gap_policy", "black") or "black"),
             "extract_mode": str(render.get("extract_mode", "seek") or "seek"),
             "concat_reencode": bool(render.get("concat_reencode", False)),
             "overlay_enabled": bool(render.get("overlay_enabled", True)),
+            # 連結前の中間パートの音声コーデック (20260812 resolve3 §7)。
+            # 既定は非圧縮。"aac" にすると従来動作 (AAC 中間) へ戻る。
+            "intermediate_audio_codec": str(
+                render.get("intermediate_audio_codec", "pcm_s16le") or ""),
+            # 中間パートの容器。pcm_s16le は mp4 に格納できないため .mov を使う。
+            "intermediate_container": str(
+                render.get("intermediate_container", ".mov") or ".mov"),
+            # 部品の尺を絶対フレーム番号の差で決める (丸め誤差を累積させない)。
+            # false にすると従来どおりモデルの秒をそのまま -t へ渡す。
+            "frame_quantize": bool(render.get("frame_quantize", True)),
         },
         "media": media_probe.media_config(settings),
     }

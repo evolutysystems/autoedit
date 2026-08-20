@@ -11,41 +11,60 @@ import os
 import sys
 import tempfile
 import threading
+from datetime import datetime
 
 # パッケージ実行・単独スクリプト実行の両対応 (main.py と同方針)
 if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.exceptions import PipelineCancelled
     from src.gui.archive_tab import ArchiveTabWidget
+    from src.gui.project_library_dialog import ProjectLibraryDialog
+    from src.gui.project_resume_row import ProjectResumeRow
     from src.gui.subtitle_editor_dialog import SubtitleEditorDialog
+    from src.gui.timeline.missing_media_dialog import MediaRelinkBridge
     from src.gui.timeline.timeline_editor_dialog import TimelineEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
-    from src.pipeline.pipeline_runner import is_timeline_mode, run_pipeline
+    from src.pipeline.pipeline_runner import (
+        is_timeline_mode,
+        run_from_project,
+        run_pipeline,
+    )
     from src.settings.settings_window import (
         SettingsWindow,
         load_settings,
         register_fonts_in_dir,
         resolve_fonts_dir,
     )
+    from src.timeline import project_io
+    from src.timeline.builder import timeline_config
     from src.gui import theme
     from src.utils import updater
     from src.utils.logger import get_logger
     from src.version import __version__
 else:
     from ..exceptions import PipelineCancelled
-    from ..pipeline.pipeline_runner import is_timeline_mode, run_pipeline
+    from ..pipeline.pipeline_runner import (
+        is_timeline_mode,
+        run_from_project,
+        run_pipeline,
+    )
     from ..settings.settings_window import (
         SettingsWindow,
         load_settings,
         register_fonts_in_dir,
         resolve_fonts_dir,
     )
+    from ..timeline import project_io
+    from ..timeline.builder import timeline_config
     from ..utils import updater
     from ..utils.logger import get_logger
     from ..version import __version__
     from . import theme
     from .archive_tab import ArchiveTabWidget
+    from .project_library_dialog import ProjectLibraryDialog
+    from .project_resume_row import ProjectResumeRow
     from .subtitle_editor_dialog import SubtitleEditorDialog
+    from .timeline.missing_media_dialog import MediaRelinkBridge
     from .timeline.timeline_editor_dialog import TimelineEditorDialog
     from .volume_threshold_dialog import VolumeThresholdDialog
 
@@ -73,6 +92,9 @@ _VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;
 
 # ドロップ受理対象の動画拡張子 (resolve12)。_VIDEO_FILE_FILTER と整合させる。
 _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+
+# 保存済みプロジェクトのファイルフィルタ・一覧の特殊項目は
+# 共有ウィジェット側 (gui/project_resume_row.py) へ移した (ver3 resolve9 §5.9)
 
 # 稼働証明スピナーのコマ (Claude Code 風の回転記号) と更新間隔
 # 表示崩れ環境向けに ASCII 版 ["|", "/", "-", "\\"] へ差し替え可能
@@ -216,9 +238,14 @@ class TimelineReviewBridge(QObject):
                 timeline, payload["settings"], work_dir,
                 asr_audio_path=payload.get("asr_audio_path"),
                 parent=self._parent_window,
+                # 保存・再編集 (ver3 resolve7 §5.7 / §5.10)
+                project_path=payload.get("project_path"),
+                created_at=payload.get("created_at"),
+                mode=payload.get("mode", "pipeline"),
             )
             if dialog.exec() == TimelineEditorDialog.Accepted:
-                self._result = dialog.result_timeline()
+                # Timeline と保存先をまとめて返す (「名前を付けて保存」で変えた先を伝える)
+                self._result = dialog.result_payload()
             else:
                 self._result = None  # キャンセル / × クローズ → 中断扱い
         except Exception:  # noqa: BLE001 (画面生成の失敗でワーカーを固めない)
@@ -332,6 +359,47 @@ class PipelineWorker(QThread):
         self.progress.emit(float(ratio), str(label))
 
 
+# 保存済みプロジェクトからの再編集をワーカースレッドで実行する (ver3 resolve7 §5.11)
+# 進捗・完了・キャンセル・失敗の通知は PipelineWorker と同じ形にして、
+# 画面側の受け口をそのまま共通で使えるようにする。
+class ProjectResumeWorker(QThread):
+
+    progress = Signal(float, str)
+    finished_ok = Signal(str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, project_path, settings, timeline_callback,
+                 relink_callback=None, restore_path=None, parent=None):
+        super().__init__(parent)
+        self._project_path = project_path
+        self._settings = settings
+        self._timeline_callback = timeline_callback
+        self._relink_callback = relink_callback
+        # 自動保存から復元する場合の読み込み元 (保存先は project_path のまま)
+        self._restore_path = restore_path
+
+    def run(self):
+        try:
+            output = run_from_project(
+                self._project_path,
+                self._settings,
+                progress_cb=self._emit_progress,
+                timeline_review_callback=self._timeline_callback,
+                media_relink_callback=self._relink_callback,
+                restore_path=self._restore_path,
+            )
+            self.finished_ok.emit(output)
+        except PipelineCancelled:
+            self.cancelled.emit()
+        except Exception as e:  # noqa: BLE001 (GUI へ集約通知するため広く捕捉)
+            _logger.exception("保存済みプロジェクトの再編集に失敗")
+            self.failed.emit(_format_failure_message(e))
+
+    def _emit_progress(self, ratio, label):
+        self.progress.emit(float(ratio), str(label))
+
+
 # 起動時の更新チェックをワーカースレッドで行う (request_autoupdate.md §6.1)
 # UI をブロックしないよう GitHub Releases 問い合わせを別スレッドで実行する。
 class UpdateCheckWorker(QThread):
@@ -390,6 +458,8 @@ class ClipTabWidget(QWidget):
     # 実行状態の変化を親へ通知する (ver3 resolve4 §5.7-4 / 回答 Q1)
     # タブ外へ移した設定ボタンを無効化するために使う。タブ自身の無効化は従来どおり。
     running_changed = Signal(bool)
+    # 種別違いのプロジェクトが選ばれた → 親にタブを切り替えてもらう (ver3 resolve9 §3-4)
+    switch_tab_requested = Signal(str, str)      # (kind, project_path)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -400,6 +470,8 @@ class ClipTabWidget(QWidget):
         self._volume_bridge = None
         # Timeline 編集画面の橋渡し参照 (ver3)
         self._timeline_bridge = None
+        # 素材の再リンク画面の橋渡し参照 (ver3 resolve7 Phase 5)
+        self._relink_bridge = None
         self._build_ui()
         # このタブ上で動画ファイルのドロップを受け付ける (resolve12)
         self.setAcceptDrops(True)
@@ -430,6 +502,16 @@ class ClipTabWidget(QWidget):
         button_row.addWidget(self.run_button)
         button_row.addStretch(1)
         root.addLayout(button_row)
+
+        # 編集の続き (保存済み Timeline プロジェクトを開き直す / ver3 resolve7 §5.11)
+        # 前半 (正規化・無音検出・音声認識) を飛ばし、保存した編集の続きから書き出す。
+        # 行はアーカイブタブと共有のウィジェット (ver3 resolve9 §5.9)。
+        self.resume_row = ProjectResumeRow(project_io.KIND_CLIP, self._settings)
+        self.resume_row.resume_requested.connect(self._start_resume)
+        self.resume_row.library_requested.connect(self._open_library)
+        self.resume_row.wrong_kind_selected.connect(
+            lambda path, kind: self.switch_tab_requested.emit(kind, path))
+        root.addWidget(self.resume_row)
 
         # 進捗バー + ステータス
         self.progress_bar = QProgressBar()
@@ -475,8 +557,14 @@ class ClipTabWidget(QWidget):
         else:
             event.ignore()
 
-    # ドロップされた動画ファイルパスを入力欄へ設定する
+    # ドロップされたファイルを受け取る
+    # 動画は入力欄へ、保存済みプロジェクトは「編集の続き」へ入れる (ver3 resolve7 §5.11)
     def dropEvent(self, event):
+        project = self._dropped_project_path(event)
+        if project:
+            self._select_project(project)
+            event.acceptProposedAction()
+            return
         path = self._dropped_video_path(event)
         if path:
             self.input_edit.setText(path)
@@ -484,12 +572,13 @@ class ClipTabWidget(QWidget):
         else:
             event.ignore()
 
-    # ドロップ内容が受理可能な動画ファイルか判定する (実行中でないこと・拡張子)
+    # ドロップ内容が受理可能か判定する (実行中でないこと・拡張子)
     def _is_acceptable_drop(self, event):
         # 実行中は入力書き換えを避けるためドロップを受け付けない
         if self._worker is not None and self._worker.isRunning():
             return False
-        return self._dropped_video_path(event) is not None
+        return (self._dropped_video_path(event) is not None
+                or self._dropped_project_path(event) is not None)
 
     # MIME からローカル動画ファイルパスを1件取り出す (非対応なら None)
     def _dropped_video_path(self, event):
@@ -501,6 +590,94 @@ class ClipTabWidget(QWidget):
             if local and os.path.splitext(local)[1].lower() in _VIDEO_EXTENSIONS:
                 return local
         return None
+
+    # ===== 編集の続き (保存済みプロジェクトの再編集 / ver3 resolve7 §5.11) =====
+
+    # 最近使ったプロジェクトの一覧を作り直す (setting.json timeline.project.recent)
+    def _refresh_recent_projects(self):
+        self.resume_row.set_settings(self._settings)
+
+    # 一覧画面を開く (ver3 resolve9 §5.12)。開くときは自分のタブで再開する。
+    def _open_library(self):
+        dialog = ProjectLibraryDialog(project_io.KIND_CLIP, self._settings, parent=self)
+        dialog.open_requested.connect(self._on_library_open)
+        dialog.changed.connect(self._refresh_recent_projects)
+        dialog.exec()
+        self._refresh_recent_projects()
+
+    def _on_library_open(self, path):
+        self.resume_row.select(path)
+        self._start_resume(path)
+
+    # 自動保存が本体より新しければ、そちらから復元するか尋ねる (ver3 resolve7 §5.9)
+    # 戻り値: 読み込みに使うパス (復元しないなら None = 本体をそのまま開く)
+    def _resolve_autosave(self, project_path):
+        cfg = timeline_config(self._settings)["project"]
+        autosave = project_io.autosave_path(project_path, cfg["autosave_suffix"])
+        try:
+            if not os.path.exists(autosave):
+                return None
+            if os.path.getmtime(autosave) <= os.path.getmtime(project_path):
+                return None    # 本体の方が新しい = 保存済み。自動保存は使わない
+            stamp = datetime.fromtimestamp(
+                os.path.getmtime(autosave)).strftime("%Y-%m-%d %H:%M:%S")
+        except OSError:
+            return None
+        answer = QMessageBox.question(
+            self, "自動保存が見つかりました",
+            f"保存されていない編集が自動保存に残っています（{stamp}）。\n"
+            "こちらから編集を再開しますか?\n\n"
+            "「いいえ」を選ぶと、最後に保存した内容を開きます"
+            "（自動保存はそのまま残ります）。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        )
+        return autosave if answer == QMessageBox.Yes else None
+
+    # 保存済みプロジェクトからの再編集をワーカースレッドで起動する
+    def _start_resume(self, project_path):
+        # 設定を最新化 (settings_window で変更された可能性に備える)
+        self._settings = load_settings()
+        register_fonts_in_dir(resolve_fonts_dir(self._settings))
+
+        # 自動保存が残っていれば復元するか尋ねる (自動保存が無効なら何も起きない)
+        restore_path = self._resolve_autosave(project_path)
+
+        # Timeline 編集画面フック (再編集は Timeline モード専用の経路)
+        self._timeline_bridge = TimelineReviewBridge(parent_window=self)
+        # 見つからない素材の再リンク画面フック
+        self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
+        self._worker = ProjectResumeWorker(
+            project_path, self._settings, self._timeline_bridge,
+            relink_callback=self._relink_bridge, restore_path=restore_path,
+            parent=self)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished_ok.connect(self._on_finished_ok)
+        self._worker.cancelled.connect(self._on_cancelled)
+        self._worker.failed.connect(self._on_failed)
+
+        self._spinner_message = "プロジェクトを読み込み中..."
+        self._set_running(True)
+        self._worker.start()
+
+    # MIME から保存済み Timeline プロジェクトのパスを1件取り出す (非対応なら None)
+    # 判定は setting.json の接尾辞 (timeline.project_suffix) に一致すること。
+    def _dropped_project_path(self, event):
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return None
+        suffix = timeline_config(self._settings)["project_suffix"].lower()
+        for url in mime.urls():
+            local = url.toLocalFile()
+            if local and local.lower().endswith(suffix) and os.path.exists(local):
+                return local
+        return None
+
+    # D&D されたプロジェクトを「編集の続き」の選択状態にする
+    # 落としただけで長い処理が始まらないよう、実行は「開く...」で明示的に行わせる。
+    def _select_project(self, path):
+        self.resume_row.select(path)
+        self.status_label.setText(
+            f"編集の続き: {os.path.basename(path)}（「開く...」で再開します）")
 
     # 実行ボタン押下: パイプラインをワーカースレッドで起動する
     def _on_run(self):
@@ -553,6 +730,11 @@ class ClipTabWidget(QWidget):
         self.run_button.setEnabled(not running)
         self.browse_button.setEnabled(not running)
         self.input_edit.setEnabled(not running)
+        # 編集の続き (ver3 resolve7 §5.11 / 行は resolve9 で共有ウィジェットへ)
+        self.resume_row.set_busy(running)
+        if not running:
+            # 編集画面で保存されていれば履歴が増えているため作り直す
+            self._refresh_recent_projects()
         # 実行中のみスピナーを回す
         if running:
             self._spinner_timer.start()
@@ -679,7 +861,21 @@ class MainWindow(QWidget):
         self.archive_tab.running_changed.connect(
             lambda running: self._on_tab_running_changed("archive", running))
 
+        # 種別違いのプロジェクトを選んだら相手のタブへ回す (ver3 resolve9 §3-4)
+        self.clip_tab.switch_tab_requested.connect(self._switch_to_kind)
+        self.archive_tab.switch_tab_requested.connect(self._switch_to_kind)
+
         root.addWidget(self.tabs)
+
+    # 種別違いのプロジェクトを、その種別のタブの「編集の続き」へ移す (ver3 resolve9 §3-4)
+    # 実行はしない (選択状態にするところまで)。長い処理は「開く...」で明示的に始めさせる。
+    def _switch_to_kind(self, kind, project_path):
+        tab = (self.archive_tab if kind == project_io.KIND_ARCHIVE else self.clip_tab)
+        row = getattr(tab, "resume_row", None)
+        if row is None:
+            return
+        self.tabs.setCurrentWidget(tab)
+        row.select(project_path)
 
     # 設定画面を開く (別ウィンドウとして表示する)
     # resolve4 M3: ClipTabWidget から移設。どのタブを選んでいても開ける。

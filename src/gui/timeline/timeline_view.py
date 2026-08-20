@@ -7,10 +7,11 @@
 import math
 import os
 
-from PySide6.QtCore import QLine, QRect, Qt, Signal
+from PySide6.QtCore import QLine, QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSlider,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -214,11 +215,19 @@ class TimelineRuler(QWidget):
             painter.drawLine(head_x, 0, head_x, RULER_HEIGHT)
 
     def mousePressEvent(self, event):
+        # 再生ヘッドを掴んだことを Controller へ伝える (スクラブ音声 / resolve7 §5.12)
+        if event.button() == Qt.LeftButton:
+            self._controller.begin_scrub()
         self._emit_seek(event.position().x(), event.modifiers())
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
             self._emit_seek(event.position().x(), event.modifiers())
+
+    # 離したらスクラブを終える (ルーラは従来 mouseReleaseEvent を持っていなかった)
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._controller.end_scrub()
 
     # ルーラの操作でも編集点へ吸着させる (resolve2 §5.2-2 / R1)
     # Alt 押下中は吸着しない。
@@ -292,6 +301,8 @@ class TimelineView(QWidget):
         self._drag_anchor_sec = 0.0
         self._drag_origin = 0.0
         self._drag_preview = None          # ドラッグ中の仮位置 (確定まで模型には触らない)
+        self._press_pos = QPoint()         # 押した座標 (クリック/ドラッグの判定に使う)
+        self._drag_moved = False           # しきい値を超えて実際に動かしたか
         # クリップのアウトラインの太さ (ver3 resolve4 E5)。
         # 長尺では 1,000 個超のクリップを毎フレーム描くため、設定の解決は 1 度だけ行う。
         ui_cfg = controller.cfg["ui"]
@@ -598,6 +609,9 @@ class TimelineView(QWidget):
             # 空き領域 → 再生ヘッド移動 (編集点へ吸着) + 選択解除
             self._controller.clear_selection()
             self._drag = _DRAG_PLAYHEAD
+            # クリップのドラッグ (移動・トリム) ではスクラブしない。
+            # 鳴らすのは再生ヘッドを掴んだときだけ (resolve7 §5.12)。
+            self._controller.begin_scrub()
             self._controller.set_playhead(
                 self._playhead_sec_at(pos.x(), event.modifiers()))
             return
@@ -627,6 +641,9 @@ class TimelineView(QWidget):
         self._drag_anchor_sec = self.x_to_sec(pos.x())
         self._drag_origin = span[0]
         self._drag_preview = {"id": target.id, "start": span[0], "duration": span[1]}
+        # 押した位置を覚え、しきい値を超えるまでは「クリック」として扱う (§6-1)
+        self._press_pos = pos
+        self._drag_moved = False
         if edge == commands.EDGE_LEFT:
             self._drag = _DRAG_TRIM_LEFT
         elif edge == commands.EDGE_RIGHT:
@@ -649,6 +666,14 @@ class TimelineView(QWidget):
         clip = self._controller.timeline.clip_by_id(self._drag_clip_id)
         if clip is None:
             return
+
+        # クリックとドラッグの区別。しきい値は Qt のプラットフォーム値に任せる
+        # (設定項目を増やさない / docs/error/20260812/resolve2.md §6-1)
+        if not self._drag_moved:
+            if (pos - self._press_pos).manhattanLength() < QApplication.startDragDistance():
+                return
+            self._drag_moved = True
+
         no_snap = bool(event.modifiers() & Qt.AltModifier)
         raw_sec = self.x_to_sec(pos.x())
         sec = raw_sec if no_snap else self._snap(raw_sec, exclude_id=clip.id)
@@ -676,11 +701,21 @@ class TimelineView(QWidget):
         drag = self._drag
         clip_id = self._drag_clip_id
         preview = self._drag_preview
+        moved = self._drag_moved
         self._drag = _DRAG_NONE
         self._drag_clip_id = None
         self._drag_preview = None
+        self._drag_moved = False
 
         if drag == _DRAG_PLAYHEAD or clip_id is None or preview is None:
+            self._controller.end_scrub()
+            self.update()
+            return
+
+        # 動かしていない = 単なるクリック → 選択だけで終える。
+        # ここでコマンドを積むと、重なっている字幕が重なり解消のため別の位置へ飛ぶ
+        # (docs/error/20260812/Analyze.md §5)
+        if not moved:
             self.update()
             return
 

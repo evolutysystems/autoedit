@@ -214,6 +214,70 @@ class ValidationTest(_TempMediaCase):
         self.assertEqual(restored.edit_points["keep_segments"], [[0.0, 10.0]])
 
 
+class ProjectResumeTest(_TempMediaCase):
+    """ver3 resolve7 §5.9: 再編集のための保存・読み込み (path_rel / media_role / load_project)"""
+
+    # 素材へプロジェクトからの相対パスを併記する
+    def test_path_rel_is_written(self):
+        dest = os.path.join(self._dir, "sample.timeline.json")
+        project_io.save(self.timeline, dest)
+        with open(dest, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["media_pool"][0]["path_rel"], "sample.mp4")
+
+    # 本編素材が中間ファイルだったかを記録する
+    def test_media_role_is_recorded(self):
+        data = json.loads(project_io.to_json(self.timeline))
+        # media_path == input_path のため "original"
+        self.assertEqual(data["source"]["media_role"], "original")
+
+        self.timeline.source["media_path"] = os.path.join(self._dir, "normalized.mp4")
+        self.timeline.source.pop("media_role", None)
+        data = json.loads(project_io.to_json(self.timeline))
+        self.assertEqual(data["source"]["media_role"], "normalized")
+
+    # load_project は Timeline と付随情報を返し、created_at を保つ
+    def test_load_project_returns_meta(self):
+        dest = os.path.join(self._dir, "sample.timeline.json")
+        project_io.save(self.timeline, dest, generator="test", created_at="2026-01-01T00:00:00")
+        timeline, meta = project_io.load_project(dest)
+        self.assertEqual(meta["created_at"], "2026-01-01T00:00:00")
+        self.assertEqual(meta["generator"], "test")
+        self.assertEqual(meta["schema_version"], project_io.SCHEMA_VERSION)
+        self.assertEqual(len(timeline.base_clips()), 2)
+
+    # 上書き保存で初回作成時刻を引き継げる
+    def test_created_at_is_preserved_on_overwrite(self):
+        dest = os.path.join(self._dir, "sample.timeline.json")
+        project_io.save(self.timeline, dest, created_at="2026-01-01T00:00:00")
+        _timeline, meta = project_io.load_project(dest)
+        project_io.save(self.timeline, dest, created_at=meta["created_at"])
+        _timeline, meta2 = project_io.load_project(dest)
+        self.assertEqual(meta2["created_at"], "2026-01-01T00:00:00")
+        self.assertNotEqual(meta2["updated_at"], "")
+
+    # validate_timeline=False なら素材が無くてもクリップを無効化しない (復旧を先に走らせるため)
+    def test_validate_can_be_skipped(self):
+        data = json.loads(project_io.to_json(self.timeline))
+        data["media_pool"][0]["path"] = os.path.join(self._dir, "no_such_file.mp4")
+
+        disabled = project_io.from_dict(data)          # 既定は従来どおり検証する
+        self.assertTrue(all(not c.enabled for c in disabled.base_video_track().clips))
+
+        kept = project_io.from_dict(data, validate_timeline=False)
+        self.assertTrue(all(c.enabled for c in kept.base_video_track().clips))
+
+    # 追加キーが無い旧プロジェクトもそのまま開ける (schema_version は 1 のまま)
+    def test_legacy_project_without_new_keys(self):
+        data = json.loads(project_io.to_json(self.timeline))
+        data["source"].pop("media_role", None)
+        for media in data["media_pool"]:
+            media.pop("path_rel", None)
+        restored = project_io.from_dict(data)
+        self.assertEqual(len(restored.base_clips()), 2)
+        self.assertEqual(restored.media_by_id("m1").path_rel, "")
+
+
 class OutputPathTest(unittest.TestCase):
 
     # 出力先は timeline.project_dir → general.output_directory → 入力と同じ場所 の順
@@ -231,6 +295,34 @@ class OutputPathTest(unittest.TestCase):
             self.assertEqual(os.path.dirname(path), out_dir)
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
+
+
+class DerivedPathTest(unittest.TestCase):
+    """ver3 resolve7 §5.9 / §3-5 案B: 自動保存ファイルと素材の複製先の組み立て"""
+
+    # 自動保存は本体とは別ファイルにする (本体を上書きしない)
+    def test_autosave_path(self):
+        self.assertEqual(
+            project_io.autosave_path(os.path.join("out", "sample.timeline.json")),
+            os.path.join("out", "sample.timeline.autosave.json"))
+
+    def test_autosave_path_with_custom_suffix(self):
+        self.assertEqual(
+            project_io.autosave_path("sample.timeline.json", ".recover.json"),
+            "sample.timeline.recover.json")
+
+    def test_autosave_path_without_project(self):
+        self.assertEqual(project_io.autosave_path(""), "")
+
+    # .timeline.json は 2 段の拡張子のため、接尾辞を丸ごと落とす
+    def test_media_dir_path(self):
+        path = project_io.media_dir_path(os.path.join("out", "sample.timeline.json"))
+        self.assertEqual(os.path.basename(path), "sample.media")
+
+    # 接尾辞に一致しない名前でも拡張子だけを落として組める
+    def test_media_dir_path_other_suffix(self):
+        path = project_io.media_dir_path("sample.json")
+        self.assertEqual(os.path.basename(path), "sample.media")
 
 
 if __name__ == "__main__":

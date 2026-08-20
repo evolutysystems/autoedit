@@ -77,7 +77,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -18
+        "last_cut_db": -29
     },
     "loudness": {
         "enabled": true,
@@ -104,6 +104,50 @@
         "opening_ending": {
             "auto_place": true
         },
+        "overlay": {
+            "min_scale": 0.02,
+            "max_scale": 4.0,
+            "resize_handle_px": 10,
+            "scale_step_percent": 1.0,
+            "default_scale_mode": "fit_width"
+        },
+        "project": {
+            "save_button": true,
+            "confirm_on_close": true,
+            "keep_media": false,
+            "media_dir_suffix": ".media",
+            "missing_media_policy": "renormalize",
+            "autosave_suffix": ".autosave.json",
+            "recent_limit": 10,
+            "recent": [
+                "D:/develop/autoedit/output\\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json",
+                "D:/develop/autoedit/output\\kaidemiru.timeline.json",
+                "D:/develop/autoedit/output\\rouryu.timeline.json",
+                "D:/develop/autoedit/output\\gomikasu.timeline.json",
+                "D:/develop/autoedit/output\\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json"
+            ],
+            "archive_suffix": ".archive",
+            "recent_archive": [],
+            "keep_audio": true,
+            "sidecar_tolerance_sec": 0.5,
+            "delete_button": true,
+            "delete_to_trash": true,
+            "delete_media_dir": true,
+            "rename_enabled": true,
+            "library": {
+                "enabled": true,
+                "window_width": 980,
+                "window_height": 620,
+                "extra_dirs": [],
+                "scan_recursive": false,
+                "max_items": 100,
+                "sort": "updated_desc",
+                "thumbnail_count": 3,
+                "thumbnail_width_px": 160,
+                "thumbnail_dir": "project_thumbs",
+                "thumbnail_cache_limit": 200
+            }
+        },
         "min_clip_sec": 0.05,
         "default_subtitle_sec": 2.0,
         "ripple_delete": true,
@@ -126,7 +170,12 @@
             "window_height": 820,
             "zoom_button_width_px": 40,
             "clip_outline_width_px": 2,
-            "clip_outline_selected_width_px": 3
+            "clip_outline_selected_width_px": 3,
+            "archive_graph_dock_area": "top",
+            "archive_graph_dock_height_px": 220,
+            "archive_clip_selector_width_px": 260,
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAAAAAAAAPwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAA/////wAAAEQA////AAAAAAAAAAAAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "subtitle_color_swatch_width_px": 28
         },
         "preview": {
             "backend": "pyav",
@@ -143,7 +192,26 @@
             "reverse_play_fps": 8,
             "transport_button_width_px": 40,
             "transport_wide_button_width_px": 52,
-            "transport_row_right_margin_px": 8
+            "transport_row_right_margin_px": 8,
+            "sequential_decode_sec": 2.0,
+            "playback_width": 960,
+            "playback_skip_frame": "none",
+            "frame_pipe_fallback": true,
+            "audio_build_mode": "single_process",
+            "audio_startup_chunk_sec": 6,
+            "audio_chunk_cache": 3,
+            "audio_sample_rate": 24000,
+            "audio_channels": 1,
+            "audio_codec": "pcm_s16le",
+            "audio_prefetch_on_open": true,
+            "scrub_audio_enabled": true,
+            "scrub_interval_ms": 60,
+            "scrub_chunk_sec": 4.0,
+            "scrub_hold_ms": 120,
+            "scrub_min_delta_sec": 0.01,
+            "scrub_volume": 0.8,
+            "scrub_rate_mode": "grain",
+            "scrub_low_quality_frames": true
         },
         "shortcuts": {
             "split": "W",
@@ -165,7 +233,9 @@
             "zoom_in": "Ctrl++",
             "zoom_in_alt": "Ctrl+=",
             "zoom_out": "Ctrl+-",
-            "delete_plain": "Backspace"
+            "delete_plain": "Backspace",
+            "save": "Ctrl+S",
+            "save_as": "Ctrl+Shift+S"
         },
         "media": {
             "video_extensions": [
@@ -191,7 +261,10 @@
             "gap_policy": "black",
             "extract_mode": "seek",
             "concat_reencode": false,
-            "overlay_enabled": true
+            "overlay_enabled": true,
+            "intermediate_audio_codec": "pcm_s16le",
+            "intermediate_container": ".mov",
+            "frame_quantize": true
         },
         "waveform": {
             "enabled": true,

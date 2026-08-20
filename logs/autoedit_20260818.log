@@ -1,0 +1,8 @@
+2026-08-18 18:02:31,556 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-18 18:02:31,558 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-18 18:03:14,368 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-18 18:08:37,870 [INFO] src.modules.subtitle_generator: 音声認識完了 (20 セグメント)
+2026-08-18 18:08:43,982 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-18 18:08:43,982 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-18 18:08:52,294 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-18 18:10:35,325 [INFO] src.modules.subtitle_generator: 音声認識完了 (26 セグメント)

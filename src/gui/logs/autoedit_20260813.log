@@ -1,0 +1,450 @@
+2026-08-13 03:31:20,565 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-13 03:45:27,576 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-13 03:45:31,209 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-13 03:46:36,824 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-13 03:46:41,318 [INFO] src.archive.twitch_source: 利用できる画質: 1440p60, 1080p60, 720p60, 360p, Audio Only
+2026-08-13 03:46:41,332 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-13 03:48:58,252 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2844372771.mp4 (画質 source)
+2026-08-13 03:48:58,263 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-08-13 03:49:01,729 [INFO] src.archive.twitch_source: コメント取得完了: D:\develop\autoedit\src\settings\archive_work\chat_2844372771.json
+2026-08-13 03:49:01,764 [INFO] src.archive.comment_source: チャット読み込み: 85件 (D:\develop\autoedit\src\settings\archive_work\chat_2844372771.json)
+2026-08-13 03:49:01,842 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2844372771.mp4 (窓180s/スライド45s, コメント85件)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline: コメント集計: 85件 / 平均0.94件/分
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline: 採点完了: 窓117件 → TOP9抽出
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip1: 270.0-450.0 点=60.0 (感情100.0/コメント11.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip2: 495.0-675.0 点=43.9 (感情71.7/コメント10.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip3: 765.0-945.0 点=56.6 (感情90.7/コメント15.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip4: 1935.0-2115.0 点=59.5 (感情100.0/コメント10.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip5: 2385.0-2745.0 点=45.7 (感情71.6/コメント14.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip6: 3735.0-3915.0 点=55.0 (感情100.0/コメント0.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip7: 4500.0-4680.0 点=44.7 (感情73.1/コメント10.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip8: 4770.0-4950.0 点=48.7 (感情80.3/コメント10.0)
+2026-08-13 04:18:25,799 [INFO] src.archive.pipeline:   clip9: 5220.0-5397.0 点=38.6 (感情54.7/コメント19.0)
+2026-08-13 04:18:31,011 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.2 LUFS / TP=-14.2 dBTP / LRA=8.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-13 04:18:37,734 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip1\normalized.mp4
+2026-08-13 04:19:42,736 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 27/27 区間)
+2026-08-13 04:19:42,736 [INFO] src.archive.clip_writer: clip1: 音量解析によりカット閾値 -22 dB を採用 (測定 27/27 区間・ダイアログ無し)
+2026-08-13 04:19:42,813 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:20:10,659 [INFO] src.modules.silence_cutter: 編集点検出: 無音 29 件 / 残す区間 28 件 (閾値=-22dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 04:20:16,741 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 28 区間 → 151.3s (元 182.1s)
+2026-08-13 04:20:42,732 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:20:42,732 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:20:49,700 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:24:42,567 [INFO] src.modules.subtitle_generator: 音声認識完了 (75 セグメント)
+2026-08-13 04:24:42,686 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 75 → 73 件 (カット区間のため 2 件除外)
+2026-08-13 04:24:42,687 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 73 → 73 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:24:42,687 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 73 件)
+2026-08-13 04:24:42,687 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 28 件 / 想定尺 151.30s (素材 182.10s)
+2026-08-13 04:24:42,687 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 73 件 / 実カットなし)
+2026-08-13 04:24:47,765 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.0 LUFS / TP=-13.3 dBTP / LRA=10.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.2 dB)
+2026-08-13 04:24:54,436 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip2\normalized.mp4
+2026-08-13 04:25:57,432 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-21 (mean, 測定 19/19 区間)
+2026-08-13 04:25:57,432 [INFO] src.archive.clip_writer: clip2: 音量解析によりカット閾値 -21 dB を採用 (測定 19/19 区間・ダイアログ無し)
+2026-08-13 04:25:57,505 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:26:23,390 [INFO] src.modules.silence_cutter: 編集点検出: 無音 25 件 / 残す区間 24 件 (閾値=-21dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 04:26:29,054 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 24 区間 → 152.5s (元 180.1s)
+2026-08-13 04:26:29,056 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:26:29,056 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:26:35,167 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:30:44,504 [INFO] src.modules.subtitle_generator: 音声認識完了 (68 セグメント)
+2026-08-13 04:30:44,618 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 68 → 68 件 (カット区間のため 0 件除外)
+2026-08-13 04:30:44,618 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 68 → 68 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:30:44,620 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 68 件)
+2026-08-13 04:30:44,620 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 24 件 / 想定尺 152.53s (素材 181.10s)
+2026-08-13 04:30:44,620 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 68 件 / 実カットなし)
+2026-08-13 04:30:49,440 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.6 LUFS / TP=-14.2 dBTP / LRA=12.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-08-13 04:30:55,669 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip3\normalized.mp4
+2026-08-13 04:31:56,699 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-27 (mean, 測定 13/13 区間)
+2026-08-13 04:31:56,699 [INFO] src.archive.clip_writer: clip3: 音量解析によりカット閾値 -27 dB を採用 (測定 13/13 区間・ダイアログ無し)
+2026-08-13 04:31:56,794 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:32:31,464 [INFO] src.modules.silence_cutter: 編集点検出: 無音 12 件 / 残す区間 13 件 (閾値=-27dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 04:32:35,904 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 13 区間 → 170.2s (元 181.1s)
+2026-08-13 04:32:35,904 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:32:35,906 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:32:41,809 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:36:17,322 [INFO] src.modules.subtitle_generator: 音声認識完了 (45 セグメント)
+2026-08-13 04:36:17,453 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 45 → 45 件 (カット区間のため 0 件除外)
+2026-08-13 04:36:17,454 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 45 → 45 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:36:17,454 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 45 件)
+2026-08-13 04:36:17,454 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 13 件 / 想定尺 170.19s (素材 181.10s)
+2026-08-13 04:36:17,454 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 45 件 / 実カットなし)
+2026-08-13 04:36:22,697 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-29.1 LUFS / TP=-13.9 dBTP / LRA=12.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-13 04:36:29,306 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip4\normalized.mp4
+2026-08-13 04:37:29,769 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 13/13 区間)
+2026-08-13 04:37:29,769 [INFO] src.archive.clip_writer: clip4: 音量解析によりカット閾値 -39 dB を採用 (測定 13/13 区間・ダイアログ無し)
+2026-08-13 04:37:29,841 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:37:58,422 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-39dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 04:38:01,836 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 181.1s (元 181.1s)
+2026-08-13 04:38:01,836 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:38:01,836 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:38:08,010 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:38:24,619 [INFO] src.modules.subtitle_generator: 音声認識完了 (1 セグメント)
+2026-08-13 04:38:24,726 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 1 → 1 件 (カット区間のため 0 件除外)
+2026-08-13 04:38:24,727 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 1 → 1 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:38:24,727 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 1 件)
+2026-08-13 04:38:24,727 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 181.10s (素材 181.10s)
+2026-08-13 04:38:24,727 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 1 件 / 実カットなし)
+2026-08-13 04:38:34,444 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-13.7 dBTP / LRA=16.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.9 dB)
+2026-08-13 04:38:48,428 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip5\normalized.mp4
+2026-08-13 04:41:38,727 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-42 (mean, 測定 25/25 区間)
+2026-08-13 04:41:38,727 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -42 dB を採用 (測定 25/25 区間・ダイアログ無し)
+2026-08-13 04:41:38,836 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:42:49,151 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-42dB, 最小無音=0.60s, 総尺=361.1s)
+2026-08-13 04:42:55,285 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 361.1s (元 361.1s)
+2026-08-13 04:42:55,285 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:42:55,285 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:43:02,384 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:47:44,147 [INFO] src.modules.subtitle_generator: 音声認識完了 (77 セグメント)
+2026-08-13 04:47:44,270 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 77 → 77 件 (カット区間のため 0 件除外)
+2026-08-13 04:47:44,270 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 77 → 77 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:47:44,270 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 77 件)
+2026-08-13 04:47:44,270 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 361.10s (素材 361.10s)
+2026-08-13 04:47:44,270 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 77 件 / 実カットなし)
+2026-08-13 04:47:49,156 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-28.7 LUFS / TP=-14.1 dBTP / LRA=14.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-13 04:47:56,097 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip6\normalized.mp4
+2026-08-13 04:48:55,364 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-25 (mean, 測定 29/29 区間)
+2026-08-13 04:48:55,364 [INFO] src.archive.clip_writer: clip6: 音量解析によりカット閾値 -25 dB を採用 (測定 29/29 区間・ダイアログ無し)
+2026-08-13 04:48:55,443 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:49:26,233 [INFO] src.modules.silence_cutter: 編集点検出: 無音 38 件 / 残す区間 37 件 (閾値=-25dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 04:49:31,928 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 37 区間 → 128.9s (元 181.1s)
+2026-08-13 04:49:31,928 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:49:31,929 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:49:38,348 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:49:54,983 [INFO] src.modules.subtitle_generator: 音声認識完了 (3 セグメント)
+2026-08-13 04:49:55,085 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 3 → 3 件 (カット区間のため 0 件除外)
+2026-08-13 04:49:55,087 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 3 → 3 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:49:55,087 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 3 件)
+2026-08-13 04:49:55,087 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 37 件 / 想定尺 128.92s (素材 181.10s)
+2026-08-13 04:49:55,087 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 3 件 / 実カットなし)
+2026-08-13 04:49:59,832 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.3 LUFS / TP=-13.8 dBTP / LRA=14.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.1 dB)
+2026-08-13 04:50:06,253 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip7\normalized.mp4
+2026-08-13 04:51:11,581 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-21 (mean, 測定 24/24 区間)
+2026-08-13 04:51:11,581 [INFO] src.archive.clip_writer: clip7: 音量解析によりカット閾値 -21 dB を採用 (測定 24/24 区間・ダイアログ無し)
+2026-08-13 04:51:11,676 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:51:42,894 [INFO] src.modules.silence_cutter: 編集点検出: 無音 43 件 / 残す区間 43 件 (閾値=-21dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 04:51:49,437 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 43 区間 → 120.2s (元 181.3s)
+2026-08-13 04:51:49,437 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:51:49,437 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:51:55,957 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 04:54:53,424 [INFO] src.modules.subtitle_generator: 音声認識完了 (63 セグメント)
+2026-08-13 04:54:53,563 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 63 → 63 件 (カット区間のため 0 件除外)
+2026-08-13 04:54:53,564 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 63 → 63 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 04:54:53,564 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 63 件)
+2026-08-13 04:54:53,564 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 43 件 / 想定尺 120.21s (素材 182.10s)
+2026-08-13 04:54:53,564 [INFO] src.archive.clip_writer: clip7 prepare 完了 (字幕 63 件 / 実カットなし)
+2026-08-13 04:54:58,701 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.5 LUFS / TP=-14.1 dBTP / LRA=13.9 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-08-13 04:55:05,329 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_ygbki280\clip8\normalized.mp4
+2026-08-13 04:56:09,204 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 8/8 区間)
+2026-08-13 04:56:09,204 [INFO] src.archive.clip_writer: clip8: 音量解析によりカット閾値 -39 dB を採用 (測定 8/8 区間・ダイアログ無し)
+2026-08-13 04:56:09,295 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 04:56:40,439 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-39dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 04:56:43,892 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 182.1s (元 182.1s)
+2026-08-13 04:56:43,892 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 04:56:43,892 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 04:56:50,246 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 09:07:17,745 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-13 09:07:23,608 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-13 09:07:26,921 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-13 09:07:35,040 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-13 09:07:37,811 [INFO] src.archive.twitch_source: 利用できる画質: 1440p60, 1080p60, 720p60, 360p, Audio Only
+2026-08-13 09:07:37,811 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-13 09:07:38,578 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2844372771.mp4 (画質 source)
+2026-08-13 09:07:38,578 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-08-13 09:07:40,714 [INFO] src.archive.twitch_source: コメント取得完了: D:\develop\autoedit\src\settings\archive_work\chat_2844372771.json
+2026-08-13 09:07:40,726 [INFO] src.archive.comment_source: チャット読み込み: 85件 (D:\develop\autoedit\src\settings\archive_work\chat_2844372771.json)
+2026-08-13 09:07:40,732 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2844372771.mp4 (窓180s/スライド45s, コメント85件)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline: コメント集計: 85件 / 平均0.94件/分
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline: 採点完了: 窓117件 → TOP9抽出
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip1: 270.0-450.0 点=60.0 (感情100.0/コメント11.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip2: 495.0-675.0 点=43.9 (感情71.7/コメント10.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip3: 765.0-945.0 点=56.6 (感情90.7/コメント15.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip4: 1935.0-2115.0 点=59.5 (感情100.0/コメント10.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip5: 2385.0-2745.0 点=45.7 (感情71.6/コメント14.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip6: 3735.0-3915.0 点=55.0 (感情100.0/コメント0.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip7: 4500.0-4680.0 点=44.7 (感情73.1/コメント10.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip8: 4770.0-4950.0 点=48.7 (感情80.3/コメント10.0)
+2026-08-13 09:39:02,372 [INFO] src.archive.pipeline:   clip9: 5220.0-5397.0 点=38.6 (感情54.7/コメント19.0)
+2026-08-13 09:39:07,820 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.2 LUFS / TP=-14.2 dBTP / LRA=8.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-13 09:39:14,315 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip1\normalized.mp4
+2026-08-13 09:40:24,945 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-22 (mean, 測定 27/27 区間)
+2026-08-13 09:40:24,945 [INFO] src.archive.clip_writer: clip1: 音量解析によりカット閾値 -22 dB を採用 (測定 27/27 区間・ダイアログ無し)
+2026-08-13 09:40:25,025 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 09:40:56,828 [INFO] src.modules.silence_cutter: 編集点検出: 無音 29 件 / 残す区間 28 件 (閾値=-22dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 09:41:02,653 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 28 区間 → 151.3s (元 182.1s)
+2026-08-13 09:41:34,060 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 09:41:34,060 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 09:41:40,891 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 09:46:17,078 [INFO] src.modules.subtitle_generator: 音声認識完了 (75 セグメント)
+2026-08-13 09:46:17,213 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 75 → 73 件 (カット区間のため 2 件除外)
+2026-08-13 09:46:17,213 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 73 → 73 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 09:46:17,213 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 73 件)
+2026-08-13 09:46:17,213 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 28 件 / 想定尺 151.30s (素材 182.10s)
+2026-08-13 09:46:17,213 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 73 件 / 実カットなし)
+2026-08-13 09:46:24,487 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.0 LUFS / TP=-13.3 dBTP / LRA=10.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.2 dB)
+2026-08-13 09:46:34,790 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip2\normalized.mp4
+2026-08-13 09:47:48,708 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-21 (mean, 測定 19/19 区間)
+2026-08-13 09:47:48,709 [INFO] src.archive.clip_writer: clip2: 音量解析によりカット閾値 -21 dB を採用 (測定 19/19 区間・ダイアログ無し)
+2026-08-13 09:47:48,798 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 09:48:20,016 [INFO] src.modules.silence_cutter: 編集点検出: 無音 25 件 / 残す区間 24 件 (閾値=-21dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 09:48:25,630 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 24 区間 → 152.5s (元 180.1s)
+2026-08-13 09:48:25,630 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 09:48:25,631 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 09:48:32,269 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 09:52:54,662 [INFO] src.modules.subtitle_generator: 音声認識完了 (68 セグメント)
+2026-08-13 09:52:54,807 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 68 → 68 件 (カット区間のため 0 件除外)
+2026-08-13 09:52:54,808 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 68 → 68 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 09:52:54,808 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 68 件)
+2026-08-13 09:52:54,808 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 24 件 / 想定尺 152.53s (素材 181.10s)
+2026-08-13 09:52:54,808 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 68 件 / 実カットなし)
+2026-08-13 09:52:59,729 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.6 LUFS / TP=-14.2 dBTP / LRA=12.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-08-13 09:53:06,304 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip3\normalized.mp4
+2026-08-13 09:54:12,060 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-27 (mean, 測定 13/13 区間)
+2026-08-13 09:54:12,061 [INFO] src.archive.clip_writer: clip3: 音量解析によりカット閾値 -27 dB を採用 (測定 13/13 区間・ダイアログ無し)
+2026-08-13 09:54:12,149 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 09:54:43,155 [INFO] src.modules.silence_cutter: 編集点検出: 無音 12 件 / 残す区間 13 件 (閾値=-27dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 09:54:47,541 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 13 区間 → 170.2s (元 181.1s)
+2026-08-13 09:54:47,542 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 09:54:47,542 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 09:54:54,004 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 09:58:39,381 [INFO] src.modules.subtitle_generator: 音声認識完了 (45 セグメント)
+2026-08-13 09:58:39,491 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 45 → 45 件 (カット区間のため 0 件除外)
+2026-08-13 09:58:39,491 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 45 → 45 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 09:58:39,492 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 45 件)
+2026-08-13 09:58:39,492 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 13 件 / 想定尺 170.19s (素材 181.10s)
+2026-08-13 09:58:39,492 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 45 件 / 実カットなし)
+2026-08-13 09:58:44,869 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-29.1 LUFS / TP=-13.9 dBTP / LRA=12.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-13 09:58:52,774 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip4\normalized.mp4
+2026-08-13 09:59:56,906 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 13/13 区間)
+2026-08-13 09:59:56,906 [INFO] src.archive.clip_writer: clip4: 音量解析によりカット閾値 -39 dB を採用 (測定 13/13 区間・ダイアログ無し)
+2026-08-13 09:59:56,983 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:00:27,776 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-39dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 10:00:31,495 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 181.1s (元 181.1s)
+2026-08-13 10:00:31,495 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:00:31,495 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:00:38,155 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:00:54,894 [INFO] src.modules.subtitle_generator: 音声認識完了 (1 セグメント)
+2026-08-13 10:00:55,008 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 1 → 1 件 (カット区間のため 0 件除外)
+2026-08-13 10:00:55,008 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 1 → 1 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:00:55,024 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 1 件)
+2026-08-13 10:00:55,024 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 181.10s (素材 181.10s)
+2026-08-13 10:00:55,024 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 1 件 / 実カットなし)
+2026-08-13 10:01:06,131 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-34.2 LUFS / TP=-13.7 dBTP / LRA=16.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.9 dB)
+2026-08-13 10:01:19,438 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip5\normalized.mp4
+2026-08-13 10:03:27,032 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-42 (mean, 測定 25/25 区間)
+2026-08-13 10:03:27,032 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -42 dB を採用 (測定 25/25 区間・ダイアログ無し)
+2026-08-13 10:03:27,116 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:04:27,305 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-42dB, 最小無音=0.60s, 総尺=361.1s)
+2026-08-13 10:04:33,143 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 361.1s (元 361.1s)
+2026-08-13 10:04:33,143 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:04:33,143 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:04:38,883 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:09:12,544 [INFO] src.modules.subtitle_generator: 音声認識完了 (77 セグメント)
+2026-08-13 10:09:12,658 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 77 → 77 件 (カット区間のため 0 件除外)
+2026-08-13 10:09:12,658 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 77 → 77 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:09:12,658 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 77 件)
+2026-08-13 10:09:12,660 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 361.10s (素材 361.10s)
+2026-08-13 10:09:12,660 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 77 件 / 実カットなし)
+2026-08-13 10:09:18,570 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-28.7 LUFS / TP=-14.1 dBTP / LRA=14.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-13 10:09:25,567 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip6\normalized.mp4
+2026-08-13 10:10:26,992 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-25 (mean, 測定 29/29 区間)
+2026-08-13 10:10:26,992 [INFO] src.archive.clip_writer: clip6: 音量解析によりカット閾値 -25 dB を採用 (測定 29/29 区間・ダイアログ無し)
+2026-08-13 10:10:27,067 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:10:58,055 [INFO] src.modules.silence_cutter: 編集点検出: 無音 38 件 / 残す区間 37 件 (閾値=-25dB, 最小無音=0.60s, 総尺=181.1s)
+2026-08-13 10:11:03,754 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 37 区間 → 128.9s (元 181.1s)
+2026-08-13 10:11:03,756 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:11:03,756 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:11:10,008 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:11:27,448 [INFO] src.modules.subtitle_generator: 音声認識完了 (3 セグメント)
+2026-08-13 10:11:27,600 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 3 → 3 件 (カット区間のため 0 件除外)
+2026-08-13 10:11:27,600 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 3 → 3 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:11:27,600 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 3 件)
+2026-08-13 10:11:27,600 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 37 件 / 想定尺 128.92s (素材 181.10s)
+2026-08-13 10:11:27,603 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 3 件 / 実カットなし)
+2026-08-13 10:11:32,826 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.3 LUFS / TP=-13.8 dBTP / LRA=14.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.1 dB)
+2026-08-13 10:11:39,805 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip7\normalized.mp4
+2026-08-13 10:12:48,389 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-21 (mean, 測定 24/24 区間)
+2026-08-13 10:12:48,389 [INFO] src.archive.clip_writer: clip7: 音量解析によりカット閾値 -21 dB を採用 (測定 24/24 区間・ダイアログ無し)
+2026-08-13 10:12:48,469 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:13:20,131 [INFO] src.modules.silence_cutter: 編集点検出: 無音 43 件 / 残す区間 43 件 (閾値=-21dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 10:13:26,584 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 43 区間 → 120.2s (元 181.3s)
+2026-08-13 10:13:26,584 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:13:26,585 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:13:32,731 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:16:31,895 [INFO] src.modules.subtitle_generator: 音声認識完了 (63 セグメント)
+2026-08-13 10:16:32,053 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 63 → 63 件 (カット区間のため 0 件除外)
+2026-08-13 10:16:32,053 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 63 → 63 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:16:32,053 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 63 件)
+2026-08-13 10:16:32,062 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 43 件 / 想定尺 120.21s (素材 182.10s)
+2026-08-13 10:16:32,062 [INFO] src.archive.clip_writer: clip7 prepare 完了 (字幕 63 件 / 実カットなし)
+2026-08-13 10:16:37,377 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-33.5 LUFS / TP=-14.1 dBTP / LRA=13.9 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-08-13 10:16:43,839 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip8\normalized.mp4
+2026-08-13 10:17:48,991 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 8/8 区間)
+2026-08-13 10:17:48,991 [INFO] src.archive.clip_writer: clip8: 音量解析によりカット閾値 -39 dB を採用 (測定 8/8 区間・ダイアログ無し)
+2026-08-13 10:17:49,070 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:18:24,015 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-39dB, 最小無音=0.60s, 総尺=182.1s)
+2026-08-13 10:18:27,462 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 182.1s (元 182.1s)
+2026-08-13 10:18:27,462 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:18:27,462 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:18:34,019 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:21:58,410 [INFO] src.modules.subtitle_generator: 音声認識完了 (57 セグメント)
+2026-08-13 10:21:58,540 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 57 → 57 件 (カット区間のため 0 件除外)
+2026-08-13 10:21:58,540 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 57 → 57 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:21:58,540 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 57 件)
+2026-08-13 10:21:58,540 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 182.10s (素材 182.10s)
+2026-08-13 10:21:58,540 [INFO] src.archive.clip_writer: clip8 prepare 完了 (字幕 57 件 / 実カットなし)
+2026-08-13 10:22:03,900 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-35.4 LUFS / TP=-14.2 dBTP / LRA=19.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.1 dB)
+2026-08-13 10:22:11,115 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_t1vsi7u7\clip9\normalized.mp4
+2026-08-13 10:23:19,539 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-19 (mean, 測定 2/2 区間)
+2026-08-13 10:23:19,539 [INFO] src.archive.clip_writer: clip9: 音量解析によりカット閾値 -19 dB を採用 (測定 2/2 区間・ダイアログ無し)
+2026-08-13 10:23:19,630 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-13 10:23:52,195 [INFO] src.modules.silence_cutter: 編集点検出: 無音 50 件 / 残す区間 46 件 (閾値=-19dB, 最小無音=0.60s, 総尺=179.1s)
+2026-08-13 10:23:58,624 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 46 区間 → 114.4s (元 179.1s)
+2026-08-13 10:23:58,624 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-13 10:23:58,626 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-13 10:24:05,216 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, condition_on_previous_text=False)
+2026-08-13 10:25:51,353 [INFO] src.modules.subtitle_generator: 音声認識完了 (28 セグメント)
+2026-08-13 10:25:51,496 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 28 → 28 件 (カット区間のため 0 件除外)
+2026-08-13 10:25:51,496 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 28 → 28 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-13 10:25:51,496 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 28 件)
+2026-08-13 10:25:51,496 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 46 件 / 想定尺 114.44s (素材 179.12s)
+2026-08-13 10:25:51,496 [INFO] src.archive.clip_writer: clip9 prepare 完了 (字幕 28 件 / 実カットなし)
+2026-08-13 10:25:51,571 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:51,653 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:51,737 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:51,890 [INFO] src.archive.timeline_builder: clip5: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:51,993 [INFO] src.archive.timeline_builder: clip7: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:52,125 [INFO] src.archive.timeline_builder: clip9: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-13 10:25:52,126 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 9 クリップ / V1 194 本 / S1 415 件 / 全長 1561.9s
+2026-08-13 11:19:38,505 [INFO] src.timeline.commands: リップル: 135.564〜136.081s (0.52s) を除去 / 削除 3 件・短縮 0 件・移動 521 件
+2026-08-13 11:21:06,394 [INFO] src.timeline.commands: リップル: 148.426〜150.786s (2.36s) を除去 / 削除 1 件・短縮 0 件・移動 506 件
+2026-08-13 11:34:34,291 [INFO] src.timeline.commands: リップル: 212.809〜221.289s (8.48s) を除去 / 削除 1 件・短縮 0 件・移動 458 件
+2026-08-13 11:34:37,678 [INFO] src.timeline.commands: リップル: 211.819〜212.809s (0.99s) を除去 / 削除 1 件・短縮 0 件・移動 458 件
+2026-08-13 11:35:14,999 [INFO] src.timeline.commands: リップル: 211.819〜215.372s (3.55s) を除去 / 削除 2 件・短縮 0 件・移動 458 件
+2026-08-13 11:38:20,938 [INFO] src.timeline.commands: リップル: 227.530〜230.479s (2.95s) を除去 / 削除 1 件・短縮 0 件・移動 454 件
+2026-08-13 11:46:21,401 [INFO] src.timeline.commands: リップル: 281.207〜283.207s (2.00s) を除去 / 削除 1 件・短縮 0 件・移動 417 件
+2026-08-13 11:49:04,034 [INFO] src.timeline.commands: リップル: 449.592〜453.167s (3.58s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-13 11:49:04,954 [INFO] src.timeline.commands: リップル: 447.711〜449.592s (1.88s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-13 11:49:05,774 [INFO] src.timeline.commands: リップル: 442.175〜447.711s (5.54s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-13 11:49:06,485 [INFO] src.timeline.commands: リップル: 435.514〜442.175s (6.66s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-13 11:49:08,074 [INFO] src.timeline.commands: リップル: 353.256〜435.442s (82.19s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:19,541 [INFO] src.timeline.commands: リップル: 347.542〜353.256s (5.71s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:20,334 [INFO] src.timeline.commands: リップル: 340.750〜347.542s (6.79s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:21,179 [INFO] src.timeline.commands: リップル: 332.214〜340.750s (8.54s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:25,554 [INFO] src.timeline.commands: リップル: 311.787〜332.214s (20.43s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:26,650 [INFO] src.timeline.commands: リップル: 283.477〜311.787s (28.31s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:33,608 [INFO] src.timeline.commands: リップル: 282.982〜283.380s (0.40s) を除去 / 削除 1 件・短縮 0 件・移動 359 件
+2026-08-13 11:49:46,506 [INFO] src.timeline.commands: リップル: 282.982〜283.079s (0.10s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-13 11:49:47,327 [INFO] src.timeline.commands: リップル: 282.982〜283.053s (0.07s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-13 11:53:11,150 [INFO] src.timeline.commands: リップル: 464.082〜469.862s (5.78s) を除去 / 削除 1 件・短縮 0 件・移動 355 件
+2026-08-13 12:00:27,490 [INFO] src.timeline.commands: リップル: 487.830〜504.378s (16.55s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:08:54,369 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 12:09:09,532 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 12:09:19,085 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 12:10:03,082 [INFO] src.timeline.commands: リップル: 505.903〜513.725s (7.82s) を除去 / 削除 1 件・短縮 0 件・移動 355 件
+2026-08-13 12:10:22,544 [INFO] src.timeline.commands: リップル: 505.903〜509.443s (3.54s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:11:02,458 [INFO] src.timeline.commands: リップル: 507.006〜507.787s (0.78s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:11:10,810 [INFO] src.timeline.commands: リップル: 509.787〜511.475s (1.69s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:11:37,708 [INFO] src.timeline.commands: リップル: 517.381〜518.568s (1.19s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:11:54,861 [INFO] src.timeline.commands: リップル: 518.193〜530.304s (12.11s) を除去 / 削除 0 件・短縮 1 件・移動 354 件
+2026-08-13 12:13:25,990 [INFO] src.timeline.commands: リップル: 517.381〜518.193s (0.81s) を除去 / 削除 1 件・短縮 0 件・移動 355 件
+2026-08-13 12:16:53,796 [INFO] src.timeline.commands: リップル: 521.461〜526.761s (5.30s) を除去 / 削除 0 件・短縮 1 件・移動 352 件
+2026-08-13 12:17:59,064 [INFO] src.timeline.commands: リップル: 524.117〜525.365s (1.25s) を除去 / 削除 0 件・短縮 1 件・移動 351 件
+2026-08-13 12:18:46,234 [INFO] src.timeline.commands: リップル: 529.313〜538.735s (9.42s) を除去 / 削除 0 件・短縮 1 件・移動 349 件
+2026-08-13 12:19:39,799 [INFO] src.timeline.commands: リップル: 531.090〜532.610s (1.52s) を除去 / 削除 0 件・短縮 1 件・移動 349 件
+2026-08-13 12:20:54,268 [INFO] src.timeline.commands: リップル: 535.885〜536.410s (0.52s) を除去 / 削除 0 件・短縮 1 件・移動 347 件
+2026-08-13 12:23:02,848 [INFO] src.timeline.commands: リップル: 548.173〜550.756s (2.58s) を除去 / 削除 0 件・短縮 1 件・移動 343 件
+2026-08-13 12:27:03,656 [INFO] src.timeline.commands: リップル: 574.555〜577.005s (2.45s) を除去 / 削除 0 件・短縮 1 件・移動 335 件
+2026-08-13 12:35:22,415 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 12:36:09,382 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 12:40:20,803 [INFO] src.timeline.commands: リップル: 618.326〜626.603s (8.28s) を除去 / 削除 0 件・短縮 1 件・移動 322 件
+2026-08-13 12:41:59,307 [INFO] src.timeline.commands: リップル: 618.326〜655.046s (36.72s) を除去 / 削除 0 件・短縮 1 件・移動 312 件
+2026-08-13 12:43:41,214 [INFO] src.timeline.commands: リップル: 624.364〜625.948s (1.58s) を除去 / 削除 0 件・短縮 1 件・移動 309 件
+2026-08-13 12:44:18,166 [INFO] src.timeline.commands: リップル: 625.004〜626.302s (1.30s) を除去 / 削除 0 件・短縮 1 件・移動 309 件
+2026-08-13 12:46:01,003 [INFO] src.timeline.commands: リップル: 625.996〜703.984s (77.99s) を除去 / 削除 1 件・短縮 0 件・移動 277 件
+2026-08-13 12:58:39,818 [INFO] src.timeline.commands: リップル: 762.892〜771.954s (9.06s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:41,532 [INFO] src.timeline.commands: リップル: 761.720〜762.892s (1.17s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:42,918 [INFO] src.timeline.commands: リップル: 760.883〜761.720s (0.84s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:43,648 [INFO] src.timeline.commands: リップル: 759.530〜760.883s (1.35s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:44,850 [INFO] src.timeline.commands: リップル: 758.606〜759.530s (0.92s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:54,712 [INFO] src.timeline.commands: リップル: 757.728〜758.606s (0.88s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:55,575 [INFO] src.timeline.commands: リップル: 756.846〜757.728s (0.88s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 12:58:56,468 [INFO] src.timeline.commands: リップル: 755.141〜756.846s (1.71s) を除去 / 削除 1 件・短縮 0 件・移動 220 件
+2026-08-13 13:00:06,285 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件
+2026-08-13 13:07:22,439 [INFO] src.timeline.commands: リップル: 789.984〜794.748s (4.76s) を除去 / 削除 1 件・短縮 0 件・移動 190 件
+2026-08-13 13:08:07,183 [INFO] src.timeline.commands: リップル: 792.326〜796.415s (4.09s) を除去 / 削除 1 件・短縮 0 件・移動 185 件
+2026-08-13 13:14:57,445 [INFO] src.timeline.commands: リップル: 843.356〜844.652s (1.30s) を除去 / 削除 1 件・短縮 0 件・移動 133 件
+2026-08-13 13:14:58,149 [INFO] src.timeline.commands: リップル: 843.356〜848.165s (4.81s) を除去 / 削除 1 件・短縮 0 件・移動 132 件
+2026-08-13 13:18:43,192 [INFO] src.timeline.commands: リップル: 1130.171〜1132.403s (2.23s) を除去 / 削除 1 件・短縮 0 件・移動 6 件
+2026-08-13 13:18:44,225 [INFO] src.timeline.commands: リップル: 1121.975〜1130.171s (8.20s) を除去 / 削除 1 件・短縮 0 件・移動 6 件
+2026-08-13 13:18:45,005 [INFO] src.timeline.commands: リップル: 1105.123〜1121.975s (16.85s) を除去 / 削除 1 件・短縮 0 件・移動 6 件
+2026-08-13 13:18:46,043 [INFO] src.timeline.commands: リップル: 1101.004〜1105.123s (4.12s) を除去 / 削除 1 件・短縮 0 件・移動 6 件
+2026-08-13 13:18:46,869 [INFO] src.timeline.commands: リップル: 1096.912〜1101.004s (4.09s) を除去 / 削除 1 件・短縮 0 件・移動 6 件
+2026-08-13 13:19:53,877 [INFO] src.timeline.commands: リップル: 1075.129〜1076.895s (1.77s) を除去 / 削除 1 件・短縮 0 件・移動 14 件
+2026-08-13 13:19:57,317 [INFO] src.timeline.commands: リップル: 1074.473〜1075.129s (0.66s) を除去 / 削除 1 件・短縮 0 件・移動 14 件
+2026-08-13 13:19:58,224 [INFO] src.timeline.commands: リップル: 1073.749〜1074.473s (0.72s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:01,878 [INFO] src.timeline.commands: リップル: 1072.479〜1073.749s (1.27s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:03,968 [INFO] src.timeline.commands: リップル: 1072.283〜1072.479s (0.20s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:04,705 [INFO] src.timeline.commands: リップル: 1071.920〜1072.283s (0.36s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:05,467 [INFO] src.timeline.commands: リップル: 1070.438〜1071.920s (1.48s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:06,197 [INFO] src.timeline.commands: リップル: 1069.540〜1070.438s (0.90s) を除去 / 削除 1 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:07,016 [INFO] src.timeline.commands: リップル: 1067.712〜1069.540s (1.83s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:09,048 [INFO] src.timeline.commands: リップル: 1067.526〜1067.712s (0.19s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:11,392 [INFO] src.timeline.commands: リップル: 1065.681〜1067.526s (1.84s) を除去 / 削除 2 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:12,220 [INFO] src.timeline.commands: リップル: 1064.792〜1065.681s (0.89s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:12,852 [INFO] src.timeline.commands: リップル: 1060.235〜1064.792s (4.56s) を除去 / 削除 3 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:13,647 [INFO] src.timeline.commands: リップル: 1057.520〜1060.235s (2.72s) を除去 / 削除 2 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:14,291 [INFO] src.timeline.commands: リップル: 1054.805〜1057.520s (2.71s) を除去 / 削除 3 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:15,192 [INFO] src.timeline.commands: リップル: 1052.164〜1054.805s (2.64s) を除去 / 削除 3 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:15,997 [INFO] src.timeline.commands: リップル: 1050.917〜1052.164s (1.25s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:16,758 [INFO] src.timeline.commands: リップル: 1050.205〜1050.917s (0.71s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:17,439 [INFO] src.timeline.commands: リップル: 1049.553〜1050.205s (0.65s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:19,283 [INFO] src.timeline.commands: リップル: 1049.074〜1049.553s (0.48s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:20,034 [INFO] src.timeline.commands: リップル: 1044.443〜1049.074s (4.63s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:21,180 [INFO] src.timeline.commands: リップル: 1042.408〜1044.443s (2.03s) を除去 / 削除 2 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:22,387 [INFO] src.timeline.commands: リップル: 1041.701〜1042.408s (0.71s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:23,085 [INFO] src.timeline.commands: リップル: 1039.091〜1041.701s (2.61s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:23,837 [INFO] src.timeline.commands: リップル: 1037.030〜1039.091s (2.06s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:24,632 [INFO] src.timeline.commands: リップル: 1031.070〜1037.030s (5.96s) を除去 / 削除 1 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:25,778 [INFO] src.timeline.commands: リップル: 1029.638〜1031.070s (1.43s) を除去 / 削除 2 件・短縮 1 件・移動 14 件
+2026-08-13 13:20:26,556 [INFO] src.timeline.commands: リップル: 1028.376〜1029.638s (1.26s) を除去 / 削除 3 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:27,171 [INFO] src.timeline.commands: リップル: 1027.407〜1028.376s (0.97s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:28,340 [INFO] src.timeline.commands: リップル: 1025.456〜1027.407s (1.95s) を除去 / 削除 2 件・短縮 0 件・移動 14 件
+2026-08-13 13:20:28,944 [INFO] src.timeline.commands: リップル: 843.356〜1025.456s (182.10s) を除去 / 削除 58 件・短縮 0 件・移動 14 件
+2026-08-13 13:22:38,699 [INFO] src.timeline.commands: リップル: 867.184〜870.865s (3.68s) を除去 / 削除 0 件・短縮 1 件・移動 0 件
+2026-08-13 13:32:25,031 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 13:32:35,121 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 13:33:35,830 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 13:35:22,528 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件
+2026-08-13 13:40:57,895 [INFO] src.timeline.renderer: ベース映像構築: 28 クリップ / ギャップ 0 件 / 合計 148.4s
+2026-08-13 13:40:57,900 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 13:44:53,817 [INFO] src.timeline.renderer: 字幕焼き込み: 70 件
+2026-08-13 13:51:14,601 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-08-13 13:51:19,052 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=健全なサウナ配信)
+2026-08-13 13:51:19,055 [INFO] src.timeline.renderer: ベース映像構築: 23 クリップ / ギャップ 1 件 / 合計 134.6s
+2026-08-13 13:51:19,064 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 13:54:45,608 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 4 件 / サイズ 3 件
+2026-08-13 13:54:45,609 [INFO] src.timeline.renderer: 字幕焼き込み: 61 件
+2026-08-13 14:00:04,601 [INFO] src.archive.clip_writer: clip2: 左上テーマタグを焼き込み
+2026-08-13 14:00:09,278 [INFO] src.archive.clip_writer: clip2: イントロカード生成 (3.00s, テーマ=Pool and ...)
+2026-08-13 14:00:09,280 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 181.1s
+2026-08-13 14:00:09,285 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 14:04:07,947 [INFO] src.timeline.renderer: オーバーレイ・字幕が無いため合成をスキップします
+2026-08-13 14:04:07,949 [INFO] src.timeline.renderer: ベース映像構築: 18 クリップ / ギャップ 0 件 / 合計 161.9s
+2026-08-13 14:04:07,954 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 14:07:36,405 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 5 件
+2026-08-13 14:07:36,406 [INFO] src.timeline.renderer: 字幕焼き込み: 53 件
+2026-08-13 14:12:49,885 [INFO] src.archive.clip_writer: clip5: 左上テーマタグを焼き込み
+2026-08-13 14:12:53,734 [INFO] src.archive.clip_writer: clip5: イントロカード生成 (3.00s, テーマ=パァ)
+2026-08-13 14:12:53,737 [INFO] src.timeline.renderer: ベース映像構築: 37 クリップ / ギャップ 0 件 / 合計 128.9s
+2026-08-13 14:12:53,742 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 14:16:06,724 [INFO] src.timeline.renderer: 字幕焼き込み: 5 件
+2026-08-13 14:21:26,599 [INFO] src.archive.clip_writer: clip6: 左上テーマタグを焼き込み
+2026-08-13 14:21:31,691 [INFO] src.archive.clip_writer: clip6: イントロカード生成 (3.00s, テーマ=２SET目)
+2026-08-13 14:21:31,695 [INFO] src.timeline.renderer: ベース映像構築: 30 クリップ / ギャップ 1 件 / 合計 88.4s
+2026-08-13 14:21:31,703 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 14:24:13,816 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 2 件 / サイズ 0 件
+2026-08-13 14:24:13,816 [INFO] src.timeline.renderer: 字幕焼き込み: 48 件
+2026-08-13 14:26:20,935 [INFO] src.timeline.renderer: ベース映像構築: 11 クリップ / ギャップ 0 件 / 合計 23.8s
+2026-08-13 14:26:20,945 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-13 14:27:07,642 [INFO] src.timeline.renderer: 字幕焼き込み: 2 件
+2026-08-13 14:46:44,654 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_vod_2844372771_combined.mp4 (使用7)

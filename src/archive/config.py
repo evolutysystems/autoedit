@@ -51,6 +51,9 @@ def download_config(settings):
         "downloader": str(dl.get("downloader", "local") or "local"),
         "twitch_dl_path": str(dl.get("twitch_dl_path", "twitch-dl") or "twitch-dl"),
         "vod_format": str(dl.get("vod_format", "source") or "source"),
+        # 希望画質が無い VOD で利用できる最高画質へ自動で落とす (error 20260810)。
+        # false にすると従来どおり希望画質のまま実行し、無ければ失敗する。
+        "vod_quality_fallback": bool(dl.get("vod_quality_fallback", True)),
         "chat_source": str(dl.get("chat_source", "twitch-dl") or "twitch-dl"),
         "work_dir": str(dl.get("work_dir", "archive_work") or "archive_work"),
     }
@@ -70,6 +73,27 @@ def resolve_work_dir(settings):
 # 作業ディレクトリ配下に置く (書込可能・アンインストールで消える運用)。
 def twitch_token_path(settings):
     return os.path.join(resolve_work_dir(settings), "twitch_token.json")
+
+
+# クリップ処理 (clip_pipeline) の設定を平坦化して返す
+def clip_pipeline_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    pipe = archive.get("clip_pipeline", {})
+    return {
+        "silence_cut": bool(pipe.get("silence_cut", True)),
+        "subtitle_review": bool(pipe.get("subtitle_review", True)),
+        "volume_dialog": bool(pipe.get("volume_dialog", False)),
+        # true=Timeline 編集画面 / false=従来の一括結果画面 (ver3 resolve5 §7)
+        "timeline_review": bool(pipe.get("timeline_review", True)),
+    }
+
+
+# アーカイブのレビューを Timeline 編集画面で行うか (ver3 resolve5)
+# timeline.enabled=false のときは Timeline 自体が無効なため従来画面を使う。
+def use_timeline_review(settings):
+    if not (settings or {}).get("timeline", {}).get("enabled", True):
+        return False
+    return clip_pipeline_config(settings)["timeline_review"]
 
 
 # 切り抜き出力ファイル名の接頭辞を返す (既定 "archive")

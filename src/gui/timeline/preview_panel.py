@@ -20,6 +20,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QGraphicsScene,
     QGraphicsView,
@@ -52,6 +53,7 @@ from .preview_items import (
     BaseFrameItem,
     ImageOverlayItem,
     SubtitleOverlayItem,
+    native_scale,
     pixel_to_normalized,
 )
 from .timeline_view import format_time_precise
@@ -168,13 +170,16 @@ class PreviewPanel(QWidget):
         self._frame_worker.start()
         self._frame_job = 0
 
-        # 音声
+        # 音声 (生成方式・品質・保持本数は preview 設定から / resolve6 §5.6)
         self._audio_source = AudioChunkSource(
-            controller.timeline, self._settings, work_dir, asr_audio_path)
+            controller.timeline, self._settings, work_dir, asr_audio_path,
+            preview_cfg=self._cfg)
         self._audio_worker = None
         self._audio_job = 0
         # 完了したら再生を始めるジョブ ID (先読みジョブと区別する)
         self._autoplay_job = 0
+        # 起動用チャンクの完了後に本チャンクを先読みするジョブ ID (resolve6 §3-6 R3)
+        self._follow_full_job = 0
         self._chunk_start = 0.0
         # 再生状態は速度 1 つで持つ (resolve2 §4-9)
         #   0.0=停止 / +1.0=通常再生 / +N=倍速再生 / -N=倍速逆再生
@@ -184,12 +189,26 @@ class PreviewPanel(QWidget):
         self._reverse_timer = None
         self._last_frame_at = 0.0
 
+        # スクラブ (再生ヘッドドラッグ中の音声 / resolve7 §5.13)
+        #   ・self._rate は 0 のまま = 音声は再生ヘッドを動かさない (§2.5.2)
+        #   ・一定間隔で「今の再生ヘッド位置」へ合わせ直し、その場から鳴らす
+        self._scrub_timer = QTimer(self)
+        self._scrub_timer.timeout.connect(self._scrub_tick)
+        self._scrub_last_sec = None       # 直前の粒で鳴らした位置
+        self._scrub_prev_sec = None       # "match" のときの速度計算用
+        self._scrub_idle_ms = 0           # 動きが無い時間の合計
+        self._scrub_source = None         # 現在 QMediaPlayer に載せているチャンク
+        self._scrub_volume_backup = None  # スクラブ前の音量 (離したら戻す)
+
         self._overlay_items = {}
+        # 直前に並べたオーバーレイの ID 列 (再生中の作り直しを省くため / resolve6 §3-9)
+        self._overlay_ids = []
         self._build_ui()
 
         controller.timeline_changed.connect(self._on_timeline_changed)
         controller.playhead_moved.connect(self._on_playhead_moved)
         controller.selection_changed.connect(self._sync_selection)
+        controller.scrub_changed.connect(self._on_scrub_changed)
 
         self._refresh_all()
 
@@ -370,13 +389,18 @@ class PreviewPanel(QWidget):
             return  # 差し替え済みの古い結果は捨てる
         image = QImage(data, width, height, width * 3, QImage.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(image)
-        if pixmap.width() != self._canvas[0] or pixmap.height() != self._canvas[1]:
-            # 素材寸法がキャンバスと異なる場合は縦横比を保って中央へ収める
-            pixmap = pixmap.scaled(self._canvas[0], self._canvas[1],
-                                   Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        # 拡縮はアイテムの scale で行い、QPixmap.scaled は使わない (resolve6 §5.8)。
+        # 再生中は縮小フレームが届くため、ここで拡大し直すと 1 枚あたり 4.5ms かかり
+        # 縮小で浮いたぶんを食い潰す。scale なら描画時に処理され、費用はほぼゼロ。
+        scale = 1.0
+        if pixmap.width() > 0 and pixmap.height() > 0:
+            scale = min(self._canvas[0] / pixmap.width(),
+                        self._canvas[1] / pixmap.height())
         self._base_item.setPixmap(pixmap)
-        self._base_item.setPos((self._canvas[0] - pixmap.width()) / 2.0,
-                               (self._canvas[1] - pixmap.height()) / 2.0)
+        self._base_item.setScale(scale)
+        # 縦横比を保って中央へ収める
+        self._base_item.setPos((self._canvas[0] - pixmap.width() * scale) / 2.0,
+                               (self._canvas[1] - pixmap.height() * scale) / 2.0)
 
     def _on_frame_failed(self, job_id):
         if job_id != self._frame_job:
@@ -385,20 +409,34 @@ class PreviewPanel(QWidget):
 
     # 再生ヘッド位置に表示されるオーバーレイだけをシーンへ並べ直す
     def _rebuild_overlays(self):
+        playhead = self._controller.playhead()
+        elements = [e for e in self._controller.timeline.overlay_elements()
+                    if e.contains(playhead)]
+        ids = [e.id for e in elements]
+        # 再生中は、映るオーバーレイの顔ぶれが変わらないかぎり作り直さない
+        # (resolve6 §3-9)。字幕は表示中ずっと同じ見た目のため差は出ない。
+        # 映像オーバーレイの絵は止まるが、作り直すと GUI スレッドで
+        # フレームを同期デコードすることになり再生そのものが引っかかる。
+        if self.is_playing() and ids == self._overlay_ids:
+            return
+        self._overlay_ids = ids
+
         for item in self._overlay_items.values():
             self._scene.removeItem(item)
         self._overlay_items = {}
 
-        playhead = self._controller.playhead()
         selected = set(self._controller.selected_ids())
-        for element in self._controller.timeline.overlay_elements():
-            if not element.contains(playhead):
-                continue
+        for element in elements:
             item = self._make_item(element)
             if item is None:
                 continue
             item.setZValue(element.z_order)
             item.move_finished = self._on_overlay_moved
+            # 大きさの確定も位置と同じ規約で受ける (resolve7 §5.4)。
+            # 再生中は編集を止める既存方針に合わせ、ハンドルを掴めなくする。
+            if hasattr(item, "set_resizable"):
+                item.resize_finished = self._on_overlay_resized
+                item.set_resizable(not self.is_playing())
             self._scene.addItem(item)
             self._overlay_items[element.id] = item
             if element.id in selected:
@@ -415,7 +453,8 @@ class PreviewPanel(QWidget):
             pixmap = self._overlay_pixmap(media, element)
             if pixmap is None or pixmap.isNull():
                 return None
-            return ImageOverlayItem(element, pixmap, self._canvas)
+            return ImageOverlayItem(element, pixmap, self._canvas,
+                                    overlay_cfg=self._controller.cfg["overlay"])
         except Exception:  # noqa: BLE001 (描画失敗で画面を落とさない)
             _logger.exception("オーバーレイの生成に失敗しました: %s", element.id)
             return None
@@ -455,6 +494,10 @@ class PreviewPanel(QWidget):
         x, y = pixel_to_normalized(center_x, center_y, *self._canvas)
         self._controller.move_overlay(clip_id, x, y)
 
+    # ハンドルのドラッグ確定 → コマンドを積む (resolve7 §5.4)
+    def _on_overlay_resized(self, clip_id, scale):
+        self._controller.resize_overlay(clip_id, scale)
+
     # プレビュー上の右クリックメニュー (削除 / レイヤー / §6.5-2)
     def show_context_menu(self, global_pos, scene_pos):
         item = self._scene.itemAt(scene_pos, self._view.transform())
@@ -475,6 +518,19 @@ class PreviewPanel(QWidget):
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_DOWN))
         layer.addAction("最背面",
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_BOTTOM))
+        # 大きさ (画像・動画オーバーレイのみ / resolve7 §5.4)。
+        # 字幕の大きさはインスペクタの「サイズ」(フォントサイズ) で変えるため出さない。
+        if hasattr(item, "set_resizable"):
+            size_menu = menu.addMenu("大きさ")
+            native = native_scale(self._controller.timeline,
+                                  self._controller.timeline.clip_by_id(clip_id))
+            action = size_menu.addAction(
+                "原寸", lambda: self._controller.resize_overlay(clip_id, native))
+            action.setEnabled(native is not None)
+            size_menu.addAction(
+                "50%", lambda: self._controller.resize_overlay(clip_id, 0.5))
+            size_menu.addAction(
+                "100%（画面幅）", lambda: self._controller.resize_overlay(clip_id, 1.0))
         menu.exec(global_pos)
 
     # ------------------------------------------------------------------
@@ -506,6 +562,11 @@ class PreviewPanel(QWidget):
         elif rate < 0:
             self._play_backward(-rate)
 
+    # 起動用チャンクの長さ (秒)。本チャンクより長くはしない (resolve6 §3-6 R3)
+    def _startup_chunk_sec(self):
+        return min(float(self._cfg["audio_startup_chunk_sec"]),
+                   float(self._cfg["audio_chunk_sec"]))
+
     # 前進再生 (通常・倍速とも。速度だけが違う)
     def _play_forward(self, rate):
         if self._player is None:
@@ -517,13 +578,16 @@ class PreviewPanel(QWidget):
 
         self._pending_rate = rate
         start = self._controller.playhead()
-        hit = self._audio_source.cached(start, self._cfg["audio_chunk_sec"])
+        # 手元の音声で「すぐ鳴らせるか」だけを見る。チャンク長ぶんの被覆を求めると
+        # 終わり際で毎回作り直しになるため (resolve6 §2.2(b))。続きは終端で継ぐ。
+        startup = self._startup_chunk_sec()
+        hit = self._audio_source.cached(start, startup)
         if hit is not None:
             self._start_playback(*hit)
             return
-        # チャンクが無い → 生成してから再生する
+        # チャンクが無い → まず短いチャンクを作って鳴らし、続けて本チャンクを先読みする
         self.set_status("音声を準備中…")
-        self._request_chunk(start)
+        self._request_chunk(start, length_sec=startup, follow_full=True)
 
     # 倍速逆再生 (音声なし / resolve2 §5.6-3)
     # QMediaPlayer は負の再生レートに対応していないため、QTimer で再生ヘッドを戻す。
@@ -548,15 +612,21 @@ class PreviewPanel(QWidget):
         self._controller.set_playhead(target)
 
     # 音声チャンクの生成を依頼する
-    # autoplay=True  : 生成できたらその場から再生を始める
-    # autoplay=False : 先読み。生成するだけで再生位置は動かさない
-    def _request_chunk(self, start_sec, autoplay=True):
+    # autoplay=True    : 生成できたらその場から再生を始める
+    # autoplay=False   : 先読み。生成するだけで再生位置は動かさない
+    # length_sec       : 生成する長さ (未指定は本チャンク長)
+    # follow_full=True : 完了後に同じ位置から本チャンクを先読みする (起動用チャンク)
+    def _request_chunk(self, start_sec, autoplay=True, length_sec=None,
+                       follow_full=False):
         self._audio_job += 1
         if autoplay:
             self._autoplay_job = self._audio_job
+        if follow_full:
+            self._follow_full_job = self._audio_job
         self._audio_worker = _AudioWorker(
             self._audio_source, self._audio_job, start_sec,
-            self._cfg["audio_chunk_sec"], parent=self)
+            self._cfg["audio_chunk_sec"] if length_sec is None else length_sec,
+            parent=self)
         self._audio_worker.chunk_ready.connect(self._on_chunk_ready)
         self._audio_worker.chunk_failed.connect(self._on_chunk_failed)
         self._audio_worker.start()
@@ -565,14 +635,17 @@ class PreviewPanel(QWidget):
         if job_id != self._audio_job:
             return
         self.set_status("")
+        follow_full = job_id == self._follow_full_job
         # 先読みで作っただけのチャンクでは再生位置を動かさない
         # (動かすと再生が数秒先へ飛んでしまう)
-        if job_id != self._autoplay_job:
-            return
-        # 生成待ちの間に停止された場合は再生を始めない
-        if not self._pending_rate:
-            return
-        self._start_playback(path, chunk_start)
+        if job_id == self._autoplay_job:
+            # 生成待ちの間に停止された場合は再生を始めない
+            if not self._pending_rate:
+                return
+            self._start_playback(path, chunk_start)
+        # 起動用の短いチャンクで鳴らし始めたら、続きを本チャンクとして先読みしておく
+        if follow_full and self.is_playing():
+            self._request_chunk(chunk_start, autoplay=False)
 
     def _on_chunk_failed(self, job_id):
         if job_id != self._audio_job:
@@ -635,7 +708,32 @@ class PreviewPanel(QWidget):
         if not playing:
             self.set_status("")
         if playing != was_playing:
+            # 再生中だけ画質を落とす (resolve6 §3-6 R6/R7)
+            self._frame_source.set_playing(playing)
+            if not playing:
+                # 止めた瞬間に原寸で取り直し、鮮明な絵へ戻す
+                self._request_frame()
+                self._rebuild_overlays()
+            # 再生中は大きさ変更ハンドルを掴ませない (resolve7 §5.4)
+            for item in self._overlay_items.values():
+                if hasattr(item, "set_resizable"):
+                    item.set_resizable(not playing)
             self.playing_changed.emit(playing)
+
+    # 画面を開いた直後に先頭の音声を先読みしておく (アーカイブ用に効く / resolve6 §5.9)
+    # 再生中・生成済みのときは何もしない。
+    def prefetch_initial(self):
+        if not self._cfg.get("audio_prefetch_on_open", True):
+            return
+        if self._player is None or self.is_playing():
+            return
+        start = self._controller.playhead()
+        if self._audio_source.cached(start, self._startup_chunk_sec()) is not None:
+            return
+        if self._audio_worker is not None and self._audio_worker.isRunning():
+            return
+        self._request_chunk(start, autoplay=False,
+                            length_sec=self._startup_chunk_sec())
 
     # 音声位置がマスタークロック。ここから再生ヘッドを進める。
     def _on_audio_position(self, position_ms):
@@ -679,16 +777,23 @@ class PreviewPanel(QWidget):
             rate = self._rate
             self._controller.set_playhead(next_start)
             self._pending_rate = rate
-            hit = self._audio_source.cached(next_start, self._cfg["audio_chunk_sec"])
+            # 先読み済みの本チャンクへ継ぐ (被覆判定は起動用の長さで足りる / resolve6 §5.6)
+            hit = self._audio_source.cached(next_start, self._startup_chunk_sec())
             if hit is not None:
                 self._start_playback(*hit)
             else:
-                self._request_chunk(next_start)
+                self._request_chunk(next_start, length_sec=self._startup_chunk_sec(),
+                                    follow_full=True)
 
     def _on_audio_error(self, error, error_string):
         if _MULTIMEDIA_AVAILABLE and error == QMediaPlayer.NoError:
             return
         _logger.warning("プレビュー音声の再生エラー: %s", error_string)
+        # スクラブ中は「再生」ではないため、失敗しても無音タイマー再生を始めない
+        # (再生ヘッドが勝手に進んでしまう / resolve7 §2.5.2)
+        if self._controller.is_scrubbing():
+            self.set_status("この位置の音声を再生できません")
+            return
         self.set_status("音声を再生できません (無音で再生します)")
         self._start_silent_playback()
 
@@ -698,6 +803,103 @@ class PreviewPanel(QWidget):
         muted = not self._audio_output.isMuted()
         self._audio_output.setMuted(muted)
         self.mute_button.setText("🔇" if muted else "🔊")
+
+    # ------------------------------------------------------------------
+    # スクラブ (再生ヘッドドラッグ中の音声 / resolve7 §3-7・§5.13)
+    # ------------------------------------------------------------------
+    # 一定間隔で「今の再生ヘッド位置」へ合わせ直し、その場から等倍で鳴らす。
+    # 動かした量だけ音が進むため、ゆっくり動かせばゆっくり、速く動かせば速く進む。
+    # 音程は変わらず、逆方向へ動かしても「その位置の音」が鳴る。
+
+    # 1 粒ぶんに必要な音の長さ (秒)。この範囲が手元に無ければ鳴らさない。
+    def _grain_sec(self):
+        return max(float(self._cfg["scrub_interval_ms"]) / 1000.0 * 2.0, 0.2)
+
+    # 掴んだ / 離した (TimelineController.scrub_changed)
+    def _on_scrub_changed(self, active):
+        if not self._cfg["scrub_audio_enabled"] or self._player is None:
+            return
+        if active:
+            self.pause()                   # 再生中に掴んだら再生は止める (機器は 1 台)
+            self._scrub_last_sec = None
+            self._scrub_prev_sec = None
+            self._scrub_idle_ms = 0
+            self._scrub_source = None
+            if self._audio_output is not None:
+                self._scrub_volume_backup = self._audio_output.volume()
+                self._audio_output.setVolume(
+                    self._scrub_volume_backup * float(self._cfg["scrub_volume"]))
+            # ドラッグ中は再生中と同じ軽い取得にする (縮小・前進デコード)
+            self._frame_source.set_playing(bool(self._cfg["scrub_low_quality_frames"]))
+            self._scrub_timer.start(int(self._cfg["scrub_interval_ms"]))
+            self._scrub_prepare()          # 手元に無ければ短いチャンクを 1 本要求する
+            return
+        self._scrub_timer.stop()
+        self._player.pause()
+        if self._audio_output is not None and self._scrub_volume_backup is not None:
+            self._audio_output.setVolume(self._scrub_volume_backup)
+        self._scrub_volume_backup = None
+        self._scrub_source = None
+        self.set_status("")
+        self._frame_source.set_playing(False)
+        self._request_frame()              # 離した瞬間に原寸で取り直す (停止時と同じ扱い)
+
+    # 1 粒ぶんの処理 (既定 60ms ごと)
+    def _scrub_tick(self):
+        # 保険: 画面外で離した等で mouseReleaseEvent が来なかった場合に自分で終わる
+        if not (QApplication.mouseButtons() & Qt.LeftButton):
+            self._controller.end_scrub()
+            return
+
+        sec = self._controller.playhead()
+        moved = (self._scrub_last_sec is None
+                 or abs(sec - self._scrub_last_sec)
+                 >= float(self._cfg["scrub_min_delta_sec"]))
+        if not moved:
+            # 掴んだまま止めている間は黙る (同じ 60ms をループさせない)
+            self._scrub_idle_ms += int(self._cfg["scrub_interval_ms"])
+            if self._scrub_idle_ms >= int(self._cfg["scrub_hold_ms"]):
+                self._player.pause()
+            return
+        self._scrub_idle_ms = 0
+        self._scrub_last_sec = sec
+
+        hit = self._audio_source.cached(sec, self._grain_sec())
+        if hit is None:
+            # 手元に無い区間 → 嘘の位置を鳴らさず黙って用意する
+            self._player.pause()
+            self._scrub_prepare()
+            return
+        path, chunk_start = hit
+        if path != self._scrub_source:     # チャンクが替わったときだけ差し替える
+            self._player.setSource(QUrl.fromLocalFile(path))
+            self._scrub_source = path
+            self._chunk_start = float(chunk_start)
+        self._player.setPosition(int(max(sec - self._chunk_start, 0.0) * 1000))
+        self._player.setPlaybackRate(self._scrub_rate(sec))
+        if self._player.playbackState() != QMediaPlayer.PlayingState:
+            self._player.play()
+
+    # 粒の再生速度。既定 "grain" は等倍 (音程が変わらない)。
+    # "match" はドラッグ速度へ合わせる (音程が変わる / 環境により無音になり得る)。
+    def _scrub_rate(self, sec):
+        if str(self._cfg["scrub_rate_mode"]) != "match":
+            self._scrub_prev_sec = sec
+            return 1.0
+        previous = self._scrub_prev_sec
+        self._scrub_prev_sec = sec
+        if previous is None:
+            return 1.0
+        speed = abs(sec - previous) / (float(self._cfg["scrub_interval_ms"]) / 1000.0)
+        return min(max(speed, 0.5), 2.0)   # 環境依存を避けるため範囲を絞る
+
+    # スクラブ用に短いチャンクを 1 本だけ用意する (同時要求は 1 本まで / §3-8)
+    def _scrub_prepare(self):
+        if self._audio_worker is not None and self._audio_worker.isRunning():
+            return
+        self.set_status("音声を準備中…")
+        self._request_chunk(self._controller.playhead(), autoplay=False,
+                            length_sec=float(self._cfg["scrub_chunk_sec"]))
 
     # ------------------------------------------------------------------
     # 高精度プレビュー (§6.4-4)
@@ -760,6 +962,8 @@ class PreviewPanel(QWidget):
 
     # 画面クローズ時に必ず呼ぶ (再生停止・スレッド終了・一時ファイル削除)
     def shutdown(self):
+        self._scrub_timer.stop()
+        self._controller.end_scrub()
         self.pause()
         if self._player is not None:
             self._player.stop()

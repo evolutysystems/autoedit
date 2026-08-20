@@ -8,6 +8,7 @@
 #
 # 区間抽出・連結・ASS 生成・焼き込みは既存資産をそのまま使う (§4-3)。
 # FFmpeg 実行はすべて ffmpeg_runner.execute (= run_ffmpeg_progress) を経由する。
+import math
 import os
 
 from ..exceptions import InputError, TimelineError
@@ -52,6 +53,10 @@ def render(timeline, context):
     # ── Step 2 / 3: オーバーレイ合成と字幕焼き込み
     result_path = _render_overlays_and_subtitles(
         timeline, context, base_path, cfg, ffmpeg_cfg)
+
+    # ── Step 3.5: 焼き込みもオーバーレイも走らなかった場合の最終化 (resolve3 §5.5)
+    # 焼き込みを通っていれば既に mp4/AAC なので、その場合は何もしない。
+    result_path = _finalize_base(timeline, context, result_path, ffmpeg_cfg)
     context.set_current_video_path(result_path)
     return result_path
 
@@ -62,28 +67,76 @@ def render(timeline, context):
 
 # V1 のクリップ列とギャップから、レンダリング単位のセグメント列を作る
 # gap_policy="black" のときだけギャップを黒+無音のセグメントとして挟む。
+# frame_quantize=True のときは各セグメントの尺を「終端フレーム − 開始フレーム」で決める
+# (20260812 resolve3 §3-2)。絶対フレーム番号の差を取るため丸め誤差が累積しない。
 def _build_segments(timeline, cfg):
     segments = []
     gap_policy = cfg["render"]["gap_policy"]
+    quantize = cfg["render"]["frame_quantize"]
     cursor = 0.0
+    cursor_frame = 0            # 直前セグメントの終端 (フレーム番号)
     for clip in timeline.base_clips():
         gap = clip.timeline_start - cursor
+        start_frame = timeline.to_frames(clip.timeline_start)
         if gap > _MIN_RENDER_SEC and gap_policy == "black":
-            segments.append({"kind": "gap", "duration": gap})
-        segments.append({"kind": "clip", "clip": clip})
+            segments.append({
+                "kind": "gap",
+                "duration": _tile_duration(
+                    timeline, cursor_frame, start_frame, gap, quantize),
+            })
+            cursor_frame = start_frame
+        end_frame = timeline.to_frames(clip.timeline_end)
+        segments.append({
+            "kind": "clip",
+            "clip": clip,
+            "duration": _tile_duration(
+                timeline, start_frame, end_frame, clip.duration, quantize),
+        })
         cursor = clip.timeline_end
+        cursor_frame = end_frame
     return segments
+
+
+# セグメントの尺を求める
+# quantize=False なら従来どおりモデルの秒をそのまま使う (切り戻し経路)。
+# quantize=True なら絶対フレーム番号の差で決めるため、部品を何本並べても誤差が積み上がらない
+# (全体の誤差は最大でも半フレーム = 60fps で 8.3ms)。
+# ※ gap_policy="close" で空白を詰める場合はクリップ単体の尺だけが量子化される。
+def _tile_duration(timeline, start_frame, end_frame, raw_duration, quantize):
+    if not quantize:
+        return raw_duration
+    frames = max(end_frame - start_frame, 1)
+    return timeline.from_frames(frames)
+
+
+# -t (尺) へ渡す文字列を作る (20260812 resolve3 §5.3)
+# フレーム境界は有限小数で表せない (60fps の 1 フレーム = 0.016666... 秒)。
+# 四捨五入して境界より 1 マイクロ秒でも上へ寄せると、FFmpeg は次のフレームまで書いてしまい
+# **映像だけが 1 フレーム長くなる**。concat デマルチプレクサは長い方 (=映像) の尺で次の
+# ファイルを配置するため、その 1 フレームぶん音声に穴が空き、部品数ぶん累積する
+# (実測: -t 5.016667 → 映像 302 フレーム / -t 5.016666 → 映像 301 フレーム・音声と完全一致)。
+# したがって必ず切り捨てて境界の内側へ寄せる。切り捨て幅は 1 マイクロ秒未満のため、
+# 音声のサンプル数は目標値へ丸められて映像と一致する。
+def _duration_arg(duration):
+    micro = max(math.floor(float(duration) * 1_000_000), 0)
+    return f"{micro // 1_000_000}.{micro % 1_000_000:06d}"
 
 
 # ベース映像を構築する
 def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
     segments = _build_segments(timeline, cfg)
     work_dir = context.working_dir
-    output_path = context.allocate_intermediate("timeline_base.mp4")
 
-    total = sum(
-        s["duration"] if s["kind"] == "gap" else s["clip"].duration for s in segments
-    ) or 1.0
+    # 中間パートの音声コーデックと容器 (20260812 resolve3 §3-1)。
+    # 部品を AAC で書くとエンコーダ遅延 (1024 サンプル = 21.3ms) が 1 部品ごとに尺へ乗り、
+    # concat デマルチプレクサの連結で部品数ぶん累積してテロップが先行する。
+    # 既定は非圧縮 (pcm_s16le) とし、AAC 化は焼き込み / 最終化の 1 回だけにする。
+    audio_codec = cfg["render"]["intermediate_audio_codec"]
+    suffix = ffmpeg_runner.intermediate_suffix(
+        audio_codec, cfg["render"]["intermediate_container"])
+    output_path = context.allocate_intermediate(f"timeline_base{suffix}")
+
+    total = sum(s["duration"] for s in segments) or 1.0
     on_progress = context.progress_subcallback("ベース映像構築")
 
     gap_count = sum(1 for s in segments if s["kind"] == "gap")
@@ -96,19 +149,20 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
     done = 0.0
     try:
         for index, segment in enumerate(segments):
-            part_path = os.path.join(work_dir, f"tl_part_{index:05d}.mp4")
-            duration = (segment["duration"] if segment["kind"] == "gap"
-                        else segment["clip"].duration)
+            part_path = os.path.join(work_dir, f"tl_part_{index:05d}{suffix}")
+            duration = segment["duration"]
 
             def _part_progress(ratio, _kv, _base=done, _dur=duration):
                 if on_progress is not None:
                     on_progress((_base + ratio * _dur) / total, _kv)
 
             if segment["kind"] == "gap":
-                _render_gap(timeline, duration, part_path, ffmpeg_cfg, _part_progress)
+                _render_gap(timeline, duration, part_path, ffmpeg_cfg, _part_progress,
+                            audio_codec)
             else:
                 _extract_clip(timeline, segment["clip"], part_path,
-                              cfg, ffmpeg_cfg, _part_progress, fade_sec)
+                              cfg, ffmpeg_cfg, _part_progress, fade_sec,
+                              duration, audio_codec)
             part_paths.append(part_path)
             done += duration
 
@@ -119,6 +173,7 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
         )
         if on_progress is not None:
             on_progress(1.0, {})
+        _verify_base_duration(output_path, total, len(segments), ffmpeg_cfg)
     finally:
         for path in part_paths:
             if os.path.exists(path):
@@ -130,31 +185,51 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
     return output_path
 
 
+# 連結後のベース映像の実尺とモデル尺を突き合わせる (20260812 resolve3 §5.6)
+# 1 フレームを超える差はタイムスタンプの累積ずれを疑うべき兆候として WARNING に残す。
+# 計測に失敗しても書き出しは止めない (照合はあくまで再発検知のため)。
+def _verify_base_duration(output_path, total, segment_count, ffmpeg_cfg):
+    try:
+        actual = ffmpeg_runner.probe_duration(output_path, ffmpeg_cfg)
+    except Exception:  # noqa: BLE001 (計測失敗で書き出しを止めない)
+        _logger.debug("ベース映像の尺照合に失敗しました (処理は続行します)", exc_info=True)
+        return
+    tolerance = 1.0 / ffmpeg_runner.get_output_fps(ffmpeg_cfg)
+    diff = actual - total
+    log = _logger.warning if abs(diff) > tolerance else _logger.info
+    log("ベース映像の尺: モデル %.3fs / 実測 %.3fs (差 %+.3fs / %d 部品)",
+        total, actual, diff, segment_count)
+
+
 # クリップ 1 件を抽出して中間ファイル化する
 # 素材の規格がキャンバスと一致する場合、生成されるコマンドは
 # silence_cutter.extract_segment と実質同一 (CFR 固定・入力シーク) になる。
 # OP/ED や D&D 素材など規格が異なる場合だけ正規化チェーンを挟む (§8.2)。
-def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_sec=0.0):
+# duration: レンダリング上の尺 (フレームタイル化した値 / None ならモデルの尺をそのまま使う)
+# audio_codec: 中間ファイル用の音声コーデック (None なら setting.json の ffmpeg.audio_codec)
+def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_sec=0.0,
+                  duration=None, audio_codec=None):
     media = timeline.media_by_id(clip.media_id)
     if media is None or not media.path or not os.path.exists(media.path):
         raise TimelineError(f"素材が見つかりません: {clip.media_id}")
 
-    duration = clip.duration
+    duration = clip.duration if duration is None else duration
     if duration <= _MIN_RENDER_SEC:
         raise InputError(f"クリップ尺が不正です: {clip.id} ({duration:.3f}s)")
 
     fps = ffmpeg_runner.get_output_fps(ffmpeg_cfg)
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
 
+    # 尺は _duration_arg で切り捨てて渡す (フレーム境界の丸め上げを避ける / resolve3 §5.3)
     cmd = [ffmpeg, "-y", "-hide_banner"]
     if media.is_image():
         # 静止画はループ入力で指定尺ぶんの映像にする
-        cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{duration:.3f}",
+        cmd += ["-loop", "1", "-framerate", str(fps), "-t", _duration_arg(duration),
                 "-i", media.path]
     else:
         # -ss を -i の前に置き、対象区間付近のみをデコードする (高速シーク)
         cmd += ["-ss", f"{clip.source_in:.3f}", "-i", media.path,
-                "-t", f"{duration:.3f}"]
+                "-t", _duration_arg(duration)]
 
     # 音声を持たない素材 / ミュート指定には無音を合成し、映像と同尺の音声を必ず持たせる
     audio_clip = timeline.audio_clip_for(clip.id)
@@ -162,10 +237,10 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
     needs_silence = media.is_image() or not media.has_audio or muted or audio_clip is None
     if needs_silence:
         sample_rate = ffmpeg_cfg.get("audio_sample_rate", 48000)
-        cmd += ["-f", "lavfi", "-t", f"{duration:.3f}",
+        cmd += ["-f", "lavfi", "-t", _duration_arg(duration),
                 "-i", f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}"]
 
-    video_filters = _video_filters(timeline, media, clip, fps, fade_sec)
+    video_filters = _video_filters(timeline, media, clip, fps, fade_sec, duration)
     audio_filters = [] if needs_silence else _audio_filters(audio_clip)
 
     if video_filters:
@@ -180,7 +255,7 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
         cmd += ["-map", "0:v:0", "-map", "0:a:0"]
 
     cmd += [
-        *ffmpeg_runner.build_encode_options(ffmpeg_cfg),
+        *ffmpeg_runner.build_intermediate_encode_options(ffmpeg_cfg, audio_codec),
         "-fps_mode", "cfr",                 # 可変フレームレートを固定化
         "-r", str(fps),
         "-ar", str(ffmpeg_cfg.get("audio_sample_rate", 48000)),
@@ -198,7 +273,7 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
 
 # クリップの映像フィルタを組み立てる (正規化 + フェード)
 # 正規化チェーンの内容は concat_processor.concat と同一にする (§8.2)。
-def _video_filters(timeline, media, clip, fps, fade_sec):
+def _video_filters(timeline, media, clip, fps, fade_sec, duration=None):
     filters = []
     if needs_normalize(media, timeline.width, timeline.height, fps):
         filters.append(
@@ -211,8 +286,10 @@ def _video_filters(timeline, media, clip, fps, fade_sec):
         _warn_normalize_once(media, timeline, fps)
 
     # 無音カットのフェード設定 (render() が settings から解決して渡す / §8.2)
-    if fade_sec > 0 and clip.duration > fade_sec * 2:
-        fade_out_start = clip.duration - fade_sec
+    # フェードアウトの開始位置は実際に書き出す尺を基準にする (resolve3 §5.3)
+    duration = clip.duration if duration is None else duration
+    if fade_sec > 0 and duration > fade_sec * 2:
+        fade_out_start = duration - fade_sec
         filters.append(f"fade=t=in:st=0:d={fade_sec}")
         filters.append(f"fade=t=out:st={fade_out_start:.3f}:d={fade_sec}")
     return filters
@@ -242,17 +319,17 @@ def _warn_normalize_once(media, timeline, fps):
 
 
 # ギャップ (削除で残した空白) を黒 + 無音のセグメントとして生成する (§8.2)
-def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress):
+def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress, audio_codec=None):
     fps = ffmpeg_runner.get_output_fps(ffmpeg_cfg)
     sample_rate = ffmpeg_cfg.get("audio_sample_rate", 48000)
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
     cmd = [
         ffmpeg, "-y", "-hide_banner",
-        "-f", "lavfi", "-t", f"{duration:.3f}",
+        "-f", "lavfi", "-t", _duration_arg(duration),
         "-i", f"color=c=black:s={timeline.width}x{timeline.height}:r={fps}",
-        "-f", "lavfi", "-t", f"{duration:.3f}",
+        "-f", "lavfi", "-t", _duration_arg(duration),
         "-i", f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}",
-        *ffmpeg_runner.build_encode_options(ffmpeg_cfg),
+        *ffmpeg_runner.build_intermediate_encode_options(ffmpeg_cfg, audio_codec),
         "-fps_mode", "cfr", "-r", str(fps),
         "-ar", str(sample_rate), "-ac", "2",
         "-pix_fmt", "yuv420p",
@@ -264,6 +341,40 @@ def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress):
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
     )
     return out_path
+
+
+# ------------------------------------------------------------------
+# Step 3.5: 中間形式のままの成果物を最終形式へ直す (§5.5)
+# ------------------------------------------------------------------
+
+# 焼き込みもオーバーレイも無いとき、中間形式 (PCM/.mov) を最終形式 (mp4/AAC) へ直す
+# (20260812 resolve3 §5.5)。後段の output_writer.finalize / clip_writer._copy_individual は
+# 成果物を .mp4 名へ移動・複製するため、中間形式のまま返すと破綻する。
+# 映像は再エンコードせずコピーし、音声だけ setting.json どおり (既定 aac) へ変換する。
+def _finalize_base(timeline, context, video_path, ffmpeg_cfg):
+    if os.path.splitext(video_path)[1].lower() == ".mp4":
+        return video_path           # 焼き込み済み / 中間も mp4 の設定なら何もしない
+
+    output_path = context.allocate_intermediate("timeline_final.mp4")
+    sample_rate = ffmpeg_cfg.get("audio_sample_rate", 48000)
+    ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
+    total_duration = timeline.duration_sec()
+    _logger.info("中間形式を最終形式へ変換: %s → mp4 (音声のみ再エンコード)",
+                 os.path.splitext(video_path)[1] or "?")
+    cmd = [
+        ffmpeg, "-y", "-hide_banner",
+        "-i", video_path,
+        "-c:v", "copy",
+        "-c:a", ffmpeg_cfg.get("audio_codec", "aac"),
+        "-ar", str(sample_rate), "-ac", "2",
+        output_path,
+    ]
+    ffmpeg_runner.execute(
+        cmd, total_duration=total_duration,
+        on_progress=context.progress_subcallback("最終化"),
+        progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+    )
+    return output_path
 
 
 # ------------------------------------------------------------------

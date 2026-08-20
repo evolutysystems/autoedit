@@ -4,7 +4,11 @@
 #
 # 現行の字幕編集画面 (SubtitleEditorDialog) は削除せず残してあり、
 # setting.json の timeline.enabled=false でそちらへ戻せる (R2)。
-from PySide6.QtCore import QObject, Qt, Signal
+import os
+import shutil
+from datetime import datetime
+
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -12,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -25,11 +30,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...exceptions import TimelineError
 from ...export import resolve_export
+from ...settings.settings_window import save_settings
+from ...timeline import media_sidecar, project_io
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
-from .. import theme
+from ...version import __version__
+from .. import project_thumbnail, theme
+from ..color_field import ColorField
 from ..subtitle_editor_dialog import RESOLVE_EXPORT_BUTTON_TEXT, run_resolve_export
+from .preview_items import native_scale
 from .preview_panel import PreviewPanel
 from .timeline_controller import TimelineController
 from .timeline_view import TimelinePanel, format_time_precise
@@ -51,27 +62,46 @@ class TimelineEditorDialog(QDialog):
     # settings      : setting.json
     # work_dir      : プレビュー用一時ファイルの置き場 (PipelineContext.working_dir)
     # asr_audio_path: 認識用に生成済みの音声 (プレビュー初回再生に再利用する / §6.4-5)
-    def __init__(self, timeline, settings, work_dir, asr_audio_path=None, parent=None):
+    # project_path  : 保存先のプロジェクトファイル (未保存なら None / resolve7 §5.7)
+    # created_at    : 読み込んだプロジェクトの初回作成時刻 (上書き保存で引き継ぐ)
+    # mode          : "pipeline" (パイプラインの途中) / "resume" (保存済みを開き直した)
+    def __init__(self, timeline, settings, work_dir, asr_audio_path=None, parent=None,
+                 project_path=None, created_at=None, mode="pipeline"):
         super().__init__(parent)
         self.setWindowTitle("Timeline 編集")
         self._timeline = timeline
         self._settings = settings
+        self._project_path = project_path or None
+        self._created_at = created_at or None
+        self._mode = str(mode or "pipeline")
         # 背景グラデーションを敷く (この上に Timeline の半透明な下地が乗る / resolve3 §3-2)
         theme.install_window_background(self)
 
         self.controller = TimelineController(timeline, settings, parent=self)
         ui_cfg = self.controller.cfg["ui"]
+        self._project_cfg = self.controller.cfg["project"]
+        # 保存 UI を出すか (アーカイブ用は素材が一時ファイルのため出さない / resolve7 §3-6)
+        self._save_enabled = (self._project_save_enabled()
+                              and bool(self._project_cfg["save_button"]))
         self.resize(ui_cfg["window_width"], ui_cfg["window_height"])
 
         self._build_ui(work_dir, asr_audio_path, ui_cfg)
         self._register_shortcuts()
+        # 自動保存 (timeline.autosave_sec > 0 のときだけ動く / resolve7 §5.9)
+        self._autosave_timer = None
+        self._start_autosave()
+
+        # 起動用音声の先読みを 1 回だけ行うための印 (resolve6 §5.9)
+        self._prefetched = False
 
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.timeline_changed.connect(self._on_timeline_changed)
+        self.controller.saved_state_changed.connect(self._update_window_title)
         self.preview.playing_changed.connect(self._on_playing_changed)
         # Timeline 側で実行できなかった操作の案内をプレビュー下へ出す
         self.timeline_panel.view.status_message.connect(self.preview.set_status)
         self._on_selection_changed(None)
+        self._update_window_title()
 
     # ------------------------------------------------------------------
     # 画面構築 (§5.2)
@@ -98,7 +128,15 @@ class TimelineEditorDialog(QDialog):
         ratio = float(ui_cfg["split_ratio"])
         self._splitter.setStretchFactor(0, max(int(ratio * 100), 1))
         self._splitter.setStretchFactor(1, max(int((1 - ratio) * 100), 1))
-        root.addWidget(self._splitter, 1)
+
+        # 主要部 (プレビュー・インスペクタ・Timeline) を 1 つの器へまとめてから置く。
+        # 派生画面がこの器を包んだり (_wrap_content)、上へ行を足したり
+        # (content.layout().insertWidget(0, …)) できるようにするため (resolve5 §5.5)。
+        self.content = QWidget()
+        content_layout = QVBoxLayout(self.content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self._splitter, 1)
+        root.addWidget(self._wrap_content(self.content), 1)
 
         # 下部ボタン
         button_row = QHBoxLayout()
@@ -112,6 +150,24 @@ class TimelineEditorDialog(QDialog):
         button_row.addWidget(self.redo_button)
         button_row.addStretch(1)
 
+        # プロジェクトの保存 (resolve7 §5.7)。保存できる画面 = 開ける画面に限る。
+        self.save_button = None
+        self.save_as_button = None
+        if self._save_enabled:
+            self.save_button = QPushButton("保存")
+            self.save_button.setAutoDefault(False)
+            self.save_button.setToolTip(
+                "現在の Timeline をプロジェクトファイルへ保存します (Ctrl+S)\n"
+                "保存したものは main_window の「編集の続き」から開き直せます")
+            self.save_button.clicked.connect(lambda: self.save_project())
+            button_row.addWidget(self.save_button)
+
+            self.save_as_button = QPushButton("名前を付けて保存...")
+            self.save_as_button.setAutoDefault(False)
+            self.save_as_button.setToolTip("保存先を選んで保存します (Ctrl+Shift+S)")
+            self.save_as_button.clicked.connect(lambda: self.save_project(ask=True))
+            button_row.addWidget(self.save_as_button)
+
         # DaVinci Resolve 出力 (既存ボタンをそのまま流用する / resolve20)
         self.export_button = None
         if resolve_export.is_enabled(self._settings):
@@ -124,7 +180,7 @@ class TimelineEditorDialog(QDialog):
 
         # 「決定」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する破壊的動作
         # として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)
-        self.decide_button = QPushButton("決定")
+        self.decide_button = QPushButton(self._decide_button_text())
         # 既定ボタンにしない: Enter / Space の取りこぼしで書き出しが始まると
         # 長い処理が意図せず走ってしまうため、必ずクリックで実行させる。
         self.decide_button.setAutoDefault(False)
@@ -140,6 +196,50 @@ class TimelineEditorDialog(QDialog):
         root.addLayout(button_row)
 
         self._update_history_buttons()
+
+    # ------------------------------------------------------------------
+    # 派生画面向けのフック (resolve5 §5.5)
+    # 既定は現行の画面と完全に同じ結果になる値を返す。
+    # ------------------------------------------------------------------
+
+    # 主要部を包む器を返す。アーカイブ用はここで QMainWindow に包み、
+    # 採点グラフをドックとして載せる (resolve5 §3-7)。
+    def _wrap_content(self, content):
+        return content
+
+    # 決定ボタンの文言。アーカイブ用は「完了（切り抜き＋字幕焼き込み）」にする。
+    def _decide_button_text(self):
+        return "決定"
+
+    # プロジェクトの保存 UI を出すか。
+    # resolve7 §3-6 ではアーカイブ用を False にしていたが、resolve9 で素材の復旧
+    # (VOD からの切り直し + 音声サイドカー) を用意したため両方 True になった。
+    def _project_save_enabled(self):
+        return True
+
+    # プロジェクトの種別 ("clip" / "archive" / resolve9 §3-4)。
+    # 履歴の積み先 (recent / recent_archive) と一覧の絞り込みに使う。
+    def _project_kind(self):
+        return project_io.KIND_CLIP
+
+    # 保存先の既定パス。アーカイブ用は元動画名の後ろへ ".archive" を挟み、
+    # 同じ元動画から作ったクリップ用と名前が衝突しないようにする (resolve9 §3-5)。
+    def _default_project_path(self):
+        return project_io.default_project_path(
+            self._settings,
+            (self.controller.timeline.source or {}).get("input_path", ""))
+
+    # ウィンドウタイトルの見出し (保存対応の画面はこの後ろへプロジェクト名を出す)
+    def _title_base(self):
+        return "Timeline 編集"
+
+    # keep_media / keep_audio の対象になる素材を返す (resolve9 §5.4)。
+    # 既定は本編素材 1 件。アーカイブ用は V1 が参照する全メディアを返す。
+    def _media_to_copy(self):
+        timeline = self.controller.timeline
+        source = timeline.source or {}
+        media = timeline.media_by_id(str(source.get("media_id", "") or ""))
+        return [media] if media is not None else []
 
     # ------------------------------------------------------------------
     # ショートカット (§6.6 / §6.7)
@@ -199,6 +299,10 @@ class TimelineEditorDialog(QDialog):
         bind("zoom_in", lambda: self.controller.zoom_by(1.25))
         bind("zoom_in_alt", lambda: self.controller.zoom_by(1.25))
         bind("zoom_out", lambda: self.controller.zoom_by(1 / 1.25))
+        # 保存 (resolve7 §5.7)。保存 UI を出さない画面では割り当てない。
+        if self._save_enabled:
+            bind("save", lambda: self.save_project())
+            bind("save_as", lambda: self.save_project(ask=True))
 
         self._shortcut_guard = _ShortcutGuard(registered, self)
 
@@ -257,9 +361,23 @@ class TimelineEditorDialog(QDialog):
     # 状態変化
     # ------------------------------------------------------------------
 
+    # 画面が出た直後に先頭の音声を先読みしておく (resolve6 §5.9)。
+    # 認識用音声を再利用できるクリップ用では何も起きない (既に手元にあるため)。
+    # アーカイブ用は再利用が効かないので、ここで作っておくと ▶ の待ちが消える。
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._prefetched:
+            return
+        self._prefetched = True
+        try:
+            self.preview.prefetch_initial()
+        except Exception:  # noqa: BLE001 (先読みの失敗で画面を開けなくしない)
+            _logger.exception("プレビュー音声の先読みに失敗しました (再生時に作り直します)")
+
     def _on_timeline_changed(self):
         self._update_history_buttons()
         self.inspector.refresh()
+        self._update_window_title()
 
     def _on_selection_changed(self, clip):
         self.inspector.show_clip(clip)
@@ -270,6 +388,204 @@ class TimelineEditorDialog(QDialog):
         self.inspector.setEnabled(not playing)
         self.undo_button.setEnabled(not playing and self.controller.can_undo())
         self.redo_button.setEnabled(not playing and self.controller.can_redo())
+
+    # ------------------------------------------------------------------
+    # プロジェクトの保存 (resolve7 §5.7)
+    # ------------------------------------------------------------------
+
+    # 画面のタイトル。保存対応の画面だけ「プロジェクト名 + 未保存の印」を出す。
+    def _update_window_title(self):
+        if not self._save_enabled:
+            return
+        name = (os.path.basename(self._project_path) if self._project_path
+                else "未保存のプロジェクト")
+        mark = "*" if self.controller.is_modified() else ""
+        self.setWindowTitle(f"{self._title_base()} — {name}{mark}")
+
+    # 現在の Timeline をプロジェクトファイルへ書き出す
+    # path 省略時は現在のプロジェクトパス、それも無ければ既定のパスを使う。
+    # 戻り値: 保存できたら True (失敗しても画面は閉じない / 閉じる確認からも使うため)
+    def save_project(self, path=None, ask=False):
+        target = path or self._project_path or self._default_project_path()
+        if ask:
+            suffix = self.controller.cfg["project_suffix"]
+            target, _ = QFileDialog.getSaveFileName(
+                self, "Timeline を保存", target,
+                f"Timeline プロジェクト (*{suffix});;すべてのファイル (*)")
+            if not target:
+                return False
+        if self._created_at is None:
+            # 初回保存の時刻を覚え、2 回目以降の上書きで作成時刻が動かないようにする
+            self._created_at = datetime.now().isoformat(timespec="seconds")
+        if self._project_cfg["keep_media"]:
+            # 素材の複製は JSON を書く前に行う (複製先を指した状態で書き出すため)
+            self._copy_media_beside_project(target)
+        elif self._project_cfg["keep_audio"]:
+            # 正規化済みの音声だけ残す (resolve9 §3-1 案D)。映像は開くときに
+            # 元動画から切り直すため、これだけで復元が数分から数十秒になる。
+            self._export_audio_sidecars(target)
+        try:
+            # 初回作成時刻は引き継ぐ (上書きのたびに created_at が変わらないように)
+            project_io.save(self.controller.timeline, target,
+                            generator=f"Stretheus {__version__}",
+                            created_at=self._created_at, project_path=target)
+        except (TimelineError, OSError) as e:
+            QMessageBox.warning(self, "保存できません", str(e))
+            return False
+        self._project_path = target
+        self.controller.mark_saved()
+        self._update_window_title()
+        self._remember_recent(target)
+        # 本体へ保存できた時点で自動保存ファイルは役目を終える
+        self._discard_autosave()
+        # 一覧に出すサムネイル (失敗しても保存は成功扱い / resolve9 §5.15)
+        project_thumbnail.ensure(target, self._settings, timeline=self.controller.timeline)
+        self.preview.set_status(f"保存しました: {os.path.basename(target)}")
+        return True
+
+    # 正規化済み素材から音声だけを <プロジェクト名>.media/ へ残す (resolve9 §5.5-a)
+    # 映像は -c:v copy で作られているため保存する必要が無く、音声だけで復元できる。
+    # 失敗しても保存そのものは続ける (次に開くときは正規化のやり直しになるだけ)。
+    def _export_audio_sidecars(self, project_path):
+        media_list = [m for m in self._media_to_copy()
+                      if m is not None and m.path and os.path.exists(m.path)]
+        if not media_list:
+            return
+        folder = self._media_dir(project_path)
+        ffmpeg_cfg = self._settings.get("ffmpeg", {})
+        saved = 0
+        try:
+            os.makedirs(folder, exist_ok=True)
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                self.preview.set_status("音声を保存しています…")
+                for media in media_list:
+                    dest = media_sidecar.sidecar_path(folder, media.id, ffmpeg_cfg)
+                    # 既に同じ素材から作ったものがあれば作り直さない
+                    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                        saved += 1
+                        continue
+                    if media_sidecar.export_audio(media.path, dest, ffmpeg_cfg):
+                        saved += 1
+            finally:
+                QApplication.restoreOverrideCursor()
+        except OSError:
+            _logger.exception("音声サイドカーの保存に失敗しました (保存は続行します)")
+            return
+        if saved:
+            _logger.info("音声サイドカーを %d 件保存しました: %s", saved, folder)
+
+    # 本編素材 (正規化後の中間ファイル) をプロジェクトの隣へ複製する
+    # (resolve7 §3-5 案B / timeline.project.keep_media)
+    # 中間ファイルは実行の終わりに消えるため、複製しておくと次に開くときに
+    # 作り直し (1 パスぶんの待ち時間) が要らなくなる。動画 1 本ぶんのディスクを使う。
+    # 元動画・OP/ED・追加画像は利用者のファイルで消えないため複製しない。
+    def _copy_media_beside_project(self, project_path):
+        timeline = self.controller.timeline
+        source = dict(timeline.source or {})
+        input_path = str(source.get("input_path", "") or "")
+        folder = self._media_dir(project_path)
+        body_id = str(source.get("media_id", "") or "")
+
+        for media in self._media_to_copy():
+            if media is None or not media.path or not os.path.exists(media.path):
+                continue
+            if input_path and os.path.abspath(media.path) == os.path.abspath(input_path):
+                continue        # 元動画そのもの = 消えないため複製しない
+            # 複製先の名前にメディア ID を付ける (アーカイブ用は全クリップが
+            # normalized.mp4 という同名のため、そのままでは衝突する / resolve9 §5.4)
+            dest = os.path.join(folder, f"{media.id}_{os.path.basename(media.path)}")
+            try:
+                os.makedirs(folder, exist_ok=True)
+                # 同じ内容が既にあるなら複製し直さない (保存のたびに数百 MB を書かない)
+                if not (os.path.exists(dest)
+                        and os.path.getsize(dest) == os.path.getsize(media.path)):
+                    QApplication.setOverrideCursor(Qt.WaitCursor)
+                    try:
+                        self.preview.set_status("素材を複製しています…")
+                        shutil.copy2(media.path, dest)
+                    finally:
+                        QApplication.restoreOverrideCursor()
+                    _logger.info("素材をプロジェクトの隣へ複製しました: %s", dest)
+            except OSError:
+                # 複製に失敗しても保存そのものは続ける (元のパスを指したまま書き出す)
+                _logger.exception("素材の複製に失敗しました (保存は続行します)")
+                continue
+            media.path = dest
+            if media.id == body_id:
+                source["media_path"] = dest
+                timeline.source = source
+
+    # 複製先フォルダ (<プロジェクト名> + timeline.project.media_dir_suffix)
+    def _media_dir(self, project_path):
+        return project_io.media_dir_path(
+            project_path, self.controller.cfg["project_suffix"],
+            self._project_cfg["media_dir_suffix"])
+
+    # ------------------------------------------------------------------
+    # 自動保存 (resolve7 §5.9 / timeline.autosave_sec)
+    # ------------------------------------------------------------------
+    # 既定は autosave_sec=0 (無効) のため、設定しなければ従来どおり何も起きない。
+    # 書き先は本体とは別ファイル (<プロジェクト>.autosave.json) で、本体は上書きしない。
+    # 次に開くとき本体より新しい autosave があれば main_window が復元を尋ねる。
+
+    def _start_autosave(self):
+        interval = int(self.controller.cfg["autosave_sec"] or 0)
+        if not self._save_enabled or interval <= 0:
+            return
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(interval * 1000)
+        self._autosave_timer.timeout.connect(self._on_autosave)
+        self._autosave_timer.start()
+        _logger.info("Timeline の自動保存を %d 秒ごとに行います", interval)
+
+    # 自動保存ファイルのパス (保存先が決まっていなければ既定のパスから組む)
+    def _autosave_path(self):
+        base = self._project_path or project_io.default_project_path(
+            self._settings, (self.controller.timeline.source or {}).get("input_path", ""))
+        return project_io.autosave_path(base, self._project_cfg["autosave_suffix"])
+
+    # 未保存の編集があるときだけ書く
+    def _on_autosave(self):
+        if not self.controller.is_modified():
+            return
+        path = self._autosave_path()
+        if not path:
+            return
+        try:
+            project_io.save(self.controller.timeline, path,
+                            generator=f"Stretheus {__version__}",
+                            created_at=self._created_at,
+                            project_path=self._project_path or path)
+        except (TimelineError, OSError):
+            # 自動保存の失敗で編集を止めない (次の周期で作り直す)
+            _logger.warning("Timeline の自動保存に失敗しました (編集は続行します)")
+
+    # 自動保存ファイルを片づける (本体へ保存できた / 決定した時点で役目が終わる)
+    def _discard_autosave(self):
+        path = self._autosave_path()
+        if not path or not os.path.exists(path):
+            return
+        try:
+            os.remove(path)
+        except OSError:
+            _logger.warning("自動保存ファイルを削除できませんでした: %s", path)
+
+    # 最近使ったプロジェクトを setting.json へ積む (main_window の「編集の続き」に出す)
+    # 種別ごとに積み先を分ける (クリップ用 = recent / アーカイブ用 = recent_archive)。
+    # タブごとの一覧・コンボにその種別のものだけを並べるため (resolve9 §3-4)。
+    def _remember_recent(self, path):
+        try:
+            project_cfg = self._settings.setdefault("timeline", {}).setdefault("project", {})
+            key = ("recent_archive" if self._project_kind() == project_io.KIND_ARCHIVE
+                   else "recent")
+            recent = [p for p in (project_cfg.get(key) or []) if p and p != path]
+            recent.insert(0, path)
+            limit = max(int(self._project_cfg["recent_limit"]), 1)
+            project_cfg[key] = recent[:limit]
+            save_settings(self._settings)
+        except Exception:  # noqa: BLE001 (履歴の保存に失敗しても編集は続けられる)
+            _logger.warning("最近使ったプロジェクトの記録に失敗しました (処理は続行します)")
 
     # ------------------------------------------------------------------
     # DaVinci Resolve 出力
@@ -290,6 +606,12 @@ class TimelineEditorDialog(QDialog):
     def result_timeline(self):
         return self.controller.timeline
 
+    # 編集結果と保存先をまとめて返す (resolve7 §5.10)。
+    # 「名前を付けて保存」で保存先を変えていた場合、確定後の保存もそちらへ行かせる。
+    def result_payload(self):
+        return {"timeline": self.controller.timeline,
+                "project_path": self._project_path}
+
     def accept(self):
         timeline = self.controller.timeline
         if not timeline.base_clips():
@@ -307,22 +629,56 @@ class TimelineEditorDialog(QDialog):
             len(timeline.subtitle_clips()),
             len(timeline.base_gaps()),
         )
+        # 決定後はパイプラインが本体を上書き保存するため、自動保存は不要になる
+        if self._save_enabled:
+            self._discard_autosave()
         super().accept()
 
     # 編集済みのまま閉じようとしたら確認する (誤操作でパイプラインを中断させない)
+    # × ボタンも QDialog の既定で reject() に落ちるため同じ経路を通る。
     def reject(self):
-        if self.controller.is_dirty():
+        if not self._confirm_close():
+            return
+        super().reject()
+
+    # 閉じてよければ True。保存できる画面では 3 択で確認する (resolve7 §5.7 / C5)。
+    def _confirm_close(self):
+        if not self._save_enabled:
+            # 保存できない画面は従来どおりの 2 択 (破棄しますか)
+            if not self.controller.is_dirty():
+                return True
             answer = QMessageBox.question(
                 self, "編集を破棄しますか",
                 "Timeline の編集内容が破棄され、処理も中断されます。よろしいですか?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
-            if answer != QMessageBox.Yes:
-                return
-        super().reject()
+            return answer == QMessageBox.Yes
+        if not self._project_cfg["confirm_on_close"] or not self.controller.is_modified():
+            return True
+
+        box = QMessageBox(self)
+        box.setWindowTitle("保存していない編集があります")
+        box.setText("Timeline に保存していない編集があります。")
+        # パイプライン実行中は閉じると処理も止まる。再編集中は保存済みファイルが残る。
+        box.setInformativeText(
+            "閉じると編集内容は失われ、処理も中断されます。" if self._mode == "pipeline"
+            else "閉じると保存していない編集は失われます。")
+        save = box.addButton("保存して閉じる", QMessageBox.AcceptRole)
+        box.addButton("保存せずに閉じる", QMessageBox.DestructiveRole)
+        cancel = box.addButton("編集に戻る", QMessageBox.RejectRole)
+        box.setDefaultButton(cancel)      # 誤操作で消えないよう既定は「戻る」
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is cancel:
+            return False
+        if clicked is save:
+            return self.save_project()    # 保存に失敗したら閉じない
+        return True
 
     # 終了時に再生を止め、スレッドと一時ファイルを片づける (§10)
     def done(self, code):
+        if self._autosave_timer is not None:
+            self._autosave_timer.stop()
         try:
             self.preview.shutdown()
         except Exception:  # noqa: BLE001 (後片付けの失敗で終了を妨げない)
@@ -451,7 +807,73 @@ class _InspectorPanel(QWidget):
         self.size_spin.setSpecialValueText("既定")
         self.size_spin.editingFinished.connect(self._on_size_changed)
         form.addRow("サイズ", self.size_spin)
+
+        # 文字色・縁の色は「このクリップだけの上書き」(resolve6 §3-1)。
+        # 空欄なら設定の役割色 (配信者/サブ/コメント) に従う。
+        # 複数選択しているときは選択中の字幕すべてへ適用する (resolve6 §3-10)。
+        swatch_width = int(self._controller.cfg["ui"]["subtitle_color_swatch_width_px"])
+        self.color_field = ColorField(with_alpha=False, swatch_width_px=swatch_width)
+        self.color_field.setToolTip(
+            "選択中の字幕の文字色です。空欄にすると設定の役割色に戻ります\n"
+            "複数選択しているときは選択中すべてに適用されます")
+        self.color_field.color_committed.connect(self._on_color_changed)
+        form.addRow("文字色", self.color_field)
+
+        # 縁は ASS 形式 (&HAABBGGRR) のため透明度も指定できる
+        self.outline_color_field = ColorField(
+            with_alpha=True, swatch_width_px=swatch_width)
+        self.outline_color_field.setToolTip(
+            "選択中の字幕の縁 (アウトライン) の色です。空欄にすると設定の役割色に戻ります\n"
+            "複数選択しているときは選択中すべてに適用されます")
+        self.outline_color_field.color_committed.connect(self._on_outline_color_changed)
+        form.addRow("縁の色", self.outline_color_field)
+
+        # 複数選択のときだけ出す案内 (単一選択の見た目を変えないため既定は非表示)
+        self.multi_note_label = QLabel("")
+        self.multi_note_label.setWordWrap(True)
+        theme.mark_note(self.multi_note_label)
+        self.multi_note_label.setVisible(False)
+        form.addRow("", self.multi_note_label)
         root.addWidget(self.subtitle_widget)
+
+        # オーバーレイ (画像・動画) 用の編集欄 (resolve7 §5.5)。
+        # 字幕用と同じ作りの「もう 1 つの器」として持ち、表示・非表示を切り替える。
+        overlay_cfg = self._controller.cfg["overlay"]
+        self.overlay_widget = QWidget()
+        overlay_form = QFormLayout(self.overlay_widget)
+        overlay_form.setContentsMargins(0, 6, 0, 0)
+
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setDecimals(1)
+        self.scale_spin.setRange(float(overlay_cfg["min_scale"]) * 100.0,
+                                 float(overlay_cfg["max_scale"]) * 100.0)
+        self.scale_spin.setSingleStep(float(overlay_cfg["scale_step_percent"]))
+        self.scale_spin.setSuffix(" %")
+        self.scale_spin.setToolTip(
+            "キャンバス幅に対する大きさです (100% = 画面の横幅いっぱい)\n"
+            "縦横比は常に保たれます")
+        # 1 打鍵ごとにコマンドを積まないよう、確定したときだけ反映する
+        self.scale_spin.editingFinished.connect(self._on_scale_changed)
+        overlay_form.addRow("大きさ", self.scale_spin)
+
+        self.scale_note_label = QLabel("")
+        theme.mark_note(self.scale_note_label)
+        overlay_form.addRow("", self.scale_note_label)
+
+        scale_buttons = QWidget()
+        scale_row = QHBoxLayout(scale_buttons)
+        scale_row.setContentsMargins(0, 0, 0, 0)
+        self.native_size_button = QPushButton("原寸")
+        self.native_size_button.setToolTip("素材のピクセル数どおりの大きさにします")
+        self.native_size_button.clicked.connect(self._apply_native_scale)
+        scale_row.addWidget(self.native_size_button)
+        self.fit_width_button = QPushButton("画面幅に合わせる")
+        self.fit_width_button.setToolTip("キャンバスの横幅いっぱい (100%) にします")
+        self.fit_width_button.clicked.connect(
+            lambda: self._apply_scale(1.0))
+        scale_row.addWidget(self.fit_width_button)
+        overlay_form.addRow("", scale_buttons)
+        root.addWidget(self.overlay_widget)
 
         self.reset_position_button = QPushButton("位置を既定へ戻す")
         self.reset_position_button.setToolTip(
@@ -461,6 +883,7 @@ class _InspectorPanel(QWidget):
 
         root.addStretch(1)
         self.subtitle_widget.setVisible(False)
+        self.overlay_widget.setVisible(False)
         self.reset_position_button.setVisible(False)
 
     # 選択要素を表示する
@@ -474,10 +897,15 @@ class _InspectorPanel(QWidget):
                     "Timeline のクリップ、またはプレビュー上の画像・字幕を選ぶと"
                     "ここに詳細が出ます。")
                 self.subtitle_widget.setVisible(False)
+                self.overlay_widget.setVisible(False)
                 self.reset_position_button.setVisible(False)
                 return
             is_subtitle = isinstance(clip, SubtitleClip)
             self.subtitle_widget.setVisible(is_subtitle)
+            is_overlay = self._is_overlay_clip(clip)
+            self.overlay_widget.setVisible(is_overlay)
+            if is_overlay:
+                self._show_overlay_scale(clip)
             self.reset_position_button.setVisible(True)
             self.title_label.setText(self._title_for(clip))
             self.info_label.setText(self._info_for(clip))
@@ -487,6 +915,10 @@ class _InspectorPanel(QWidget):
                 self.role_combo.setCurrentIndex(max(index, 0))
                 self._set_font(clip.font or "")
                 self.size_spin.setValue(float(clip.font_size or 0))
+                # 色は先頭 1 件の値を出す (複数選択で値が違っても「複数値」は持たない)
+                self.color_field.set_value(clip.color)
+                self.outline_color_field.set_value(clip.outline_color)
+                self._update_multi_note()
         finally:
             self._updating = False
 
@@ -509,9 +941,30 @@ class _InspectorPanel(QWidget):
             return
         self.show_clip(self._controller.timeline.clip_by_id(clip_id))
 
+    # 選択中の字幕クリップ ID を返す (色の一括適用の対象 / resolve6 §3-10)
+    # 字幕以外 (映像・音声クリップ) が混ざっていてもここで振り分ける。
+    def _selected_subtitle_ids(self):
+        timeline = self._controller.timeline
+        ids = [i for i in self._controller.selected_ids()
+               if isinstance(timeline.clip_by_id(i), SubtitleClip)]
+        # 選択が空のまま表示だけしている場合 (プレビュー側の選択など) に備える
+        if not ids and isinstance(self._clip, SubtitleClip):
+            ids = [self._clip.id]
+        return ids
+
+    # 複数選択のときだけ「色は選択中すべてに効く」ことを案内する
+    def _update_multi_note(self):
+        count = len(self._selected_subtitle_ids())
+        self.multi_note_label.setVisible(count > 1)
+        if count > 1:
+            self.multi_note_label.setText(
+                f"※ 文字色・縁の色は選択中の {count} 件すべてに適用されます"
+                "（字幕・役割・フォント・サイズはこの 1 件のみ）")
+
     def _title_for(self, clip):
         if isinstance(clip, SubtitleClip):
-            return "字幕クリップ"
+            count = len(self._selected_subtitle_ids())
+            return "字幕クリップ" if count <= 1 else f"字幕クリップ（{count} 件選択）"
         if isinstance(clip, AudioClip):
             return "音声クリップ"
         origin = clip.origin_type()
@@ -534,10 +987,62 @@ class _InspectorPanel(QWidget):
         if not isinstance(clip, SubtitleClip):
             media = timeline.media_by_id(clip.media_id)
             if media is not None:
-                import os
                 lines.append(f"素材 {os.path.basename(media.path)}")
             lines.append(f"素材内 {clip.source_in:.2f}〜{clip.source_out:.2f} 秒")
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # 大きさ (オーバーレイ / resolve7 §5.5)
+    # ------------------------------------------------------------------
+
+    # 「大きさ」欄を出す対象か。
+    # 対象は オーバーレイの映像・画像クリップ だけで、
+    #   ・字幕      … 大きさはフォントサイズで表す (二重の指定手段を作らない)
+    #   ・音声      … 見た目を持たない
+    #   ・ベース映像 (本編・OP・ED) … renderer が transform を見ないため
+    #                                 変えても出力が変わらない = 嘘になる
+    # は出さない。
+    def _is_overlay_clip(self, clip):
+        if clip is None or isinstance(clip, (SubtitleClip, AudioClip)):
+            return False
+        if not hasattr(clip, "transform"):
+            return False
+        timeline = self._controller.timeline
+        track = timeline.track_of_clip(clip.id)
+        base = timeline.base_video_track()
+        if track is None:
+            return False
+        return base is None or track.id != base.id
+
+    # 現在の拡大率を欄へ出し、実寸の目安を添える
+    def _show_overlay_scale(self, clip):
+        scale = float(clip.transform.scale or 1.0)
+        self.scale_spin.setValue(scale * 100.0)
+        timeline = self._controller.timeline
+        media = timeline.media_by_id(clip.media_id)
+        width_px = int(round(timeline.width * scale))
+        if media is not None and media.width and media.height:
+            height_px = int(round(width_px * float(media.height) / float(media.width)))
+            self.scale_note_label.setText(f"{width_px} × {height_px} px 相当")
+        else:
+            self.scale_note_label.setText(f"幅 {width_px} px 相当")
+        self.native_size_button.setEnabled(native_scale(timeline, clip) is not None)
+
+    def _on_scale_changed(self):
+        if self._updating or not self._is_overlay_clip(self._clip):
+            return
+        self._apply_scale(self.scale_spin.value() / 100.0)
+
+    def _apply_scale(self, scale):
+        if self._clip is None or scale is None:
+            return
+        self._controller.resize_overlay(self._clip.id, scale)
+
+    # 素材のピクセル数どおりの大きさへ戻す
+    def _apply_native_scale(self):
+        if self._clip is None:
+            return
+        self._apply_scale(native_scale(self._controller.timeline, self._clip))
 
     # ------------------------------------------------------------------
     # 編集
@@ -567,6 +1072,21 @@ class _InspectorPanel(QWidget):
         value = int(self.size_spin.value())
         self._controller.edit_subtitle(
             self._clip.id, font_size=value if value > 0 else None)
+
+    # 色は選択中の字幕すべてへ適用する (1 コマンド = Undo 1 手 / resolve6 §3-10)
+    def _on_color_changed(self, value):
+        if self._updating:
+            return
+        ids = self._selected_subtitle_ids()
+        if ids:
+            self._controller.edit_subtitles(ids, color=value)
+
+    def _on_outline_color_changed(self, value):
+        if self._updating:
+            return
+        ids = self._selected_subtitle_ids()
+        if ids:
+            self._controller.edit_subtitles(ids, outline_color=value)
 
     # ドラッグで付いた位置指定を捨てる (字幕は設定の配置へ戻る)
     def _reset_position(self):

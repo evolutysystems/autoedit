@@ -7,11 +7,23 @@ import os
 
 from ..exceptions import AutoEditError, FFmpegError, PipelineCancelled, SubtitleError
 from ..settings.settings_window import resolve_fonts_dir
+from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from . import ffmpeg_runner, silence_cutter
 
 _logger = get_logger(__name__)
 
+
+# Silero VAD が発話チャンクの前後へ足す余白 (ms) / resolve8 §2-3・§3-2
+# faster-whisper の既定は 400ms で、語頭側の無音まで認識対象へ含めてしまう。
+# その無音へ先頭語の単語タイムスタンプが寄るため、テロップが発話より手前に出ていた。
+# 既定から 300ms 削って 100ms とする:
+#   - 0 にすると VAD の検出遅れ (判定窓 32ms 刻み) で語頭が音声から欠け、
+#     テロップの文字自体が落ちる恐れがある
+#   - 100ms なら早出しとして知覚されにくく、検出遅れも吸収できる
+# 語頭の取りこぼしが出るようなら 200ms へ戻す (resolve8 §9 Q1)。
+# 設定項目としては出さない (要望 D3)。400 に戻せば従来の挙動へ完全に戻る。
+_VAD_SPEECH_PAD_MS = 100
 
 # ASS Style のうち要望対象外のため固定維持する値 (マジックナンバー回避)
 _ASS_SCALE_X = 100
@@ -388,10 +400,17 @@ class WhisperTextSource(TextSource):
         if self._vad_filter:
             # 内蔵 Silero VAD で無音/非発話区間を認識対象から除外する
             kwargs["vad_filter"] = True
-            kwargs["vad_parameters"] = {"min_silence_duration_ms": self._vad_min_silence_ms}
+            # speech_pad_ms を明示する。未指定だと既定 400ms で語頭の無音まで
+            # 認識対象に入り、テロップが発話より手前に出る (resolve8 §2-3)。
+            kwargs["vad_parameters"] = {
+                "min_silence_duration_ms": self._vad_min_silence_ms,
+                "speech_pad_ms": _VAD_SPEECH_PAD_MS,
+            }
             _logger.info(
-                "VAD フィルタ有効 (min_silence=%dms, condition_on_previous_text=%s)",
-                self._vad_min_silence_ms, self._condition_on_previous_text,
+                "VAD フィルタ有効 (min_silence=%dms, speech_pad=%dms, "
+                "condition_on_previous_text=%s)",
+                self._vad_min_silence_ms, _VAD_SPEECH_PAD_MS,
+                self._condition_on_previous_text,
             )
 
         try:
@@ -530,7 +549,55 @@ def _inline_position_override(entry, video_width, video_height):
     return f"\\an5\\pos({px:.1f},{py:.1f})"
 
 
-# 1 エントリぶんのインライン上書きタグ (位置 → フォント → サイズ の順) をまとめる
+# ASS 色文字列 (&HAABBGGRR / &HBBGGRR) を (BBGGRR, AA) へ分解する (resolve6 §5.3)
+# アルファを持たない 6 桁形式では alpha に None を返す (Style の透明度を引き継ぐ)。
+# 不正値は (None, None) を返し、呼び出し側でタグを出さない。
+def _split_ass_color(value):
+    text = str(value or "").strip().upper()
+    if not text.startswith("&H"):
+        return None, None
+    digits = text[2:].rstrip("&")
+    if not all(c in "0123456789ABCDEF" for c in digits):
+        return None, None
+    if len(digits) == 8:
+        return digits[2:], digits[0:2]
+    if len(digits) == 6:
+        return digits, None
+    return None, None
+
+
+# HTML 色 (#RRGGBB) を検証して 6 桁の大文字 16 進へ寄せる (不正・空欄は空文字)
+# _hex_to_ass_color は不正値を白へ倒すが、インライン上書きでは
+# 「不正なら何も指定しない」= Style の色に従うのが正しいためここで弾く。
+def _normalize_hex_color(value):
+    hex_value = str(value or "").strip().lstrip("#")
+    if len(hex_value) != 6:
+        return ""
+    if not all(c in "0123456789abcdefABCDEF" for c in hex_value):
+        return ""
+    return hex_value.upper()
+
+
+# 1 エントリぶんの色上書きタグ (塗り → 縁 の順) を返す (resolve6 §3-3)
+# entry["color"]         : 塗り (HTML #RRGGBB)
+# entry["outline_color"] : 縁 (ASS &HAABBGGRR。透明度を持てる)
+# どちらも未指定なら空文字を返す = 既存の生成結果と完全に一致する。
+def _inline_color_override(entry):
+    override = ""
+    color_hex = _normalize_hex_color(entry.get("color", ""))
+    if color_hex:
+        # _hex_to_ass_color は "&H00BBGGRR" を返す。インラインタグはアルファを
+        # 含まない 6 桁のため、先頭の "&H00" を落として使う。
+        override += f"\\1c&H{_hex_to_ass_color(color_hex)[4:]}&"
+    bgr, alpha = _split_ass_color(entry.get("outline_color", ""))
+    if bgr:
+        override += f"\\3c&H{bgr}&"
+        if alpha is not None:
+            override += f"\\3a&H{alpha}&"
+    return override
+
+
+# 1 エントリぶんのインライン上書きタグ (位置 → フォント → サイズ → 塗り → 縁 の順) をまとめる
 # 何も指定が無ければ空文字を返す (既存挙動と同一)。
 def _inline_overrides(entry, video_width, video_height):
     position = _inline_position_override(entry, video_width, video_height)
@@ -541,6 +608,8 @@ def _inline_overrides(entry, video_width, video_height):
     size = _to_int(entry.get("font_size"), None) if entry.get("font_size") not in (None, "") else None
     if size is not None:
         override += f"\\fs{size}"
+    # クリップ個別の色 (resolve6 §3-3)。未指定なら空文字が返る。
+    override += _inline_color_override(entry)
     if not position and not override:
         return ""
     return "{" + position + override + "}"
@@ -576,6 +645,9 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
     # 個別フォント/サイズ指定の件数 (ログ出力用 / resolve16 §6)
     font_override_count = 0
     size_override_count = 0
+    # 個別の色指定の件数 (ログ出力用 / resolve6 §5.3)
+    color_override_count = 0
+    outline_override_count = 0
     for entry in timeline:
         start = _format_ass_time(entry["start"])
         end = _format_ass_time(entry["end"])
@@ -597,15 +669,22 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
                 font_override_count += 1
             if entry_size not in (None, ""):
                 size_override_count += 1
+            if _normalize_hex_color(entry.get("color", "")):
+                color_override_count += 1
+            if _split_ass_color(entry.get("outline_color", ""))[0]:
+                outline_override_count += 1
         # 役割に対応する Style 名で色分けする (role 未指定は配信者)
         style_name = font_profile.style_for_role(role)
         body_lines.append(f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}")
 
-    # 個別指定の件数を INFO 出力する (resolve16 §6)。0 件時のみ従来同様に静かに済ませる
-    if font_override_count or size_override_count:
+    # 個別指定の件数を INFO 出力する (resolve16 §6 / resolve6 §5.3)。
+    # 0 件時のみ従来同様に静かに済ませる。
+    if (font_override_count or size_override_count
+            or color_override_count or outline_override_count):
         _logger.info(
-            "テロップ個別指定 フォント %d 件 / サイズ %d 件",
+            "テロップ個別指定 フォント %d 件 / サイズ %d 件 / 文字色 %d 件 / 縁の色 %d 件",
             font_override_count, size_override_count,
+            color_override_count, outline_override_count,
         )
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -1038,13 +1117,42 @@ def run(context):
 # Timeline (ver3) 経路の音声認識
 # ==================================================================
 
-# 編集点モード用の音声認識 (docs/request/ver3/resolve.md §7.3)
-# 残す区間の「音声のみ」を連結した一時ファイルに対して認識する。
-#   ・映像エンコードを伴わないため従来 (実カット動画を作ってから認識) より軽い
-#   ・得られる時刻は「本編を詰めた後の時間軸」= OP を除く Timeline 時間と一致する
+# 認識結果 (素材時間) を「残す区間を詰めた軸」= Timeline 時間へ写す
+# (docs/error/20260812/resolve2.md §4)
+#
+# 素材そのままの音声を認識すると時刻の精度が上がる代わりに、時刻は素材時間で返る。
+# ここで TimeMap を通して詰めた軸へ写し直すことで、
+# 「recognize_for_timeline は詰めた軸の items を返す」という契約を保つ。
+#
+# ・カットを跨ぐ字幕     : 詰めた結果 Timeline 上では連続するため 1 区間へまとまる
+# ・一部がカットへかかる : かかった分だけ短くなる
+# ・全体がカットへ落ちる : 載せない (カットした無音への幻聴字幕もここで落ちる)
+#
+# 戻り値: (写像後の timeline, 落とした件数)
+def map_items_to_timeline(timeline_items, keep_segments):
+    timemap = TimeMap.from_segments(keep_segments)
+    mapped = []
+    dropped = 0
+    for entry in timeline_items or []:
+        pieces = timemap.split_interval(entry["start"], entry["end"])
+        if not pieces:
+            dropped += 1
+            continue
+        # 先頭の開始〜末尾の終了で 1 区間にする (連続する区間は split_interval が結合済み)
+        mapped.append({**entry, "start": pieces[0][0], "end": pieces[-1][1]})
+    return mapped, dropped
+
+
+# 編集点モード用の音声認識 (docs/request/ver3/resolve.md §7.3 / 20260812 resolve2.md §4)
+#
+# 認識は「素材そのまま (無音カット前) の音声」に対して行い、得られた素材時間を
+# TimeMap で詰めた軸へ写す。残す区間だけを連結した音声を認識すると、継ぎ接ぎの影響で
+# 単語タイムスタンプが後方ほど遅れる
+# (docs/error/20260812/Analyze.md §3-3-1: 前半 +0.64s → 後半 +1.05s を実測)。
+#
 # 認識に失敗しても字幕を空にして続行する (パイプラインを止めない / §10)。
 # 戻り値: (items, 実効字幕設定)
-#   items = [{"start","end","text","use","role","font","font_size"}]
+#   items = [{"start","end","text","use","role","font","font_size"}] (詰めた軸)
 def recognize_for_timeline(context, keep_segments):
     settings = context.settings
     subtitle_cfg = settings.get("subtitle", {})
@@ -1065,25 +1173,26 @@ def recognize_for_timeline(context, keep_segments):
         _logger.info("音声認識エンジン無効のため字幕を作成しません")
         return [], eff_cfg
 
-    # ── 認識用音声の抽出 (残す区間のみ・映像なし)
+    # ── プレビューの初回再生ソース用に、残す区間の音声を連結しておく (§6.4-5)
+    # 認識には使わない (認識は素材そのままに対して行う / 20260812 resolve2.md §4)。
+    # 失敗してもプレビューが都度生成へ切り替わるだけなので、字幕は作り続ける。
     audio_path = context.allocate_intermediate("asr_audio.m4a")
     try:
         silence_cutter.extract_audio_segments(
             context.current_video_path(), keep_segments, audio_path, ffmpeg_cfg,
-            on_progress=context.progress_subcallback("認識用音声を抽出中…"),
+            on_progress=context.progress_subcallback("プレビュー音声を準備中…"),
         )
     except AutoEditError:
-        _logger.exception("認識用音声の抽出に失敗したため字幕を作成しません")
-        return [], eff_cfg
+        _logger.exception("プレビュー用音声の抽出に失敗しました (字幕生成は続行します)")
+    else:
+        setter = getattr(context, "set_asr_audio_path", None)
+        if callable(setter):
+            setter(audio_path)
 
-    # プレビューの初回再生ソースとして再利用する (§6.4-5)
-    setter = getattr(context, "set_asr_audio_path", None)
-    if callable(setter):
-        setter(audio_path)
-
-    # ── 音声認識
+    # ── 音声認識 (素材そのまま = 無音カット前に対して行う / 20260812 resolve2.md §4)
     try:
-        timeline_items = text_source.extract(audio_path, eff_cfg.get("language", "ja"))
+        timeline_items = text_source.extract(
+            context.current_video_path(), eff_cfg.get("language", "ja"))
     except Exception:  # noqa: BLE001 (認識失敗で処理全体を止めない / §10)
         _logger.exception("音声認識に失敗したため字幕を作成しません")
         return [], eff_cfg
@@ -1092,7 +1201,18 @@ def recognize_for_timeline(context, keep_segments):
         _logger.warning("テロップタイムラインが空のため字幕を作成しません")
         return [], eff_cfg
 
-    # ── 表示タイミング整形 (既存ロジックをそのまま流用 / docs/error/20260627)
+    # ── 素材時間 → 詰めた軸へ写す (20260812 resolve2.md §4)
+    before_map = len(timeline_items)
+    timeline_items, dropped = map_items_to_timeline(timeline_items, keep_segments)
+    _logger.info(
+        "字幕時刻を Timeline の軸へ写像: %d → %d 件 (カット区間のため %d 件除外)",
+        before_map, len(timeline_items), dropped,
+    )
+    if not timeline_items:
+        _logger.warning("写像後の字幕が 0 件のため字幕を作成しません")
+        return [], eff_cfg
+
+    # ── 表示タイミング整形 (詰めた軸の上で行う。整形の意味を変えないため写像の後)
     max_hold_sec = float(eff_cfg.get("display_max_hold_sec", 2.0))
     min_duration_sec = float(eff_cfg.get("display_min_duration_sec", 0.5))
     before_count = len(timeline_items)

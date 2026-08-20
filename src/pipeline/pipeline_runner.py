@@ -15,7 +15,7 @@ from ..modules import (
 )
 from ..settings.settings_window import save_settings
 from ..timeline import builder as timeline_builder
-from ..timeline import project_io, renderer
+from ..timeline import media_recovery, project_io, renderer
 from ..utils.logger import get_logger
 from ..version import __version__
 from .pipeline_context import PipelineContext
@@ -70,6 +70,103 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
         raise
     except Exception:
         _logger.exception("パイプライン中断: 想定外エラー")
+        raise
+    finally:
+        _cleanup(context)
+
+
+# 保存済みプロジェクトから編集を再開して書き出す (ver3 resolve7 §3-4 / §5.10)
+# 新しい編集画面もレンダラも作らず、既存パイプラインの後半だけを走らせる。
+# 前半 (正規化・無音検出・音声認識・Timeline 構築) は保存済みの内容で置き換わる。
+#
+# project_path         : <元動画名>.timeline.json
+# timeline_review_callback : Timeline 編集画面フック (GUI 実行時のみ)
+# media_relink_callback    : 見つからない素材の差し替えフック (GUI 実行時のみ)
+# restore_path         : 読み込むファイルだけを差し替える (自動保存からの復元 / §5.9)。
+#                        保存先は project_path のままにするため、復元して「決定」しても
+#                        上書きは本体のプロジェクトファイルへ行く。
+# 戻り値               : 出力動画パス
+def run_from_project(project_path, settings, progress_cb=None,
+                     timeline_review_callback=None, media_relink_callback=None,
+                     restore_path=None):
+    _logger.info("=" * 50)
+    _logger.info("保存済みプロジェクトから再開: %s", project_path)
+
+    if not project_path or not os.path.exists(project_path):
+        raise InputError(f"プロジェクトファイルが見つかりません: {project_path}")
+
+    ffmpeg_cfg = settings.get("ffmpeg", {})
+    ffmpeg_runner.ensure_available(ffmpeg_cfg)
+
+    cfg = timeline_builder.timeline_config(settings)
+    load_path = restore_path or project_path
+    if restore_path:
+        _logger.info("自動保存から復元します: %s", restore_path)
+    # 検証は素材の復旧より後に行う。先に走らせると、消えた中間ファイルを参照する
+    # クリップが片っ端から無効化されてしまう (resolve7 §5.8)。
+    timeline, meta = project_io.load_project(
+        load_path, min_clip_sec=cfg["min_clip_sec"], validate_timeline=False)
+
+    input_path = str((timeline.source or {}).get("input_path", "") or "")
+    if not input_path:
+        raise InputError("プロジェクトに元動画のパスが記録されていないため開けません")
+    # 種別違いをここで弾く (ver3 resolve9 §3-4)。アーカイブ切り抜き用は素材の復旧も
+    # 書き出し方も違うため、この経路へ通すと空の Timeline を書き出してしまう。
+    if project_io.project_kind(timeline) == project_io.KIND_ARCHIVE:
+        raise InputError(
+            "アーカイブ切り抜き用のプロジェクトです。"
+            "「アーカイブ切り抜き用」タブの「編集の続き」から開いてください。")
+
+    # 工程は「素材の復旧」と「Timeline レンダリング」の 2 つ
+    context = PipelineContext(
+        input_path=input_path,
+        settings=settings,
+        progress_callback=progress_cb,
+        total_steps=2,
+        timeline_review_callback=timeline_review_callback,
+    )
+    # 出力プロファイルは Timeline のキャンバスから復元する (保存時と同じ寸法で出す)
+    context.output_profile = {
+        "is_portrait": timeline.orientation == "portrait",
+        "orientation": timeline.orientation,
+        "width": timeline.width,
+        "height": timeline.height,
+    }
+    context.project_path = project_path
+    # 上書き保存で初回作成時刻を引き継ぐため覚えておく
+    context.project_created_at = meta.get("created_at")
+    context.timeline = timeline
+
+    try:
+        # ① 素材の復旧 (足りなければ元動画から作り直す / 再リンクを求める)
+        context.begin_step("素材の復旧")
+        media_recovery.recover(timeline, project_path, settings, context,
+                               relink_callback=media_relink_callback)
+        project_io.validate(timeline, min_clip_sec=cfg["min_clip_sec"])
+        context.end_step("素材の復旧")
+
+        # ② Timeline 編集画面 (既存関数をそのまま使う。キャンセルは PipelineCancelled)
+        timeline = _review_timeline(context, timeline, mode="resume")
+        context.timeline = timeline
+
+        # ③ レンダリング (OP/ED・オーバーレイ・字幕を含む / §8)
+        context.begin_step("Timeline レンダリング")
+        renderer.render(timeline, context)
+        context.end_step("Timeline レンダリング")
+
+        # ④ 出力 (最終ファイル配置。既存 output_writer をそのまま使う)
+        output_path = output_writer.run(context)
+        _logger.info("再編集の書き出し正常終了: %s", output_path)
+        return output_path
+
+    except PipelineCancelled:
+        _logger.info("再編集を中断: ユーザーによるキャンセル")
+        raise
+    except AutoEditError:
+        _logger.exception("再編集を中断: 既知エラー")
+        raise
+    except Exception:
+        _logger.exception("再編集を中断: 想定外エラー")
         raise
     finally:
         _cleanup(context)
@@ -205,7 +302,8 @@ def _save_project(timeline, context):
 
 # Timeline 編集画面を開き、編集結果で置き換える (§5.1)
 # コールバック未注入 (CLI/ヘッドレス) の場合は編集点をそのまま採用して自動レンダリングする。
-def _review_timeline(context, timeline):
+# mode: "pipeline" (パイプラインの途中) / "resume" (保存済みを開き直した / resolve7 §5.10)
+def _review_timeline(context, timeline, mode="pipeline"):
     callback = getattr(context, "timeline_review_callback", None)
     if callback is None:
         _logger.info("Timeline 編集画面なしで続行します (編集点をそのまま採用)")
@@ -215,10 +313,18 @@ def _review_timeline(context, timeline):
         "timeline": timeline,
         "settings": context.settings,
         "project_path": context.project_path,
+        # 上書き保存で初回作成時刻を引き継ぐため画面へ渡す (resolve7 §5.7)
+        "created_at": getattr(context, "project_created_at", None),
+        "mode": mode,
         "asr_audio_path": context.asr_audio_path(),
         # プレビューの一時ファイルは中間ファイルと同じ寿命にする (cleanup で消える)
         "working_dir": context.working_dir,
     })
+    # 戻り値は Timeline (従来) / {"timeline","project_path"} (追加) のどちらでもよい。
+    # 画面が「名前を付けて保存」で保存先を変えていたら、確定後の保存もそちらへ行う。
+    if isinstance(edited, dict):
+        context.project_path = edited.get("project_path") or context.project_path
+        edited = edited.get("timeline")
     if edited is None:
         raise PipelineCancelled("Timeline 編集がキャンセルされたためパイプラインを中断します")
 
@@ -226,7 +332,8 @@ def _review_timeline(context, timeline):
     if context.project_path:
         try:
             project_io.save(edited, context.project_path,
-                            generator=f"Stretheus {__version__}")
+                            generator=f"Stretheus {__version__}",
+                            created_at=getattr(context, "project_created_at", None))
         except Exception:  # noqa: BLE001
             _logger.warning("確定後のプロジェクト保存に失敗しました (処理は続行します)")
     return edited

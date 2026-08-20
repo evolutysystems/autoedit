@@ -636,6 +636,16 @@ QWidget[flatPanel="true"],
 #glassPanel[flatPanel="true"],
 #glassPanelStrong[flatPanel="true"] { border-radius: 0px; }
 
+/* ドック (アーカイブ画面の採点グラフ / ver3 resolve5 §5.9)。
+   指定が無いとタイトルバーだけ OS 既定の明るい帯になり、ガラス面の中で浮く。
+   閉じる・切り離しのボタンは既定のまま残す (消すと操作できなくなるため)。 */
+QDockWidget { color: {text.primary}; }
+QDockWidget::title {
+    background: {glass.bg.strong};
+    border: {border.width} solid {glass.border};
+    padding: 4px 8px;
+}
+
 /* プレビューの映像領域は意図的にテーマ対象外 (§5.6)。
    映像の周囲に色を付けると焼き込み結果の色判断を誤らせるため、常に黒のままにする。
    ここに置くのは「インライン指定を撤去しつつ、テーマで塗り替えない」ことを明示するため。 */
@@ -807,6 +817,18 @@ QSlider::handle:horizontal {
 }
 QCheckBox, QRadioButton, QLabel { background: transparent; }
 QCheckBox:disabled, QRadioButton:disabled { color: {text.disabled}; }
+/* チェック欄の枠 (ver3 resolve5)。QSS を当てた時点で Qt は既定の枠を描かなくなり、
+   未チェックだと何も見えない = 押せる場所が分からなくなるため、ここで枠を描く。 */
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: {border.width} solid {glass.border};
+    border-radius: 3px;
+    background: {glass.bg.strong};
+}
+QCheckBox::indicator:hover { border-color: {glass.highlight}; }
+QCheckBox::indicator:checked { background: {accent}; border-color: {accent}; }
+QCheckBox::indicator:disabled { border-color: {text.disabled}; }
 """
 
 # プレースホルダ (英小文字・数字・ドットのみ) を拾う。CSS の { 改行 } とは一致しない。

@@ -23,8 +23,10 @@ from ..modules import (
 from ..modules.subtitle_generator import _format_ass_time, _hex_to_ass_color
 from ..pipeline.pipeline_context import PipelineContext
 from ..settings.settings_window import resolve_fonts_dir
+from ..timeline import renderer
 from ..utils.logger import get_logger
 from . import config
+from . import timeline_builder as archive_timeline
 
 _logger = get_logger(__name__)
 
@@ -47,7 +49,10 @@ def _fmt_ts(seconds):
 
 
 # 区間 [start,end] を切り出す (ストリームコピーで高速に。焼き込み側で再エンコードされる)
-def _cut_region(input_path, start, end, dest, ffmpeg_cfg):
+# 再エンコードしないため、同じ入力・同じ引数なら出力は決定的になる。
+# 保存したプロジェクトを開き直すときの素材復旧でも同じ関数を使う
+# (ver3 resolve9 §3-1 / archive/project_resume.py)。
+def cut_region(input_path, start, end, dest, ffmpeg_cfg):
     duration = max(end - start, 0.0)
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
     cmd = [
@@ -64,7 +69,8 @@ def _cut_region(input_path, start, end, dest, ffmpeg_cfg):
 
 
 # クリップ処理用の設定コピーを作る (OP/ED は付けない・出力は一時領域・無音カット/レビューは設定に従う)
-def _build_clip_settings(settings, workdir, clip_pipe):
+# 再編集経路 (project_resume) からも同じ設定を作るため公開している (ver3 resolve9 §5.6)。
+def build_clip_settings(settings, workdir, clip_pipe):
     clip_settings = copy.deepcopy(settings)
     general = clip_settings.setdefault("general", {})
     # OP/ED は各クリップには付けない (結合段階で1回だけ付ける / resolve18 §3-2)
@@ -321,14 +327,51 @@ def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index):
 # 戻り値: (無音カット後パス, クリップ内の残す区間 or None)
 #   残す区間は Resolve 出力のカット編集点として結果画面へ引き継ぐ (resolve20 §5.4 案①)。
 #   無音カット無効時は None (= 区間全長) となり、字幕時間と生クリップ区間が一致する。
+#
+# 【従来画面経路 (timeline_review=false) 専用】
+# Timeline 経路は実カットせず _prepare_edit_points を使う。実カット後ファイルへ音声認識すると
+# 区間ごとの CFR 量子化と AAC プライミングが累積し、Timeline の軸と字幕がズレるため
+# (docs/error/20260811/resolve.md §2-3)。
 def _silence_cut(raw, clip_settings, clip_dir):
     ctx = PipelineContext(input_path=raw, settings=clip_settings, working_dir=clip_dir)
     silence_cutter.run(ctx)
     return ctx.current_video_path(), ctx.keep_segments()
 
 
+# Timeline 経路の準備: 実カットせず編集点と字幕を得る (docs/error/20260811/resolve.md §4-3)
+#
+# クリップ用 (pipeline_runner._run_timeline) と同じ 2 段構えにすることで、
+# 字幕の時刻を「残す区間を詰めた理想の軸」= build_archive_timeline が V1/A1 を並べる軸
+# と一致させる。実カット後ファイルに対して認識すると、区間ごとの CFR 量子化と
+# AAC プライミングが累積して後方ほど字幕が遅れる (§2-3)。
+#
+# profile は縦動画のとき字幕設定を縦用へ切り替えるために認識前へ渡す。
+# 戻り値: (keep_segments, items, 素材尺)
+#   keep_segments : normalized 相対の残す区間。無音カット無効時は全長 1 区間
+#   items         : [{"start","end","text","use","role","font","font_size"}]
+def _prepare_edit_points(normalized, clip_settings, clip_dir, profile):
+    # 中間物は clip_dir (= workdir 配下) に置き、write_clips の TemporaryDirectory へ
+    # 後始末を任せる (_render_clips の PipelineContext と同じ扱い。cleanup は呼ばない)。
+    ctx = PipelineContext(input_path=normalized, settings=clip_settings,
+                          working_dir=clip_dir)
+    ctx.output_profile = profile
+    keep_segments, meta = silence_cutter.detect_edit_points(ctx)
+    items, _eff_cfg = subtitle_generator.recognize_for_timeline(ctx, keep_segments)
+    source_duration = float(meta.get("source_duration_sec") or 0.0)
+    kept = sum(float(e) - float(s) for s, e in keep_segments)
+    _logger.info(
+        "編集点準備: 残す区間 %d 件 / 想定尺 %.2fs (素材 %.2fs)",
+        len(keep_segments), kept, source_duration,
+    )
+    return keep_segments, items, source_duration
+
+
 # 文字起こし→表示タイミング整形で編集用タイムライン(items)を得る (subtitle_generator 標準関数)。
 # subtitle 無効/エンジン無しは空。失敗時も空で継続(クリップ全損を避ける)。
+#
+# 【従来画面経路 (timeline_review=false) 専用】
+# 実カット後クリップ (prepared_path) の時間軸で認識するため、結果画面のプレビューとは
+# 一致するが Timeline の軸とは一致しない。Timeline 経路は _prepare_edit_points を使う。
 def _transcribe(prepared_path, settings, eff_cfg):
     if not eff_cfg.get("enabled", True):
         return []
@@ -352,10 +395,14 @@ def _transcribe(prepared_path, settings, eff_cfg):
     ]
 
 
-# 全クリップを prepare する (切り出し→無音カット→文字起こし)。ダイアログは出さない。
+# 全クリップを prepare する (切り出し→編集点検出/無音カット→文字起こし)。ダイアログは出さない。
+# use_timeline : True  = Timeline 経路。実カットせず編集点だけを求め、区間音声のみで認識する
+#                        (docs/error/20260811/resolve.md §4-2)。字幕の時間軸が Timeline と一致する。
+#                False = 従来画面経路。これまでどおり実カットしてから認識する。
 # 戻り値: [{"index","start","end","score","prepared_path","profile","eff_cfg","items",
-#           "keep_segments"}]
-def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb):
+#           "keep_segments","normalized_path","normalized_duration"}]
+def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdir,
+                   progress_cb, use_timeline=False):
     prepared = []
     total = len(used)
     subtitle_cfg = clip_settings.get("subtitle", {})
@@ -369,7 +416,7 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
         clip_dir = os.path.join(workdir, f"clip{clip['index']}")
         os.makedirs(clip_dir, exist_ok=True)
         raw = os.path.join(clip_dir, "raw.mp4")
-        _cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
+        cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
         # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
         # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
         normalized = loudness_normalizer.normalize_file(
@@ -378,22 +425,51 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
         if progress_cb:
             progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音量解析）")
         _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
-        if progress_cb:
-            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（文字起こし）")
-        prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
-        profile = output_profile.resolve_output_profile(prepared_path, settings)
-        eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
-            subtitle_cfg, vertical_cfg, profile)
-        items = _transcribe(prepared_path, settings, eff_cfg)
+        if use_timeline:
+            # Timeline 経路: 実カットしない。字幕の時間軸を Timeline の軸へ一致させる (§4-2)
+            if progress_cb:
+                progress_cb((pos - 1) / total * 0.55,
+                            f"クリップ {pos}/{total} を準備中…（編集点検出・文字起こし）")
+            # 出力プロファイルは寸法しか見ないため、実カット前の normalized で判定できる
+            # (extract_segment はスケーリングしないため実カット後と同値)。
+            profile = output_profile.resolve_output_profile(normalized, settings)
+            eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
+                subtitle_cfg, vertical_cfg, profile)
+            # 実カット後ファイルは作らない (参照するのは従来画面だけのため)
+            prepared_path = ""
+            keep_segments, items, normalized_duration = _prepare_edit_points(
+                normalized, clip_settings, clip_dir, profile)
+        else:
+            # 従来画面経路: 実カット後クリップをプレビュー・焼き込みに使う
+            if progress_cb:
+                progress_cb((pos - 1) / total * 0.55,
+                            f"クリップ {pos}/{total} を準備中…（文字起こし）")
+            prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
+            profile = output_profile.resolve_output_profile(prepared_path, settings)
+            eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
+                subtitle_cfg, vertical_cfg, profile)
+            items = _transcribe(prepared_path, settings, eff_cfg)
+            normalized_duration = ffmpeg_runner.probe_duration(normalized, ffmpeg_cfg)
         prepared.append({
             "index": clip["index"], "start": clip["start"], "end": clip["end"],
             "score": clip.get("score", 0.0),
+            # Timeline 経路では空文字。参照するのは従来画面 (_burn_one / 結果画面プレビュー) だけ
             "prepared_path": prepared_path, "profile": profile,
             "eff_cfg": eff_cfg, "items": items,
             # クリップ内の無音カット編集点 (Resolve 出力用の一時データ / resolve20 §5.4)
             "keep_segments": keep_segments,
+            # Timeline 編集の素材 (無音カット前・正規化済み / ver3 resolve5 §3-2)。
+            # 実カット後の prepared_path と違い、切った区間を編集画面で戻せる。
+            "normalized_path": normalized,
+            "normalized_duration": normalized_duration,
+            # 素材が正規化を通ったか (ver3 resolve9 §3-1)。normalize_file は
+            # 無効・音声無し・測定失敗のとき入力パスをそのまま返すためパスで判別できる。
+            # 開き直すときに音声サイドカーを貼るかどうかの判断に使う。
+            "media_role": "normalized" if normalized != raw else "original",
         })
-        _logger.info("clip%d prepare 完了 (字幕 %d 件)", clip["index"], len(items))
+        _logger.info(
+            "clip%d prepare 完了 (字幕 %d 件%s)",
+            clip["index"], len(items), " / 実カットなし" if use_timeline else "")
     return prepared
 
 
@@ -475,6 +551,50 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
     return burned
 
 
+# 編集済み Timeline をクリップ単位へ切り直し、レンダリング→テーマ演出→パーツ化する
+# (ver3 resolve5 §3-8 / §5.6)。返り値の形は _burn_clips と同一のため、
+# 結合・個別出力 (_build_combine_parts / _write_individual) は無改造で流せる。
+# 字幕は renderer が S1 から ASS を起こして焼くため、ここでの焼き込みは行わない。
+def _render_clips(input_path, timeline, edited, prepared_by_index, settings, clip_settings,
+                  ffmpeg_cfg, workdir, progress_cb, card, fonts_dir):
+    burned = []
+    edited_by_index = {e.get("index"): e for e in (edited or [])}
+    groups = archive_timeline.split_by_clip(timeline)
+    total = max(1, len(groups))
+    subtitle_cfg = settings.get("subtitle", {})
+    for pos, (clip_index, sub_timeline) in enumerate(groups, 1):
+        prepared = prepared_by_index.get(clip_index)
+        if prepared is None:
+            _logger.warning("clip%s の準備結果が見つからないため飛ばします", clip_index)
+            continue
+        entry = edited_by_index.get(clip_index, {})
+        if not entry.get("use", True):
+            continue
+        if progress_cb:
+            progress_cb(0.6 + (pos - 1) / total * 0.3,
+                        f"クリップ {pos}/{len(groups)} を書き出し中…")
+
+        clip_dir = os.path.join(workdir, f"clip{clip_index}")
+        os.makedirs(clip_dir, exist_ok=True)
+        context = PipelineContext(input_path=prepared["normalized_path"],
+                                  settings=clip_settings, working_dir=clip_dir)
+        try:
+            renderer.render(sub_timeline, context)
+        except Exception:  # noqa: BLE001 (1 クリップの失敗で全体を止めない)
+            _logger.exception("clip%s のレンダリングに失敗 → このクリップを飛ばします", clip_index)
+            continue
+        out = context.current_video_path()
+
+        theme = (entry.get("theme") or "").strip()
+        clip_meta = {"index": prepared["index"], "start": prepared["start"],
+                     "end": prepared["end"]}
+        parts, body = _decorate_clip(
+            input_path, out, clip_meta, theme, card, subtitle_cfg,
+            ffmpeg_cfg, fonts_dir, workdir)
+        burned.append({"clip": clip_meta, "body": body, "parts": parts})
+    return burned
+
+
 # keep_individual 用: 本編クリップを出力先へ複製する (イントロは含めない)
 def _copy_individual(entry, out_dir, prefix, stem):
     clip = entry["clip"]
@@ -495,8 +615,11 @@ def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
 
 # 確定した TOP5 クリップを prepare→一括レビュー→burn→結合して 1 本の動画を出力する (R2 flow17)
 # clips: [{index,start,end,score,use,...}] (use=False は除外)。
-# result_callback(prepared, curve): 一括結果画面ブリッジ。編集済み [{index,items,theme,use}]
-#   を返す。None ならキャンセル (出力なし)。未注入(CLI/テスト)は全件そのまま自動焼き込み。
+# result_callback(prepared, curve, timeline): 一括レビュー画面のブリッジ。戻り値は
+#   ・Timeline 経路 (ver3 resolve5): {"timeline": 編集済み Timeline,
+#                                     "clips": [{index,theme,use}]}
+#   ・従来画面                     : [{index,items,theme,use}]
+#   None ならキャンセル (出力なし)。未注入(CLI/テスト)は全件そのまま自動で書き出す。
 # curve: 採点グラフ用の窓スコア列 (結果画面へ渡す)。
 # 戻り値: 出力ファイルパスの一覧 (結合時は [..., 結合1本]、非結合時は個別クリップ群)。
 def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None, curve=None):
@@ -510,35 +633,48 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
 
     archive_cfg = settings.get("archive", {})
     clip_pipe = archive_cfg.get("clip_pipeline", {})
-    combine_cfg = archive_cfg.get("combine", {})
-    # テーマ演出設定・追加フォントディレクトリ (resolve19)
-    card = config.intro_card_config(settings)
-    fonts_dir = resolve_fonts_dir(settings)
-
-    out_dir = _resolve_output_dir(settings, input_path)
-    prefix = config.clip_prefix(settings)
-    stem = os.path.splitext(os.path.basename(input_path))[0]
 
     # Windows では焼き込み直後のファイルが一時的にロックされ得るため、
     # 一時ディレクトリ削除の失敗を無視する (削除失敗で処理成功が誤ってエラー扱いになるのを防ぐ)。
     with tempfile.TemporaryDirectory(prefix="archive_clips_", ignore_cleanup_errors=True) as workdir:
-        clip_settings = _build_clip_settings(settings, workdir, clip_pipe)
+        clip_settings = build_clip_settings(settings, workdir, clip_pipe)
+        # Timeline 経路かどうかを prepare より先に確定する。準備の作り方 (実カットの有無) が
+        # 変わるため、判定を二重に持たず 1 か所で決める (docs/error/20260811/resolve.md §4-4)。
+        use_timeline = config.use_timeline_review(settings)
 
-        # ① prepare: 全クリップを 切り出し→無音カット→文字起こし (ダイアログ無し)
+        # ① prepare: 全クリップを 切り出し→編集点検出(または無音カット)→文字起こし (ダイアログ無し)
         prepared = _prepare_clips(
-            input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb)
+            input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb,
+            use_timeline=use_timeline)
         if not prepared:
             _logger.info("準備できたクリップが0件")
             return []
 
-        # ② 一括レビュー: 1つの結果画面で全クリップの字幕・テーマを編集
+        # Timeline 編集経路 (ver3 resolve5): 選ばれたクリップを 1 本の Timeline へ並べる。
+        # 画面を持たない経路 (CLI/テスト) でも同じ Timeline をレンダリングして出力を揃える。
+        timeline = None
+        if use_timeline:
+            timeline = archive_timeline.build_archive_timeline(
+                prepared, clip_settings, source_path=input_path, curve=curve)
+
+        # ② 一括レビュー: 1つの画面で全クリップを編集
         if result_callback is not None:
-            edited = result_callback(prepared, curve or [])
-            if edited is None:
+            review = result_callback(prepared, curve or [], timeline)
+            if review is None:
                 _logger.info("結果画面でキャンセル → 出力なし")
                 return []
+            # Timeline 経路は {"timeline", "clips"} / 従来画面は [{"index","items",…}]
+            if isinstance(review, dict):
+                timeline = review.get("timeline") or timeline
+                edited = review.get("clips") or []
+            else:
+                edited = review
+                timeline = None
+        elif timeline is not None:
+            # CLI/テスト (Timeline 経路): 全件そのまま採用 (テーマ無し)
+            edited = [{"index": p["index"], "theme": "", "use": True} for p in prepared]
         else:
-            # CLI/テスト: 全件そのまま採用 (テーマ無し)
+            # CLI/テスト (従来経路): 全件そのまま採用 (テーマ無し)
             edited = [
                 {"index": p["index"], "items": p["items"], "theme": "", "use": True}
                 for p in prepared
@@ -549,50 +685,75 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
         for p in prepared:
             p.pop("keep_segments", None)
 
-        # ③ burn: 各クリップを 字幕焼き込み→テーマ演出→パーツ化
-        if progress_cb:
-            progress_cb(0.6, "字幕焼き込み中…")
-        prepared_by_index = {p["index"]: p for p in prepared}
+        return finish_clips(input_path, settings, clip_settings, timeline, edited,
+                            prepared, workdir, ffmpeg_cfg, progress_cb=progress_cb)
+
+
+# レビュー後の書き出し (burn → テーマ演出 → 個別出力 → 結合) を行う (ver3 resolve9 §5.6)
+# write_clips から切り出した処理で、保存済みプロジェクトの再編集
+# (archive/project_resume.run_from_archive_project) からも同じものを呼ぶ。
+# timeline が None なら従来画面経路 (_burn_clips) を通る。挙動は切り出し前と同一。
+# 戻り値: 出力ファイルパスの一覧
+def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared,
+                 workdir, ffmpeg_cfg=None, progress_cb=None):
+    ffmpeg_cfg = ffmpeg_cfg if ffmpeg_cfg is not None else settings.get("ffmpeg", {})
+    archive_cfg = settings.get("archive", {})
+    combine_cfg = archive_cfg.get("combine", {})
+    card = config.intro_card_config(settings)
+    fonts_dir = resolve_fonts_dir(settings)
+    out_dir = _resolve_output_dir(settings, input_path)
+    prefix = config.clip_prefix(settings)
+    stem = os.path.splitext(os.path.basename(input_path))[0]
+
+    # ③ burn: 各クリップを 焼き込み(またはレンダリング)→テーマ演出→パーツ化
+    if progress_cb:
+        progress_cb(0.6, "字幕焼き込み中…")
+    prepared_by_index = {p["index"]: p for p in prepared}
+    if timeline is not None:
+        burned = _render_clips(
+            input_path, timeline, edited, prepared_by_index, settings, clip_settings,
+            ffmpeg_cfg, workdir, progress_cb, card, fonts_dir)
+    else:
         burned = _burn_clips(
             input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
             workdir, progress_cb, card, fonts_dir)
 
-        if not burned:
-            _logger.info("焼き込み済みクリップが0件")
-            return []
+    if not burned:
+        _logger.info("焼き込み済みクリップが0件")
+        return []
 
-        # keep_individual: 個別クリップ(本編)も出力先へ残す
-        outputs = []
-        if combine_cfg.get("keep_individual", False):
+    # keep_individual: 個別クリップ(本編)も出力先へ残す
+    outputs = []
+    if combine_cfg.get("keep_individual", False):
+        for entry in burned:
+            outputs.append(_copy_individual(entry, out_dir, prefix, stem))
+
+    # 各クリップの結合用パーツを時系列で平坦化 (テーマ有りは [intro, tagged])
+    clip_parts = [path for entry in burned for path in entry["parts"]]
+
+    # 結合しない設定なら個別出力のみ (keep_individual 未指定でも個別を出す)
+    if not combine_cfg.get("enabled", True):
+        if not outputs:
             for entry in burned:
-                outputs.append(_copy_individual(entry, out_dir, prefix, stem))
-
-        # 各クリップの結合用パーツを時系列で平坦化 (テーマ有りは [intro, tagged])
-        clip_parts = [path for entry in burned for path in entry["parts"]]
-
-        # 結合しない設定なら個別出力のみ (keep_individual 未指定でも個別を出す)
-        if not combine_cfg.get("enabled", True):
-            if not outputs:
-                for entry in burned:
-                    outputs.append(_write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg))
-            _logger.info("個別クリップ %d 件を出力 (結合なし)", len(outputs))
-            if progress_cb:
-                progress_cb(1.0, "完了")
-            return outputs
-
-        # 結合: [Opening?] + (intro?+本編)群 + [Ending?] を 1 本へ (OP/ED を1回だけ)
-        if progress_cb:
-            progress_cb(0.92, "結合中…")
-        parts = _build_combine_parts(settings, combine_cfg, clip_parts)
-
-        suffix = combine_cfg.get("combined_suffix", "combined") or "combined"
-        final = os.path.join(out_dir, f"{prefix}_{stem}_{suffix}.mp4")
-        _combine(parts, final, ffmpeg_cfg)
-
-        _logger.info("結合出力: %s (使用%d)", final, len(burned))
+                outputs.append(_write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg))
+        _logger.info("個別クリップ %d 件を出力 (結合なし)", len(outputs))
         if progress_cb:
             progress_cb(1.0, "完了")
-        return outputs + [final]
+        return outputs
+
+    # 結合: [Opening?] + (intro?+本編)群 + [Ending?] を 1 本へ (OP/ED を1回だけ)
+    if progress_cb:
+        progress_cb(0.92, "結合中…")
+    parts = _build_combine_parts(settings, combine_cfg, clip_parts)
+
+    suffix = combine_cfg.get("combined_suffix", "combined") or "combined"
+    final = os.path.join(out_dir, f"{prefix}_{stem}_{suffix}.mp4")
+    _combine(parts, final, ffmpeg_cfg)
+
+    _logger.info("結合出力: %s (使用%d)", final, len(burned))
+    if progress_cb:
+        progress_cb(1.0, "完了")
+    return outputs + [final]
 
 
 # 結合パーツ [Opening?] + クリップ群 + [Ending?] を組み立てる

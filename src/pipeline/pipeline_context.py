@@ -63,6 +63,9 @@ class PipelineContext:
         # も同じ寿命で保持し、cleanup() で破棄する (回答 Q10: 永続化しない)。
         self.timeline = None
         self.project_path = None
+        # 読み込んだプロジェクトの初回作成時刻 (上書き保存で引き継ぐ / ver3 resolve7 §5.7)。
+        # 新規実行では None のまま = 保存時の時刻がそのまま created_at になる。
+        self.project_created_at = None
         self._asr_audio_path = None
 
     # 現在の処理対象動画パスを取得する

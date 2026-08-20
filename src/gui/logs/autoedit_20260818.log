@@ -1,0 +1,11 @@
+2026-08-18 17:43:05,277 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-18 17:43:13,875 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-08-18 17:43:16,451 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-08-18 17:44:31,168 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-08-18 17:44:34,382 [INFO] src.archive.twitch_source: 利用できる画質: 1440p60, 1080p60, 720p60, 360p, Audio Only
+2026-08-18 17:44:34,384 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-08-18 17:44:35,269 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2847676012.mp4 (画質 source)
+2026-08-18 17:44:35,272 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-08-18 17:44:37,928 [INFO] src.archive.twitch_source: コメント取得完了: D:\develop\autoedit\src\settings\archive_work\chat_2847676012.json
+2026-08-18 17:44:37,942 [INFO] src.archive.comment_source: チャット読み込み: 137件 (D:\develop\autoedit\src\settings\archive_work\chat_2847676012.json)
+2026-08-18 17:44:37,949 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2847676012.mp4 (窓180s/スライド45s, コメント137件)

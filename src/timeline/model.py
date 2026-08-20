@@ -146,10 +146,14 @@ class Transform:
 class MediaRef:
 
     def __init__(self, media_id, kind, path, duration_sec=None,
-                 width=0, height=0, fps=0.0, has_audio=False):
+                 width=0, height=0, fps=0.0, has_audio=False, path_rel=""):
         self.id = media_id
         self.kind = kind                      # MEDIA_VIDEO / MEDIA_IMAGE
         self.path = path
+        # プロジェクトファイルからの相対パス (ver3 resolve7 §5.9)。
+        # 保存時に project_io が書き込み、開くときに素材を探す 2 番目の手がかりに使う。
+        # プロジェクトと素材をまとめて別フォルダへ移した場合に効く。
+        self.path_rel = str(path_rel or "")
         self.duration_sec = duration_sec      # 画像は None (尺を持たない)
         self.width = _to_int(width)
         self.height = _to_int(height)
@@ -167,7 +171,7 @@ class MediaRef:
         return self.duration_sec
 
     def to_dict(self):
-        return {
+        data = {
             "id": self.id,
             "kind": self.kind,
             "path": self.path,
@@ -177,6 +181,10 @@ class MediaRef:
             "fps": round(self.fps, 4),
             "has_audio": self.has_audio,
         }
+        # 任意キー。持っているときだけ書き出す (旧ファイル・旧アプリと共存させるため)
+        if self.path_rel:
+            data["path_rel"] = self.path_rel
+        return data
 
     @staticmethod
     def from_dict(data):
@@ -189,6 +197,7 @@ class MediaRef:
             height=data.get("height", 0),
             fps=data.get("fps", 0.0),
             has_audio=bool(data.get("has_audio", False)),
+            path_rel=data.get("path_rel", ""),
         )
 
 
@@ -273,7 +282,7 @@ class SubtitleClip:
 
     def __init__(self, clip_id, timeline_start, duration, text="", role=DEFAULT_ROLE,
                  font="", font_size=None, use=True, z_order=DEFAULT_SUBTITLE_Z_ORDER,
-                 transform=None, origin=None):
+                 transform=None, origin=None, color="", outline_color=""):
         self.id = clip_id
         self.timeline_start = _to_float(timeline_start)
         self.duration = _to_float(duration)
@@ -286,6 +295,10 @@ class SubtitleClip:
         # 位置上書き (x/y が None なら設定の alignment/margin に従う / §8.3)
         self.transform = transform or Transform(x=None, y=None)
         self.origin = dict(origin or {})
+        # このクリップだけの文字色 (HTML #RRGGBB)。空文字 = 役割の色に従う (resolve6 §3-2)
+        self.color = str(color or "")
+        # このクリップだけの縁の色 (ASS &HAABBGGRR)。空文字 = 役割の色に従う (resolve6 §3-2)
+        self.outline_color = str(outline_color or "")
 
     @property
     def timeline_end(self):
@@ -302,6 +315,7 @@ class SubtitleClip:
             self.id, self.timeline_start, self.duration, self.text, self.role,
             self.font, self.font_size, self.use, self.z_order,
             self.transform.copy(), dict(self.origin),
+            self.color, self.outline_color,
         )
 
     # 既存資産 (build_subtitle_file / resolve_export) が扱う item 形式へ変換する
@@ -320,6 +334,11 @@ class SubtitleClip:
         if self.transform.is_positioned():
             item["pos_x"] = self.transform.x
             item["pos_y"] = self.transform.y
+        # 色は個別指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve6 §5.2)
+        if self.color:
+            item["color"] = self.color
+        if self.outline_color:
+            item["outline_color"] = self.outline_color
         return item
 
     def to_dict(self):
@@ -335,6 +354,9 @@ class SubtitleClip:
             "z_order": self.z_order,
             "transform": self.transform.to_position_dict(),
             "origin": dict(self.origin),
+            # 個別の色 (未指定は空文字。旧ファイルに無くても from_dict で空文字になる)
+            "color": self.color,
+            "outline_color": self.outline_color,
         }
 
     @staticmethod
@@ -351,6 +373,8 @@ class SubtitleClip:
             z_order=data.get("z_order", DEFAULT_SUBTITLE_Z_ORDER),
             transform=Transform.from_position_dict(data.get("transform")),
             origin=data.get("origin"),
+            color=data.get("color", ""),
+            outline_color=data.get("outline_color", ""),
         )
 
 

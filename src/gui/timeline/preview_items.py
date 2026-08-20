@@ -9,6 +9,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QPen, QPixmap
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPixmapItem,
+    QGraphicsRectItem,
     QGraphicsSimpleTextItem,
 )
 
@@ -17,6 +18,13 @@ _ALIGN_LEFT = (1, 4, 7)
 _ALIGN_RIGHT = (3, 6, 9)
 _ALIGN_BOTTOM = (1, 2, 3)
 _ALIGN_TOP = (7, 8, 9)
+
+# 大きさ変更ハンドルの既定値 (呼び出し側が設定を渡さなかった場合の保険 / resolve7 §7)
+_DEFAULT_OVERLAY_CFG = {
+    "min_scale": 0.02,
+    "max_scale": 4.0,
+    "resize_handle_px": 10,
+}
 
 # 選択枠の色 (琥珀)
 # ver3 resolve3 §5.6: 映像の上に置く操作用の目印のため、アクセント (赤) へ寄せない。
@@ -79,6 +87,15 @@ def pixel_to_normalized(px, py, canvas_width, canvas_height):
             1.0 - py / (canvas_height / 2.0))
 
 
+# 素材のピクセル数どおりに置くための拡大率 (キャンバス幅に対する比率 / resolve7 §5.5)
+# 求められないとき (素材が無い・寸法が取れない) は None を返す。
+def native_scale(timeline, clip):
+    media = timeline.media_by_id(getattr(clip, "media_id", "") or "")
+    if media is None or not media.width or not timeline.width:
+        return None
+    return float(media.width) / float(timeline.width)
+
+
 # 選択・ドラッグに対応するオーバーレイ要素の共通振る舞い
 class _OverlayMixin:
 
@@ -107,14 +124,65 @@ class _OverlayMixin:
         painter.drawRect(self.boundingRect())
 
 
+# 大きさ変更ハンドル (四隅 / resolve7 §5.3)
+# ビューは fitInView でキャンバス全体を縮めて表示するため、ItemIgnoresTransformations を
+# 付けて「画面上で常に同じ大きさ」に見えるようにする。
+# 辺 (上下左右) のハンドルは出さない。出すと「縦だけ伸ばす」操作を見せてしまい、
+# 縦横比固定という要望に反するため、四隅だけにすることが UI 上の担保になる (§3-1)。
+class _ResizeHandleItem(QGraphicsRectItem):
+
+    def __init__(self, owner, corner, size_px):
+        half = float(size_px) / 2.0
+        super().__init__(QRectF(-half, -half, float(size_px), float(size_px)), owner)
+        self._owner = owner
+        self._corner = corner
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.setBrush(QBrush(_SELECTION_COLOR))
+        self.setPen(QPen(QColor(40, 40, 40), 1))
+        self.setCursor(Qt.SizeFDiagCursor if corner in ("tl", "br")
+                       else Qt.SizeBDiagCursor)
+        self.setZValue(1.0)
+
+    # 押した瞬間に掴む (親の移動へ流さない = 掴んだ角でクリップごと動かさない)
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            event.ignore()
+            return
+        self._owner.begin_resize()
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        self._owner.update_resize(event.scenePos())
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._owner.finish_resize()
+        event.accept()
+
+
 # 画像・動画オーバーレイ (V2 以降のクリップ)
 class ImageOverlayItem(_OverlayMixin, QGraphicsPixmapItem):
 
-    def __init__(self, clip, pixmap, canvas_size, parent=None):
+    # 大きさ確定を伝える先 (PreviewPanel が設定する / move_finished と同じ規約)
+    resize_finished = None
+
+    def __init__(self, clip, pixmap, canvas_size, parent=None, overlay_cfg=None):
         super().__init__(parent)
         self._init_overlay(clip)
         self._canvas_size = canvas_size
-        target_width = max(int(canvas_size[0] * float(clip.transform.scale or 1.0)), 2)
+        cfg = dict(_DEFAULT_OVERLAY_CFG)
+        cfg.update(overlay_cfg or {})
+        self._min_scale = float(cfg["min_scale"])
+        self._max_scale = float(cfg["max_scale"])
+        # 素材の原寸 (縦横比の計算に使う。拡縮後の pixmap からは取れないため先に控える)
+        self._native_width = max(pixmap.width(), 1)
+        self._native_height = max(pixmap.height(), 1)
+        # この絵を描いたときの拡大率。ドラッグ中の setScale はこれとの比で与える。
+        self._base_scale = max(float(clip.transform.scale or 1.0), 1e-6)
+        self._pending_scale = self._base_scale
+        self._resizable = True
+
+        target_width = max(int(canvas_size[0] * self._base_scale), 2)
         if not pixmap.isNull():
             scaled = pixmap.scaledToWidth(target_width, Qt.SmoothTransformation)
             self.setPixmap(scaled)
@@ -124,6 +192,78 @@ class ImageOverlayItem(_OverlayMixin, QGraphicsPixmapItem):
             clip.transform.x or 0.0, clip.transform.y or 0.0, *canvas_size)
         rect = self.boundingRect()
         self.setPos(cx - rect.width() / 2.0, cy - rect.height() / 2.0)
+        # 中心を基準に拡縮する (大きさを変えても位置が動かない / resolve7 §3-2)
+        self.setTransformOriginPoint(rect.center())
+
+        self._handles = [
+            _ResizeHandleItem(self, corner, int(cfg["resize_handle_px"]))
+            for corner in ("tl", "tr", "bl", "br")
+        ]
+        self._layout_handles()
+        self._sync_handles()
+
+    # ハンドルを四隅へ置く (子アイテムの座標は親のローカル座標。親の setScale で追従する)
+    def _layout_handles(self):
+        rect = self.boundingRect()
+        corners = {
+            "tl": (rect.left(), rect.top()),
+            "tr": (rect.right(), rect.top()),
+            "bl": (rect.left(), rect.bottom()),
+            "br": (rect.right(), rect.bottom()),
+        }
+        for handle in self._handles:
+            x, y = corners[handle._corner]
+            handle.setPos(x, y)
+
+    # ハンドルの表示条件: 選択中 かつ 掴める状態 (再生中は掴ませない)
+    def _sync_handles(self):
+        visible = bool(self.isSelected()) and self._resizable
+        for handle in getattr(self, "_handles", []):
+            handle.setVisible(visible)
+
+    # 再生中など、大きさを変えさせない状態を切り替える
+    def set_resizable(self, resizable):
+        self._resizable = bool(resizable)
+        self._sync_handles()
+
+    # 選択が変わったらハンドルの表示を合わせる (選択中のときだけ出す)
+    def itemChange(self, change, value):
+        result = super().itemChange(change, value)
+        if change == QGraphicsItem.ItemSelectedHasChanged:
+            self._sync_handles()
+        return result
+
+    # ------------------------------------------------------------------
+    # 大きさ変更 (ハンドルから呼ばれる / resolve7 §3-3)
+    # ------------------------------------------------------------------
+
+    def begin_resize(self):
+        self._pending_scale = self._base_scale
+
+    # ドラッグ中は setScale で見た目だけ追従させる。
+    # QPixmap.scaledToWidth は綺麗だがコストが高く、毎フレーム実行してはならない (§3-3)。
+    def update_resize(self, scene_pos):
+        scale = self._scale_from_cursor(scene_pos)
+        self._pending_scale = min(max(scale, self._min_scale), self._max_scale)
+        self.setScale(self._pending_scale / self._base_scale)
+
+    # 確定時にコマンドを 1 回だけ積む (ドラッグ中は積まない = 履歴を汚さない)
+    def finish_resize(self):
+        if callable(self.resize_finished):
+            self.resize_finished(self.clip_id, self._pending_scale)
+
+    # 中心を固定したまま、カーソル位置から新しい拡大率を求める (resolve7 §3-2)
+    #   カーソルが角へ吸い付くよう、横・縦それぞれで必要な拡大率の大きい方を採る。
+    #   縦横比は「幅から高さを決める」ため常に保たれる。
+    def _scale_from_cursor(self, scene_pos):
+        canvas_w = float(self._canvas_size[0])
+        center = self.sceneBoundingRect().center()
+        dx = abs(scene_pos.x() - center.x())
+        dy = abs(scene_pos.y() - center.y())
+        ratio = float(self._native_height) / float(self._native_width)
+        scale_x = 2.0 * dx / max(canvas_w, 1.0)
+        scale_y = 2.0 * dy / max(canvas_w * ratio, 1.0)
+        return max(scale_x, scale_y)
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
@@ -151,9 +291,13 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         font.setUnderline(bool(font_profile.underline))
         self.setFont(font)
 
-        fill = font_profile.role_colors.get(role, font_profile.color_hex)
+        # クリップ個別の色があれば優先する (resolve6 §3-4)。空文字なら役割の色に従う。
+        fill = (clip.color
+                or font_profile.role_colors.get(role, font_profile.color_hex))
         self.setBrush(QBrush(ass_color_to_qcolor(fill)))
-        outline = font_profile.role_outline_colors.get(role, font_profile.outline_color)
+        outline = (clip.outline_color
+                   or font_profile.role_outline_colors.get(
+                       role, font_profile.outline_color))
         width = max(int(font_profile.outline_width or 0), 0)
         if width > 0:
             pen = QPen(ass_color_to_qcolor(outline, "#000000"))
@@ -202,10 +346,13 @@ class BaseFrameItem(QGraphicsPixmapItem):
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
 
     # 空フレーム (取得できないとき) は黒で塗る
+    # 直前に縮小フレームを表示していた場合に備え、拡縮と位置も戻す (resolve6 §5.8)
     def show_blank(self, canvas_size):
         pixmap = QPixmap(int(canvas_size[0]), int(canvas_size[1]))
         pixmap.fill(QColor(0, 0, 0))
         self.setPixmap(pixmap)
+        self.setScale(1.0)
+        self.setPos(0.0, 0.0)
 
     def bounding_canvas(self, canvas_size):
         return QRectF(0, 0, float(canvas_size[0]), float(canvas_size[1]))

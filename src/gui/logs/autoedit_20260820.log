@@ -1,0 +1,263 @@
+2026-08-20 10:50:56,166 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-20 11:15:42,711 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 11:15:42,712 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.mp4
+2026-08-20 11:15:43,260 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-20 11:15:44,603 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-31.6 LUFS / TP=-14.1 dBTP / LRA=8.8 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-08-20 11:15:45,645 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_r38om0gb\loudness_normalized.mp4
+2026-08-20 11:15:48,492 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-25 (mean, 測定 4/4 区間)
+2026-08-20 11:15:51,355 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -25 dB
+2026-08-20 11:15:52,538 [INFO] src.modules.silence_cutter: 編集点検出: 無音 2 件 / 残す区間 3 件 (閾値=-25dB, 最小無音=0.60s, 総尺=27.8s)
+2026-08-20 11:15:52,539 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:15:53,643 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 3 区間 → 26.2s (元 27.8s)
+2026-08-20 11:16:25,601 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-20 11:16:25,601 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-20 11:16:34,285 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-20 11:17:12,099 [INFO] src.modules.subtitle_generator: 音声認識完了 (6 セグメント)
+2026-08-20 11:17:12,200 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 6 → 6 件 (カット区間のため 0 件除外)
+2026-08-20 11:17:12,201 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 6 → 6 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-20 11:17:12,201 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 6 件)
+2026-08-20 11:17:12,286 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-20 11:17:12,286 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-20 11:17:12,287 [INFO] src.timeline.builder: Timeline 構築: V1 3 クリップ (OP=無 / ED=無) / S1 6 字幕 / 全長 26.3s / 60fps 1080x1920
+2026-08-20 11:17:12,289 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json
+2026-08-20 11:17:12,290 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:17:12,291 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-20 11:46:45,269 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:48:57,063 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json
+2026-08-20 11:49:01,180 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 3 クリップ / オーバーレイ 0 件 / 字幕 9 件（使用 9 件）/ ギャップ 0 件
+2026-08-20 11:49:01,335 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json
+2026-08-20 11:49:01,336 [INFO] src.timeline.renderer: ベース映像構築: 3 クリップ / ギャップ 0 件 / 合計 26.2s
+2026-08-20 11:49:16,722 [WARNING] src.timeline.renderer: ベース映像の尺: モデル 26.167s / 実測 26.083s (差 -0.083s / 3 部品)
+2026-08-20 11:49:16,725 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:49:16,725 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 2 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:49:16,726 [INFO] src.timeline.renderer: 字幕焼き込み: 9 件
+2026-08-20 11:49:36,801 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait_edited.mp4
+2026-08-20 11:49:36,801 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait_edited.mp4
+2026-08-20 11:50:00,606 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 11:50:00,606 [INFO] src.pipeline.pipeline_runner: 保存済みプロジェクトから再開: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json
+2026-08-20 11:50:00,619 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.timeline.json
+2026-08-20 11:50:00,620 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\Downloads\20260820_PlumpRepletePorcupinePicoMause-9RkskcvR9Ay4QY8p_portrait.mp4
+2026-08-20 11:50:01,467 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-31.6 LUFS / TP=-14.1 dBTP / LRA=8.8 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-08-20 11:50:02,480 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_q3d65fsr\recovered_source.mp4
+2026-08-20 11:50:02,481 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:50:07,413 [INFO] src.pipeline.pipeline_runner: 再編集を中断: ユーザーによるキャンセル
+2026-08-20 11:51:00,851 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 11:51:00,852 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/gomikasu.mp4
+2026-08-20 11:51:00,916 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1076x1914 → 出力=1080x1920)
+2026-08-20 11:51:01,920 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-32.0 LUFS / TP=-13.2 dBTP / LRA=13.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -0.5 dB)
+2026-08-20 11:51:03,177 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_96pkaar1\loudness_normalized.mp4
+2026-08-20 11:51:06,472 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-20 (mean, 測定 4/4 区間)
+2026-08-20 11:51:08,143 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -20 dB
+2026-08-20 11:51:09,528 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 6 件 (閾値=-20dB, 最小無音=0.60s, 総尺=35.6s)
+2026-08-20 11:51:09,528 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:51:10,939 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 6 区間 → 27.6s (元 35.6s)
+2026-08-20 11:51:10,939 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-20 11:51:10,939 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-20 11:51:17,737 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-20 11:51:55,377 [INFO] src.modules.subtitle_generator: 音声認識完了 (14 セグメント)
+2026-08-20 11:51:55,507 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 14 → 14 件 (カット区間のため 0 件除外)
+2026-08-20 11:51:55,508 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 14 → 14 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-20 11:51:55,509 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 14 件)
+2026-08-20 11:51:55,601 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-20 11:51:55,602 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-20 11:51:55,603 [INFO] src.timeline.builder: Timeline 構築: V1 6 クリップ (OP=無 / ED=無) / S1 14 字幕 / 全長 29.0s / 60fps 1080x1920
+2026-08-20 11:51:55,606 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\gomikasu.timeline.json
+2026-08-20 11:51:55,607 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:51:55,608 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-20 11:55:13,063 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:55:22,272 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:55:37,946 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:59:26,994 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\gomikasu.timeline.json
+2026-08-20 11:59:28,712 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\gomikasu.timeline.json
+2026-08-20 11:59:30,247 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 6 クリップ / オーバーレイ 0 件 / 字幕 14 件（使用 14 件）/ ギャップ 0 件
+2026-08-20 11:59:30,282 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\gomikasu.timeline.json
+2026-08-20 11:59:30,283 [INFO] src.timeline.renderer: ベース映像構築: 6 クリップ / ギャップ 0 件 / 合計 27.6s
+2026-08-20 11:59:30,288 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (1076x1914 60fps → 1080x1920 60fps)
+2026-08-20 11:59:54,121 [WARNING] src.timeline.renderer: ベース映像の尺: モデル 27.600s / 実測 27.520s (差 -0.080s / 6 部品)
+2026-08-20 11:59:54,126 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 11:59:54,127 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 2 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 11:59:54,128 [INFO] src.timeline.renderer: 字幕焼き込み: 14 件
+2026-08-20 12:00:22,844 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\gomikasu_edited.mp4
+2026-08-20 12:00:22,844 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\gomikasu_edited.mp4
+2026-08-20 12:26:23,043 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-20 12:26:53,442 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 12:26:53,442 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/rouryu.mp4
+2026-08-20 12:26:53,506 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-20 12:26:54,293 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-30.5 LUFS / TP=-14.1 dBTP / LRA=11.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -1.3 dB)
+2026-08-20 12:26:55,260 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_wgf5mlc5\loudness_normalized.mp4
+2026-08-20 12:26:57,052 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-08-20 12:26:58,112 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -18 dB
+2026-08-20 12:26:59,054 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 5 件 (閾値=-18dB, 最小無音=0.60s, 総尺=25.4s)
+2026-08-20 12:26:59,054 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:27:00,223 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 5 区間 → 21.3s (元 25.4s)
+2026-08-20 12:27:03,180 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-20 12:27:03,180 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-20 12:27:09,644 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-20 12:27:25,013 [INFO] src.modules.subtitle_generator: 音声認識完了 (3 セグメント)
+2026-08-20 12:27:25,113 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 3 → 3 件 (カット区間のため 0 件除外)
+2026-08-20 12:27:25,114 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 3 → 3 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-20 12:27:25,115 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 3 件)
+2026-08-20 12:27:25,220 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-20 12:27:25,221 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-20 12:27:25,221 [INFO] src.timeline.builder: Timeline 構築: V1 5 クリップ (OP=無 / ED=無) / S1 3 字幕 / 全長 21.3s / 60fps 1080x1920
+2026-08-20 12:27:25,223 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:27:25,224 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:27:25,224 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-20 12:29:09,612 [INFO] src.timeline.commands: リップル: 19.382〜21.279s (1.90s) を除去 / 削除 1 件・短縮 0 件・移動 0 件
+2026-08-20 12:29:32,579 [INFO] src.timeline.commands: リップル: 18.786〜19.382s (0.60s) を除去 / 削除 1 件・短縮 0 件・移動 0 件
+2026-08-20 12:29:35,247 [INFO] src.timeline.commands: リップル: 17.400〜18.786s (1.39s) を除去 / 削除 1 件・短縮 0 件・移動 0 件
+2026-08-20 12:30:19,535 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:30:20,602 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 3 クリップ / オーバーレイ 0 件 / 字幕 2 件（使用 2 件）/ ギャップ 0 件
+2026-08-20 12:30:20,622 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:30:20,622 [INFO] src.timeline.renderer: ベース映像構築: 3 クリップ / ギャップ 0 件 / 合計 17.4s
+2026-08-20 12:30:29,887 [INFO] src.timeline.renderer: ベース映像の尺: モデル 17.400s / 実測 17.400s (差 +0.000s / 3 部品)
+2026-08-20 12:30:29,890 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:30:29,890 [INFO] src.timeline.renderer: 字幕焼き込み: 2 件
+2026-08-20 12:30:38,573 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\rouryu_edited.mp4
+2026-08-20 12:30:38,574 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\rouryu_edited.mp4
+2026-08-20 12:30:50,112 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 12:30:50,112 [INFO] src.pipeline.pipeline_runner: 保存済みプロジェクトから再開: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:30:50,124 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:30:50,125 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\Downloads\rouryu.mp4
+2026-08-20 12:30:50,888 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-30.5 LUFS / TP=-14.1 dBTP / LRA=11.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -1.3 dB)
+2026-08-20 12:30:51,866 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_c32_5g7c\recovered_source.mp4
+2026-08-20 12:30:51,868 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:31:23,847 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:31:24,681 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 3 クリップ / オーバーレイ 0 件 / 字幕 2 件（使用 2 件）/ ギャップ 0 件
+2026-08-20 12:31:24,712 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\rouryu.timeline.json
+2026-08-20 12:31:24,713 [INFO] src.timeline.renderer: ベース映像構築: 3 クリップ / ギャップ 0 件 / 合計 17.4s
+2026-08-20 12:31:34,196 [INFO] src.timeline.renderer: ベース映像の尺: モデル 17.400s / 実測 17.400s (差 +0.000s / 3 部品)
+2026-08-20 12:31:34,198 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:31:34,199 [INFO] src.timeline.renderer: 字幕焼き込み: 2 件
+2026-08-20 12:31:44,567 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\rouryu_edited_1.mp4
+2026-08-20 12:31:44,568 [INFO] src.pipeline.pipeline_runner: 再編集の書き出し正常終了: D:/develop/autoedit/output\rouryu_edited_1.mp4
+2026-08-20 12:39:30,164 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-20 12:40:01,365 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 12:40:01,365 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kaidemiru.mp4
+2026-08-20 12:40:01,434 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-20 12:40:02,068 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-29.2 LUFS / TP=-14.0 dBTP / LRA=21.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.2 dB)
+2026-08-20 12:40:02,939 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_1d1pawiw\loudness_normalized.mp4
+2026-08-20 12:40:04,512 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-39 (mean, 測定 3/3 区間)
+2026-08-20 12:40:06,888 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -39 dB
+2026-08-20 12:40:07,669 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-39dB, 最小無音=0.60s, 総尺=19.2s)
+2026-08-20 12:40:07,670 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:40:08,229 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 19.2s (元 19.2s)
+2026-08-20 12:40:11,004 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-20 12:40:11,004 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-20 12:40:17,297 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-20 12:40:33,292 [INFO] src.modules.subtitle_generator: 音声認識完了 (6 セグメント)
+2026-08-20 12:40:33,396 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 6 → 6 件 (カット区間のため 0 件除外)
+2026-08-20 12:40:33,396 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 6 → 6 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-20 12:40:33,396 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 6 件)
+2026-08-20 12:40:33,502 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-20 12:40:33,502 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-20 12:40:33,503 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 6 字幕 / 全長 20.9s / 60fps 1080x1920
+2026-08-20 12:40:33,504 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kaidemiru.timeline.json
+2026-08-20 12:40:33,505 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:40:33,506 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-20 12:41:12,031 [INFO] src.timeline.commands: リップル: 17.775〜19.200s (1.43s) を除去 / 削除 1 件・短縮 0 件・移動 0 件
+2026-08-20 12:44:34,400 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kaidemiru.timeline.json
+2026-08-20 12:44:35,540 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 1 クリップ / オーバーレイ 0 件 / 字幕 5 件（使用 5 件）/ ギャップ 0 件
+2026-08-20 12:44:35,570 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kaidemiru.timeline.json
+2026-08-20 12:44:35,570 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 17.8s
+2026-08-20 12:44:44,424 [INFO] src.timeline.renderer: ベース映像の尺: モデル 17.767s / 実測 17.767s (差 +0.000s / 1 部品)
+2026-08-20 12:44:44,426 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-20 12:44:44,426 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 2 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-20 12:44:44,427 [INFO] src.timeline.renderer: 字幕焼き込み: 5 件
+2026-08-20 12:44:56,571 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kaidemiru_edited.mp4
+2026-08-20 12:44:56,571 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kaidemiru_edited.mp4
+2026-08-20 15:25:01,311 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-20 15:26:57,531 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 15:26:57,531 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.mp4
+2026-08-20 15:26:57,604 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-08-20 15:27:06,021 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.2 LUFS / TP=2.0 dBTP / LRA=13.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-20 15:27:22,071 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_vuy48469\loudness_normalized.mp4
+2026-08-20 15:29:11,520 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-29 (mean, 測定 63/63 区間)
+2026-08-20 15:29:15,261 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -29 dB
+2026-08-20 15:30:10,474 [INFO] src.modules.silence_cutter: 編集点検出: 無音 60 件 / 残す区間 60 件 (閾値=-29dB, 最小無音=0.60s, 総尺=285.0s)
+2026-08-20 15:30:21,331 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 60 区間 → 163.4s (元 282.5s)
+2026-08-20 15:31:00,301 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-20 15:31:00,301 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-20 15:31:09,705 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-20 15:36:18,791 [INFO] src.modules.subtitle_generator: 音声認識完了 (94 セグメント)
+2026-08-20 15:36:18,933 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 94 → 94 件 (カット区間のため 0 件除外)
+2026-08-20 15:36:18,933 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 94 → 94 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-20 15:36:18,934 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 94 件)
+2026-08-20 15:36:19,021 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-08-20 15:36:19,021 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-08-20 15:36:19,026 [INFO] src.timeline.builder: Timeline 構築: V1 60 クリップ (OP=無 / ED=無) / S1 94 字幕 / 全長 165.2s / 60fps 1920x1080
+2026-08-20 15:36:19,031 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 15:36:19,031 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-20 15:37:20,119 [INFO] src.timeline.commands: リップル: 1.952〜4.437s (2.49s) を除去 / 削除 1 件・短縮 0 件・移動 149 件
+2026-08-20 15:37:20,120 [INFO] src.timeline.commands: リップル: 1.731〜1.952s (0.22s) を除去 / 削除 1 件・短縮 0 件・移動 149 件
+2026-08-20 15:37:20,120 [INFO] src.timeline.commands: リップル: 0.000〜1.731s (1.73s) を除去 / 削除 1 件・短縮 0 件・移動 149 件
+2026-08-20 15:43:26,212 [INFO] src.timeline.commands: リップル: 26.238〜26.289s (0.05s) を除去 / 削除 1 件・短縮 0 件・移動 115 件
+2026-08-20 15:43:37,715 [INFO] src.timeline.commands: リップル: 32.096〜38.869s (6.77s) を除去 / 削除 1 件・短縮 0 件・移動 111 件
+2026-08-20 15:43:37,715 [INFO] src.timeline.commands: リップル: 31.668〜32.096s (0.43s) を除去 / 削除 1 件・短縮 0 件・移動 111 件
+2026-08-20 15:43:37,715 [INFO] src.timeline.commands: リップル: 28.514〜31.668s (3.15s) を除去 / 削除 1 件・短縮 0 件・移動 111 件
+2026-08-20 15:43:37,715 [INFO] src.timeline.commands: リップル: 26.238〜28.514s (2.28s) を除去 / 削除 1 件・短縮 0 件・移動 111 件
+2026-08-20 15:44:40,642 [INFO] src.timeline.commands: リップル: 64.067〜64.503s (0.44s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,642 [INFO] src.timeline.commands: リップル: 59.703〜64.067s (4.36s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,642 [INFO] src.timeline.commands: リップル: 57.934〜59.703s (1.77s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,642 [INFO] src.timeline.commands: リップル: 51.188〜57.934s (6.75s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,642 [INFO] src.timeline.commands: リップル: 47.913〜51.188s (3.28s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 42.759〜47.913s (5.15s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 41.433〜42.759s (1.33s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 40.361〜41.433s (1.07s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 38.444〜40.361s (1.92s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 37.219〜38.444s (1.23s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 34.391〜37.219s (2.83s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 33.045〜34.391s (1.35s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 32.036〜33.045s (1.01s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 31.473〜32.036s (0.56s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 30.139〜31.473s (1.33s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 28.333〜30.139s (1.81s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:44:40,651 [INFO] src.timeline.commands: リップル: 26.238〜28.333s (2.09s) を除去 / 削除 1 件・短縮 0 件・移動 71 件
+2026-08-20 15:46:47,662 [INFO] src.timeline.commands: リップル: 36.325〜37.175s (0.85s) を除去 / 削除 1 件・短縮 0 件・移動 65 件
+2026-08-20 15:47:07,873 [INFO] src.timeline.commands: リップル: 37.418〜37.861s (0.44s) を除去 / 削除 1 件・短縮 0 件・移動 62 件
+2026-08-20 15:58:08,836 [INFO] src.timeline.commands: リップル: 87.403〜87.664s (0.26s) を除去 / 削除 1 件・短縮 0 件・移動 15 件
+2026-08-20 15:58:30,837 [INFO] src.timeline.commands: リップル: 88.097〜88.802s (0.71s) を除去 / 削除 0 件・短縮 1 件・移動 13 件
+2026-08-20 15:59:12,416 [INFO] src.timeline.commands: リップル: 92.338〜92.834s (0.50s) を除去 / 削除 0 件・短縮 1 件・移動 10 件
+2026-08-20 16:01:05,273 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.media\m1_audio.m4a (6.8 MB)
+2026-08-20 16:01:05,273 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 1 件保存しました: D:\develop\autoedit\output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.media
+2026-08-20 16:01:05,281 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:01:09,006 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 35 クリップ / オーバーレイ 0 件 / 字幕 60 件（使用 60 件）/ ギャップ 0 件
+2026-08-20 16:01:09,060 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:01:09,060 [INFO] src.timeline.renderer: ベース映像構築: 35 クリップ / ギャップ 0 件 / 合計 105.3s
+2026-08-20 16:01:09,065 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-20 16:03:08,983 [INFO] src.timeline.renderer: ベース映像の尺: モデル 105.283s / 実測 105.284s (差 +0.000s / 35 部品)
+2026-08-20 16:03:09,002 [INFO] src.timeline.renderer: 字幕焼き込み: 60 件
+2026-08-20 16:04:28,999 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited.mp4
+2026-08-20 16:04:29,009 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited.mp4
+2026-08-20 16:07:01,323 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-20 16:07:04,697 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 16:07:04,697 [INFO] src.pipeline.pipeline_runner: 保存済みプロジェクトから再開: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:07:04,707 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:07:04,709 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\Downloads\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.mp4
+2026-08-20 16:07:12,638 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.2 LUFS / TP=2.0 dBTP / LRA=13.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-20 16:07:29,078 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_g2mk9qpz\recovered_source.mp4
+2026-08-20 16:08:48,916 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 1 件保存しました: D:\develop\autoedit\output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.media
+2026-08-20 16:08:48,921 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:08:50,435 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 35 クリップ / オーバーレイ 0 件 / 字幕 60 件（使用 60 件）/ ギャップ 4 件
+2026-08-20 16:08:50,472 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:08:50,472 [INFO] src.timeline.renderer: ベース映像構築: 35 クリップ / ギャップ 0 件 / 合計 105.3s
+2026-08-20 16:08:50,477 [INFO] src.timeline.renderer: 素材を正規化: recovered_source.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-20 16:10:46,264 [INFO] src.timeline.renderer: ベース映像の尺: モデル 105.267s / 実測 105.267s (差 +0.000s / 35 部品)
+2026-08-20 16:10:46,284 [INFO] src.timeline.renderer: 字幕焼き込み: 60 件
+2026-08-20 16:12:08,682 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited_1.mp4
+2026-08-20 16:12:08,682 [INFO] src.pipeline.pipeline_runner: 再編集の書き出し正常終了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited_1.mp4
+2026-08-20 16:14:43,176 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-20 16:14:43,176 [INFO] src.pipeline.pipeline_runner: 保存済みプロジェクトから再開: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:14:43,184 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:14:43,184 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\Downloads\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.mp4
+2026-08-20 16:14:51,241 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-20.2 LUFS / TP=2.0 dBTP / LRA=13.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-08-20 16:15:06,546 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_27bqtf6q\recovered_source.mp4
+2026-08-20 16:15:45,731 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 1 件保存しました: D:\develop\autoedit\output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.media
+2026-08-20 16:15:45,739 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:15:48,822 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 35 クリップ / オーバーレイ 0 件 / 字幕 60 件（使用 60 件）/ ギャップ 4 件
+2026-08-20 16:15:48,859 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b.timeline.json
+2026-08-20 16:15:48,859 [INFO] src.timeline.renderer: ベース映像構築: 35 クリップ / ギャップ 0 件 / 合計 105.3s
+2026-08-20 16:17:44,203 [INFO] src.timeline.renderer: ベース映像の尺: モデル 105.267s / 実測 105.267s (差 +0.000s / 35 部品)
+2026-08-20 16:17:44,217 [INFO] src.timeline.renderer: 字幕焼き込み: 60 件
+2026-08-20 16:19:01,357 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited.mp4
+2026-08-20 16:19:01,357 [INFO] src.pipeline.pipeline_runner: 再編集の書き出し正常終了: D:/develop/autoedit/output\2851243291-669964096-37613131-dad7-4856-b533-e32b8e005b4b_edited.mp4

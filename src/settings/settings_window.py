@@ -5,7 +5,7 @@ import os
 import shutil
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QDoubleValidator, QFont, QFontDatabase, QIntValidator
+from PySide6.QtGui import QDoubleValidator, QFont, QFontDatabase, QIntValidator
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -27,12 +27,14 @@ from PySide6.QtWidgets import (
 # デザイントークンと ui セクションの既定は src/gui/theme.py が唯一の出どころ (§4-2)。
 # 本ファイルは単独実行 (python src/settings/settings_window.py) もできるため、
 # パッケージ外から起動された場合はリポジトリルートを sys.path へ補ってから読み込む。
+# color_field は色文字列の変換と色見本の描画を Timeline のインスペクタと共有する
+# ための小部品 (resolve6 §5.4)。theme と同じ経路で読み込む。
 try:
-    from src.gui import theme
+    from src.gui import color_field, theme
 except ImportError:
     sys.path.insert(
         0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from src.gui import theme
+    from src.gui import color_field, theme
 
 DEFAULT_UI_SETTINGS = theme.DEFAULT_UI_SETTINGS
 
@@ -252,12 +254,92 @@ DEFAULT_SETTINGS = {
         "enabled": True,
         "project_dir": "",                     # 空 = general.output_directory
         "project_suffix": ".timeline.json",
-        "autosave_sec": 0,                     # 既定 0=無効 (読み戻し経路が無いため)
+        # 編集画面の自動保存の間隔 (秒)。0=無効 (既定)。
+        # 有効にすると <プロジェクト>.autosave.json へ書き、次に開くとき
+        # 本体より新しければ「復元しますか」を出す (ver3 resolve7 §5.9)。
+        "autosave_sec": 0,
         "keep_project_file": True,             # false なら「決定」後に削除する
         # 設定の OP/ED を Timeline へ自動配置するか (§6.9)。
         # false でも D&D による手動追加は可能。配置条件は concat_processor と同一。
         "opening_ending": {
             "auto_place": True,
+        },
+        # オーバーレイ (画像・動画) の大きさ (ver3 resolve7 §5.2/§5.3)
+        "overlay": {
+            # 拡大率の下限・上限 (キャンバス幅に対する比率)
+            "min_scale": 0.02,
+            "max_scale": 4.0,
+            # プレビュー上の四隅ハンドルの一辺 (画面ピクセル。ビューの拡大率に依らず一定)
+            "resize_handle_px": 10,
+            # インスペクタの「大きさ」欄の刻み (%)
+            "scale_step_percent": 1.0,
+            # D&D で置いた直後の大きさ
+            #   "fit_width" = キャンバス幅いっぱい (現行の挙動 / 既定)
+            #   "native"    = 素材のピクセル数どおり (キャンバスより大きければ収める)
+            "default_scale_mode": "fit_width",
+        },
+        # プロジェクトの保存・再編集 (ver3 resolve7 §5.7〜§5.11)
+        "project": {
+            # 編集画面に保存ボタン・Ctrl+S を出す (false で従来どおり保存操作なし)
+            "save_button": True,
+            # 未保存のまま閉じようとしたら確認する
+            "confirm_on_close": True,
+            # 保存時に本編素材 (正規化後の中間ファイル) をプロジェクトの隣へ複製する。
+            # true にすると開くのが速くなる代わりに動画 1 本ぶんのディスクを使う。
+            "keep_media": False,
+            # 複製先フォルダの接尾辞 (<プロジェクト名> + これ)
+            "media_dir_suffix": ".media",
+            # 素材が見つからないときの方針
+            #   "renormalize" = 元動画からラウドネス正規化をやり直す (既定 / 保存時と同じ音量)
+            #   "use_source"  = 元動画をそのまま使う (速いが音量が正規化前になる)
+            "missing_media_policy": "renormalize",
+            # 自動保存ファイルの接尾辞 (timeline.autosave_sec > 0 のときに使う)
+            "autosave_suffix": ".autosave.json",
+            # main_window の「編集の続き」に出す履歴
+            "recent_limit": 10,
+            "recent": [],
+            # アーカイブ切り抜き用プロジェクトの既定名に挟む識別子 (ver3 resolve9 §3-5)。
+            # 同じ VOD からクリップ用とアーカイブ用を作っても名前が衝突しないようにする。
+            "archive_suffix": ".archive",
+            # アーカイブ切り抜き用の「編集の続き」履歴 (クリップ用の recent と分ける)
+            "recent_archive": [],
+            # 保存時に正規化済みの音声だけを <プロジェクト名>.media/ へ残す
+            # (ver3 resolve9 §3-1 案D)。ラウドネス正規化は映像を -c:v copy で通すため、
+            # 音声さえ残しておけば開くときは「切り出し + 多重化」のコピー2回で復元できる。
+            # false にすると開くときにラウドネス正規化をやり直すことになる (数分)。
+            "keep_audio": True,
+            # サイドカー音声の尺が保存値とどれだけズレたら使わないか (秒)
+            "sidecar_tolerance_sec": 0.5,
+            # 一覧に削除ボタンを出す
+            "delete_button": True,
+            # 削除をゴミ箱経由にする (false で完全削除 / ver3 resolve9 §3-7)
+            "delete_to_trash": True,
+            # 削除時に複製素材フォルダ <プロジェクト名>.media/ も消す
+            "delete_media_dir": True,
+            # 一覧にリネームボタンを出す
+            "rename_enabled": True,
+            # プロジェクト一覧画面 (ver3 resolve9 §5.12)
+            "library": {
+                "enabled": True,
+                "window_width": 980,
+                "window_height": 620,
+                # 走査へ加えるフォルダ (既定は project_dir / general.output_directory のみ)
+                "extra_dirs": [],
+                # 走査を再帰にするか (既定は直下のみ)
+                "scan_recursive": False,
+                # 一覧に出す上限 (超えた分は更新日時の古いものから落とす)
+                "max_items": 100,
+                # 初期の並び ("updated_desc" / "name_asc" / "size_desc")
+                "sort": "updated_desc",
+                # V1 の帯に並べるコマ数 (1 で単一サムネイル)
+                "thumbnail_count": 3,
+                # 1 コマの幅 (高さはアスペクト比を保つ)
+                "thumbnail_width_px": 160,
+                # サムネイルのキャッシュ置き場 (相対指定は src/settings 基準)
+                "thumbnail_dir": "project_thumbs",
+                # キャッシュを保持するプロジェクト数の上限
+                "thumbnail_cache_limit": 200,
+            },
         },
         "min_clip_sec": 0.05,                  # これ未満へはトリムできない
         # Timeline の右クリック「字幕追加」で置く字幕の既定の尺 (秒)。
@@ -298,6 +380,14 @@ DEFAULT_SETTINGS = {
             # 太さは矩形の内側へ描くため、クリップの占有幅は変わらない。
             "clip_outline_width_px": 2,
             "clip_outline_selected_width_px": 3,
+            # アーカイブ用画面 (ver3 resolve5 §7)。採点グラフのドック配置と
+            # クリップバーの寸法。dock_state は利用者が動かした結果の記憶。
+            "archive_graph_dock_area": "top",       # "top"/"left"/"right"/"bottom"
+            "archive_graph_dock_height_px": 220,
+            "archive_clip_selector_width_px": 260,
+            "archive_dock_state": "",
+            # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §7)
+            "subtitle_color_swatch_width_px": 28,
         },
         "preview": {
             "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
@@ -319,6 +409,50 @@ DEFAULT_SETTINGS = {
             "transport_wide_button_width_px": 52,  # ◀◀ ▶▶ (2 記号ぶん広い)
             # 「高精度プレビュー」ボタンの右側の余白 (ver3 resolve4 E3)
             "transport_row_right_margin_px": 8,
+            # ── 再生の応答改善 (ver3 resolve6 §7) ──────────────────
+            # 直前に読んだ位置からこの秒数以内の前進なら seek せず読み進める。
+            # 0 にすると常に seek する = 従来動作へ戻る。
+            "sequential_decode_sec": 2.0,
+            # 再生中だけ映像をこの幅へ縮小して取得する (0 = 原寸のまま)。
+            # 停止・スクラブ中は原寸に戻るため、粗くなるのは再生中だけ。
+            # 素材の幅がこれ以下なら縮小しない。出力動画の画質には影響しない。
+            "playback_width": 960,
+            # 再生中のフレーム間引き "none" | "nonref" | "bidir"
+            "playback_skip_frame": "none",
+            # PyAV が無い環境で、再生中だけ常駐 ffmpeg のパイプ読み出しを使う
+            "frame_pipe_fallback": True,
+            # 音声チャンクの作り方。"single_process"=断片ごとに -ss 入力を並べて
+            # 1 回の ffmpeg で作る (既定) / "per_piece"=断片ごとに起動する従来方式
+            "audio_build_mode": "single_process",
+            # ▶ を押したとき最初に作る短いチャンクの長さ (秒)
+            "audio_startup_chunk_sec": 6,
+            # 保持しておくチャンクの本数 (少し戻して再生し直すときの作り直しを防ぐ)
+            "audio_chunk_cache": 3,
+            # プレビュー音声の品質 (編集用の確認音のため軽くしてある)。
+            # 0 / 空文字なら ffmpeg セクションの値 (48000 / aac) を使う。
+            "audio_sample_rate": 24000,
+            "audio_channels": 1,
+            "audio_codec": "pcm_s16le",
+            # 画面を開いた直後に先頭の起動用チャンクを先読みする
+            "audio_prefetch_on_open": True,
+            # ── スクラブ (再生ヘッドドラッグ中の音声 / ver3 resolve7 §3-7・§5.13) ──
+            # false で従来どおり完全に無音のドラッグに戻る
+            "scrub_audio_enabled": True,
+            # 1 粒の間隔 (ms)。短いほど追従が細かくなるが setPosition の回数が増える
+            "scrub_interval_ms": 60,
+            # 手元に音が無いときに作る短いチャンクの長さ (秒)
+            "scrub_chunk_sec": 4.0,
+            # 動きが止まってから黙るまでの時間 (ms)
+            "scrub_hold_ms": 120,
+            # これ未満の移動は「止まっている」とみなす (秒)
+            "scrub_min_delta_sec": 0.01,
+            # 通常再生に対する音量比 (スクラブ音は耳に付きやすいので下げられるようにする)
+            "scrub_volume": 0.8,
+            # "grain" = 等倍で粒を撒く (既定 / 音程が変わらず逆方向でも鳴る)
+            # "match" = ドラッグ速度に再生レートを合わせる (音程が変わる / 環境依存)
+            "scrub_rate_mode": "grain",
+            # スクラブ中も再生中と同じ軽い取得 (縮小・前進デコード) を使う
+            "scrub_low_quality_frames": True,
         },
         # キー割り当て (ver3 resolve2 §6)。空文字で無効。
         # S には何も割り当てないため項目自体を置かない。
@@ -344,6 +478,9 @@ DEFAULT_SETTINGS = {
             "zoom_in": "Ctrl++",
             "zoom_in_alt": "Ctrl+=",
             "zoom_out": "Ctrl+-",
+            # プロジェクトの保存 (ver3 resolve7 §5.7)
+            "save": "Ctrl+S",
+            "save_as": "Ctrl+Shift+S",
         },
         "media": {
             "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"],
@@ -357,6 +494,16 @@ DEFAULT_SETTINGS = {
             "extract_mode": "seek",
             "concat_reencode": False,
             "overlay_enabled": True,           # false でオーバーレイ合成をスキップ (切り分け用)
+            # 連結前の中間パートの音声コーデック (20260812 resolve3 §7)。
+            # AAC のエンコーダ遅延 (1024 サンプル = 21.3ms) が部品ごとに尺へ乗り、
+            # concat 連結で部品数ぶん累積してテロップがずれるため既定は非圧縮。
+            # "aac" にすると従来動作へ戻る。
+            "intermediate_audio_codec": "pcm_s16le",
+            # 中間パートの容器。pcm_s16le は mp4 に格納できないため .mov を使う。
+            "intermediate_container": ".mov",
+            # 部品の尺をフレーム境界へタイル化する (絶対フレーム番号の差で決める)。
+            # false にすると従来どおりモデルの秒をそのまま -t へ渡す。
+            "frame_quantize": True,
         },
     },
     "ffmpeg": {
@@ -399,7 +546,11 @@ DEFAULT_SETTINGS = {
             # R3: ローカル指定に加え Twitch VOD を twitch-dl で自動取得できる (flow17 R3)。
             "downloader": "local",       # "local" | "twitch-dl" (UI の入力ソース選択で切替)
             "twitch_dl_path": "twitch-dl",  # twitch-dl CLI (同梱 or PATH。ffmpeg と同方式で解決)
-            "vod_format": "source",      # 取得画質 (source=最高)
+            # 希望する取得画質。"source"=無変換(chunked)。VOD によっては存在しない
+            # (トランスコードのみの VOD がある / error 20260810)。
+            "vod_format": "source",
+            # 希望画質が無いとき、利用できる最高画質へ自動で落とす (error 20260810)
+            "vod_quality_fallback": True,
             "chat_source": "twitch-dl",  # コメントは twitch-dl chat json に一本化
             "work_dir": "archive_work",  # 取得物の作業ディレクトリ (settings 相対 or 絶対)
         },
@@ -1508,50 +1659,24 @@ class SettingsWindow(QWidget):
 
     # 設定文字列を QColor へ変換する(不正・空欄時は既定色を返す)
     # with_alpha=True: ASS &HAABBGGRR / False: HTML #RRGGBB
+    # 実体は color_field へ移した (Timeline のインスペクタと共有するため / resolve6 §5.4)。
+    # フォールバック色はプレースホルダー定数を渡し、従来と同じ結果になるようにしている。
     def _parse_color(self, text, with_alpha):
-        s = (text or "").strip()
-        try:
-            if with_alpha:
-                # ASS: &HAABBGGRR (BGR 並び・アルファ反転)。6桁(アルファ省略)は補完受理する
-                hex_ = s[2:] if s.upper().startswith("&H") else s
-                hex_ = hex_.rjust(8, "0")[-8:]
-                aa, bb, gg, rr = hex_[0:2], hex_[2:4], hex_[4:6], hex_[6:8]
-                color = QColor(int(rr, 16), int(gg, 16), int(bb, 16))
-                color.setAlpha(255 - int(aa, 16))  # ASS→Qt はアルファ反転
-                return color
-            # HTML: #RRGGBB
-            color = QColor(s if s.startswith("#") else "#" + s)
-            return color if color.isValid() else QColor(PLACEHOLDER_COLOR)
-        except (ValueError, TypeError):
-            # フォールバック既定色(プレースホルダー定数を流用しハードコードを避ける)
-            fallback = PLACEHOLDER_OUTLINE_COLOR if with_alpha else PLACEHOLDER_COLOR
-            return self._parse_color(fallback, with_alpha)
+        fallback = PLACEHOLDER_OUTLINE_COLOR if with_alpha else PLACEHOLDER_COLOR
+        return color_field.parse_color(text, with_alpha, fallback)
 
     # QColor を設定保存形式の文字列へ変換する
     # with_alpha=True: ASS &HAABBGGRR / False: HTML #RRGGBB
     def _format_color(self, color, with_alpha):
-        if with_alpha:
-            aa = 255 - color.alpha()  # Qt→ASS はアルファ反転
-            return "&H{:02X}{:02X}{:02X}{:02X}".format(
-                aa, color.blue(), color.green(), color.red()
-            )
-        return "#{:02X}{:02X}{:02X}".format(color.red(), color.green(), color.blue())
+        return color_field.format_color(color, with_alpha)
 
     # ボタン上の色見本を現在の入力値で塗り替える(手入力・ピッカー双方に追従)
     # ここはテーマの適用対象外 (resolve3 §5.5)。
     # 塗りは「ユーザーが設定した字幕の色そのもの」を表示する機能であり、
     # テーマで塗り替えると設定値が見えなくなる。枠線の色だけテーマから引く。
     def _update_swatch(self, button, line_edit, with_alpha):
-        color = self._parse_color(line_edit.text(), with_alpha)
-        # 枠線は色面を縁取るためのものなので、明暗どちらでも見える不透明な色を使う
-        # (glass.border は半透明の白で、ライトでは下地に埋もれて縁取りにならない)
-        border = (theme.color("text.secondary").name() if theme.is_enabled() else "#888")
-        # 不透明度はボタン背景では無視し、色相のみ提示(視認性優先)
-        button.setStyleSheet(
-            f"background-color: {color.name()}; min-width: 28px; "
-            f"border: 1px solid {border};"
-        )
-        button.setText("")  # 色面のみ。ラベルは項目名側で表現
+        fallback = PLACEHOLDER_OUTLINE_COLOR if with_alpha else PLACEHOLDER_COLOR
+        color_field.apply_swatch(button, line_edit.text(), with_alpha, fallback)
 
     # ディレクトリ選択ダイアログを開く
     def _choose_directory(self, line_edit):

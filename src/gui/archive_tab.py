@@ -4,6 +4,7 @@
 # → 完了で切り抜き+字幕焼き込み+結合。
 # コメント採点(ｗ数・急増ボーナス)は chat 取得時に有効化される (resolve17 §4.4.1)。
 import os
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFontDatabase
@@ -21,9 +22,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..archive import clip_writer, comment_source, config, pipeline, twitch_source
+from ..archive import (
+    clip_writer,
+    comment_source,
+    config,
+    pipeline,
+    project_resume,
+    twitch_source,
+)
 from ..archive.twitch_auth import TwitchAuth
-from ..exceptions import TwitchError
+from ..exceptions import PipelineCancelled, TwitchError
+from ..timeline import project_io
+from ..timeline.builder import timeline_config
 from ..settings.settings_window import (
     load_settings,
     register_fonts_in_dir,
@@ -32,6 +42,9 @@ from ..settings.settings_window import (
 from ..utils.logger import get_logger
 from . import theme
 from .archive_result_window import ArchiveResultBridge
+from .project_library_dialog import ProjectLibraryDialog
+from .project_resume_row import ProjectResumeRow
+from .timeline.missing_media_dialog import MediaRelinkBridge
 
 _logger = get_logger(__name__)
 
@@ -127,7 +140,8 @@ class ArchiveAnalyzeWorker(QThread):
         self.progress.emit(0.0, "VOD取得中…")
         input_path = twitch_source.download_vod(
             video_id, work_dir, dl["twitch_dl_path"], dl["vod_format"],
-            progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir)
+            progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir,
+            quality_fallback=dl["vod_quality_fallback"])
 
         # コメント取得。失敗してもコメント無しで採点続行 (resolve17 §5)
         comments = None
@@ -176,12 +190,49 @@ class ArchiveClipWorker(QThread):
         self.progress.emit(float(ratio), str(label))
 
 
+# 保存済みアーカイブ用プロジェクトの再編集をワーカースレッドで実行する
+# (ver3 resolve9 §5.8)。素材の復元 → 編集画面 → 書き出しまでを一気に通す。
+class ArchiveResumeWorker(QThread):
+    progress = Signal(float, str)
+    finished_ok = Signal(object)   # 出力パスのリスト
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, project_path, settings, result_callback=None,
+                 relink_callback=None, restore_path=None, parent=None):
+        super().__init__(parent)
+        self._project_path = project_path
+        self._settings = settings
+        self._result_callback = result_callback
+        self._relink_callback = relink_callback
+        self._restore_path = restore_path
+
+    def run(self):
+        try:
+            outputs = project_resume.run_from_archive_project(
+                self._project_path, self._settings, progress_cb=self._emit,
+                result_callback=self._result_callback,
+                relink_callback=self._relink_callback,
+                restore_path=self._restore_path)
+            self.finished_ok.emit(outputs)
+        except PipelineCancelled:
+            self.cancelled.emit()
+        except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
+            _logger.exception("保存済みプロジェクトの再編集に失敗")
+            self.failed.emit(str(e))
+
+    def _emit(self, ratio, label):
+        self.progress.emit(float(ratio), str(label))
+
+
 # アーカイブ切り抜き用タブ
 class ArchiveTabWidget(QWidget):
 
     # 実行状態の変化を親へ通知する (ver3 resolve4 §5.7-4 / 回答 Q1)
     # タブ外へ移した設定ボタンを無効化するために使う。
     running_changed = Signal(bool)
+    # 種別違いのプロジェクトが選ばれた → 親にタブを切り替えてもらう (ver3 resolve9 §3-4)
+    switch_tab_requested = Signal(str, str)      # (kind, project_path)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -197,6 +248,10 @@ class ArchiveTabWidget(QWidget):
         self._auth = None           # TwitchAuth (ログイン状態を保持)
         # 無音カット可否チェック (resolve20 §5.8)。機能無効時は UI を作らないため None。
         self.silence_cut_check = None
+        # 編集の続きの行 (ver3 resolve9 §5.8)。機能無効時は作らないため None。
+        self.resume_row = None
+        self._resume_worker = None
+        self._relink_bridge = None
         if self._enabled:
             self._build_ui()
             self._init_auth()
@@ -310,6 +365,15 @@ class ArchiveTabWidget(QWidget):
         button_row.addWidget(self.analyze_button)
         button_row.addStretch(1)
         root.addLayout(button_row)
+
+        # 編集の続き (保存済みアーカイブ用プロジェクトの再編集 / ver3 resolve9 §5.8)
+        # 採点・切り出し・文字起こしを飛ばし、保存した編集の続きから書き出す。
+        self.resume_row = ProjectResumeRow(project_io.KIND_ARCHIVE, self._settings)
+        self.resume_row.resume_requested.connect(self._start_resume)
+        self.resume_row.library_requested.connect(self._open_library)
+        self.resume_row.wrong_kind_selected.connect(
+            lambda path, kind: self.switch_tab_requested.emit(kind, path))
+        root.addWidget(self.resume_row)
 
         # 進捗 + ステータス
         self.progress_bar = QProgressBar()
@@ -501,6 +565,8 @@ class ArchiveTabWidget(QWidget):
             default_size=subtitle_cfg.get("font_size", None),
             font_families=list(QFontDatabase.families()),
             theme_placeholder=_THEME_PLACEHOLDER,
+            # Timeline 編集画面のプレビュー一時ファイル置き場 (ver3 resolve5)
+            work_dir=config.resolve_work_dir(self._settings),
         )
 
         # 準備+一括編集+切り抜き+焼き込み+結合を開始
@@ -532,6 +598,95 @@ class ArchiveTabWidget(QWidget):
         self.status_label.setText("エラーで停止しました")
         QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
 
+    # ===== 編集の続き (保存済みプロジェクトの再編集 / ver3 resolve9 §5.8) =====
+
+    # 一覧画面を開く (開いたものは自分のタブで再開する)
+    def _open_library(self):
+        dialog = ProjectLibraryDialog(
+            project_io.KIND_ARCHIVE, self._settings, parent=self)
+        dialog.open_requested.connect(self._on_library_open)
+        dialog.changed.connect(lambda: self.resume_row.set_settings(self._settings))
+        dialog.exec()
+        self.resume_row.set_settings(self._settings)
+
+    def _on_library_open(self, path):
+        self.resume_row.select(path)
+        self._start_resume(path)
+
+    # 自動保存が本体より新しければ、そちらから復元するか尋ねる (resolve7 §5.9 と同じ扱い)
+    # 戻り値: 読み込みに使うパス (復元しないなら None = 本体をそのまま開く)
+    def _resolve_autosave(self, project_path):
+        cfg = timeline_config(self._settings)["project"]
+        autosave = project_io.autosave_path(project_path, cfg["autosave_suffix"])
+        try:
+            if not os.path.exists(autosave):
+                return None
+            if os.path.getmtime(autosave) <= os.path.getmtime(project_path):
+                return None    # 本体の方が新しい = 保存済み。自動保存は使わない
+            stamp = datetime.fromtimestamp(
+                os.path.getmtime(autosave)).strftime("%Y-%m-%d %H:%M:%S")
+        except OSError:
+            return None
+        answer = QMessageBox.question(
+            self, "自動保存が見つかりました",
+            f"保存されていない編集が自動保存に残っています（{stamp}）。\n"
+            "こちらから編集を再開しますか?\n\n"
+            "「いいえ」を選ぶと、最後に保存した内容を開きます"
+            "（自動保存はそのまま残ります）。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        )
+        return autosave if answer == QMessageBox.Yes else None
+
+    # 保存済みプロジェクトからの再編集をワーカースレッドで起動する
+    # 素材は VOD から切り直し、音声はサイドカーを貼り直して復元する (§3-1 案D)。
+    def _start_resume(self, project_path):
+        # 設定を最新化 (settings_window で変更された可能性に備える)
+        self._settings = load_settings()
+        register_fonts_in_dir(resolve_fonts_dir(self._settings))
+        self.resume_row.set_settings(self._settings)
+
+        # 自動保存が残っていれば復元するか尋ねる (自動保存が無効なら何も起きない)
+        restore_path = self._resolve_autosave(project_path)
+
+        # 元 VOD は Timeline に記録されている (Resolve 出力とテーマ演出に使う)
+        source_path = ""
+        try:
+            timeline = project_io.load(project_path, validate_timeline=False)
+            source_path = project_resume.recorded_vod_path(timeline)
+        except Exception:  # noqa: BLE001 (読めない場合はワーカー側で通知する)
+            source_path = ""
+
+        subtitle_cfg = self._settings.get("subtitle", {})
+        self._review_bridge = ArchiveResultBridge(
+            parent_window=self,
+            settings=self._settings,
+            source_path=source_path,
+            default_font=subtitle_cfg.get("font_family", ""),
+            default_size=subtitle_cfg.get("font_size", None),
+            font_families=list(QFontDatabase.families()),
+            theme_placeholder=_THEME_PLACEHOLDER,
+            work_dir=config.resolve_work_dir(self._settings),
+        )
+        self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
+
+        self._resume_worker = ArchiveResumeWorker(
+            project_path, self._settings, result_callback=self._review_bridge,
+            relink_callback=self._relink_bridge, restore_path=restore_path,
+            parent=self)
+        self._resume_worker.progress.connect(self._on_progress)
+        self._resume_worker.finished_ok.connect(self._on_clip_done)
+        self._resume_worker.cancelled.connect(self._on_resume_cancelled)
+        self._resume_worker.failed.connect(self._on_failed)
+        self._spinner_message = "プロジェクトを読み込み中..."
+        self._set_running(True)
+        self._resume_worker.start()
+
+    # 編集画面でキャンセルされた (出力なしで終わる)
+    def _on_resume_cancelled(self):
+        self._set_running(False)
+        self.progress_bar.setValue(0)
+        self.status_label.setText("中断しました")
+
     def _on_progress(self, ratio, label):
         self.progress_bar.setValue(int(ratio * 100))
         self._spinner_message = label
@@ -551,6 +706,12 @@ class ArchiveTabWidget(QWidget):
         # 実行中は無音カットの可否を変更できないようにする (resolve20 §5.8)
         if self.silence_cut_check is not None:
             self.silence_cut_check.setEnabled(not running)
+        # 編集の続き (ver3 resolve9 §5.8)
+        if self.resume_row is not None:
+            self.resume_row.set_busy(running)
+            if not running:
+                # 編集画面で保存されていれば履歴が増えているため作り直す
+                self.resume_row.set_settings(self._settings)
         if running:
             self._spinner_timer.start()
         else:

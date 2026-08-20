@@ -85,6 +85,26 @@ class MoveTest(unittest.TestCase):
         self.stack.push(self.timeline, commands.MoveClip("c3", 12.0, _MIN))
         _assert_audio_in_sync(self, self.timeline)
 
+    # 現在位置と同じ位置への移動は何もしない (docs/error/20260812/Analyze.md §5-2)
+    # 重なっている字幕をクリックしただけで別の位置へ飛ぶ不具合の再発防止 (I5)。
+    def test_move_to_same_position_does_nothing(self):
+        subtitle_track = self.timeline.subtitle_tracks()[0]
+        subtitle_track.clips.append(SubtitleClip("s2", 2.0, 3.0, "字幕2"))  # s1 と重なる
+        ok = self.stack.push(
+            self.timeline, commands.MoveClip("s2", 2.0, _MIN))
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s2").timeline_start, 2.0)
+
+    # 重なっている字幕でも、実際に動かす移動なら従来どおり重なりを避ける
+    def test_move_of_overlapping_subtitle_still_resolves(self):
+        subtitle_track = self.timeline.subtitle_tracks()[0]
+        subtitle_track.clips.append(SubtitleClip("s2", 2.0, 3.0, "字幕2"))
+        ok = self.stack.push(
+            self.timeline, commands.MoveClip("s2", 2.5, _MIN))
+        self.assertTrue(ok)
+        moved = self.timeline.clip_by_id("s2")
+        self.assertGreaterEqual(moved.timeline_start, self.timeline.clip_by_id("s1").timeline_end - 1e-6)
+
 
 class TrimTest(unittest.TestCase):
 
@@ -660,6 +680,72 @@ class AudioSettingTest(unittest.TestCase):
         self.assertTrue(self.timeline.clip_by_id("a1").muted)
         self.stack.undo(self.timeline)
         self.assertFalse(self.timeline.clip_by_id("a1").muted)
+
+
+class ResizeOverlayTest(unittest.TestCase):
+    """ver3 resolve7 §5.2: オーバーレイの大きさ変更 (縦横比はスカラー 1 つで構造的に固定)"""
+
+    def setUp(self):
+        self.timeline = _build()
+        # V2 にオーバーレイを 1 本置く (大きさを変えられるのはベース以外のクリップだけ)
+        self.timeline.tracks.append(Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+            Clip("o1", "m1", 5.0, 5.0, 0.0, 5.0, z_order=10,
+                 origin={"type": "user_media"}),
+        ]))
+        self.stack = commands.CommandStack()
+
+    def test_resize_changes_scale(self):
+        ok = self.stack.push(self.timeline, commands.ResizeOverlay("o1", 0.5))
+        self.assertTrue(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").transform.scale, 0.5)
+
+    # 上下限で丸まる
+    def test_resize_clamps_to_limits(self):
+        self.stack.push(self.timeline, commands.ResizeOverlay("o1", 99.0, 0.02, 4.0))
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").transform.scale, 4.0)
+        self.stack.push(self.timeline, commands.ResizeOverlay("o1", 0.0001, 0.02, 4.0))
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").transform.scale, 0.02)
+
+    # 同じ値なら履歴を汚さない
+    def test_resize_same_value_is_noop(self):
+        self.assertTrue(self.stack.push(self.timeline, commands.ResizeOverlay("o1", 0.5)))
+        self.assertFalse(self.stack.push(self.timeline, commands.ResizeOverlay("o1", 0.5)))
+
+    # 字幕は対象外 (大きさはフォントサイズで表すため)
+    def test_resize_ignores_subtitle(self):
+        self.assertFalse(self.stack.push(self.timeline, commands.ResizeOverlay("s1", 0.5)))
+
+    # ベース映像 (V1) は renderer が transform を見ないため対象外
+    def test_resize_ignores_base_clip(self):
+        self.assertFalse(self.stack.push(self.timeline, commands.ResizeOverlay("c1", 0.5)))
+
+    # Undo で元の大きさへ戻る
+    def test_resize_undo_restores_scale(self):
+        self.stack.push(self.timeline, commands.ResizeOverlay("o1", 0.4))
+        self.stack.undo(self.timeline)
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").transform.scale, 1.0)
+
+
+class AddMediaScaleTest(unittest.TestCase):
+    """ver3 resolve7 §7: 置いた直後の大きさ (default_scale_mode)"""
+
+    def setUp(self):
+        self.timeline = _build()
+        self.stack = commands.CommandStack()
+        self.media = MediaRef("m2", "image", __file__, None, 640, 360, 0, False)
+
+    # 既定 (scale 未指定) は従来どおりキャンバス幅いっぱい
+    def test_default_is_fit_width(self):
+        self.stack.push(self.timeline, commands.AddMediaClip(self.media, 2.0, 5.0))
+        clip = self.timeline.track_by_id("V2").clips[0]
+        self.assertAlmostEqual(clip.transform.scale, 1.0)
+
+    # 指定した大きさで置ける (原寸モード)
+    def test_scale_is_applied(self):
+        self.stack.push(self.timeline,
+                        commands.AddMediaClip(self.media, 2.0, 5.0, scale=0.25))
+        clip = self.timeline.track_by_id("V2").clips[0]
+        self.assertAlmostEqual(clip.transform.scale, 0.25)
 
 
 if __name__ == "__main__":

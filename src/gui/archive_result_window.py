@@ -5,6 +5,7 @@
 #   下右 = プレビュー (SubtitlePreviewWidget / resolve23。字幕適用済み区間の再生。
 #          対象は prepared_path=無音カット後クリップで、字幕 items と時間軸が一致する)
 # 「完了」で各クリップの編集済み字幕・テーマ・使用可否を返し、まとめて焼き込みへ進む。
+import tempfile
 import threading
 
 from PySide6.QtCore import Qt, QObject, Signal
@@ -266,11 +267,13 @@ class ArchiveResultBridge(QObject):
 
     def __init__(self, parent_window=None, settings=None, source_path="",
                  default_font="", default_size=None, font_families=None,
-                 theme_placeholder=""):
+                 theme_placeholder="", work_dir=None):
         super().__init__()
         self._parent_window = parent_window
         self._settings = settings or {}
         self._source_path = source_path
+        # Timeline 編集画面のプレビュー一時ファイル置き場 (ver3 resolve5)
+        self._work_dir = work_dir or tempfile.gettempdir()
         self._default_font = default_font
         self._default_size = default_size
         self._font_families = font_families
@@ -279,26 +282,64 @@ class ArchiveResultBridge(QObject):
         self._result = None
         self.result_requested.connect(self._on_requested, Qt.QueuedConnection)
 
-    # ワーカースレッドから呼ばれる。prepared/curve を渡し、編集結果 or None を返す。
-    def __call__(self, prepared, curve):
+    # ワーカースレッドから呼ばれる。prepared/curve/timeline を渡し、編集結果 or None を返す。
+    # timeline が None でなければ Timeline 編集画面を開く (ver3 resolve5)。
+    # project_path/created_at: 保存済みプロジェクトを開き直した場合に渡る
+    #   (ver3 resolve9 §5.7)。渡ると画面は「再編集」として振る舞い、
+    #   保存先と初回作成時刻をそのまま引き継ぐ。
+    def __call__(self, prepared, curve, timeline=None, project_path=None,
+                 created_at=None):
         self._event.clear()
         self._result = None
-        self.result_requested.emit({"prepared": prepared, "curve": curve})
+        self.result_requested.emit({
+            "prepared": prepared, "curve": curve, "timeline": timeline,
+            "project_path": project_path, "created_at": created_at,
+            "mode": "resume" if project_path else "pipeline",
+        })
         self._event.wait()
         return self._result
 
     # メインスレッドで結果画面を開く
     def _on_requested(self, payload):
         try:
-            window = ArchiveResultWindow(
-                payload["prepared"], payload["curve"], self._source_path, self._settings,
-                default_font=self._default_font, default_size=self._default_size,
-                font_families=self._font_families, theme_placeholder=self._theme_placeholder,
-                parent=self._parent_window,
-            )
-            if window.exec() == QDialog.Accepted:
-                self._result = window.result_data()
+            if payload.get("timeline") is not None:
+                self._open_timeline_window(payload)
             else:
-                self._result = None
+                self._open_legacy_window(payload)
+        except Exception:  # noqa: BLE001 (画面生成の失敗でワーカーを固めない)
+            _logger.exception("結果画面の表示に失敗しました")
+            self._result = None
         finally:
             self._event.set()
+
+    # Timeline 編集画面 (ver3 resolve5)。戻り値は {"timeline", "clips"}。
+    def _open_timeline_window(self, payload):
+        # 循環 import を避けるため遅延 import する (timeline 側が本モジュールを参照しない構成)
+        from .timeline.archive_timeline_dialog import ArchiveTimelineDialog
+
+        window = ArchiveTimelineDialog(
+            payload["timeline"], payload["prepared"], payload["curve"],
+            self._source_path, self._settings, self._work_dir,
+            parent=self._parent_window,
+            project_path=payload.get("project_path"),
+            created_at=payload.get("created_at"),
+            mode=payload.get("mode", "pipeline"),
+        )
+        if window.exec() == QDialog.Accepted:
+            self._result = {"timeline": window.result_timeline(),
+                            "clips": window.result_data()}
+        else:
+            self._result = None
+
+    # 従来の一括結果画面 (timeline_review=false のとき)
+    def _open_legacy_window(self, payload):
+        window = ArchiveResultWindow(
+            payload["prepared"], payload["curve"], self._source_path, self._settings,
+            default_font=self._default_font, default_size=self._default_size,
+            font_families=self._font_families, theme_placeholder=self._theme_placeholder,
+            parent=self._parent_window,
+        )
+        if window.exec() == QDialog.Accepted:
+            self._result = window.result_data()
+        else:
+            self._result = None

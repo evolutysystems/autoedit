@@ -182,8 +182,10 @@ def _used_items(items):
 def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
     width, height = canvas
     role = str(item.get("role", "streamer"))
+    # 塗り・縁とも item 個別指定を優先する (resolve6 §3-5)。無ければ役割の色。
     stroke_hex, stroke_alpha = _ass_color_to_hex_alpha(
-        font_profile.role_outline_colors.get(role, font_profile.outline_color)
+        item.get("outline_color")
+        or font_profile.role_outline_colors.get(role, font_profile.outline_color)
     )
     text = _item_text(item, font_profile)
     return {
@@ -192,7 +194,8 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
         "text": text,
         "font": item.get("font") or font_profile.family,
         "font_size": item.get("font_size") or font_profile.size,
-        "color": font_profile.role_colors.get(role, font_profile.color_hex),
+        "color": (item.get("color")
+                  or font_profile.role_colors.get(role, font_profile.color_hex)),
         "stroke_color": stroke_hex,
         "stroke_alpha": stroke_alpha,
         "stroke_width": font_profile.outline_width,
@@ -231,7 +234,9 @@ def _caption_from_item(item, offset, font_profile, name):
         "text": _item_text(item, font_profile),
         "font": item.get("font") or font_profile.family,
         "font_size": item.get("font_size") or font_profile.size,
-        "color": font_profile.role_colors.get(role, font_profile.color_hex),
+        # 塗りは item 個別指定を優先する (resolve6 §3-5)
+        "color": (item.get("color")
+                  or font_profile.role_colors.get(role, font_profile.color_hex)),
         "bold": font_profile.bold,
         "italic": font_profile.italic,
         "underline": font_profile.underline,

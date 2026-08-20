@@ -3,6 +3,7 @@
 # マーカ/折れ線のクリックで最寄りクリップを選び clip_selected(index) を emit し、
 # 結果画面の下段 (字幕編集・プレビュー) を同期させる。
 from PySide6.QtCharts import (
+    QAreaSeries,
     QChart,
     QChartView,
     QLineSeries,
@@ -10,7 +11,7 @@ from PySide6.QtCharts import (
     QValueAxis,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from . import theme
@@ -29,6 +30,12 @@ class ScoreGraphWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._clip_points = []  # [(mid_time, clip_index)] マーカ→クリップ逆引き用
+        # 選択中クリップの帯 (ver3 resolve5 §3-5)。軸は帯の付け替えに使う。
+        self._highlight = None
+        self._highlight_bounds = None    # 帯を形づくる上下の系列 (参照保持用)
+        self._axis_x = None
+        self._axis_y = None
+        self._score_range = (0.0, 1.0)
         self._build_ui()
 
     def _build_ui(self):
@@ -76,6 +83,8 @@ class ScoreGraphWidget(QWidget):
         for axis in list(self._chart.axes()):
             self._chart.removeAxis(axis)
         self._clip_points = []
+        self._highlight = None
+        self._highlight_bounds = None
 
         curve = curve or []
         clips = clips or []
@@ -131,6 +140,43 @@ class ScoreGraphWidget(QWidget):
         for series in self._chart.series():
             series.attachAxis(axis_x)
             series.attachAxis(axis_y)
+        self._axis_x = axis_x
+        self._axis_y = axis_y
+        self._score_range = (axis_y.min(), axis_y.max())
+
+    # 選択中クリップの区間を帯で示す (ver3 resolve5 §3-5)。
+    # start/end は元動画(VOD)の秒。None を渡すと帯を消す。
+    # 再生ヘッドの追従は行わない (回答 Q4。QtCharts の再描画が重いため)。
+    def set_selected_range(self, start_sec, end_sec):
+        if self._highlight is not None:
+            self._chart.removeSeries(self._highlight)
+            self._highlight = None
+            self._highlight_bounds = None
+        if start_sec is None or end_sec is None or end_sec <= start_sec:
+            return
+        if self._axis_x is None or self._axis_y is None:
+            return
+        low, high = self._score_range
+        # QAreaSeries は上下の QLineSeries の所有権を取らない。Python 側で参照を
+        # 手放すと解放され、描画時に落ちるため、帯と一緒に保持しておく。
+        upper = QLineSeries(self)
+        upper.append(float(start_sec), high)
+        upper.append(float(end_sec), high)
+        lower = QLineSeries(self)
+        lower.append(float(start_sec), low)
+        lower.append(float(end_sec), low)
+        self._highlight_bounds = (upper, lower)
+        band = QAreaSeries(upper, lower)
+        # 帯は折れ線・マーカを隠さないよう薄く塗り、輪郭は描かない
+        color = theme.color("accent") if theme.is_enabled() else QColor(120, 170, 255)
+        fill = QColor(color)
+        fill.setAlpha(48)
+        band.setBrush(QBrush(fill))
+        band.setPen(QPen(Qt.NoPen))
+        self._chart.addSeries(band)
+        band.attachAxis(self._axis_x)
+        band.attachAxis(self._axis_y)
+        self._highlight = band
 
     # 折れ線/マーカのクリック → 最寄りクリップを選択して emit
     def _on_series_clicked(self, point):
