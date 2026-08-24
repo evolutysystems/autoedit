@@ -121,7 +121,9 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [],
+            "recent_archive": [
+                "D:/develop/autoedit/output\\vod_2854706666.archive.timeline.json"
+            ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
@@ -168,7 +170,7 @@
             "archive_graph_dock_area": "top",
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAAAAAAAAPwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAA/////wAAAEQA////AAAAAAAAAAAAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAhoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
@@ -229,7 +231,16 @@
             "zoom_out": "Ctrl+-",
             "delete_plain": "Backspace",
             "save": "Ctrl+S",
-            "save_as": "Ctrl+Shift+S"
+            "save_as": "Ctrl+Shift+S",
+            "copy": "Ctrl+C",
+            "paste": "Ctrl+V"
+        },
+        "paste": {
+            "ripple_scope": "base_syncs_all",
+            "insert_policy": "split",
+            "archive_index_policy": "inherit",
+            "move_playhead_to_end": true,
+            "select_pasted": true
         },
         "media": {
             "video_extensions": [

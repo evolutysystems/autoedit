@@ -7,8 +7,10 @@
 # 移動・トリム・リップルは追随処理なしで自動的に一致する。
 # 明示的な追随が要るのはクリップ個数が変わる Split と Delete の 2 つだけ。
 import copy
+import os
 
 from ..utils.logger import get_logger
+from . import clipboard
 from .model import (
     BASE_SUBTITLE_TRACK_ID,
     BASE_Z_ORDER,
@@ -21,6 +23,7 @@ from .model import (
     Z_ORDER_STEP,
     AudioClip,
     Clip,
+    MediaRef,
     SubtitleClip,
     Track,
     Transform,
@@ -209,6 +212,46 @@ def _overlay_elements(timeline):
     return timeline.overlay_elements(include_disabled=True)
 
 
+# クリップを at_sec で 2 つに割り、後半のクリップを返す (割れなければ None)
+# 両側が最小尺を満たさない位置では割らない。リンク音声も 2 本へ分ける (R18 §6.3.4)。
+# ver3 resolve10 §5.2: SplitClip と貼り付けの割り込み (make_room_for_range) で
+# 分割の規約を共有するため関数へ出した。2 か所へ書くと必ずズレるため 1 つに寄せる。
+def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05):
+    offset = at_sec - clip.timeline_start
+    if offset < min_clip_sec or (clip.duration - offset) < min_clip_sec:
+        return None
+
+    if isinstance(clip, SubtitleClip):
+        new_clip = clip.copy()
+        new_clip.id = timeline.next_id("s")
+        new_clip.timeline_start = at_sec
+        new_clip.duration = clip.duration - offset
+        clip.duration = offset
+        track.clips.append(new_clip)
+        return new_clip
+
+    new_clip = clip.copy()
+    new_clip.id = timeline.next_id("c")
+    new_clip.timeline_start = at_sec
+    new_clip.duration = clip.duration - offset
+    new_clip.source_in = clip.source_in + offset
+    new_clip.source_out = clip.source_out
+    clip.duration = offset
+    clip.source_out = clip.source_in + offset
+    track.clips.append(new_clip)
+
+    # リンク音声も 2 つへ分ける (R18 §6.3.4)
+    audio_clip = timeline.audio_clip_for(clip.id)
+    if audio_clip is not None:
+        audio_track = timeline.track_of_clip(audio_clip.id)
+        if audio_track is not None:
+            new_audio = audio_clip.copy()
+            new_audio.id = timeline.next_id("a")
+            new_audio.link_clip = new_clip.id
+            audio_track.clips.append(new_audio)
+    return new_clip
+
+
 # ------------------------------------------------------------------
 # 範囲リップル (resolve2 §5.4 / R8)
 # ------------------------------------------------------------------
@@ -320,6 +363,112 @@ def ripple_remove_range(timeline, start, end, tracks, min_clip_sec=0.05):
             start, end, delta, removed, shortened, moved,
         )
     return changed
+
+
+# ------------------------------------------------------------------
+# 割り込み (貼り付け用 / ver3 resolve10 §3-4 / §5.2-2)
+# ------------------------------------------------------------------
+# ripple_remove_range() の逆にあたるが、対称形ではない:
+#   ・対象は「干渉したトラックだけ」(呼び出し側が渡す)
+#   ・ずらす量は「必要な分だけ」トラックごとに計算する
+#   ・干渉が無ければ 1 か所も変更しない
+# 貼り付けたノードが優先され、既存ノードが右へ逃げる、という要望に対応する。
+
+# 割り込み時に跨ぎクリップをどう扱うか (ver3 resolve10 §3-4)
+INSERT_SPLIT = "split"              # start で分割し後半だけずらす (既定)
+INSERT_SHIFT_WHOLE = "shift_whole"  # 丸ごとずらす
+
+
+# クリップ 1 件を [start, ...) の外へ出す方法と「動き出す位置」を返す
+#   (None,    None)     : 区間より前にいる。何もしない
+#   ("move",  開始位置)  : 丸ごと右へずらす
+#   ("split", start)    : start で分割し、後半だけ右へずらす
+#   ("trim",  None)     : start へ終端を切り詰める (動かさない)
+# ver3 resolve10 §3-4。ずらし量の計算 (required_shift) と実際の適用
+# (make_room_for_range) で必ず同じ判定を使うため、分岐をこの 1 関数へ寄せる。
+# 2 か所へ書くと必ずズレて、貼り付け区間に重なりが残る。
+def _insert_action(clip, start, min_clip_sec, policy):
+    if clip.timeline_end <= start + _EPS:
+        return (None, None)                           # 区間より前 → 無関係
+    if clip.timeline_start >= start - _EPS:
+        return ("move", clip.timeline_start)          # start 以降 → 丸ごとずらす
+    # ここから: start を跨ぐクリップ
+    head = start - clip.timeline_start                # start より前に残る長さ
+    tail = clip.timeline_end - start                  # start より後ろの長さ
+    if policy == INSERT_SHIFT_WHOLE or head < min_clip_sec:
+        return ("move", clip.timeline_start)          # 頭がごく短い → 丸ごと右へ
+    if tail < min_clip_sec:
+        return ("trim", None)                         # 尻がごく短い → start で切る
+    return ("split", start)                           # start で分割し後半が動く
+
+
+# トラック上で [start, end) を空けるのに必要なずらし量を求める (ver3 resolve10 §3-4)
+# 干渉が無ければ 0.0 (＝ずらさずそのまま置ける)。
+# 「動き出す位置」が最も早いクリップが、必要量を決める。
+def required_shift(track, start, end, min_clip_sec=0.05, policy=INSERT_SPLIT):
+    shift = 0.0
+    for clip in track.clips:
+        _action, move_from = _insert_action(clip, start, min_clip_sec, policy)
+        if move_from is None:
+            continue
+        if move_from < end - _EPS:                    # 貼り付け区間へ食い込んでいる
+            shift = max(shift, end - move_from)
+    return shift
+
+
+# クリップの終端を at へ切り詰める (最小尺未満の食い込みを潰すための後始末)
+def _trim_tail_to(clip, at):
+    duration = max(at - clip.timeline_start, 0.0)
+    if isinstance(clip, Clip):
+        clip.source_out = clip.source_in + duration
+    clip.duration = duration
+
+
+# トラック上の [start, end) を空ける (ver3 resolve10 §3-4 / §5.2-2)
+# shift を渡さなければ required_shift() で最小限を求める。
+# 全トラックを同量ずらす場合 (ripple_scope=base_syncs_all / all) は呼び出し側が指定する。
+# 音声トラックは対象外: AudioClip は時刻を持たず V1 から導出するため自動で追従する (R18)。
+# ロック中のトラックも触らない (ロックの意味を優先する)。
+# 戻り値: 実際にずらした量 (0.0 = 何も動かしていない)
+#
+# 不変条件:
+#   ① 戻った時点で [start, end) に重なる既存クリップは 1 つも無い
+#   ② 干渉が無ければ Timeline を 1 か所も変えない
+#   ③ start 以降のクリップは全て同じ shift だけ動く (間隔が保たれ、新しい重なりを作らない)
+def make_room_for_range(timeline, track, start, end, min_clip_sec=0.05,
+                        policy=INSERT_SPLIT, shift=None):
+    if track.is_audio() or track.locked:
+        return 0.0
+    if shift is None:
+        shift = required_shift(track, start, end, min_clip_sec, policy)
+    if shift <= _EPS:
+        return 0.0
+
+    moved = split = trimmed = 0
+    # split_clip_at() が track.clips へ追加するため、走査は複製に対して行う
+    for clip in list(track.clips):
+        action, _move_from = _insert_action(clip, start, min_clip_sec, policy)
+        if action is None:
+            continue
+        if action == "move":
+            clip.timeline_start += shift
+            moved += 1
+        elif action == "trim":
+            _trim_tail_to(clip, start)
+            trimmed += 1
+        else:                                          # split
+            tail = split_clip_at(timeline, track, clip, start, min_clip_sec)
+            if tail is None:                           # 念のため (通常は起きない)
+                clip.timeline_start += shift
+                moved += 1
+            else:
+                tail.timeline_start += shift
+                split += 1
+
+    _logger.info(
+        "貼り付けの割り込み: %s の %.3fs へ %.2fs を確保 / 移動 %d 件・分割 %d 件・切詰 %d 件",
+        track.id, start, shift, moved, split, trimmed)
+    return shift
 
 
 # ------------------------------------------------------------------
@@ -449,40 +598,10 @@ class SplitClip(Command):
         track = timeline.track_of_clip(self._clip_id)
         if clip is None or track is None or track.locked:
             return False
-        offset = self._at_sec - clip.timeline_start
-        # 両側が最小尺を満たさない位置では分割しない
-        if offset < self._min_clip_sec or (clip.duration - offset) < self._min_clip_sec:
-            return False
-
-        if isinstance(clip, SubtitleClip):
-            new_clip = clip.copy()
-            new_clip.id = timeline.next_id("s")
-            new_clip.timeline_start = self._at_sec
-            new_clip.duration = clip.duration - offset
-            clip.duration = offset
-            track.clips.append(new_clip)
-            return True
-
-        new_clip = clip.copy()
-        new_clip.id = timeline.next_id("c")
-        new_clip.timeline_start = self._at_sec
-        new_clip.duration = clip.duration - offset
-        new_clip.source_in = clip.source_in + offset
-        new_clip.source_out = clip.source_out
-        clip.duration = offset
-        clip.source_out = clip.source_in + offset
-        track.clips.append(new_clip)
-
-        # リンク音声も 2 つへ分ける (R18 §6.3.4)
-        audio_clip = timeline.audio_clip_for(clip.id)
-        if audio_clip is not None:
-            audio_track = timeline.track_of_clip(audio_clip.id)
-            if audio_track is not None:
-                new_audio = audio_clip.copy()
-                new_audio.id = timeline.next_id("a")
-                new_audio.link_clip = new_clip.id
-                audio_track.clips.append(new_audio)
-        return True
+        # 分割の規約は split_clip_at() が持つ (ver3 resolve10 §5.2)。
+        # 両側が最小尺を満たさない位置では割れず None が返る。
+        return split_clip_at(timeline, track, clip, self._at_sec,
+                             self._min_clip_sec) is not None
 
 
 # クリップを削除する (R10 / R17)
@@ -755,6 +874,263 @@ class AddSubtitleClip(Command):
             break
         duration = end - self._start
         return duration if duration >= self._min_clip_sec else None
+
+
+# ------------------------------------------------------------------
+# 貼り付け (ver3 resolve10)
+# ------------------------------------------------------------------
+
+# 右へずらす範囲 (ver3 resolve10 §3-5)
+SCOPE_BASE_SYNCS_ALL = "base_syncs_all"  # V1 へ貼るときだけ全トラック (既定)
+SCOPE_TRACK = "track"                    # 常に干渉したトラックだけ
+SCOPE_ALL = "all"                        # 常に全トラック
+
+# アーカイブ用 V1 の archive_clip_index の扱い (ver3 resolve10 §3-8)
+ARCHIVE_INDEX_INHERIT = "inherit"
+ARCHIVE_INDEX_KEEP = "keep"
+
+# アーカイブ書き出しのグループ分けに使う origin のキー (archive/timeline_builder.py)
+_ORIGIN_ARCHIVE_INDEX = "archive_clip_index"
+
+
+# クリップボードの内容を at_sec へ貼り付ける (ver3 resolve10 §5.3)
+# 貼り付けたノードが優先され、干渉した既存ノードは右へずれる (要望 P3)。
+# ずれるのは干渉したトラックだけ・必要な分だけで、干渉が無ければ何も動かない (要望 P4)。
+# ただし V1 (ベース映像) へ貼るときは字幕・オーバーレイも同量ずらす (要望 P14 / §3-5)。
+#
+# 【手順】順序に意味がある:
+#   ① 解決 : 貼り付け先トラックと素材を先に確定する (貼れない項目のために場所を空けない)
+#   ② 確保 : トラックごとに必要な分だけ場所を空ける
+#   ③ 配置 : 空いた区間へクリップを作って置く
+class PasteClips(Command):
+
+    def __init__(self, payload, at_sec, min_clip_sec=0.05,
+                 insert_policy=INSERT_SPLIT, ripple_scope=SCOPE_BASE_SYNCS_ALL,
+                 archive_index_policy=ARCHIVE_INDEX_INHERIT, max_video_tracks=8):
+        self._payload = payload or {}
+        self._at = max(float(at_sec), 0.0)
+        self._min_clip_sec = float(min_clip_sec)
+        self._insert_policy = insert_policy
+        self._ripple_scope = ripple_scope
+        self._archive_index_policy = archive_index_policy
+        self._max_video_tracks = int(max_video_tracks)
+        # 呼び出し側が選択・再生ヘッド・案内に使う結果
+        self.created_clip_ids = []
+        self.pasted_end_sec = None
+        self.skipped = 0
+        self.shifted_sec = 0.0        # 実際にずらした最大量 (0 = 何も動いていない)
+        self.label = "貼り付け"
+
+    def apply(self, timeline):
+        items = self._payload.get("items") or []
+        if not items:
+            return False
+
+        # ① 解決: 貼れる項目だけを (トラック, 項目, 素材ID, 区間) の形へ落とす
+        plans = []
+        for item in items:
+            plan = self._resolve_item(timeline, item)
+            if plan is None:
+                self.skipped += 1
+                continue
+            plans.append(plan)
+        if not plans:
+            return False
+
+        # ② 確保: トラックごとの外接区間で場所を空ける
+        self._make_room(timeline, plans)
+
+        # ③ 配置
+        for plan in plans:
+            self._place(timeline, plan)
+
+        # 【重要】少しでも Timeline を変えたら True を返す。CommandStack.push() は
+        # False のときスナップショットへ戻さないため、場所だけ空いて 1 件も貼れなかった
+        # 場合に False を返すと、Undo できない変更が残る。
+        return bool(self.created_clip_ids) or self.shifted_sec > _EPS
+
+    # 項目 1 件について貼り付け先と素材を解決する (貼れなければ None)
+    def _resolve_item(self, timeline, item):
+        track = self._resolve_track(timeline, item)
+        if track is None or track.locked:
+            return None
+        duration = float((item.get("clip") or {}).get("duration") or 0.0)
+        if duration < self._min_clip_sec:
+            return None
+        media_id = None
+        if item.get("kind") == clipboard.KIND_VIDEO:
+            media_id = self._resolve_media(timeline, item)
+            if media_id is None:            # 素材が見つからない → 貼らない (§3-7)
+                return None
+        start = self._at + float(item.get("offset_sec") or 0.0)
+        return {"track": track, "item": item, "media_id": media_id,
+                "start": start, "end": start + duration}
+
+    # トラックごとに必要な分だけ場所を空ける (§3-4 / §3-5)
+    # 貼り付け先に V1 (ベース映像) が含まれる場合は、字幕・オーバーレイも同量ずらす
+    # (既定 base_syncs_all / 要望 P14)。V1 だけ動かすと字幕が置いていかれるため。
+    def _make_room(self, timeline, plans):
+        # 同じトラックへ乗る項目は外接区間 (最小開始〜最大終端) でまとめて 1 回だけ空ける。
+        # コピー元にあった項目間の隙間は隙間のまま貼る (並びを崩さないため)。
+        regions, tracks = {}, {}
+        for plan in plans:
+            track = plan["track"]
+            tracks[track.id] = track
+            low, high = regions.get(track.id, (plan["start"], plan["end"]))
+            regions[track.id] = (min(low, plan["start"]), max(high, plan["end"]))
+
+        base = timeline.base_video_track()
+        sync_all = (self._ripple_scope == SCOPE_ALL) or (
+            self._ripple_scope == SCOPE_BASE_SYNCS_ALL
+            and base is not None and base.id in tracks)
+
+        if not sync_all:
+            # 干渉したトラックだけを、それぞれ必要な分だけずらす (要望 P4)
+            for track_id, (start, end) in regions.items():
+                shift = make_room_for_range(
+                    timeline, tracks[track_id], start, end,
+                    self._min_clip_sec, self._insert_policy)
+                self.shifted_sec = max(self.shifted_sec, shift)
+            return
+
+        # 全トラックを同量ずらす (縦の同期を保つため最大値へ揃える / §3-5)。
+        # make_room_for_range() が音声トラックとロック中のトラックを弾く。
+        # shift が 0 (= 貼り付け先に十分な隙間がある) なら 1 つも動かさない。
+        shift = 0.0
+        for track_id, (start, end) in regions.items():
+            shift = max(shift, required_shift(tracks[track_id], start, end,
+                                              self._min_clip_sec, self._insert_policy))
+        if shift <= _EPS:
+            return
+        start = min(s for s, _e in regions.values())
+        end = max(e for _s, e in regions.values())
+        for track in timeline.tracks:
+            make_room_for_range(timeline, track, start, end, self._min_clip_sec,
+                                self._insert_policy, shift=shift)
+        self.shifted_sec = shift
+
+    # 項目 1 件を置く (場所は ② で空いているため衝突しない)
+    def _place(self, timeline, plan):
+        track, item = plan["track"], plan["item"]
+        clip = self._instantiate(timeline, track, item, plan["media_id"],
+                                 plan["start"], plan["end"] - plan["start"])
+        track.clips.append(clip)
+        self.created_clip_ids.append(clip.id)
+        self._attach_audio(timeline, track, clip, item)
+        end = clip.timeline_end
+        self.pasted_end_sec = (end if self.pasted_end_sec is None
+                               else max(self.pasted_end_sec, end))
+
+    # 新しいクリップを作る (ID は採番し直す。尺・素材位置はコピー元のまま)
+    def _instantiate(self, timeline, track, item, media_id, start, duration):
+        data = dict(item.get("clip") or {})
+        if item.get("kind") == clipboard.KIND_SUBTITLE:
+            clip = SubtitleClip.from_dict(data)
+            clip.id = timeline.next_id("s")
+            clip.timeline_start = start
+            clip.duration = duration
+            return clip
+
+        clip = Clip.from_dict(data)
+        clip.id = timeline.next_id("c")
+        clip.media_id = media_id
+        clip.timeline_start = start
+        clip.duration = duration
+        clip.origin = self._resolve_origin(timeline, track,
+                                           dict(data.get("origin") or {}), start)
+        return clip
+
+    # アーカイブ用 V1 の archive_clip_index を決める (§3-8)
+    # 書き出しは V1 を index で区切り、index からフォルダ名・出力ファイル名を作るため、
+    # 同じ index のグループが 2 つできると出力が衝突する。直前のクリップの index を
+    # 引き継げば新しいグループ境界を作らないので、構造的に衝突しない。
+    # 判定は「場所を空けた後」の並びに対して行う (ずらす前だと直前クリップを取り違える)。
+    def _resolve_origin(self, timeline, track, origin, start):
+        if self._archive_index_policy != ARCHIVE_INDEX_INHERIT:
+            return origin
+        if not isinstance(timeline.source, dict) or not timeline.source.get("archive"):
+            return origin                        # クリップ用 Timeline は対象外
+        base = timeline.base_video_track()
+        if base is None or track.id != base.id:
+            return origin                        # V1 以外は書き出し分割に関与しない
+        previous = following = None
+        for clip in sorted(base.clips, key=lambda c: c.timeline_start):
+            if clip.timeline_start <= start + _EPS:
+                previous = clip
+            elif following is None:
+                following = clip
+        neighbor = previous or following
+        if neighbor is not None and _ORIGIN_ARCHIVE_INDEX in neighbor.origin:
+            origin[_ORIGIN_ARCHIVE_INDEX] = neighbor.origin[_ORIGIN_ARCHIVE_INDEX]
+        return origin
+
+    # 貼り付け先トラックを決める (§3-3)
+    # コピー元のトラックを引き継ぐ。AddMediaClip の「重なるなら別トラックへ逃がす」
+    # 規約は使わない (要望は「押しのける」であり、逃がすと違う結果になるため)。
+    def _resolve_track(self, timeline, item):
+        info = item.get("track") or {}
+        if item.get("kind") == clipboard.KIND_SUBTITLE:
+            track = timeline.track_by_id(str(info.get("id") or ""))
+            if track is not None and track.is_subtitle():
+                return track
+            track = timeline.base_subtitle_track()
+            if track is not None:
+                return track
+            track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
+            timeline.tracks.append(track)
+            return track
+
+        if info.get("is_base"):
+            return timeline.base_video_track()
+        track = timeline.track_by_id(str(info.get("id") or ""))
+        if track is not None and track.is_video():
+            return track
+        if len(timeline.video_tracks()) >= self._max_video_tracks:
+            _logger.warning("映像トラックの上限 (%d) に達しているため貼り付けません",
+                            self._max_video_tracks)
+            return None
+        track_id, index = timeline.next_video_track_id()
+        track = Track(track_id, TRACK_VIDEO, index, name=f"Video {index}")
+        timeline.tracks.append(track)
+        return track
+
+    # 素材をプールへ再登録して media_id を返す (見つからなければ None / §3-7)
+    # 別画面の Timeline へ貼ると media_id が存在しないため、パスで引き直す。
+    def _resolve_media(self, timeline, item):
+        data = item.get("media")
+        clip_media_id = str((item.get("clip") or {}).get("media_id") or "")
+        if not data:
+            return clip_media_id if timeline.media_by_id(clip_media_id) else None
+        path = str(data.get("path") or "")
+        existing = timeline.media_by_path(path) if path else None
+        if existing is not None:
+            return existing.id
+        if not path or not os.path.exists(path):
+            # 実ファイルが無いまま貼ると黒画面のクリップが増えるだけなので貼らない
+            _logger.warning("素材が見つからないため貼り付けません: %s", path)
+            return None
+        media = MediaRef.from_dict(data)
+        media.id = timeline.next_id("m")
+        timeline.media_pool.append(media)
+        return media.id
+
+    # リンク音声を作る (§3-6)。素材に音声が無ければ作らない。
+    def _attach_audio(self, timeline, track, clip, item):
+        if item.get("kind") != clipboard.KIND_VIDEO:
+            return
+        media = timeline.media_by_id(clip.media_id)
+        if media is None or media.is_image() or not media.has_audio:
+            return
+        audio_track = timeline.audio_track_for(track.id)
+        if audio_track is None:
+            audio_id, audio_index = timeline.next_audio_track_id()
+            audio_track = Track(audio_id, TRACK_AUDIO, audio_index,
+                                name=f"Audio {audio_index}", link_track=track.id)
+            timeline.tracks.append(audio_track)
+        attrs = item.get("audio") or {}
+        audio_track.clips.append(AudioClip(
+            timeline.next_id("a"), clip.id,
+            gain_db=attrs.get("gain_db", 0.0), muted=attrs.get("muted", False)))
 
 
 # 描画順を変更する (R8 / §6.5-2)

@@ -782,6 +782,12 @@ class TimelineView(QWidget):
             # 字幕トラックの空き領域なら、その位置へ新しい字幕を足せる
             row = self._row_at_pos(pos)
             track = row["track"] if row is not None else None
+            # 貼り付け先はあくまで再生ヘッド (右クリックした位置ではない / resolve10 §5.6)
+            paste = menu.addAction("再生ヘッドへ貼り付け\tCtrl+V", self._paste)
+            paste.setEnabled(self._controller.can_paste())
+            # 字幕トラックの空き領域なら、その位置へ新しい字幕を足せる
+            row = self._row_at_pos(pos)
+            track = row["track"] if row is not None else None
             if track is not None and track.is_subtitle():
                 menu.addSeparator()
                 action = menu.addAction(
@@ -802,6 +808,11 @@ class TimelineView(QWidget):
         at_sec = self.x_to_sec(pos.x())
         menu.addAction("ここで分割", lambda: self._controller.split_at_playhead(
             clip.id, at_sec))
+        menu.addSeparator()
+        # コピー＆ペースト (ver3 resolve10 §5.6)。貼り付け先は再生ヘッド。
+        menu.addAction("コピー\tCtrl+C", self._copy)
+        paste = menu.addAction("再生ヘッドへ貼り付け\tCtrl+V", self._paste)
+        paste.setEnabled(self._controller.can_paste())
         menu.addSeparator()
         # 再生ヘッドを境にしたリップル削除 (A / D / resolve2 R4・R6)
         before = menu.addAction(
@@ -845,6 +856,30 @@ class TimelineView(QWidget):
             start, track_id=track.id, text=NEW_SUBTITLE_TEXT)
         if clip_id is None:
             self.status_message.emit("この位置には字幕を追加できません")
+
+    # 右クリックメニューからのコピー (ver3 resolve10 §5.6)
+    def _copy(self):
+        count = self._controller.copy_selected()
+        self.status_message.emit(
+            f"{count} 件のノードをコピーしました" if count
+            else "コピーするノードが選択されていません")
+
+    # 右クリックメニューからの貼り付け。位置は再生ヘッド (ver3 resolve10 §5.6)
+    def _paste(self):
+        result = self._controller.paste()
+        if result["empty"]:
+            self.status_message.emit("コピーされたノードがありません")
+            return
+        if result["pasted"] == 0:
+            self.status_message.emit(
+                "貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)")
+            return
+        message = f"{result['pasted']} 件を貼り付けました"
+        if result["shifted"] > 0:
+            message += f" (既存ノードを {result['shifted']:.2f} 秒ぶん右へ移動)"
+        if result["skipped"]:
+            message += f" ({result['skipped']} 件は貼れませんでした)"
+        self.status_message.emit(message)
 
     # 音声クリップのメニュー: 削除は出さない (V1 側から消す / §6.3.4)
     def _build_audio_menu(self, menu, clip):

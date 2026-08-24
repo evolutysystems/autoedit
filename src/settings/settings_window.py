@@ -481,6 +481,28 @@ DEFAULT_SETTINGS = {
             # プロジェクトの保存 (ver3 resolve7 §5.7)
             "save": "Ctrl+S",
             "save_as": "Ctrl+Shift+S",
+            # ノードのコピー＆ペースト (ver3 resolve10 §7)。
+            # 貼り付けは 1 種類だけ (Ctrl+Shift+V は割り当てない)。
+            "copy": "Ctrl+C",
+            "paste": "Ctrl+V",
+        },
+        # 貼り付けの方針 (ver3 resolve10 §7)
+        "paste": {
+            # 右へずらす範囲
+            #   "base_syncs_all" (既定) … V1 へ貼るときだけ全トラックを同量ずらす
+            #                             (字幕が V1 と一緒に動く)。V2 以降・字幕へ
+            #                             貼るときは干渉したトラックだけ
+            #   "track"                … 常に干渉したトラックだけ
+            #   "all"                  … 常に全トラック
+            "ripple_scope": "base_syncs_all",
+            # 貼り付け位置を跨ぐクリップの扱い ("split" = 分割 / "shift_whole" = 丸ごと移動)
+            "insert_policy": "split",
+            # アーカイブ用 V1 の archive_clip_index ("inherit" = 直前から引き継ぐ / "keep")
+            "archive_index_policy": "inherit",
+            # 貼り付け後に再生ヘッドを貼った範囲の終端へ送る (連続貼り付け用)
+            "move_playhead_to_end": True,
+            # 貼り付けたノードを選択状態にする
+            "select_pasted": True,
         },
         "media": {
             "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"],

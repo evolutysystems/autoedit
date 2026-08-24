@@ -3,7 +3,7 @@
 # UI と編集処理の分離 (§4-2) が崩れず、Undo/Redo が全操作で一様に効く。
 from PySide6.QtCore import QObject, Signal
 
-from ...timeline import commands
+from ...timeline import clipboard, commands
 from ...timeline.builder import timeline_config
 from ...timeline.timemap import TimeMap
 from ...utils.logger import get_logger
@@ -278,6 +278,46 @@ class TimelineController(QObject):
             return None
         self.select([command.created_clip_id])
         return command.created_clip_id
+
+    # ------------------------------------------------------------------
+    # コピー＆ペースト (ver3 resolve10 §5.4)
+    # ------------------------------------------------------------------
+
+    # 選択中のノードをクリップボードへ控える。控えた件数を返す (0 = 対象なし)。
+    # Timeline は変更しないため履歴には積まない (Undo の対象外・未保存の印も付かない)。
+    def copy_selected(self):
+        return clipboard.copy_clips(self._timeline, self._selected_ids)
+
+    def can_paste(self):
+        return not clipboard.is_empty()
+
+    # クリップボードの内容を再生ヘッド位置へ貼り付ける (Ctrl+V)
+    # 貼り付けたノードが優先され、干渉した既存ノードだけが必要な分だけ右へずれる。
+    # V1 へ貼るときは字幕・オーバーレイも同量ずれる (設定 timeline.paste.ripple_scope)。
+    # 戻り値: {"pasted": 件数, "skipped": 件数, "shifted": ずらした秒数, "empty": bool}
+    def paste(self):
+        payload = clipboard.payload()
+        if not payload:
+            return {"pasted": 0, "skipped": 0, "shifted": 0.0, "empty": True}
+        paste_cfg = self._cfg["paste"]
+        command = commands.PasteClips(
+            payload, self._playhead,
+            min_clip_sec=self._cfg["min_clip_sec"],
+            insert_policy=paste_cfg["insert_policy"],
+            ripple_scope=paste_cfg["ripple_scope"],
+            archive_index_policy=paste_cfg["archive_index_policy"],
+            max_video_tracks=self._cfg["media"]["max_video_tracks"],
+        )
+        if not self.execute(command):
+            return {"pasted": 0,
+                    "skipped": command.skipped or len(payload.get("items") or []),
+                    "shifted": 0.0, "empty": False}
+        if paste_cfg["select_pasted"] and command.created_clip_ids:
+            self.select(command.created_clip_ids)
+        if paste_cfg["move_playhead_to_end"] and command.pasted_end_sec is not None:
+            self.set_playhead(command.pasted_end_sec)
+        return {"pasted": len(command.created_clip_ids), "skipped": command.skipped,
+                "shifted": command.shifted_sec, "empty": False}
 
     # ------------------------------------------------------------------
     # 選択・再生ヘッド・ズーム

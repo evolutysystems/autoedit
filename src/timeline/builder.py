@@ -65,6 +65,12 @@ _DEFAULT_SHORTCUTS = {
     # プロジェクトの保存 (ver3 resolve7 §5.7)
     "save": "Ctrl+S",
     "save_as": "Ctrl+Shift+S",
+    # ノードのコピー＆ペースト (ver3 resolve10 §3-1)
+    # 貼り付けは 1 種類だけ。paste_insert (Ctrl+Shift+V) は作らない (rev2 R-1)。
+    # ここに無い action は _shortcut_config() が捨てるため、setting.json へ
+    # 手で書いても Ctrl+Shift+V は復活しない。
+    "copy": "Ctrl+C",
+    "paste": "Ctrl+V",
 }
 
 # キー割り当てを既定で補完する (欠落キーは既定へ戻す)
@@ -134,6 +140,34 @@ def _library_config(values):
         "thumbnail_dir": str(cfg.get("thumbnail_dir", "project_thumbs")
                              or "project_thumbs"),
         "thumbnail_cache_limit": _positive_int(cfg.get("thumbnail_cache_limit"), 200),
+    }
+
+
+# 候補のいずれかへ寄せる (ver3 resolve10 §7)。想定外の値は既定へ落とす。
+# 黙って別の挙動になると原因が追えないため警告を出す。
+def _one_of(value, choices, default):
+    text = str(value or default).strip().lower()
+    if text in choices:
+        return text
+    _logger.warning("貼り付けの設定が不正なため既定 %s を使用します: %r", default, value)
+    return default
+
+
+# 貼り付けの方針を検証して既定へ寄せる (ver3 resolve10 §7)
+def _paste_config(values):
+    values = values if isinstance(values, dict) else {}
+    return {
+        # 右へずらす範囲。base_syncs_all = V1 へ貼るときだけ全トラック (既定)
+        "ripple_scope": _one_of(values.get("ripple_scope"),
+                                ("base_syncs_all", "track", "all"), "base_syncs_all"),
+        # 貼り付け位置を跨ぐクリップの扱い
+        "insert_policy": _one_of(values.get("insert_policy"),
+                                 ("split", "shift_whole"), "split"),
+        # アーカイブ用 V1 の archive_clip_index の引き継ぎ
+        "archive_index_policy": _one_of(values.get("archive_index_policy"),
+                                        ("inherit", "keep"), "inherit"),
+        "move_playhead_to_end": bool(values.get("move_playhead_to_end", True)),
+        "select_pasted": bool(values.get("select_pasted", True)),
     }
 
 
@@ -218,6 +252,8 @@ def timeline_config(settings):
         "snap_threshold_px": int(cfg.get("snap_threshold_px", 8)),
         # キー割り当て (resolve2 §6)。空文字で無効。S は割り当てない (回答 Q1)
         "shortcuts": _shortcut_config(cfg.get("shortcuts", {})),
+        # ノードのコピー＆ペースト (ver3 resolve10 §7)
+        "paste": _paste_config(cfg.get("paste", {})),
         "default_zoom_px_per_sec": float(cfg.get("default_zoom_px_per_sec", 40)),
         "zoom_min_px_per_sec": float(cfg.get("zoom_min_px_per_sec", 2)),
         "zoom_max_px_per_sec": float(cfg.get("zoom_max_px_per_sec", 400)),

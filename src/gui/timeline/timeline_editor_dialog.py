@@ -287,6 +287,12 @@ class TimelineEditorDialog(QDialog):
         bind("play_pause", self.preview.toggle_play)
         bind("play_fast_forward", self._play_fast_forward)
         bind("play_fast_backward", self._play_fast_backward)
+        # コピー＆ペースト (ver3 resolve10 §5.5)
+        # 貼り付けは 1 種類だけ。Ctrl+Shift+V は割り当てない (rev2 R-1)。
+        # bind() 経由で登録するため、字幕テキスト欄にフォーカスがある間は
+        # _ShortcutGuard が無効化し、本来の文字コピー＆ペーストとして働く。
+        bind("copy", self._copy)
+        bind("paste", self._paste)
         # 履歴・移動・ズーム
         bind("undo", self._undo)
         bind("redo", self._redo)
@@ -332,6 +338,30 @@ class TimelineEditorDialog(QDialog):
     def _run_ripple_trim(self, side):
         if not self.controller.ripple_trim_to_playhead(side):
             self.preview.set_status("再生ヘッド上にクリップがありません")
+
+    # Ctrl+C: 選択中のノードをコピーする (ver3 resolve10 §5.5)
+    def _copy(self):
+        count = self.controller.copy_selected()
+        self.preview.set_status(
+            f"{count} 件のノードをコピーしました" if count
+            else "コピーするノードが選択されていません")
+
+    # Ctrl+V: 再生ヘッド位置へ貼り付ける (干渉した既存ノードは右へずれる)
+    def _paste(self):
+        result = self.controller.paste()
+        if result["empty"]:
+            self.preview.set_status("コピーされたノードがありません")
+            return
+        if result["pasted"] == 0:
+            self.preview.set_status(
+                "貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)")
+            return
+        message = f"{result['pasted']} 件を貼り付けました"
+        if result["shifted"] > 0:
+            message += f" (既存ノードを {result['shifted']:.2f} 秒ぶん右へ移動)"
+        if result["skipped"]:
+            message += f" ({result['skipped']} 件は貼れませんでした)"
+        self.preview.set_status(message)
 
     # E: 倍速再生 (トグル)
     def _play_fast_forward(self):
