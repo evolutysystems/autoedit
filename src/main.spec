@@ -6,7 +6,10 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=collect_data_files('budoux'),        # BudouX のモデルJSON等を同梱 (request11)
+    datas=[
+        # コメント字幕のアイコン (ver3 resolve11 §5.10)
+        ('comment_icon.png', 'src'),
+    ] + collect_data_files('budoux'),          # BudouX のモデルJSON等を同梱 (request11)
     hiddenimports=collect_submodules('budoux'),  # BudouX 遅延 import 対策 (request11)
     hookspath=[],
     hooksconfig={},

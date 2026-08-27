@@ -296,6 +296,30 @@ class SplitTest(unittest.TestCase):
         self.assertAlmostEqual(second[0].timeline_start, 0.0, places=6)
         self.assertAlmostEqual(second[0].timeline_end, 1.0, places=6)
 
+    # コメント用トラック (S2) は分割後も別トラックのまま保たれる
+    # 1 本へ潰すと S1 と重なり、読み込み時に押し出されてしまう (ver3 resolve11 §5.9)
+    def test_comment_track_is_preserved(self):
+        from src.timeline.model import (
+            COMMENT_SUBTITLE_TRACK_ID,
+            TRACK_SUBTITLE,
+            SubtitleClip,
+            Track,
+        )
+        base = self.timeline.base_subtitle_track().clips[0]      # clip1-a (1.0-)
+        self.timeline.tracks.append(Track(
+            COMMENT_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 2, name="Comment",
+            clips=[SubtitleClip("sc1", base.timeline_start, base.duration,
+                                text="コメント", role="comment")]))
+        groups = dict(timeline_builder.split_by_clip(self.timeline))
+        comment_track = groups[1].track_by_id(COMMENT_SUBTITLE_TRACK_ID)
+        self.assertIsNotNone(comment_track, "コメント用トラックが失われています")
+        self.assertEqual(len(comment_track.clips), 1)
+        self.assertEqual(comment_track.clips[0].role, "comment")
+        # S1 側には混ざらない (= 同じ時刻でも重ならない)
+        self.assertNotIn(
+            "コメント",
+            [c.text for c in groups[1].base_subtitle_track().clips])
+
     # 各グループの字幕がグループの範囲に収まる (I4)
     def test_group_subtitles_stay_in_range(self):
         for _index, sub in timeline_builder.split_by_clip(self.timeline):

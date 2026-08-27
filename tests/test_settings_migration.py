@@ -96,6 +96,42 @@ class NestedDefaultsTest(unittest.TestCase):
             self.assertIn(key, project, f"{key} が補完されていません")
         self.assertIn("max_items", project["library"])
 
+    # コメント用の字幕トラック設定も入れ子として補完される (ver3 resolve11 §7.3)
+    def test_subtitle_tracks_defaults_are_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"].pop("subtitle_tracks", None)
+        merged = sw._merge_with_defaults(data)
+        tracks = merged["timeline"].get("subtitle_tracks")
+        self.assertIsNotNone(tracks, "subtitle_tracks が補完されていません")
+        self.assertEqual(tracks["comment_track_id"], "S2")
+
+
+# コメント役割の先頭ラベル「コメント：」の撤去 (ver3 resolve11 C3 / §8-1)
+class CommentLabelMigrationTest(unittest.TestCase):
+
+    # 既定は空文字 (アイコン表示へ置き換えたため)
+    def test_default_is_empty(self):
+        self.assertEqual(sw.DEFAULT_SETTINGS["subtitle"]["comment_label"], "")
+
+    # 旧既定値が残っている環境は起動時に空へ寄る
+    def test_legacy_label_is_removed(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["subtitle"] = dict(data["subtitle"], comment_label="コメント：")
+        merged = sw._merge_with_defaults(data)
+        # マージだけでは既存値が残る (キーが在るため既定が届かない)
+        self.assertEqual(merged["subtitle"]["comment_label"], "コメント：")
+        self.assertTrue(sw._normalize_legacy_values(merged))
+        self.assertEqual(merged["subtitle"]["comment_label"], "")
+
+    # 利用者が入れた独自の文言は尊重する (上書きしない)
+    def test_custom_label_is_kept(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["subtitle"] = dict(data["subtitle"], comment_label="視聴者：")
+        merged = sw._merge_with_defaults(data)
+        sw._normalize_legacy_values(merged)
+        self.assertEqual(merged["subtitle"]["comment_label"], "視聴者：")
+
 
 if __name__ == "__main__":
     unittest.main()

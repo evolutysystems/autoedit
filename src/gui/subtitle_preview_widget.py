@@ -32,6 +32,7 @@ except Exception:  # noqa: BLE001 (import 失敗は静止画モードへフォ�
 # 確定時と同一の字幕整形 (使用チェック+wrap_lines) を再利用する (resolve23 §5.2-1)
 from ..archive.clip_writer import _finalize_timeline
 from ..modules import ffmpeg_runner
+from ..modules import comment_decor
 from ..modules.subtitle_generator import build_font_profile, build_subtitle_file
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
@@ -330,12 +331,17 @@ class SubtitlePreviewWidget(QWidget):
     def _write_segment_ass(self, seg_start, seg_len):
         canvas_w, canvas_h = self._canvas()
         ass_path = os.path.join(self._tmp_dir, f"preview_{self._job_seq}.ass")
+        items = self._segment_items(seg_start, seg_len)
         build_subtitle_file(
-            self._segment_items(seg_start, seg_len),
+            items,
             build_font_profile(self._eff_cfg),
             ass_path,
             video_width=canvas_w, video_height=canvas_h,
+            # コメントの背景 (角丸の箱) を本番と同じ経路で出す (ver3 resolve11 §5.6-6)
+            subtitle_cfg=self._eff_cfg,
         )
+        # アイコンの合成に使うため、この区間の item を覚えておく
+        self._segment_ass_items = items
         return ass_path
 
     # フィルタチェーンを組み立てる (縦動画はキャンバス正規化 → ass → プレビュー縮小 / §5.2-4)
@@ -356,6 +362,17 @@ class SubtitlePreviewWidget(QWidget):
                 safe_dir = self._fonts_dir.replace("\\", "/").replace(":", "\\:")
                 opt += f":fontsdir='{safe_dir}'"
             chain += f"{opt},"
+        # コメントアイコンはキャンバス実寸のまま重ねる (ver3 resolve11 §5.6-6)。
+        # プレビュー用の縮小 (scale) はアイコンを載せた後に掛ける必要があるため、
+        # ラベル付きのチェーンへ組み替える。対象が無ければ従来と同一の 1 本鎖のまま。
+        icon_chains = []
+        if ass_path:
+            icon_chains, _count, _groups = comment_decor.build_icon_chains(
+                getattr(self, "_segment_ass_items", []) or [], self._eff_cfg,
+                *self._canvas(), in_label="[vsub]", out_label="[vicon]")
+        if icon_chains:
+            return (f"{chain}null[vsub];" + ";".join(icon_chains)
+                    + f";[vicon]scale={self._width}:-2")
         return f"{chain}scale={self._width}:-2"
 
     # 区間動画の生成を開始する (完了で _on_worker_done → 再生)

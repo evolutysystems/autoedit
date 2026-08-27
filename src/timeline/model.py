@@ -25,6 +25,8 @@ ORIGIN_USER_SUBTITLE = "user_subtitle"
 
 # ── 字幕の役割 (既存 subtitle_generator と同じキー)
 DEFAULT_ROLE = "streamer"
+# コメント役割。専用の字幕トラックへ置き分ける対象 (ver3 resolve11 §3 D-1)
+ROLE_COMMENT = "comment"
 
 # ベースクリップ (V1 の本編・OP・ED) の描画順。オーバーレイは 1 以上を使う (§6.5-2)。
 BASE_Z_ORDER = 0
@@ -37,6 +39,8 @@ DEFAULT_SUBTITLE_Z_ORDER = 100
 BASE_VIDEO_TRACK_ID = "V1"
 BASE_AUDIO_TRACK_ID = "A1"
 BASE_SUBTITLE_TRACK_ID = "S1"
+# コメント専用の字幕トラック ID (ver3 resolve11 §5.1)。設定で変更できる。
+COMMENT_SUBTITLE_TRACK_ID = "S2"
 
 
 # 値を float へ寄せる (不正値は既定へフォールバック)
@@ -629,6 +633,24 @@ class Timeline:
     def base_subtitle_track(self):
         tracks = sorted(self.subtitle_tracks(), key=lambda t: t.index)
         return tracks[0] if tracks else None
+
+    # 役割に対応する字幕トラックを返す (無ければ None。作成はここでは行わない)
+    # コメント役割だけ専用トラック (既定 S2) へ置き分ける (ver3 resolve11 §5.1)。
+    # enabled=False のときは常に既定トラック (S1) を返す = 従来どおりの 1 本運用。
+    def subtitle_track_for_role(self, role,
+                                comment_track_id=COMMENT_SUBTITLE_TRACK_ID,
+                                enabled=True):
+        if not enabled or str(role or "") != ROLE_COMMENT:
+            return self.base_subtitle_track()
+        track = self.track_by_id(comment_track_id)
+        if track is not None and track.is_subtitle():
+            return track
+        # ID を設定で変えられている場合に備え「S1 以外の字幕トラック」で拾い直す
+        base = self.base_subtitle_track()
+        for candidate in sorted(self.subtitle_tracks(), key=lambda t: t.index):
+            if base is None or candidate.id != base.id:
+                return candidate
+        return None
 
     # 映像トラックにリンクしている音声トラックを返す
     def audio_track_for(self, video_track_id):

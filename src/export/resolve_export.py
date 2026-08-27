@@ -188,6 +188,9 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
         or font_profile.role_outline_colors.get(role, font_profile.outline_color)
     )
     text = _item_text(item, font_profile)
+    # 役割別の配置 (コメントは中央の左) を近似位置へ反映する (ver3 resolve11 §5.9)。
+    # アイコンと背景は Resolve 側の枠に収まらないため出力しない (§9-Q5)。
+    alignment, margin_l, margin_r, margin_v = font_profile.placement_for_role(role)
     return {
         "offset": offset,
         "duration": max(float(item.get("end", 0.0)) - float(item.get("start", 0.0)), 0.0),
@@ -202,11 +205,9 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
         "bold": font_profile.bold,
         "italic": font_profile.italic,
         "underline": font_profile.underline,
-        "align": _align_name(font_profile.alignment),
+        "align": _align_name(alignment),
         "position": _title_position(
-            font_profile.alignment,
-            (font_profile.margin_l, font_profile.margin_r, font_profile.margin_v),
-            width, height, title_cfg,
+            alignment, (margin_l, margin_r, margin_v), width, height, title_cfg,
         ),
         "name": name,
     }
@@ -240,7 +241,8 @@ def _caption_from_item(item, offset, font_profile, name):
         "bold": font_profile.bold,
         "italic": font_profile.italic,
         "underline": font_profile.underline,
-        "placement": _caption_placement(font_profile.alignment),
+        # 役割別の配置 (コメントは中央の左) を反映する (ver3 resolve11 §5.9)
+        "placement": _caption_placement(font_profile.placement_for_role(role)[0]),
         "name": name,
     }
 

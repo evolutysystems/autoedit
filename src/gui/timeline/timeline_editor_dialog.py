@@ -115,6 +115,8 @@ class TimelineEditorDialog(QDialog):
         self.preview = PreviewPanel(self.controller, work_dir, asr_audio_path, parent=self)
         upper.addWidget(self.preview)
         self.inspector = _InspectorPanel(self.controller, parent=self)
+        # 役割変更の結果 (トラック移動の可否) をプレビュー下へ出す (ver3 resolve11 §5.8)
+        self.inspector.status_message.connect(self.preview.set_status)
         upper.addWidget(self.inspector)
         upper.setStretchFactor(0, 4)
         upper.setStretchFactor(1, 1)
@@ -770,6 +772,9 @@ class _CommitOnFocusOutEdit(QPlainTextEdit):
 
 class _InspectorPanel(QWidget):
 
+    # 操作の結果をプレビュー下のステータスへ出す (Timeline の view と同じ規約)
+    status_message = Signal(str)
+
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self._controller = controller
@@ -1084,11 +1089,23 @@ class _InspectorPanel(QWidget):
         text = self.text_edit.toPlainText().replace("\n", "\\N")
         self._controller.edit_subtitle(self._clip.id, text=text)
 
+    # 役割を変えるとコメント用トラック (S2) への移動も一緒に行う (ver3 resolve11 §5.8)。
+    # 移動できなくても役割の変更は通る (出力は役割が決めるため見た目は正しく出る)。
     def _on_role_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):
             return
-        self._controller.edit_subtitle(
-            self._clip.id, role=self.role_combo.currentData())
+        result = self._controller.change_subtitle_role(
+            self._clip.id, self.role_combo.currentData())
+        if not result["changed"]:
+            return
+        if result["moved"]:
+            track = self._controller.timeline.track_of_clip(self._clip.id)
+            self.status_message.emit(
+                f"コメントトラック({track.id})へ移しました" if track
+                else "コメントトラックへ移しました")
+        elif result["blocked"]:
+            self.status_message.emit(
+                "同じ時間にコメントがあるため、役割だけ変更しました")
 
     def _on_font_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):

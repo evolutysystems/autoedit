@@ -148,7 +148,8 @@ DEFAULT_SETTINGS = {
         "sub_subtitle_color": "#FFF100",
         "comment_subtitle_color": "#FFFFFF",
         # コメント役割のテロップ先頭に付与するラベル (空文字で無効。焼き込み時のみ付与)
-        "comment_label": "コメント：",
+        # ver3 resolve11 C3: アイコン表示へ置き換えたため既定は空文字 (旧値は起動時に移行する)
+        "comment_label": "",
         "enabled": True,
         "review_enabled": True,
         "review_on_empty_skip": True,
@@ -183,6 +184,40 @@ DEFAULT_SETTINGS = {
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 60,
+        # ── コメント役割だけの配置と装飾 (ver3 resolve11 §7.1 / §7.4)
+        # 配置: 中央の左 (ASS an4)。アイコンを左横へ確実に置くため左寄せ (1/4/7) のみ許す。
+        "comment_alignment": 4,
+        # 左余白 = margin_l(40) + アイコン幅(100) + 間隔(50)。アイコン左端が 40px に揃う。
+        "comment_margin_l": 190,
+        "comment_margin_r": 40,
+        "comment_margin_v": 60,
+        # アイコン (src/comment_icon.png) の表示
+        "comment_icon_enabled": True,
+        "comment_icon_path": "",          # 空 = 同梱の src/comment_icon.png
+        "comment_icon_size_px": 100,
+        "comment_icon_gap_px": 50,        # アイコン右端と文字左端の間隔
+        # enable 式が長くなったときに -filter_script:v へ逃がす閾値 (文字数)
+        "comment_icon_filter_script_chars": 8000,
+        # 背景ボックス (アイコン + 文字をまとめて囲う角丸の箱 / ver3 resolve11 C13)
+        "comment_bg_enabled": True,
+        "comment_bg_color": "&H80000000",  # 黒・透明度50% (ASS &HAABBGGRR / AA=80)
+        "comment_bg_radius_px": 24,
+        "comment_bg_padding_px": 24,
+        # 文字幅の推定係数 (libass の実寸は測れないため font_size 比で見積もる)
+        # 既定は同梱の既定フォント (Yu Gothic UI) で実測した値。
+        # 1 文字あたりの実測値 (font_size 比 / フォントサイズ48で計測):
+        #   Yu Gothic UI  全角 0.55(かな)〜0.75(漢字) / 半角 0.33〜0.41
+        #   Yu Gothic     全角 0.75〜0.77           / 半角 0.35〜0.48
+        #   Meiryo        全角 0.65〜0.67           / 半角 0.32〜0.42
+        #   MS Gothic     全角 0.97〜0.99           / 半角 0.48〜0.50 ← 等幅なので要調整
+        # 背景が文字より狭くなる (文字がはみ出す) 場合はこの値を上げる。
+        # MS ゴシック等の等幅フォントを使うときは 1.0 / 0.5 にする。
+        "comment_bg_char_width_full": 0.78,
+        "comment_bg_char_width_half": 0.45,
+        "comment_bg_line_height_ratio": 1.2,
+        # 重ね順 (背景 < 本文)。ASS の Layer は数値が大きいほど前面。
+        "comment_bg_layer": 0,
+        "comment_text_layer": 1,
         "engine": "whisper",
         "whisper_model": "large-v3",
         "whisper_device": "cpu",
@@ -345,6 +380,18 @@ DEFAULT_SETTINGS = {
         # Timeline の右クリック「字幕追加」で置く字幕の既定の尺 (秒)。
         # 次の字幕まで入らない場合はその手前まで縮めて置く。
         "default_subtitle_sec": 2.0,
+        # 役割別の字幕トラック (ver3 resolve11 §7.3)。
+        # 役割を「コメント」にした字幕を専用トラックへ移し、通常字幕と同時に出せるようにする。
+        # 字幕トラックは 1 本の中では重ねられないため、別トラックにするのが唯一の方法。
+        "subtitle_tracks": {
+            # false で従来どおり字幕トラック 1 本の運用へ戻す
+            "role_track_enabled": True,
+            "comment_track_id": "S2",
+            "comment_track_name": "Comment",
+            "comment_track_index": 2,
+            # false なら役割だけ変えてトラックは動かさない
+            "auto_move_on_role_change": True,
+        },
         # Delete キー単独の割り当て (ver3 resolve2 R7)。true=リップル削除 (既定) /
         # false=空白を残す。Shift+Delete は常にもう一方。
         # 両方とも右クリックメニューからも実行できる。
@@ -555,6 +602,15 @@ DEFAULT_SETTINGS = {
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 320,
+        # コメント役割の縦用上書き (ver3 resolve11 §7.2)。
+        # アイコンは 50x50 へ縮め、左余白 = 40 + 50 + 50 = 140 とする
+        # (横と同じくアイコン左端が 40px に揃う)。
+        "comment_alignment": 4,
+        "comment_margin_l": 140,
+        "comment_margin_r": 40,
+        "comment_margin_v": 320,
+        "comment_icon_size_px": 50,
+        "comment_icon_gap_px": 50,
     },
     "logging": {
         "log_dir": "logs",
@@ -758,6 +814,8 @@ def _normalize_legacy_values(merged):
                 if value != default:
                     ffmpeg[key] = default
                     changed = True
+    if _migrate_comment_label(merged):
+        changed = True
     if _fill_twitch_client_id(merged):
         changed = True
     if _fill_timeline_nested_defaults(merged):
@@ -767,6 +825,26 @@ def _normalize_legacy_values(merged):
     if _migrate_ripple_delete(merged):
         changed = True
     return changed
+
+
+# コメント役割の先頭ラベル「コメント：」を撤去する (ver3 resolve11 C3 / §8-1)
+# 背景: ラベルはアイコン表示へ置き換えたため既定を空文字にしたが、_merge_with_defaults は
+#   既存のユーザー値を温存するため、旧 setting.json では「コメント：」が残り続ける。
+#   FFmpeg 実行ファイルのレガシー正規化と同じ扱いで、既知の旧既定値のときだけ空へ寄せる。
+#   利用者が独自の文言を入れている場合は上書きしない (その文言は尊重する)。
+_LEGACY_COMMENT_LABELS = ("コメント：", "コメント:")
+
+
+def _migrate_comment_label(merged):
+    subtitle = merged.get("subtitle")
+    if not isinstance(subtitle, dict):
+        return False
+    value = subtitle.get("comment_label")
+    if not isinstance(value, str) or value.strip() not in _LEGACY_COMMENT_LABELS:
+        return False
+    subtitle["comment_label"] = ""
+    _logger.info("コメント役割の先頭ラベルを撤去しました (アイコン表示へ置き換え)")
+    return True
 
 
 # 空のままの Twitch Client-ID を既定 (アプリが配布する公開値) で補う (error 20260820)

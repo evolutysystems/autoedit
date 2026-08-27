@@ -1,0 +1,908 @@
+2026-08-24 11:36:35,118 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:36:35,135 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:36:35,136 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:36:35,136 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1408px / 使える幅 1080px)。font_size か max_line_length を下げると解消します
+2026-08-24 11:44:47,339 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:44:47,341 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,345 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,352 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,352 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,355 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,355 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:44:47,357 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,357 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 0 件 / 実カットなし)
+2026-08-24 11:44:47,358 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:44:47,363 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_z5sg1hst\vod.archive.timeline.json
+2026-08-24 11:44:47,373 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_z5sg1hst\vod.archive.timeline.json
+2026-08-24 11:44:47,383 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_3x6c143i\vod.archive.timeline.json
+2026-08-24 11:44:47,383 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_3x6c143i\clip.timeline.json
+2026-08-24 11:44:47,383 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:44:47,383 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_3x6c143i\clip.timeline.json
+2026-08-24 11:44:47,408 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_3x6c143i\clip.timeline.json
+2026-08-24 11:44:47,412 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_d1bk4gtv\vod.archive.timeline.json
+2026-08-24 11:44:47,431 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_d1bk4gtv\vod.archive.timeline.json
+2026-08-24 11:44:47,431 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:44:47,431 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:44:47,446 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_lh_23n50\vod.archive.timeline.json
+2026-08-24 11:44:47,466 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_lh_23n50\vod.archive.timeline.json
+2026-08-24 11:44:47,467 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:44:47,470 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:44:47,474 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_5q_58if1\vod.archive.timeline.json
+2026-08-24 11:44:47,477 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:44:47,477 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_5q_58if1\no_such.timeline.json
+2026-08-24 11:44:47,477 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_2flxknbp\vod.archive.timeline.json
+2026-08-24 11:44:47,498 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_2flxknbp\vod.archive.timeline.json
+2026-08-24 11:44:47,508 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_5mrqv1eo\vod.archive.timeline.json
+2026-08-24 11:44:47,528 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_5mrqv1eo\vod.archive.timeline.json
+2026-08-24 11:44:47,528 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip1
+2026-08-24 11:44:47,533 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip2
+2026-08-24 11:44:47,533 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (100.00s / 期待 103.00s) → 使いません
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 2 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 3 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 3 件 / 全長 20.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 1 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,535 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,540 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,540 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,540 [INFO] src.archive.timeline_builder: clip2 は使用しないため書き出しから除外します
+2026-08-24 11:44:47,542 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,542 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,542 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,542 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,544 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,544 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:44:47,547 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-24 11:44:47,550 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:44:47,558 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-24 11:44:47,595 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-24 11:44:47,597 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-24 11:44:47,597 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-24 11:44:47,597 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:44:47,597 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:44:47,604 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:44:47,604 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_j7yevdke\sample.mp4
+2026-08-24 11:44:47,604 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m2 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_9ot10oem\gone.png)
+2026-08-24 11:44:47,614 [INFO] src.timeline.media_recovery: 素材を差し替え済みのフォルダで見つけました: m3 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_a45hc_xf\moved\logo2.png
+2026-08-24 11:44:47,615 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_m_p5yjpm\sample.mp4
+2026-08-24 11:44:47,615 [WARNING] src.timeline.media_recovery: 元動画が見つからないため本編素材を復旧できません: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_timo8du3\no_such_input.mp4
+2026-08-24 11:44:47,615 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m1 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_timo8du3\work\loudness_normalized.mp4)
+2026-08-24 11:44:47,617 [INFO] src.timeline.media_recovery: 本編素材は元動画そのものだったため、そのまま使います: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_r2bv9_n_\sample.mp4
+2026-08-24 11:44:47,619 [INFO] src.timeline.media_recovery: 素材を相対パスで見つけました: m2 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_8eas_kgx\assets\logo.png
+2026-08-24 11:44:47,619 [INFO] src.timeline.media_recovery: 設定に従い元動画をそのまま使います (音量は正規化前): C:\Users\evolu\AppData\Local\Temp\media_recovery_test_th9izyhq\sample.mp4
+2026-08-24 11:44:47,638 [WARNING] src.timeline.builder: フレーム間引きの設定が不正なため none を使用します: 'all'
+2026-08-24 11:44:47,655 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_xsgu21gn\vod.archive.timeline.json
+2026-08-24 11:44:47,690 [WARNING] src.timeline.project_io: プロジェクトの概要を読めませんでした: C:\Users\evolu\AppData\Local\Temp\library_summary_fyhvq92p\broken.timeline.json
+2026-08-24 11:44:47,693 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_ank78zrb\sample.timeline.json
+2026-08-24 11:44:47,717 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_2bz67osl\sample.timeline.json
+2026-08-24 11:44:47,737 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_py4gdznf\old.timeline.json
+2026-08-24 11:44:47,744 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_l6h8u5zg\old.timeline.json
+2026-08-24 11:44:47,749 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_obvtmmvt\old.timeline.json
+2026-08-24 11:44:47,766 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:44:47,791 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_c218zy17\old.timeline.json
+2026-08-24 11:44:47,805 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:44:47,805 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_vs88j_t9\old.timeline.json
+2026-08-24 11:44:47,820 [INFO] src.timeline.project_io: プロジェクトが 5 件見つかりました (新しい 2 件を表示します)
+2026-08-24 11:44:47,839 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xmvul838\sample.mp4
+2026-08-24 11:44:47,852 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_8d4gkpjw\sample.mp4
+2026-08-24 11:44:47,855 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7dwkgr2x\sample.mp4
+2026-08-24 11:44:47,870 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_173ctowd\sample.mp4
+2026-08-24 11:44:47,870 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-24 11:44:47,870 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-24 11:44:47,879 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_3q5o9egu\sample.mp4
+2026-08-24 11:44:47,887 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lbiq8iz9\sample.mp4
+2026-08-24 11:44:47,897 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ktf_dzcr\sample.mp4
+2026-08-24 11:44:47,904 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ktf_dzcr\sample.mp4
+2026-08-24 11:44:47,913 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s960jz8m\sample.mp4
+2026-08-24 11:44:47,914 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-24 11:44:47,921 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5p9dj9yp\sample.mp4
+2026-08-24 11:44:47,930 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_65k8_wyy\sample.mp4
+2026-08-24 11:44:47,940 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uzq1bdq_\sample.mp4
+2026-08-24 11:44:47,950 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_nwyijb4_\sample.mp4
+2026-08-24 11:44:47,960 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_gbwv8yss\sample.mp4
+2026-08-24 11:44:47,961 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_92596b19\sample.mp4
+2026-08-24 11:44:47,977 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_phvvvcpa\sample.mp4
+2026-08-24 11:44:47,977 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5nxvfwf4\sample.mp4
+2026-08-24 11:44:47,993 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_lgzm06da\sample.mp4
+2026-08-24 11:44:47,993 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-24 11:44:47,993 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5tlj_zhm\sample.mp4
+2026-08-24 11:44:47,993 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5tlj_zhm\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:44:47,993 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-24 11:44:47,993 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5tlj_zhm\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:44:48,015 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_pwrzfr12\sample.mp4
+2026-08-24 11:44:48,015 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_pwrzfr12\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:44:48,016 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_pwrzfr12\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:44:48,024 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\sample.mp4
+2026-08-24 11:44:48,024 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:44:48,029 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\out.srt (1 件)
+2026-08-24 11:44:48,029 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\out.srt (タイムライン尺 5.00s)
+2026-08-24 11:44:48,034 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_we3khq6n\out.fcpxml
+2026-08-24 11:44:48,042 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:44:48,063 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:44:48,105 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:44:48,126 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:44:48,143 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 1 件
+2026-08-24 11:44:48,159 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:44:48,159 [WARNING] src.modules.subtitle_generator: VAD 付き認識に失敗したため VAD 無しで再試行します: VAD の初期化に失敗しました (テスト)
+2026-08-24 11:44:48,159 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=800ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:44:48,159 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 15.00s を確保 / 移動 3 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 15.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 15.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 10.020s へ 10.02s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 19.980s へ 9.98s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [WARNING] src.timeline.commands: 素材が見つからないため貼り付けません: D:\develop\autoedit\tests\存在しない素材.mp4
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 4.000s へ 2.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 base_syncs_all を使用します: 'なにか'
+2026-08-24 11:44:48,167 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 split を使用します: 123
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:44:48,167 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,167 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:44:48,175 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-24 11:44:48,177 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,177 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,177 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:44:48,179 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_9gs72_lv\sample.timeline.json
+2026-08-24 11:44:48,181 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_9gs72_lv\sample.timeline.json
+2026-08-24 11:44:48,181 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_9gs72_lv\sample.timeline.json
+2026-08-24 11:44:48,193 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_9gs72_lv\sample.timeline.json
+2026-08-24 11:44:48,193 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_n1xfh789\sample.timeline.json
+2026-08-24 11:44:48,214 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_n1xfh789\sample.timeline.json
+2026-08-24 11:44:48,214 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_vkezzdno\sample.timeline.json
+2026-08-24 11:44:48,243 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:44:48,245 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_n0u0hdlw\sample.timeline.json
+2026-08-24 11:44:48,262 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_55cva3u9\sample.timeline.json
+2026-08-24 11:44:48,271 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-24 11:44:48,271 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:44:48,284 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:44:48,284 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-24 11:44:48,348 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-24 11:44:48,348 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:44:48,427 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)
+2026-08-24 11:44:48,431 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-24 11:45:43,461 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:45:43,461 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1408px / 使える幅 1080px)。font_size か max_line_length を下げると解消します
+2026-08-24 11:45:43,461 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 2 種類
+2026-08-24 11:45:43,461 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 1 種類
+2026-08-24 11:45:43,461 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:45:43,461 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:45:43,461 [WARNING] src.modules.comment_decor: コメントアイコンがキャンバスに収まらないため位置を詰めました (要求 x=-140.0 y=490.0 → x=0.0 y=490.0)。subtitle.comment_margin_l を大きくすると解消します
+2026-08-24 11:46:22,938 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:46:22,973 [WARNING] src.modules.subtitle_generator: コメントの Layer が逆転しているため本文を 6 へ引き上げます (背景=5 / 本文=1)
+2026-08-24 11:46:22,973 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:46:23,065 [WARNING] src.modules.subtitle_generator: コメントの配置は左寄せ (1/4/7) のみ対応のため 4 を使用します: 2
+2026-08-24 11:46:23,072 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:47:05,855 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:47:05,856 [INFO] src.timeline.commands: 移動先 S2 が空いていないため役割だけ変更しました: s1
+2026-08-24 11:47:05,856 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:47:05,856 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:47:05,856 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:47:05,861 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\tmpojvjob4i\sample.timeline.json
+2026-08-24 11:48:07,618 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:07,618 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,619 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,620 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,620 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,620 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,620 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,620 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 2 件 / 全長 30.0s
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 3 件 / 全長 30.0s
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 3 件 / 全長 20.0s
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 1 件
+2026-08-24 11:48:07,621 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,622 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,623 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,623 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,623 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,623 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,623 [INFO] src.archive.timeline_builder: clip2 は使用しないため書き出しから除外します
+2026-08-24 11:48:07,624 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,624 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,624 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,624 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,625 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:07,625 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,060 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:48:13,065 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:48:13,068 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,068 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,069 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,069 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,072 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 0 件 / 実カットなし)
+2026-08-24 11:48:13,080 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:48:13,088 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume__wt_zyst\vod.archive.timeline.json
+2026-08-24 11:48:13,106 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume__wt_zyst\vod.archive.timeline.json
+2026-08-24 11:48:13,117 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_y6qqetze\vod.archive.timeline.json
+2026-08-24 11:48:13,121 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_y6qqetze\clip.timeline.json
+2026-08-24 11:48:13,121 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:48:13,121 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_y6qqetze\clip.timeline.json
+2026-08-24 11:48:13,147 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_y6qqetze\clip.timeline.json
+2026-08-24 11:48:13,152 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_tc0dc3ju\vod.archive.timeline.json
+2026-08-24 11:48:13,173 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_tc0dc3ju\vod.archive.timeline.json
+2026-08-24 11:48:13,174 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:48:13,175 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:48:13,180 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_sezht8ts\vod.archive.timeline.json
+2026-08-24 11:48:13,194 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_sezht8ts\vod.archive.timeline.json
+2026-08-24 11:48:13,206 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:48:13,206 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:48:13,210 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_0ky6arib\vod.archive.timeline.json
+2026-08-24 11:48:13,210 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:48:13,210 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_0ky6arib\no_such.timeline.json
+2026-08-24 11:48:13,210 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_ues88gfj\vod.archive.timeline.json
+2026-08-24 11:48:13,230 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_ues88gfj\vod.archive.timeline.json
+2026-08-24 11:48:13,240 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_fzldnj10\vod.archive.timeline.json
+2026-08-24 11:48:13,260 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_fzldnj10\vod.archive.timeline.json
+2026-08-24 11:48:13,260 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip1
+2026-08-24 11:48:13,260 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip2
+2026-08-24 11:48:13,264 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (100.00s / 期待 103.00s) → 使いません
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 2 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 3 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 3 件 / 全長 20.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 1 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: clip2 は使用しないため書き出しから除外します
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,264 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:48:13,272 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:48:13,272 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1408px / 使える幅 1080px)。font_size か max_line_length を下げると解消します
+2026-08-24 11:48:13,272 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 2 種類
+2026-08-24 11:48:13,272 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 1 種類
+2026-08-24 11:48:13,272 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:48:13,272 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:48:13,272 [WARNING] src.modules.comment_decor: コメントアイコンがキャンバスに収まらないため位置を詰めました (要求 x=-140.0 y=490.0 → x=0.0 y=490.0)。subtitle.comment_margin_l を大きくすると解消します
+2026-08-24 11:48:13,273 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:48:13,273 [WARNING] src.modules.subtitle_generator: コメントの Layer が逆転しているため本文を 6 へ引き上げます (背景=5 / 本文=1)
+2026-08-24 11:48:13,273 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:48:13,290 [WARNING] src.modules.subtitle_generator: コメントの配置は左寄せ (1/4/7) のみ対応のため 4 を使用します: 2
+2026-08-24 11:48:13,290 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:48:13,290 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-24 11:48:13,290 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:48:13,304 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-24 11:48:13,306 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-24 11:48:13,306 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-24 11:48:13,306 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-24 11:48:13,307 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:48:13,307 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:48:13,307 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:48:13,307 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_nlxdd0yl\sample.mp4
+2026-08-24 11:48:13,307 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m2 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_zmt4h7sl\gone.png)
+2026-08-24 11:48:13,319 [INFO] src.timeline.media_recovery: 素材を差し替え済みのフォルダで見つけました: m3 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_pwqz2vaa\moved\logo2.png
+2026-08-24 11:48:13,322 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_7t72pz8s\sample.mp4
+2026-08-24 11:48:13,324 [WARNING] src.timeline.media_recovery: 元動画が見つからないため本編素材を復旧できません: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_k4x5n3za\no_such_input.mp4
+2026-08-24 11:48:13,324 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m1 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_k4x5n3za\work\loudness_normalized.mp4)
+2026-08-24 11:48:13,324 [INFO] src.timeline.media_recovery: 本編素材は元動画そのものだったため、そのまま使います: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_rfnutypp\sample.mp4
+2026-08-24 11:48:13,324 [INFO] src.timeline.media_recovery: 素材を相対パスで見つけました: m2 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_ffjumirf\assets\logo.png
+2026-08-24 11:48:13,324 [INFO] src.timeline.media_recovery: 設定に従い元動画をそのまま使います (音量は正規化前): C:\Users\evolu\AppData\Local\Temp\media_recovery_test_nt2kb6e6\sample.mp4
+2026-08-24 11:48:13,344 [WARNING] src.timeline.builder: フレーム間引きの設定が不正なため none を使用します: 'all'
+2026-08-24 11:48:13,358 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_6nkwvt5e\vod.archive.timeline.json
+2026-08-24 11:48:13,374 [WARNING] src.timeline.project_io: プロジェクトの概要を読めませんでした: C:\Users\evolu\AppData\Local\Temp\library_summary_r1ffb2nv\broken.timeline.json
+2026-08-24 11:48:13,379 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_sgee714n\sample.timeline.json
+2026-08-24 11:48:13,398 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_05zstvg_\sample.timeline.json
+2026-08-24 11:48:13,414 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_7709wvjp\old.timeline.json
+2026-08-24 11:48:13,426 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_q1pbs_vq\old.timeline.json
+2026-08-24 11:48:13,430 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_9qbefpc3\old.timeline.json
+2026-08-24 11:48:13,445 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:48:13,474 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_m7_vasx4\old.timeline.json
+2026-08-24 11:48:13,492 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:48:13,494 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_30kcmrhy\old.timeline.json
+2026-08-24 11:48:13,499 [INFO] src.timeline.project_io: プロジェクトが 5 件見つかりました (新しい 2 件を表示します)
+2026-08-24 11:48:13,511 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_05qv6szv\sample.mp4
+2026-08-24 11:48:13,528 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_niby6r2z\sample.mp4
+2026-08-24 11:48:13,528 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_ehdina94\sample.mp4
+2026-08-24 11:48:13,545 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_v2rzla1c\sample.mp4
+2026-08-24 11:48:13,545 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-24 11:48:13,545 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-24 11:48:13,545 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_3khk0oba\sample.mp4
+2026-08-24 11:48:13,562 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9s921w4b\sample.mp4
+2026-08-24 11:48:13,570 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7t2zi0mv\sample.mp4
+2026-08-24 11:48:13,578 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_7t2zi0mv\sample.mp4
+2026-08-24 11:48:13,585 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_owcqgwi1\sample.mp4
+2026-08-24 11:48:13,585 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-24 11:48:13,595 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9mjda35h\sample.mp4
+2026-08-24 11:48:13,601 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_zns05ty9\sample.mp4
+2026-08-24 11:48:13,612 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_5_puzerw\sample.mp4
+2026-08-24 11:48:13,617 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_xwds4r6l\sample.mp4
+2026-08-24 11:48:13,617 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_uy03dqs7\sample.mp4
+2026-08-24 11:48:13,634 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_0_qzvzln\sample.mp4
+2026-08-24 11:48:13,634 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_n9h2t7fj\sample.mp4
+2026-08-24 11:48:13,649 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_j9jkernv\sample.mp4
+2026-08-24 11:48:13,662 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fr3m9ehu\sample.mp4
+2026-08-24 11:48:13,662 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-24 11:48:13,666 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_tgsdo3cl\sample.mp4
+2026-08-24 11:48:13,666 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_tgsdo3cl\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:48:13,666 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-24 11:48:13,666 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_tgsdo3cl\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:48:13,682 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fygrorv_\sample.mp4
+2026-08-24 11:48:13,682 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fygrorv_\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:48:13,684 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fygrorv_\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:48:13,693 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\sample.mp4
+2026-08-24 11:48:13,693 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:48:13,695 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\out.srt (1 件)
+2026-08-24 11:48:13,695 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\out.srt (タイムライン尺 5.00s)
+2026-08-24 11:48:13,696 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_596bbs11\out.fcpxml
+2026-08-24 11:48:13,701 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:48:13,701 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:48:13,715 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:48:13,715 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:48:13,715 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 1 件
+2026-08-24 11:48:13,726 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:48:13,726 [INFO] src.timeline.commands: 移動先 S2 が空いていないため役割だけ変更しました: s1
+2026-08-24 11:48:13,726 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:48:13,726 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:48:13,726 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:48:13,730 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\tmpdi315pdr\sample.timeline.json
+2026-08-24 11:48:13,749 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:48:13,751 [WARNING] src.modules.subtitle_generator: VAD 付き認識に失敗したため VAD 無しで再試行します: VAD の初期化に失敗しました (テスト)
+2026-08-24 11:48:13,751 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=800ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:48:13,751 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:48:13,752 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,752 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,752 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,752 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 15.00s を確保 / 移動 3 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 15.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 15.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 10.020s へ 10.02s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 1 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 19.980s へ 9.98s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [WARNING] src.timeline.commands: 素材が見つからないため貼り付けません: D:\develop\autoedit\tests\存在しない素材.mp4
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 4.000s へ 2.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,758 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,765 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 base_syncs_all を使用します: 'なにか'
+2026-08-24 11:48:13,765 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 split を使用します: 123
+2026-08-24 11:48:13,765 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:48:13,765 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,765 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:48:13,766 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,766 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:48:13,769 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-24 11:48:13,772 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,772 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,772 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:48:13,776 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_40w3rhha\sample.timeline.json
+2026-08-24 11:48:13,798 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_40w3rhha\sample.timeline.json
+2026-08-24 11:48:13,801 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_40w3rhha\sample.timeline.json
+2026-08-24 11:48:13,803 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_40w3rhha\sample.timeline.json
+2026-08-24 11:48:13,805 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_fncae24m\sample.timeline.json
+2026-08-24 11:48:13,812 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_fncae24m\sample.timeline.json
+2026-08-24 11:48:13,818 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_3flxtubk\sample.timeline.json
+2026-08-24 11:48:13,836 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:48:13,836 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_q2h3i9d9\sample.timeline.json
+2026-08-24 11:48:13,860 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_75wjs_nf\sample.timeline.json
+2026-08-24 11:48:13,867 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-24 11:48:13,869 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:48:13,869 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:48:13,871 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-24 11:48:13,875 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-24 11:48:13,875 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:48:13,965 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)
+2026-08-24 11:48:13,970 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0
+2026-08-24 11:49:42,114 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:49:42,115 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:53:58,185 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:53:58,185 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1131px / 使える幅 1080px)。font_size か max_line_length を下げると解消します
+2026-08-24 11:53:58,186 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 2 種類
+2026-08-24 11:53:58,186 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 1 種類
+2026-08-24 11:53:58,186 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:53:58,186 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:53:58,186 [WARNING] src.modules.comment_decor: コメントアイコンがキャンバスに収まらないため位置を詰めました (要求 x=-140.0 y=490.0 → x=0.0 y=490.0)。subtitle.comment_margin_l を大きくすると解消します
+2026-08-24 11:54:06,007 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:54:06,007 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:56:23,053 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 3.0s
+2026-08-24 11:56:24,347 [INFO] src.timeline.renderer: ベース映像の尺: モデル 3.000s / 実測 3.000s (差 +0.000s / 1 部品)
+2026-08-24 11:56:24,348 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:56:24,349 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:56:24,349 [INFO] src.timeline.renderer: オーバーレイ合成: 5 層 (追加入力 1 件)
+2026-08-24 11:56:57,755 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:56:57,755 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:56:57,756 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:57:12,957 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:57:12,957 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件)
+2026-08-24 11:57:12,963 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,963 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,966 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,966 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,968 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,968 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,972 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,972 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,973 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,975 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,975 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,975 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 2 件 / 実カットなし)
+2026-08-24 11:57:12,978 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,978 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 0 件 / 実カットなし)
+2026-08-24 11:57:12,978 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 10.00s (素材 30.00s)
+2026-08-24 11:57:12,986 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_l_lbw6w4\vod.archive.timeline.json
+2026-08-24 11:57:13,008 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_l_lbw6w4\vod.archive.timeline.json
+2026-08-24 11:57:13,017 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_qxigksb8\vod.archive.timeline.json
+2026-08-24 11:57:13,020 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_qxigksb8\clip.timeline.json
+2026-08-24 11:57:13,020 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:57:13,020 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_qxigksb8\clip.timeline.json
+2026-08-24 11:57:13,042 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_qxigksb8\clip.timeline.json
+2026-08-24 11:57:13,047 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_4em4ck5a\vod.archive.timeline.json
+2026-08-24 11:57:13,067 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_4em4ck5a\vod.archive.timeline.json
+2026-08-24 11:57:13,067 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:57:13,072 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:57:13,080 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_hwboiu5v\vod.archive.timeline.json
+2026-08-24 11:57:13,103 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_hwboiu5v\vod.archive.timeline.json
+2026-08-24 11:57:13,105 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip1 の正規化をやり直します
+2026-08-24 11:57:13,106 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip2 の正規化をやり直します
+2026-08-24 11:57:13,110 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_gasxufwk\vod.archive.timeline.json
+2026-08-24 11:57:13,111 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 11:57:13,111 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: C:\Users\evolu\AppData\Local\Temp\archive_resume_gasxufwk\no_such.timeline.json
+2026-08-24 11:57:13,117 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_x_bw36wn\vod.archive.timeline.json
+2026-08-24 11:57:13,133 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_x_bw36wn\vod.archive.timeline.json
+2026-08-24 11:57:13,144 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\archive_resume_z4kg64rd\vod.archive.timeline.json
+2026-08-24 11:57:13,165 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\archive_resume_z4kg64rd\vod.archive.timeline.json
+2026-08-24 11:57:13,169 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip1
+2026-08-24 11:57:13,170 [INFO] src.archive.project_resume: 設定に従い切り出したままの音量で使います: clip2
+2026-08-24 11:57:13,171 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (100.00s / 期待 103.00s) → 使いません
+2026-08-24 11:57:13,171 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:57:13,171 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:57:13,171 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:57:13,171 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:57:13,173 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 0 件 / 全長 30.0s
+2026-08-24 11:57:13,173 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,173 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,173 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,174 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,174 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,174 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,174 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,174 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 1 クリップ / V1 1 本 / S1 2 件 / 全長 30.0s
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 3 件 / 全長 30.0s
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 3 件 / 全長 20.0s
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 1 件
+2026-08-24 11:57:13,175 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 2 クリップ / V1 4 本 / S1 2 件 / 全長 20.0s
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,176 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: clip2 は使用しないため書き出しから除外します
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,178 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,179 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,179 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,179 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,179 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 3 クリップ / V1 6 本 / S1 6 件 / 全長 30.0s
+2026-08-24 11:57:13,179 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:57:13,179 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1131px / 使える幅 1080px)。font_size か max_line_length を下げると解消します
+2026-08-24 11:57:13,181 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 2 種類
+2026-08-24 11:57:13,181 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 1 種類
+2026-08-24 11:57:13,181 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 11:57:13,181 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:57:13,181 [WARNING] src.modules.comment_decor: コメントアイコンがキャンバスに収まらないため位置を詰めました (要求 x=-140.0 y=490.0 → x=0.0 y=490.0)。subtitle.comment_margin_l を大きくすると解消します
+2026-08-24 11:57:13,183 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:57:13,203 [WARNING] src.modules.subtitle_generator: コメントの Layer が逆転しているため本文を 6 へ引き上げます (背景=5 / 本文=1)
+2026-08-24 11:57:13,203 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 11:57:13,243 [WARNING] src.modules.subtitle_generator: コメントの配置は左寄せ (1/4/7) のみ対応のため 4 を使用します: 2
+2026-08-24 11:57:13,243 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 11:57:13,253 [WARNING] src.export.fcpxml_builder: タイムライン終端を超える字幕をクリップ末尾へクランプしました (丸め誤差の端数など)。
+2026-08-24 11:57:13,253 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:57:13,260 [ERROR] src.modules.loudness_normalizer: ラウドネス正規化の適用に失敗 (元音声のまま継続): in.mp4
+Traceback (most recent call last):
+  File "D:\develop\autoedit\src\modules\loudness_normalizer.py", line 219, in normalize_file
+    ffmpeg_runner.execute(
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 1198, in _execute_mock_call
+    raise effect
+src.exceptions.FFmpegError: 失敗
+2026-08-24 11:57:13,263 [INFO] src.modules.loudness_normalizer: ラウドネス正規化は無効のためスキップ
+2026-08-24 11:57:13,263 [WARNING] src.modules.loudness_normalizer: ラウドネス測定に失敗したため正規化をスキップ (元音声のまま継続): in.mp4
+2026-08-24 11:57:13,263 [INFO] src.modules.loudness_normalizer: 音声ストリームが無いためラウドネス正規化をスキップ: in.mp4
+2026-08-24 11:57:13,271 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:57:13,271 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)
+2026-08-24 11:57:13,278 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: out.mp4
+2026-08-24 11:57:13,279 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_jnxb0vx8\sample.mp4
+2026-08-24 11:57:13,281 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m2 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_jcee9m4b\gone.png)
+2026-08-24 11:57:13,284 [INFO] src.timeline.media_recovery: 素材を差し替え済みのフォルダで見つけました: m3 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_4gwqzxka\moved\logo2.png
+2026-08-24 11:57:13,284 [INFO] src.timeline.media_recovery: 本編素材を元動画から作り直します: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_7h12qxbs\sample.mp4
+2026-08-24 11:57:13,291 [WARNING] src.timeline.media_recovery: 元動画が見つからないため本編素材を復旧できません: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_ifubijmq\no_such_input.mp4
+2026-08-24 11:57:13,291 [WARNING] src.timeline.media_recovery: 素材が見つかりません: m1 (C:\Users\evolu\AppData\Local\Temp\media_recovery_test_ifubijmq\work\loudness_normalized.mp4)
+2026-08-24 11:57:13,291 [INFO] src.timeline.media_recovery: 本編素材は元動画そのものだったため、そのまま使います: C:\Users\evolu\AppData\Local\Temp\media_recovery_test_ndt85b90\sample.mp4
+2026-08-24 11:57:13,293 [INFO] src.timeline.media_recovery: 素材を相対パスで見つけました: m2 → C:\Users\evolu\AppData\Local\Temp\media_recovery_test_hvr3tgmh\assets\logo.png
+2026-08-24 11:57:13,295 [INFO] src.timeline.media_recovery: 設定に従い元動画をそのまま使います (音量は正規化前): C:\Users\evolu\AppData\Local\Temp\media_recovery_test_vt83geak\sample.mp4
+2026-08-24 11:57:13,321 [WARNING] src.timeline.builder: フレーム間引きの設定が不正なため none を使用します: 'all'
+2026-08-24 11:57:13,331 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_v116gs0v\vod.archive.timeline.json
+2026-08-24 11:57:13,344 [WARNING] src.timeline.project_io: プロジェクトの概要を読めませんでした: C:\Users\evolu\AppData\Local\Temp\library_summary_6lf2gdai\broken.timeline.json
+2026-08-24 11:57:13,347 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_0gtx9d6l\sample.timeline.json
+2026-08-24 11:57:13,371 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_summary_3qq2lvwv\sample.timeline.json
+2026-08-24 11:57:13,395 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_lj_gm83j\old.timeline.json
+2026-08-24 11:57:13,399 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_de6r49i8\old.timeline.json
+2026-08-24 11:57:13,407 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_u_tgp_no\old.timeline.json
+2026-08-24 11:57:13,426 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:57:13,443 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_ephbjsxd\old.timeline.json
+2026-08-24 11:57:13,462 [INFO] src.timeline.project_io: プロジェクトを改名しました: old.timeline.json → new.timeline.json
+2026-08-24 11:57:13,466 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\library_rename_85xu8tvd\old.timeline.json
+2026-08-24 11:57:13,473 [INFO] src.timeline.project_io: プロジェクトが 5 件見つかりました (新しい 2 件を表示します)
+2026-08-24 11:57:13,496 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_31doqbl3\sample.mp4
+2026-08-24 11:57:13,504 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_b2cb023n\sample.mp4
+2026-08-24 11:57:13,517 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_fnz4dc_h\sample.mp4
+2026-08-24 11:57:13,524 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_rifwckmj\sample.mp4
+2026-08-24 11:57:13,524 [WARNING] src.export.resolve_export: テーマ演出はテキストと区間のみを出力します (ブラー・黒帯などの映像エフェクトは FCPXML で表現できません)。
+2026-08-24 11:57:13,524 [WARNING] src.export.resolve_export: 字幕位置は配置(alignment)＋余白からの近似です。Resolve 取り込み時に位置が中央へ戻る場合があります (フォント/サイズ/色は保持)。
+2026-08-24 11:57:13,534 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2rpc2ohl\sample.mp4
+2026-08-24 11:57:13,549 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_k6rtdcwu\sample.mp4
+2026-08-24 11:57:13,553 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_v3nv7fey\sample.mp4
+2026-08-24 11:57:13,568 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_v3nv7fey\sample.mp4
+2026-08-24 11:57:13,577 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_z3iuqefh\sample.mp4
+2026-08-24 11:57:13,577 [WARNING] src.export.resolve_export: 未対応の字幕出力方式 export.resolve.subtitle.mode=bogus のため caption で出力します
+2026-08-24 11:57:13,584 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_82747pjy\sample.mp4
+2026-08-24 11:57:13,596 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_o18bhthi\sample.mp4
+2026-08-24 11:57:13,605 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_94qkanar\sample.mp4
+2026-08-24 11:57:13,613 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_k3gunhas\sample.mp4
+2026-08-24 11:57:13,623 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_s_lrgyt9\sample.mp4
+2026-08-24 11:57:13,633 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_b0m2z6wz\sample.mp4
+2026-08-24 11:57:13,643 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_vsc4k03h\sample.mp4
+2026-08-24 11:57:13,652 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_2q1rgg_5\sample.mp4
+2026-08-24 11:57:13,665 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_u9cia7ys\sample.mp4
+2026-08-24 11:57:13,665 [INFO] src.export.resolve_export: 編集点が無いため全長 1 クリップとして出力します
+2026-08-24 11:57:13,678 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_w8tjsg9o\sample.mp4
+2026-08-24 11:57:13,678 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_w8tjsg9o\out2.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:57:13,679 [INFO] src.export.resolve_export: 字幕トラックのスタイルは Resolve の字幕トラックヘッダー選択 → インスペクタ → Track Style で一括設定できます (Resolve 19 以降は Text+ スタイルも指定可)。
+2026-08-24 11:57:13,679 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_w8tjsg9o\out2.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:57:13,691 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_megp0e0e\sample.mp4
+2026-08-24 11:57:13,691 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_megp0e0e\out3.fcpxml (クリップ 1 件 / 字幕 caption 0 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:57:13,693 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_megp0e0e\out3.fcpxml (タイムライン尺 5.00s)
+2026-08-24 11:57:13,703 [WARNING] src.export.resolve_export: ソース総尺の取得に失敗 (タイムライン全長で代用): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\sample.mp4
+2026-08-24 11:57:13,703 [INFO] src.export.resolve_export: Resolve 出力開始: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\out.fcpxml (クリップ 1 件 / 字幕 caption 1 件 / title・テーマ 0 件 / 1920x1080 60fps)
+2026-08-24 11:57:13,709 [INFO] src.export.resolve_export: SRT サイドカー出力: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\out.srt (1 件)
+2026-08-24 11:57:13,709 [INFO] src.export.resolve_export: Resolve 出力完了: C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\out.fcpxml / C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\out.srt (タイムライン尺 5.00s)
+2026-08-24 11:57:13,711 [INFO] src.export.resolve_export: Resolve 出力を中止 (上書きしない): C:\Users\evolu\AppData\Local\Temp\resolve_export_test_9qgg8udj\out.fcpxml
+2026-08-24 11:57:13,717 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:57:13,717 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 11:57:13,760 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:57:13,762 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 1 件
+2026-08-24 11:57:13,768 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 1 件
+2026-08-24 11:57:13,773 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:57:13,773 [INFO] src.timeline.commands: 移動先 S2 が空いていないため役割だけ変更しました: s1
+2026-08-24 11:57:13,773 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:57:13,773 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:57:13,773 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 11:57:13,776 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\tmp33n7bn2_\sample.timeline.json
+2026-08-24 11:57:13,793 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:57:13,793 [WARNING] src.modules.subtitle_generator: VAD 付き認識に失敗したため VAD 無しで再試行します: VAD の初期化に失敗しました (テスト)
+2026-08-24 11:57:13,793 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=800ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:57:13,796 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 11:57:13,803 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,803 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,803 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 15.00s を確保 / 移動 3 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 15.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 15.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 10.020s へ 10.02s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 10.020s へ 10.02s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 1 件
+2026-08-24 11:57:13,804 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 19.980s へ 9.98s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 19.980s へ 9.98s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,805 [WARNING] src.timeline.commands: 素材が見つからないため貼り付けません: D:\develop\autoedit\tests\存在しない素材.mp4
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,805 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,806 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 4.000s へ 2.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 4.000s へ 2.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,807 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,808 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,808 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 base_syncs_all を使用します: 'なにか'
+2026-08-24 11:57:13,808 [WARNING] src.timeline.builder: 貼り付けの設定が不正なため既定 split を使用します: 123
+2026-08-24 11:57:13,808 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 1 件・切詰 0 件
+2026-08-24 11:57:13,808 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 5.000s へ 10.00s を確保 / 移動 2 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,808 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 5.000s へ 10.00s を確保 / 移動 1 件・分割 0 件・切詰 0 件
+2026-08-24 11:57:13,808 [WARNING] src.timeline.commands: 映像トラックの上限 (3) に達しているため追加できません
+2026-08-24 11:57:13,810 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (2.000 秒)
+2026-08-24 11:57:13,810 [INFO] src.timeline.commands: 字幕を追加できる空きがありません (0.990 秒)
+2026-08-24 11:57:13,810 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,810 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,810 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,812 [INFO] src.timeline.commands: リップル: 0.000〜10.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,812 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,812 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 0 件・移動 3 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,813 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 2 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: 残り尺が下限を割るためクリップごとリップル削除しました: c2
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 10.000〜15.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 15.000〜20.000s (5.00s) を除去 / 削除 0 件・短縮 1 件・移動 2 件
+2026-08-24 11:57:13,814 [INFO] src.timeline.commands: リップル: 26.000〜27.000s (1.00s) を除去 / 削除 0 件・短縮 2 件・移動 0 件
+2026-08-24 11:57:13,815 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,815 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,816 [INFO] src.timeline.commands: リップル: 10.000〜20.000s (10.00s) を除去 / 削除 1 件・短縮 0 件・移動 1 件
+2026-08-24 11:57:13,817 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_kazky3tu\sample.timeline.json
+2026-08-24 11:57:13,833 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_kazky3tu\sample.timeline.json
+2026-08-24 11:57:13,833 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_kazky3tu\sample.timeline.json
+2026-08-24 11:57:13,833 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_kazky3tu\sample.timeline.json
+2026-08-24 11:57:13,845 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_x4chtuuj\sample.timeline.json
+2026-08-24 11:57:13,861 [INFO] src.timeline.project_io: プロジェクト読込: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_x4chtuuj\sample.timeline.json
+2026-08-24 11:57:13,865 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_2mwyohd7\sample.timeline.json
+2026-08-24 11:57:13,886 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:57:13,890 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_iiuu1hy3\sample.timeline.json
+2026-08-24 11:57:13,912 [INFO] src.timeline.project_io: プロジェクト保存: C:\Users\evolu\AppData\Local\Temp\timeline_io_test_fxfiv9cn\sample.timeline.json
+2026-08-24 11:57:13,919 [WARNING] src.timeline.project_io: 編集点の区間が不正なため無視します: 20.000→15.000
+2026-08-24 11:57:13,920 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (1 件)。該当クリップを無効化します: m1
+2026-08-24 11:57:13,921 [WARNING] src.timeline.project_io: 音声クリップ a1 のリンク先 no_such_clip が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:57:13,922 [WARNING] src.timeline.project_io: トラック V1 でクリップ c2 が重複しているため 12.480 へ移動します
+2026-08-24 11:57:13,926 [WARNING] src.timeline.project_io: クリップ c2 の尺 (0.001s) が下限 (0.050s) 未満のため除外します
+2026-08-24 11:57:13,926 [WARNING] src.timeline.project_io: 音声クリップ a2 のリンク先 c2 が存在しないため除外します (該当区間は無音になります)
+2026-08-24 11:57:14,017 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)
+2026-08-24 11:57:14,024 [WARNING] src.timeline.builder: 寸法の設定が不正なため既定 8000 を使用します: 0

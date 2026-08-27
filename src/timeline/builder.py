@@ -9,12 +9,15 @@ import os
 
 from ..modules import concat_processor
 from ..utils.logger import get_logger
-from . import media_probe
+# commands は編集操作だが、役割別トラックの解決は構築時も同じ規則を使うため共有する
+# (commands は builder を import しないので循環しない / ver3 resolve11 §5.3)
+from . import commands, media_probe
 from .model import (
     BASE_AUDIO_TRACK_ID,
     BASE_SUBTITLE_TRACK_ID,
     BASE_VIDEO_TRACK_ID,
     BASE_Z_ORDER,
+    COMMENT_SUBTITLE_TRACK_ID,
     DEFAULT_ROLE,
     DEFAULT_SUBTITLE_Z_ORDER,
     ORIGIN_ASR,
@@ -171,6 +174,21 @@ def _paste_config(values):
     }
 
 
+# 役割別の字幕トラック運用を検証して既定で補う (ver3 resolve11 §7.3)
+# コメント役割の字幕を専用トラック (既定 S2) へ置くための設定。
+# role_track_enabled=False で従来どおり字幕トラック 1 本の運用へ戻せる。
+def _subtitle_tracks_config(values):
+    values = values if isinstance(values, dict) else {}
+    track_id = str(values.get("comment_track_id", "") or "").strip()
+    return {
+        "role_track_enabled": bool(values.get("role_track_enabled", True)),
+        "comment_track_id": track_id or COMMENT_SUBTITLE_TRACK_ID,
+        "comment_track_name": str(values.get("comment_track_name", "") or "Comment"),
+        "comment_track_index": _positive_int(values.get("comment_track_index"), 2),
+        "auto_move_on_role_change": bool(values.get("auto_move_on_role_change", True)),
+    }
+
+
 # ドックの配置指定を検証する (ver3 resolve5 §7)。想定外の値は既定 "top" へ寄せる。
 def _dock_area(value):
     area = str(value or "top").strip().lower()
@@ -200,6 +218,8 @@ def timeline_config(settings):
         "min_clip_sec": float(cfg.get("min_clip_sec", 0.05)),
         # 右クリック「字幕追加」で置く字幕の既定の尺 (秒)
         "default_subtitle_sec": _positive_float(cfg.get("default_subtitle_sec"), 2.0),
+        # 役割別の字幕トラック (ver3 resolve11 §7.3)
+        "subtitle_tracks": _subtitle_tracks_config(cfg.get("subtitle_tracks", {})),
         # Delete キー単独の割り当て (ver3 resolve2 R7)。true=リップル削除 (既定)
         "ripple_delete": bool(cfg.get("ripple_delete", True)),
         # リップルで一緒に詰める対象 (resolve2 R8)。"all"=全トラック (既定) / "same"=同一のみ
@@ -516,13 +536,19 @@ def build(input_path, media_path, keep_segments, subtitle_items,
             cursor, ORIGIN_ENDING, settings, cfg)
 
     # ── 字幕 (本編基準の時刻へ OP の尺を一律で加える)
-    _append_subtitles(timeline, subtitle_track, subtitle_items, body_offset, keep_segments)
+    _append_subtitles(timeline, subtitle_track, subtitle_items, body_offset,
+                      keep_segments, tracks_cfg=cfg["subtitle_tracks"])
 
     timeline.normalize()
+    # コメント用トラックは必要になったときだけ作られる (ver3 resolve11 §5.3)
+    comment_track = timeline.track_by_id(cfg["subtitle_tracks"]["comment_track_id"])
+    comment_count = len(comment_track.clips) if comment_track is not None else 0
     _logger.info(
-        "Timeline 構築: V1 %d クリップ (OP=%s / ED=%s) / S1 %d 字幕 / 全長 %.1fs / %dfps %dx%d",
+        "Timeline 構築: V1 %d クリップ (OP=%s / ED=%s) / S1 %d 字幕 / "
+        "%s(コメント) %d 字幕 / 全長 %.1fs / %dfps %dx%d",
         len(video_track.clips), "有" if opening_path else "無",
         "有" if ending_path else "無", len(subtitle_track.clips),
+        cfg["subtitle_tracks"]["comment_track_id"], comment_count,
         timeline.duration_sec(), fps, canvas_w, canvas_h,
     )
     return timeline
@@ -558,7 +584,8 @@ def _append_material(timeline, video_track, audio_track, path,
 # 字幕 items を字幕トラックへ載せる
 # items の時刻は本編基準のため body_offset を一律で加える (§6.9-2)。
 # 由来の元動画時刻は TimeMap で逆算し origin へ残す (将来の再同期用 / §13)。
-def _append_subtitles(timeline, subtitle_track, items, body_offset, keep_segments):
+def _append_subtitles(timeline, subtitle_track, items, body_offset, keep_segments,
+                      tracks_cfg=None):
     timemap = TimeMap.from_segments(keep_segments, media_id="m1")
     for item in (items or []):
         start = float(item.get("start", 0.0))
@@ -575,12 +602,16 @@ def _append_subtitles(timeline, subtitle_track, items, body_offset, keep_segment
         if source_end is not None:
             origin["source_end"] = round(source_end[1], 3)
 
-        subtitle_track.clips.append(SubtitleClip(
+        role = item.get("role", DEFAULT_ROLE)
+        # コメント役割は専用トラック (既定 S2) へ振り分ける (ver3 resolve11 §5.3)。
+        # 字幕編集画面など「トラックの無い画面」で付けた役割も、ここで正しい置き場所に入る。
+        track = commands.ensure_subtitle_track(timeline, role, tracks_cfg)             if role != DEFAULT_ROLE else subtitle_track
+        (track or subtitle_track).clips.append(SubtitleClip(
             timeline.next_id("s"),
             timeline_start=start + body_offset,
             duration=duration,
             text=item.get("text", ""),
-            role=item.get("role", DEFAULT_ROLE),
+            role=role,
             font=item.get("font", ""),
             font_size=item.get("font_size"),
             use=item.get("use", True),

@@ -5,13 +5,16 @@
 #
 # 字幕の描画は Qt による近似であり libass と完全一致しない (§6.4-4 に明記した仕様)。
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QGraphicsItem,
+    QGraphicsPathItem,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsSimpleTextItem,
 )
+
+from ...modules import comment_decor
 
 # ASS テンキー配置 → 水平/垂直の寄せ (resolve_export と同じ対応)
 _ALIGN_LEFT = (1, 4, 7)
@@ -25,6 +28,31 @@ _DEFAULT_OVERLAY_CFG = {
     "max_scale": 4.0,
     "resize_handle_px": 10,
 }
+
+# コメント役割 (背景とアイコンを付ける対象 / ver3 resolve11)
+_ROLE_COMMENT = "comment"
+
+# コメントアイコンの読み込み結果を使い回すためのキャッシュ (キー: (パス, 一辺px))。
+# 再生中は毎フレーム作り直されるため、その都度ディスクから読むと引っかかる。
+_icon_cache = {}
+
+
+# 指定サイズのコメントアイコンを返す (読めなければ None)
+def _comment_icon_pixmap(eff_cfg, size):
+    path = comment_decor.resolve_icon_path(eff_cfg)
+    if not path:
+        return None
+    key = (path, int(size))
+    pixmap = _icon_cache.get(key)
+    if pixmap is None:
+        source = QPixmap(path)
+        if source.isNull():
+            return None
+        pixmap = source.scaled(int(size), int(size),
+                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        _icon_cache[key] = pixmap
+    return pixmap
+
 
 # 選択枠の色 (琥珀)
 # ver3 resolve3 §5.6: 映像の上に置く操作用の目印のため、アクセント (赤) へ寄せない。
@@ -53,11 +81,21 @@ def ass_color_to_qcolor(value, default="#FFFFFF"):
 
 # 字幕設定の配置(alignment)+余白から、位置未指定時の描画位置を求める
 # 戻り値は (x_px, y_px, 水平アンカー, 垂直アンカー)。
-def default_subtitle_anchor(eff_cfg, canvas_width, canvas_height):
-    alignment = int(eff_cfg.get("alignment", 2) or 2)
-    margin_l = int(eff_cfg.get("margin_l", 40) or 0)
-    margin_r = int(eff_cfg.get("margin_r", 40) or 0)
-    margin_v = int(eff_cfg.get("margin_v", 60) or 0)
+# role にコメントを渡すと役割別の配置 (comment_alignment / comment_margin_*) を使う
+# (ver3 resolve11 §5.7)。キーが無ければ共通値へ落ちるため旧設定でも動く。
+def default_subtitle_anchor(eff_cfg, canvas_width, canvas_height, role=""):
+    prefix = "comment_" if str(role or "") == _ROLE_COMMENT else ""
+
+    # 役割別のキー (comment_*) を優先し、無ければ共通のキーへ落とす
+    def value(key, default):
+        if prefix and eff_cfg.get(prefix + key) is not None:
+            return eff_cfg.get(prefix + key)
+        return eff_cfg.get(key, default)
+
+    alignment = int(value("alignment", 2) or 2)
+    margin_l = int(value("margin_l", 40) or 0)
+    margin_r = int(value("margin_r", 40) or 0)
+    margin_v = int(value("margin_v", 60) or 0)
 
     if alignment in _ALIGN_LEFT:
         x, h_anchor = float(margin_l), "left"
@@ -108,12 +146,19 @@ class _OverlayMixin:
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setCursor(Qt.OpenHandCursor)
 
+    # 位置として保存する基準点 (シーン座標)
+    # 既定は外接矩形の中心。コメント字幕だけ「文字の左中央」を返す (ver3 resolve11 §3 D-7)。
+    # 背景・アイコンを子アイテムとして持つと sceneBoundingRect() にそれらが混ざるため、
+    # ここを切り出して「何を基準に保存するか」をアイテム側が決められるようにする。
+    def anchor_scene_point(self):
+        return self.sceneBoundingRect().center()
+
     # ドラッグ確定時に 1 回だけ通知する (ドラッグ中は積まない = 履歴を汚さない / §6.5-1)
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if callable(self.move_finished):
-            center = self.sceneBoundingRect().center()
-            self.move_finished(self.clip_id, center.x(), center.y())
+            point = self.anchor_scene_point()
+            self.move_finished(self.clip_id, point.x(), point.y())
 
     # 選択枠を描く
     def _paint_selection(self, painter):
@@ -290,6 +335,8 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         font.setItalic(bool(font_profile.italic))
         font.setUnderline(bool(font_profile.underline))
         self.setFont(font)
+        # 位置の基準 (anchor_scene_point) を役割で切り替えるため覚えておく
+        self._role = role
 
         # クリップ個別の色があれば優先する (resolve6 §3-4)。空文字なら役割の色に従う。
         fill = (clip.color
@@ -308,15 +355,70 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
             self.setPen(QPen(Qt.NoPen))
 
         self._place(clip, eff_cfg, canvas_size)
+        # コメントは背景 (角丸の箱) とアイコンを子アイテムとして持たせる
+        # (ver3 resolve11 §5.11-6)。親を動かせば一緒に付いてくる。
+        if role == _ROLE_COMMENT:
+            self._add_comment_decor(clip, eff_cfg, canvas_size, text)
+
+    # 位置として保存する基準点 (ver3 resolve11 §3 D-4 / D-7)
+    # コメントは \an4 (左中央) を基準に位置を持つため、文字の矩形の左中央を返す。
+    # boundingRect() は子アイテム (背景・アイコン) を含まないため、装飾を足しても基準は動かない。
+    def anchor_scene_point(self):
+        rect = self.boundingRect()
+        if self._role == _ROLE_COMMENT:
+            return self.mapToScene(rect.left(), rect.center().y())
+        return self.mapToScene(rect.center())
+
+    # 背景 (角丸の箱) とアイコンを子アイテムとして足す (ver3 resolve11 §5.11-6)
+    # 大きさは comment_decor の推定値をそのまま使う。Qt の実測 (QFontMetrics) は使わない:
+    # 実測すると焼き込み (推定) と別の箱になり、プレビューと出力がズレるため (§3 D-10)。
+    def _add_comment_decor(self, clip, eff_cfg, canvas_size, text):
+        item = clip.to_item()
+        # 子アイテムの座標は親 (文字) の左上が原点。キャンバス座標との差を引いて置く。
+        origin = self.scenePos()
+
+        box = comment_decor.background_box(
+            item, eff_cfg, canvas_size[0], canvas_size[1], text=text)
+        if box:
+            path = QPainterPath()
+            path.addRoundedRect(
+                QRectF(box["x"] - origin.x(), box["y"] - origin.y(),
+                       box["w"], box["h"]),
+                float(box["radius"]), float(box["radius"]))
+            background = QGraphicsPathItem(path, self)
+            background.setBrush(QBrush(ass_color_to_qcolor(
+                eff_cfg.get("comment_bg_color"), "#000000")))
+            background.setPen(QPen(Qt.NoPen))
+            # 負の Z を持つ子は親より先に (= 下に) 描かれる
+            background.setZValue(-1)
+            background.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            background.setFlag(QGraphicsItem.ItemIsMovable, False)
+
+        icon = comment_decor.icon_box(
+            item, eff_cfg, canvas_size[0], canvas_size[1])
+        if not icon:
+            return
+        pixmap = _comment_icon_pixmap(eff_cfg, icon["size"])
+        if pixmap is None or pixmap.isNull():
+            return
+        item_icon = QGraphicsPixmapItem(pixmap, self)
+        item_icon.setOffset(icon["x"] - origin.x(), icon["y"] - origin.y())
+        item_icon.setZValue(1)
+        item_icon.setFlag(QGraphicsItem.ItemIsSelectable, False)
+        item_icon.setFlag(QGraphicsItem.ItemIsMovable, False)
 
     # 位置指定があればその中心へ、無ければ設定の配置(alignment)+余白へ置く
+    # コメントは中心ではなく「文字の左中央」を基準に置く (ver3 resolve11 §3 D-4)。
     def _place(self, clip, eff_cfg, canvas_size):
         rect = self.boundingRect()
+        is_comment = str(clip.role or "") == _ROLE_COMMENT
         if clip.transform.is_positioned():
             cx, cy = normalized_to_pixel(clip.transform.x, clip.transform.y, *canvas_size)
-            self.setPos(cx - rect.width() / 2.0, cy - rect.height() / 2.0)
+            left = cx if is_comment else cx - rect.width() / 2.0
+            self.setPos(left, cy - rect.height() / 2.0)
             return
-        x, y, h_anchor, v_anchor = default_subtitle_anchor(eff_cfg, *canvas_size)
+        x, y, h_anchor, v_anchor = default_subtitle_anchor(
+            eff_cfg, *canvas_size, role=clip.role)
         if h_anchor == "left":
             left = x
         elif h_anchor == "right":

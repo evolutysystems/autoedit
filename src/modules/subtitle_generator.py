@@ -9,7 +9,7 @@ from ..exceptions import AutoEditError, FFmpegError, PipelineCancelled, Subtitle
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
-from . import ffmpeg_runner, silence_cutter
+from . import comment_decor, ffmpeg_runner, silence_cutter
 
 _logger = get_logger(__name__)
 
@@ -61,6 +61,8 @@ def _safe_ass_color(value, default):
 
 # テロップ役割 (request10) の既定値。役割未指定時はこの色(=配信者色)へ寄せる。
 _DEFAULT_ROLE = "streamer"
+# コメント役割 (ver3 resolve11)。配置・アイコン・背景の対象になる。
+_ROLE_COMMENT = "comment"
 
 
 # HTML #RRGGBB を ASS PrimaryColour (&H00BBGGRR) へ変換する
@@ -87,7 +89,8 @@ class FontProfile:
                  bold=False, italic=False, underline=False, strikeout=False,
                  spacing=0, angle=0, border_style=1, alignment=2,
                  margin_l=40, margin_r=40, margin_v=60, role_colors=None,
-                 role_outline_colors=None, comment_label="コメント："):
+                 role_outline_colors=None, comment_label="",
+                 role_placements=None):
         self.family = family
         self.size = int(size) if size is not None else 48
         # 配信者色 (旧来の単一色)。後方互換のため引数名/意味は据え置く。
@@ -114,6 +117,9 @@ class FontProfile:
         self.margin_l = _to_int(margin_l, 40)
         self.margin_r = _to_int(margin_r, 40)
         self.margin_v = _to_int(margin_v, 60)
+        # 役割別の配置・余白 (ver3 resolve11 §3 D-3)。
+        # 未指定の役割は共通値へ落ちるため、旧来の呼び出しは挙動が変わらない。
+        self._role_placements = self._normalize_placements(role_placements)
 
     # 役割別・塗り色マップを正規化する
     # streamer は配信者色(color_hex)を既定とし、sub/comment の欠落は配信者色へ寄せる
@@ -138,6 +144,29 @@ class FontProfile:
             "comment": _safe_ass_color(rc.get("comment"), streamer),
         }
 
+    # 役割別・配置マップを正規化する (ver3 resolve11 §3 D-3)
+    # 各値は (alignment, margin_l, margin_r, margin_v)。欠けている項目は共通値で埋める。
+    def _normalize_placements(self, role_placements):
+        common = (self.alignment, self.margin_l, self.margin_r, self.margin_v)
+        placements = {role: common for role in self.ROLE_STYLE}
+        for role, values in dict(role_placements or {}).items():
+            if role not in placements or not values:
+                continue
+            data = dict(values)
+            placements[role] = (
+                _to_int(data.get("alignment"), self.alignment),
+                _to_int(data.get("margin_l"), self.margin_l),
+                _to_int(data.get("margin_r"), self.margin_r),
+                _to_int(data.get("margin_v"), self.margin_v),
+            )
+        return placements
+
+    # 役割の配置 (alignment, margin_l, margin_r, margin_v) を返す
+    # 未知の役割は配信者 (= 共通値) へフォールバックする。
+    def placement_for_role(self, role):
+        return self._role_placements.get(
+            role, self._role_placements[_DEFAULT_ROLE])
+
     # 後方互換: 配信者色の ASS PrimaryColour (&H00BBGGRR) を返す
     def to_ass_color(self):
         return _hex_to_ass_color(self.color_hex)
@@ -148,7 +177,10 @@ class FontProfile:
 
     # 指定 Style 名・塗り色 (HTML #RRGGBB)・アウトライン色 (ASS &HAABBGGRR) の
     # ASS Style 値 (Style: 以降) を生成する。塗り=PrimaryColour / アウトライン=OutlineColour。
-    def to_ass_style_named(self, style_name, color_hex, outline_color):
+    # placement 省略時は共通の配置・余白を使う (旧来の呼び出しと同一の出力)。
+    def to_ass_style_named(self, style_name, color_hex, outline_color, placement=None):
+        alignment, margin_l, margin_r, margin_v = placement or (
+            self.alignment, self.margin_l, self.margin_r, self.margin_v)
         return (
             f"{style_name},{self.family},{self.size},"
             f"{_hex_to_ass_color(color_hex)},{outline_color},{self.back_color},"
@@ -156,18 +188,20 @@ class FontProfile:
             f"{_ass_flag(self.underline)},{_ass_flag(self.strikeout)},"
             f"{_ASS_SCALE_X},{_ASS_SCALE_Y},{self.spacing},{self.angle},"
             f"{self.border_style},{self.outline_width},{_ASS_SHADOW},"
-            f"{self.alignment},{self.margin_l},{self.margin_r},{self.margin_v},"
+            f"{alignment},{margin_l},{margin_r},{margin_v},"
             f"{_ASS_ENCODING}"
         )
 
     # 全役割の Style 値を (Style名, Style値) のリストで返す
-    # 配信者→サブ→コメント の順。各役割の塗り色＋アウトライン色を差し替える (追加2)。
+    # 配信者→サブ→コメント の順。各役割の塗り色＋アウトライン色＋配置を差し替える
+    # (色 = 追加2 / 配置 = ver3 resolve11 §3 D-3)。
     def iter_role_styles(self):
         return [
             (self.ROLE_STYLE[role],
              self.to_ass_style_named(self.ROLE_STYLE[role],
                                      self.role_colors[role],
-                                     self.role_outline_colors[role]))
+                                     self.role_outline_colors[role],
+                                     self.placement_for_role(role)))
             for role in ("streamer", "sub", "comment")
         ]
 
@@ -436,6 +470,34 @@ class WhisperTextSource(TextSource):
         return wrap_lines(text, self._min_line_length, self._max_line_length, self._wrap_engine)
 
 
+# コメント役割で使える配置 (ver3 resolve11 §3 D-4)
+# アイコンと背景を文字の左横へ確実に置くには「文字列の左端」が確定している必要があるため、
+# 左寄せ (an1/an4/an7) だけを許す。中央・右寄せは文字幅なしに左端が求まらない。
+_COMMENT_ALIGNMENTS = (1, 4, 7)
+_DEFAULT_COMMENT_ALIGNMENT = 4
+
+
+# コメント役割の配置・余白を字幕設定から取り出す (ver3 resolve11 §5.4-1)
+# キーが無ければ共通値 (alignment/margin_*) へ落ちるため、旧 setting.json でも挙動不変。
+def _comment_placement(subtitle_cfg):
+    alignment = _to_int(subtitle_cfg.get("comment_alignment"),
+                        _DEFAULT_COMMENT_ALIGNMENT)
+    if alignment not in _COMMENT_ALIGNMENTS:
+        _logger.warning(
+            "コメントの配置は左寄せ (1/4/7) のみ対応のため %d を使用します: %r",
+            _DEFAULT_COMMENT_ALIGNMENT, subtitle_cfg.get("comment_alignment"))
+        alignment = _DEFAULT_COMMENT_ALIGNMENT
+    return {
+        "alignment": alignment,
+        "margin_l": subtitle_cfg.get("comment_margin_l",
+                                     subtitle_cfg.get("margin_l", 40)),
+        "margin_r": subtitle_cfg.get("comment_margin_r",
+                                     subtitle_cfg.get("margin_r", 40)),
+        "margin_v": subtitle_cfg.get("comment_margin_v",
+                                     subtitle_cfg.get("margin_v", 60)),
+    }
+
+
 # 字幕設定 (subtitle セクション) から FontProfile を構築する
 # run() とアーカイブ切り抜き (clip_writer) の双方で同一のスタイルを得るために共通化する。
 # 役割別カラー/アウトライン色・コメントラベル・装飾・余白など現行 run() と同一の対応。
@@ -457,7 +519,10 @@ def build_font_profile(subtitle_cfg):
             "comment": subtitle_cfg.get("comment_outline_color", ""),
         },
         # コメント役割の先頭ラベル (request10 追加要望5)。空文字ならラベル無し。
-        comment_label=subtitle_cfg.get("comment_label", "コメント："),
+        # ver3 resolve11 C3 でアイコン表示へ置き換えたため既定は空文字。
+        comment_label=subtitle_cfg.get("comment_label", ""),
+        # 役割別の配置 (ver3 resolve11 §3 D-3)。コメントだけ中央の左へ寄せる。
+        role_placements={"comment": _comment_placement(subtitle_cfg)},
         outline_color=subtitle_cfg.get("outline_color", _DEFAULT_OUTLINE_COLOR),
         outline_width=subtitle_cfg.get("outline_width", 3),
         back_color=subtitle_cfg.get("back_color", _DEFAULT_BACK_COLOR),
@@ -481,6 +546,10 @@ def build_font_profile(subtitle_cfg):
 _VERTICAL_OVERRIDE_KEYS = (
     "font_size", "min_line_length", "max_line_length",
     "alignment", "margin_l", "margin_r", "margin_v",
+    # コメント役割の配置とアイコン (ver3 resolve11 §7.2)。
+    # 背景 (余白・角丸・色) は縦横で共通のため上書きしない。
+    "comment_alignment", "comment_margin_l", "comment_margin_r", "comment_margin_v",
+    "comment_icon_size_px", "comment_icon_gap_px",
 )
 
 
@@ -546,7 +615,11 @@ def _inline_position_override(entry, video_width, video_height):
     # 正規化座標 → ピクセル (\pos はテキストのアンカー位置。\an5 で中央基準に揃える)
     px = (float(x) + 1.0) * video_width / 2.0
     py = (1.0 - float(y)) * video_height / 2.0
-    return f"\\an5\\pos({px:.1f},{py:.1f})"
+    # コメントだけは左中央アンカー (\an4) にする (ver3 resolve11 §3 D-4)。
+    # 中央基準 (\an5) だと「文字列の左端 = 中央 - 文字幅/2」となり、文字幅を測れない
+    # Python 側からアイコン・背景の位置を決められないため。他の役割は従来どおり \an5。
+    anchor = 4 if str(entry.get("role", "")) == _ROLE_COMMENT else 5
+    return f"\\an{anchor}\\pos({px:.1f},{py:.1f})"
 
 
 # ASS 色文字列 (&HAABBGGRR / &HBBGGRR) を (BBGGRR, AA) へ分解する (resolve6 §5.3)
@@ -615,12 +688,30 @@ def _inline_overrides(entry, video_width, video_height):
     return "{" + position + override + "}"
 
 
+# 背景と本文の ASS Layer を決める (ver3 resolve11 §5.11-4)
+# ASS は Layer の数値が大きいほど前面。背景 < 本文 でなければ箱が文字を隠すため、
+# 逆転していたら警告して本文を 1 つ上へ持ち上げる。
+# subtitle_cfg 未指定 (背景を出さない呼び出し) では両方 0 = 従来と完全に同一の出力。
+def _comment_layers(subtitle_cfg):
+    if subtitle_cfg is None:
+        return 0, 0
+    bg_layer = _to_int(subtitle_cfg.get("comment_bg_layer"), 0)
+    text_layer = _to_int(subtitle_cfg.get("comment_text_layer"), 1)
+    if text_layer <= bg_layer:
+        _logger.warning(
+            "コメントの Layer が逆転しているため本文を %d へ引き上げます "
+            "(背景=%d / 本文=%d)", bg_layer + 1, bg_layer, text_layer)
+        text_layer = bg_layer + 1
+    return bg_layer, text_layer
+
+
 # タイムラインから ASS 字幕ファイルを生成する
 # テロップ役割 (配信者/サブ/コメント) ごとに色違いの Style を定義し、
 # 各 Dialogue 行は entry["role"] に対応する Style を参照する (request10)。
 # role 欠落 entry は配信者(streamer) 扱い=旧来の単一色と同一挙動 (後方互換)。
 # entry["font"]/["font_size"] があれば ASS インライン上書きタグで個別適用する (resolve16 §4.4)。
-def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, video_height=1080):
+def build_subtitle_file(timeline, font_profile, output_path,
+                        video_width=1920, video_height=1080, subtitle_cfg=None):
     # 役割別 Style 行 (Streamer/Sub/Comment) をまとめて出力する
     style_lines = "\n".join(
         f"Style: {value}" for _name, value in font_profile.iter_role_styles()
@@ -641,6 +732,11 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
+    # コメントの背景と重ね順 (ver3 resolve11 §5.11-4)。
+    # subtitle_cfg 未指定の呼び出しでは背景を出さず、Layer も 0 のまま = 従来と同一出力。
+    bg_layer, comment_layer = _comment_layers(subtitle_cfg)
+    background_count = 0
+
     body_lines = []
     # 個別フォント/サイズ指定の件数 (ログ出力用 / resolve16 §6)
     font_override_count = 0
@@ -657,6 +753,12 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
         # 本文は既に \N 折返し済みのため、ラベルは独立行として折返しに巻き込まれない。
         if role == "comment" and font_profile.comment_label:
             text = f"{font_profile.comment_label}\\N{text}"
+        # コメントは背景 (角丸の箱) を 1 本手前に出す (ver3 resolve11 §5.11-5)。
+        # ラベル付与後・上書きタグ付与前の本文で大きさを見積もる (実際に出る行がこれのため)。
+        background = None
+        if subtitle_cfg is not None and role == _ROLE_COMMENT:
+            background = comment_decor.build_background_text(
+                entry, subtitle_cfg, video_width, video_height, text=text)
         # 個別フォント/サイズ/位置の上書きタグを本文最先頭へ付与する
         # (resolve16 §4.4 / ver3 §8.3)。ラベル部にも同フォントを適用するため
         # コメントラベル付与より後に前置する (§8-5 確定)。
@@ -675,10 +777,20 @@ def build_subtitle_file(timeline, font_profile, output_path, video_width=1920, v
                 outline_override_count += 1
         # 役割に対応する Style 名で色分けする (role 未指定は配信者)
         style_name = font_profile.style_for_role(role)
-        body_lines.append(f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}")
+        # 背景 → 本文 の順に並べ、Layer でも前後関係を明示する (実装依存の描画順に頼らない)
+        if background:
+            body_lines.append(
+                f"Dialogue: {bg_layer},{start},{end},{style_name},,0,0,0,,{background}")
+            background_count += 1
+        layer = comment_layer if role == _ROLE_COMMENT else 0
+        body_lines.append(
+            f"Dialogue: {layer},{start},{end},{style_name},,0,0,0,,{text}")
 
     # 個別指定の件数を INFO 出力する (resolve16 §6 / resolve6 §5.3)。
     # 0 件時のみ従来同様に静かに済ませる。
+    if background_count:
+        _logger.info("コメント背景: %d 件", background_count)
+
     if (font_override_count or size_override_count
             or color_override_count or outline_override_count):
         _logger.info(
@@ -710,7 +822,8 @@ def _format_ass_time(seconds):
 # CFR 化は fps フィルタ (実PTS基準) で行い、映像と音声の同期を保つ (resolve 20260719 対策A)。
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
                   total_duration=0.0, on_progress=None, target_size=None,
-                  fonts_dir=None):
+                  fonts_dir=None, extra_chains=None, filter_script_path=None,
+                  filter_script_chars=0):
     # subtitles フィルタは2段階エスケープに従う (resolve 20260630 resolve2.md 対策A):
     #   ・シングルクォートでフィルタグラフ階層(空白/カンマ)を保護し、内側の '\' を下位へ通す
     #   ・フィルタ内オプション階層では ':' がなお区切り文字のため '\:' でエスケープする
@@ -760,15 +873,34 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
         _logger.info("追加フォント fontsdir を適用: %s (%d 件)", fonts_dir, font_count)
     fps = ffmpeg_runner.get_output_fps(ffmpeg_settings)
     filter_spec = f"fps={fps},{scale_chain}{subtitles_opt}"
+    # 追加のフィルタチェーン (コメントアイコンの overlay / ver3 resolve11 §5.4-4)。
+    # 空なら 1 文字も足さない = 従来と完全に同一のコマンドになる。
+    # -vf は「入力1・出力1」ならラベル付きの複数チェーンを書けるため、
+    # subtitles の出力へラベルを付けて鎖の続きを繋ぐ (-filter_complex へ作り替えない)。
+    if extra_chains:
+        filter_spec = f"{filter_spec}[vsub];" + ";".join(extra_chains)
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
+    # 表示区間が多いと enable 式が長くなりコマンドライン長の上限に触れるため、
+    # 閾値を超えたらフィルタをファイルへ逃がす (ver3 resolve11 §3 D-6)。
+    filter_args = ["-vf", filter_spec]
+    if (filter_script_path and filter_script_chars
+            and len(filter_spec) > int(filter_script_chars)):
+        try:
+            with open(filter_script_path, "w", encoding="utf-8") as f:
+                f.write(filter_spec)
+            filter_args = ["-filter_script:v", filter_script_path]
+            _logger.info("フィルタが長いためスクリプトへ退避しました (%d 文字): %s",
+                         len(filter_spec), filter_script_path)
+        except OSError as e:
+            _logger.warning("フィルタスクリプトを書けないため直接指定します: %s", e)
     cmd = [
         ffmpeg,
         "-y",
         "-hide_banner",
         "-fflags", "+genpts",          # 欠落PTSを再生成して読み込む
         "-i", input_path,
-        "-vf", filter_spec,
+        *filter_args,
         "-af", "aresample=async=1:first_pts=0",  # 音声を実時刻・先頭0基準で保持し同期維持
         *ffmpeg_runner.build_encode_options(ffmpeg_settings),
         "-fps_mode", "cfr",            # 固定フレームレート化 (有効な duration を保証)
@@ -1099,7 +1231,13 @@ def run(context):
     build_subtitle_file(
         timeline, font_profile, subtitle_path,
         video_width=canvas_width, video_height=canvas_height,
+        # コメントの背景 (角丸の箱) を出す (ver3 resolve11 §5.6-3)
+        subtitle_cfg=subtitle_cfg,
     )
+    # コメントアイコンを字幕の上へ重ねる (対象が無ければコマンドは従来と同一)
+    icon_chains, _icon_count, _icon_groups = comment_decor.build_icon_chains(
+        timeline, subtitle_cfg, canvas_width, canvas_height,
+        in_label="[vsub]", out_label="")
     burn_subtitle(
         input_path, subtitle_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -1108,6 +1246,9 @@ def run(context):
         target_size=target_size,
         # 追加フォント(settings/fonts)を libass に解決させる (resolve16 §4.3)
         fonts_dir=resolve_fonts_dir(settings),
+        extra_chains=icon_chains,
+        filter_script_path=context.allocate_intermediate("subtitle_vf.txt"),
+        filter_script_chars=subtitle_cfg.get("comment_icon_filter_script_chars", 8000),
     )
     context.set_current_video_path(output_path)
     return output_path

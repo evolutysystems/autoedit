@@ -14,9 +14,11 @@ from . import clipboard
 from .model import (
     BASE_SUBTITLE_TRACK_ID,
     BASE_Z_ORDER,
+    COMMENT_SUBTITLE_TRACK_ID,
     DEFAULT_ROLE,
     DEFAULT_SUBTITLE_Z_ORDER,
     ORIGIN_USER_SUBTITLE,
+    ROLE_COMMENT,
     TRACK_AUDIO,
     TRACK_SUBTITLE,
     TRACK_VIDEO,
@@ -33,6 +35,44 @@ _logger = get_logger(__name__)
 
 # 位置比較の許容誤差
 _EPS = 1e-6
+
+# 役割別の字幕トラックが未設定のときに使う既定 (ver3 resolve11 §5.2)
+_DEFAULT_SUBTITLE_TRACKS_CFG = {
+    "role_track_enabled": True,
+    "comment_track_id": COMMENT_SUBTITLE_TRACK_ID,
+    "comment_track_name": "Comment",
+    "comment_track_index": 2,
+    "auto_move_on_role_change": True,
+}
+
+
+# 役割に対応する字幕トラックを返す。無ければ作る (ver3 resolve11 §5.2-1)
+# cfg: timeline_config()["subtitle_tracks"]。None なら既定 (コメントは S2) で動く。
+def ensure_subtitle_track(timeline, role, cfg=None):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    track = timeline.subtitle_track_for_role(
+        role, cfg["comment_track_id"], cfg["role_track_enabled"])
+    if track is not None:
+        return track
+    if not cfg["role_track_enabled"] or role != ROLE_COMMENT:
+        track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
+    else:
+        track = Track(cfg["comment_track_id"], TRACK_SUBTITLE,
+                      cfg["comment_track_index"], name=cfg["comment_track_name"])
+        _logger.info("コメント用の字幕トラックを作成しました: %s", track.id)
+    timeline.tracks.append(track)
+    return track
+
+
+# トラック上に [start, end) と重なるクリップがあるか (自分自身は除く)
+def _overlaps_any(track, start, end, exclude_id=None):
+    for clip in track.clips:
+        if exclude_id is not None and clip.id == exclude_id:
+            continue
+        if clip.timeline_start < end - _EPS and start < clip.timeline_end - _EPS:
+            return True
+    return False
+
 
 # レイヤー変更の方向 (§6.5-2)
 LAYER_TOP = "top"
@@ -819,13 +859,15 @@ class AddSubtitleClip(Command):
     label = "字幕の追加"
 
     def __init__(self, timeline_start, duration, text="", track_id=None,
-                 role=DEFAULT_ROLE, min_clip_sec=0.05):
+                 role=DEFAULT_ROLE, min_clip_sec=0.05, subtitle_tracks_cfg=None):
         self._start = max(float(timeline_start), 0.0)
         self._duration = float(duration)
         self._text = str(text or "")
         self._track_id = track_id
         self._role = role
         self._min_clip_sec = float(min_clip_sec)
+        # 役割別トラックの設定 (ver3 resolve11 §5.2-3)
+        self._tracks_cfg = subtitle_tracks_cfg
         # 追加したクリップの ID (呼び出し側が選択状態にするため公開する)
         self.created_clip_id = None
         self.created_track_id = None
@@ -848,18 +890,18 @@ class AddSubtitleClip(Command):
         self.created_clip_id = clip.id
         return True
 
-    # 追加先の字幕トラックを決める (無ければ S1 を作る)
+    # 追加先の字幕トラックを決める
+    # トラックの明示指定があればそれを使い、無ければ役割に対応するトラック
+    # (コメントは S2 / それ以外は S1) へ置く。無ければ作る (ver3 resolve11 §5.2-3)。
     def _resolve_track(self, timeline):
         if self._track_id:
             track = timeline.track_by_id(self._track_id)
             if track is not None and track.is_subtitle():
                 return track
-        track = timeline.base_subtitle_track()
-        if track is not None:
-            return track
-        track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
-        timeline.tracks.append(track)
-        self.created_track_id = track.id
+        before = {t.id for t in timeline.subtitle_tracks()}
+        track = ensure_subtitle_track(timeline, self._role, self._tracks_cfg)
+        if track is not None and track.id not in before:
+            self.created_track_id = track.id
         return track
 
     # 開始位置に置ける尺を返す (置けないときは None)
@@ -906,7 +948,8 @@ class PasteClips(Command):
 
     def __init__(self, payload, at_sec, min_clip_sec=0.05,
                  insert_policy=INSERT_SPLIT, ripple_scope=SCOPE_BASE_SYNCS_ALL,
-                 archive_index_policy=ARCHIVE_INDEX_INHERIT, max_video_tracks=8):
+                 archive_index_policy=ARCHIVE_INDEX_INHERIT, max_video_tracks=8,
+                 subtitle_tracks_cfg=None):
         self._payload = payload or {}
         self._at = max(float(at_sec), 0.0)
         self._min_clip_sec = float(min_clip_sec)
@@ -914,6 +957,8 @@ class PasteClips(Command):
         self._ripple_scope = ripple_scope
         self._archive_index_policy = archive_index_policy
         self._max_video_tracks = int(max_video_tracks)
+        # 役割別の字幕トラック (貼り付け先が見つからないときの解決に使う / resolve11 §5.2-4)
+        self._subtitle_tracks_cfg = subtitle_tracks_cfg
         # 呼び出し側が選択・再生ヘッド・案内に使う結果
         self.created_clip_ids = []
         self.pasted_end_sec = None
@@ -1073,12 +1118,10 @@ class PasteClips(Command):
             track = timeline.track_by_id(str(info.get("id") or ""))
             if track is not None and track.is_subtitle():
                 return track
-            track = timeline.base_subtitle_track()
-            if track is not None:
-                return track
-            track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
-            timeline.tracks.append(track)
-            return track
+            # 別プロジェクトへ貼るとコピー元のトラック ID が無い。役割で置き場所を決め直す
+            # (コメントが S1 へ落ちないようにする / ver3 resolve11 §5.2-4)。
+            role = str((item.get("clip") or {}).get("role") or DEFAULT_ROLE)
+            return ensure_subtitle_track(timeline, role, self._subtitle_tracks_cfg)
 
         if info.get("is_base"):
             return timeline.base_video_track()
@@ -1256,6 +1299,52 @@ class EditSubtitle(Command):
                 setattr(clip, key, value)
                 changed = True
         return changed
+
+
+# 字幕の役割を変え、必要ならコメント用トラック (S2) へ移す (ver3 resolve11 §5.2-2)
+# 【重要】役割の書き換えは必ず通し、トラック移動は best-effort とする。
+#   出力 (色・Style・配置・アイコン・背景) を決めるのは role であって置き場所ではないため、
+#   移動できなくても見た目は正しく出る。ここで役割変更ごと失敗させると
+#   「色は変えられるのに役割は変えられない」という不可解な挙動になる。
+# 移動しても clip.id は変えない (選択・Undo・アーカイブ index の紐付けを切らないため)。
+class ChangeSubtitleRole(Command):
+
+    label = "字幕の役割変更"
+
+    def __init__(self, clip_id, role, subtitle_tracks_cfg=None):
+        self._clip_id = clip_id
+        self._role = str(role or DEFAULT_ROLE)
+        self._cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(subtitle_tracks_cfg or {})}
+        # 呼び出し側の案内文言用 (移動できたか / 移動先が埋まっていたか)
+        self.moved = False
+        self.move_blocked = False
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        if not isinstance(clip, SubtitleClip):
+            return False
+        changed = clip.role != self._role
+        clip.role = self._role
+        if not (self._cfg["role_track_enabled"]
+                and self._cfg["auto_move_on_role_change"]):
+            return changed
+
+        source = timeline.track_of_clip(clip.id)
+        target = ensure_subtitle_track(timeline, self._role, self._cfg)
+        if source is None or target is None or target.id == source.id:
+            return changed
+        if target.locked or _overlaps_any(
+                target, clip.timeline_start, clip.timeline_end, exclude_id=clip.id):
+            self.move_blocked = True
+            _logger.info("移動先 %s が空いていないため役割だけ変更しました: %s",
+                         target.id, clip.id)
+            return changed
+
+        source.remove_clip(clip.id)
+        target.clips.append(clip)
+        target.sort_clips(timeline)
+        self.moved = True
+        return True
 
 
 # 複数の字幕クリップをまとめて変更する (ver3 resolve6 §3-10 / §5.10)

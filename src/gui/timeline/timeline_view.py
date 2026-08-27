@@ -25,8 +25,10 @@ from .. import theme
 from .waveform import WaveformCache
 from ...timeline import commands, media_probe
 from ...timeline.model import (
+    DEFAULT_ROLE,
     ORIGIN_ENDING,
     ORIGIN_OPENING,
+    ROLE_COMMENT,
     AudioClip,
     SubtitleClip,
 )
@@ -850,12 +852,25 @@ class TimelineView(QWidget):
 
     # 右クリックした位置へ新しい字幕クリップを足す
     # 開始位置は編集点へ吸着させる (クリップ移動と同じ規約)。
+    # コメント用トラックの上で足した字幕は最初から役割「コメント」にする
+    # (ver3 resolve11 §5.8)。トラックと役割が食い違ったまま増えるのを防ぐ。
     def _add_subtitle(self, pos, track):
         start = max(self._snap(self.x_to_sec(pos.x())), 0.0)
+        role = self._role_for_track(track)
         clip_id = self._controller.add_subtitle(
-            start, track_id=track.id, text=NEW_SUBTITLE_TEXT)
+            start, track_id=track.id, text=NEW_SUBTITLE_TEXT, role=role)
         if clip_id is None:
             self.status_message.emit("この位置には字幕を追加できません")
+
+    # 字幕トラックに対応する役割を返す (コメント用トラックならコメント)
+    def _role_for_track(self, track):
+        cfg = self._controller.cfg["subtitle_tracks"]
+        if not cfg["role_track_enabled"]:
+            return DEFAULT_ROLE
+        base = self._controller.timeline.base_subtitle_track()
+        is_comment = (track.id == cfg["comment_track_id"]
+                      or (base is not None and track.id != base.id))
+        return ROLE_COMMENT if is_comment else DEFAULT_ROLE
 
     # 右クリックメニューからのコピー (ver3 resolve10 §5.6)
     def _copy(self):

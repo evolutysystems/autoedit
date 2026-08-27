@@ -40,7 +40,7 @@ try:
 except Exception:  # noqa: BLE001
     _MULTIMEDIA_AVAILABLE = False
 
-from ...modules import ffmpeg_runner, subtitle_generator
+from ...modules import comment_decor, ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
 from ...timeline import commands
 from ...timeline.audio_source import AudioChunkSource
@@ -925,7 +925,9 @@ class PreviewPanel(QWidget):
         ass_path = os.path.join(self._work_dir, "preview_hq.ass")
         subtitle_generator.build_subtitle_file(
             items, self._font_profile, ass_path,
-            video_width=self._canvas[0], video_height=self._canvas[1])
+            video_width=self._canvas[0], video_height=self._canvas[1],
+            # コメントの背景 (角丸の箱) を本番と同じ経路で出す (ver3 resolve11 §5.6-5)
+            subtitle_cfg=self._eff_cfg)
 
         out_path = os.path.join(self._work_dir, "preview_hq.png")
         ffmpeg_cfg = self._settings.get("ffmpeg", {})
@@ -939,6 +941,13 @@ class PreviewPanel(QWidget):
             safe_dir = fonts_dir.replace("\\", "/").replace(":", "\\:")
             chain = chain.replace(f"ass='{safe_ass}'",
                                   f"ass='{safe_ass}':fontsdir='{safe_dir}'")
+        # コメントアイコンを重ねる (ver3 resolve11 §5.6-5)。
+        # 現在フレームの 1 枚絵なので表示時間 (enable) は付けない。
+        icon_chains, _count, _groups = comment_decor.build_icon_chains(
+            items, self._eff_cfg, self._canvas[0], self._canvas[1],
+            in_label="[vsub]", out_label="", with_enable=False)
+        if icon_chains:
+            chain = f"{chain}[vsub];" + ";".join(icon_chains)
         cmd = [
             ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg), "-y", "-hide_banner",
             "-loglevel", "error",

@@ -283,6 +283,16 @@ def _build_group_timeline(timeline, clips):
                         link_track=BASE_VIDEO_TRACK_ID)
     subtitle_track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
     sub.tracks = [video_track, audio_track, subtitle_track]
+    # 元の字幕トラック構成 (S1 / コメント用 S2 …) をそのまま複製する
+    # (ver3 resolve11 §5.9)。1 本へ潰すと S1 と S2 の字幕が同じトラックで重なり、
+    # 読み込み時に _validate_overlaps が片方を右へ押し出してしまう。
+    subtitle_tracks = {subtitle_track.id: subtitle_track}
+    for track in sorted(timeline.subtitle_tracks(), key=lambda t: t.index):
+        if track.id in subtitle_tracks:
+            continue
+        copied = Track(track.id, TRACK_SUBTITLE, track.index, name=track.name)
+        subtitle_tracks[track.id] = copied
+        sub.tracks.append(copied)
 
     for clip in sorted(clips, key=lambda c: c.timeline_start):
         moved = clip.copy()
@@ -305,7 +315,8 @@ def _build_group_timeline(timeline, clips):
             moved = subtitle.copy()
             moved.timeline_start = start - offset
             moved.duration = stop - start
-            subtitle_track.clips.append(moved)
+            # 元のトラックに対応する側へ入れる (役割ごとの重なりを保つ)
+            subtitle_tracks.get(track.id, subtitle_track).clips.append(moved)
 
     # 範囲に入るオーバーレイ (V2 以降。D&D で足した素材など)
     base_id = timeline.base_video_track().id if timeline.base_video_track() else None

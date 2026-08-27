@@ -12,7 +12,12 @@ import math
 import os
 
 from ..exceptions import InputError, TimelineError
-from ..modules import ffmpeg_runner, silence_cutter, subtitle_generator
+from ..modules import (
+    comment_decor,
+    ffmpeg_runner,
+    silence_cutter,
+    subtitle_generator,
+)
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
 from .builder import timeline_config
@@ -426,6 +431,7 @@ def _subtitle_profile(context):
 
 
 # 字幕クリップ群から ASS を書き出す
+# 戻り値 (ass のパス, 書き出した item 配列)。item はアイコン合成でも使う (resolve11 §5.6)。
 def _write_ass(timeline, context, clips, name):
     eff_cfg, font_profile = _subtitle_profile(context)
     ass_path = context.allocate_intermediate(name)
@@ -433,8 +439,10 @@ def _write_ass(timeline, context, clips, name):
     subtitle_generator.build_subtitle_file(
         items, font_profile, ass_path,
         video_width=timeline.width, video_height=timeline.height,
+        # コメントの背景 (角丸の箱) を出すため実効字幕設定を渡す (resolve11 §5.11-5)
+        subtitle_cfg=eff_cfg,
     )
-    return ass_path
+    return ass_path, items
 
 
 # 字幕のみのケース: 既存 burn_subtitle をそのまま使う
@@ -444,10 +452,16 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
         _logger.info("使用する字幕が無いため焼き込みをスキップします")
         return base_path
 
-    ass_path = _write_ass(timeline, context, used, "timeline_subtitle.ass")
+    ass_path, items = _write_ass(timeline, context, used, "timeline_subtitle.ass")
     output_path = context.allocate_intermediate("timeline_subtitle.mp4")
     total_duration = timeline.duration_sec()
     _logger.info("字幕焼き込み: %d 件", len(used))
+    # コメントアイコンを字幕の上へ重ねる (resolve11 §5.6-1)。
+    # 対象が無ければ空リストが返り、コマンドは従来と完全に同一になる。
+    eff_cfg, _profile = _subtitle_profile(context)
+    chains, _count, _groups = comment_decor.build_icon_chains(
+        items, eff_cfg, timeline.width, timeline.height,
+        in_label="[vsub]", out_label="")
     subtitle_generator.burn_subtitle(
         base_path, ass_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -455,6 +469,9 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
         # ベースは既にキャンバス寸法へ正規化済みのため二重 scale はしない
         target_size=None,
         fonts_dir=resolve_fonts_dir(context.settings),
+        extra_chains=chains,
+        filter_script_path=context.allocate_intermediate("timeline_subtitle_vf.txt"),
+        filter_script_chars=eff_cfg.get("comment_icon_filter_script_chars", 8000),
     )
     return output_path
 
@@ -472,6 +489,8 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
     sample_rate = ffmpeg_cfg.get("audio_sample_rate", 48000)
     fonts_dir = resolve_fonts_dir(context.settings)
     output_path = context.allocate_intermediate("timeline_composite.mp4")
+    # コメントアイコンの配置に使う実効字幕設定 (縦動画の上書きを含む)
+    eff_cfg, _font_profile = _subtitle_profile(context)
 
     inputs = [base_path]
     input_args = ["-i", base_path]
@@ -485,7 +504,7 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
             used = [c for c in layer["clips"] if c.use]
             if not used:
                 continue
-            ass_path = _write_ass(
+            ass_path, items = _write_ass(
                 timeline, context, used, f"timeline_subtitle_{step}.ass")
             option = f"ass='{_escape_filter_path(ass_path)}'"
             if fonts_dir and os.path.isdir(fonts_dir):
@@ -494,6 +513,18 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
             chains.append(f"{current}{option}{label}")
             current = label
             step += 1
+            # コメントアイコンは、その字幕グループの直後へ重ねる (resolve11 §5.6-2)。
+            # movie ソースで読むため入力本数 (inputs / index) は増えない。
+            icon_out = f"[v{step}]"
+            icon_chains, _count, _groups = comment_decor.build_icon_chains(
+                items, eff_cfg, timeline.width, timeline.height,
+                in_label=current, out_label=icon_out,
+                # 1 つの filtergraph で複数回呼ぶためラベルを重複させない
+                prefix=f"cic{step}")
+            if icon_chains:
+                chains.extend(icon_chains)
+                current = icon_out
+                step += 1
             continue
 
         clip = layer["clip"]

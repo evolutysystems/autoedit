@@ -12,6 +12,7 @@ import shutil
 import tempfile
 
 from ..modules import (
+    comment_decor,
     concat_processor,
     ffmpeg_runner,
     loudness_normalizer,
@@ -516,11 +517,20 @@ def _burn_one(prepared, items, settings, ffmpeg_cfg, fonts_dir):
     out_path = os.path.join(clip_dir, "burned.mp4")
     subtitle_generator.build_subtitle_file(
         used_timeline, font_profile, ass_path,
-        video_width=canvas_w, video_height=canvas_h)
+        video_width=canvas_w, video_height=canvas_h,
+        # コメントの背景 (角丸の箱) を出す (ver3 resolve11 §5.6-4)
+        subtitle_cfg=eff_cfg)
     total_dur = ffmpeg_runner.probe_duration(src, ffmpeg_cfg)
+    # コメントアイコンを重ねる (対象が無ければコマンドは従来と同一)
+    icon_chains, _count, _groups = comment_decor.build_icon_chains(
+        used_timeline, eff_cfg, canvas_w, canvas_h,
+        in_label="[vsub]", out_label="")
     subtitle_generator.burn_subtitle(
         src, ass_path, out_path, ffmpeg_cfg,
-        total_duration=total_dur, target_size=target_size, fonts_dir=fonts_dir)
+        total_duration=total_dur, target_size=target_size, fonts_dir=fonts_dir,
+        extra_chains=icon_chains,
+        filter_script_path=os.path.join(clip_dir, "subtitle_vf.txt"),
+        filter_script_chars=eff_cfg.get("comment_icon_filter_script_chars", 8000))
     return out_path
 
 

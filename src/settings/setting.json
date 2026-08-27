@@ -13,7 +13,7 @@
         "own_subtitle_color": "#ED0004",
         "sub_subtitle_color": "#2ABCFF",
         "comment_subtitle_color": "#FFFFFF",
-        "comment_label": "コメント：",
+        "comment_label": "",
         "enabled": true,
         "review_enabled": true,
         "review_on_empty_skip": true,
@@ -44,6 +44,24 @@
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 60,
+        "comment_alignment": 4,
+        "comment_margin_l": 190,
+        "comment_margin_r": 40,
+        "comment_margin_v": 60,
+        "comment_icon_enabled": true,
+        "comment_icon_path": "",
+        "comment_icon_size_px": 100,
+        "comment_icon_gap_px": 50,
+        "comment_icon_filter_script_chars": 8000,
+        "comment_bg_enabled": true,
+        "comment_bg_color": "&H80000000",
+        "comment_bg_radius_px": 24,
+        "comment_bg_padding_px": 24,
+        "comment_bg_char_width_full": 0.78,
+        "comment_bg_char_width_half": 0.45,
+        "comment_bg_line_height_ratio": 1.2,
+        "comment_bg_layer": 0,
+        "comment_text_layer": 1,
         "engine": "whisper",
         "whisper_model": "large-v3",
         "whisper_device": "cpu",
@@ -59,7 +77,7 @@
         "display_min_duration_sec": 0.5
     },
     "silence_cut": {
-        "enabled": true,
+        "enabled": false,
         "mode": "edit_points",
         "noise_threshold_db": -27,
         "min_silence_duration_sec": 0.6,
@@ -77,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -29
+        "last_cut_db": -31
     },
     "loudness": {
         "enabled": true,
@@ -119,7 +137,9 @@
             "missing_media_policy": "renormalize",
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
-            "recent": [],
+            "recent": [
+                "D:/develop/autoedit/output\\f1_oranda_2.timeline.json"
+            ],
             "archive_suffix": ".archive",
             "recent_archive": [
                 "D:/develop/autoedit/output\\vod_2854706666.archive.timeline.json"
@@ -146,6 +166,13 @@
         },
         "min_clip_sec": 0.05,
         "default_subtitle_sec": 2.0,
+        "subtitle_tracks": {
+            "role_track_enabled": true,
+            "comment_track_id": "S2",
+            "comment_track_name": "Comment",
+            "comment_track_index": 2,
+            "auto_move_on_role_change": true
+        },
         "ripple_delete": true,
         "ripple_delete_migrated": true,
         "ripple_sync_tracks": "all",
@@ -170,7 +197,7 @@
             "archive_graph_dock_area": "top",
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAhoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAskAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
@@ -302,7 +329,13 @@
         "alignment": 5,
         "margin_l": 40,
         "margin_r": 40,
-        "margin_v": 320
+        "margin_v": 320,
+        "comment_alignment": 4,
+        "comment_margin_l": 140,
+        "comment_margin_r": 40,
+        "comment_margin_v": 320,
+        "comment_icon_size_px": 50,
+        "comment_icon_gap_px": 50
     },
     "logging": {
         "log_dir": "logs",

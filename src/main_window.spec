@@ -21,6 +21,9 @@ a = Analysis(
         # アプリアイコンを実行時のウィンドウ/タスクバー用に同梱する。
         # main_window._resolve_app_icon_path が _internal/src/gui/app.ico を解決する。
         ('gui/app.ico', 'src/gui'),
+        # コメント字幕のアイコン (ver3 resolve11 §5.10)。
+        # comment_decor.resolve_icon_path が _internal/src/comment_icon.png を解決する。
+        ('comment_icon.png', 'src'),
         # FFmpeg/ffprobe を PATH 非依存にするため同梱する (error 20260708 / HowToRelease §3.2)。
         # onedir では _internal/ffmpeg/ へ展開され、ffmpeg_runner._resolve_exe が sys._MEIPASS 基準で解決する。
         # ソースは src/ffmpeg/ に配置(git 管理外・HowToRelease §2 で入手)。binaries でなく datas で純コピーする。

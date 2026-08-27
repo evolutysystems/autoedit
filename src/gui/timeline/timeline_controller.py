@@ -3,7 +3,7 @@
 # UI と編集処理の分離 (§4-2) が崩れず、Undo/Redo が全操作で一様に効く。
 from PySide6.QtCore import QObject, Signal
 
-from ...timeline import clipboard, commands
+from ...timeline import clipboard, commands, model
 from ...timeline.builder import timeline_config
 from ...timeline.timemap import TimeMap
 from ...utils.logger import get_logger
@@ -268,16 +268,28 @@ class TimelineController(QObject):
 
     # 字幕クリップを追加する。追加できたら新しいクリップ ID を返す (置けなければ None)。
     # duration 省略時は設定 (timeline.default_subtitle_sec) の尺を使う。
-    def add_subtitle(self, timeline_start, duration=None, track_id=None, text=""):
+    # role を渡すとその役割で作り、対応するトラックへ置く (ver3 resolve11 §5.8)。
+    def add_subtitle(self, timeline_start, duration=None, track_id=None, text="",
+                     role=model.DEFAULT_ROLE):
         command = commands.AddSubtitleClip(
             timeline_start,
             self._cfg["default_subtitle_sec"] if duration is None else duration,
             text=text, track_id=track_id, min_clip_sec=self._cfg["min_clip_sec"],
+            role=role, subtitle_tracks_cfg=self._cfg["subtitle_tracks"],
         )
         if not self.execute(command):
             return None
         self.select([command.created_clip_id])
         return command.created_clip_id
+
+    # 字幕の役割を変える。コメントにするとコメント用トラック (S2) へ移す。
+    # 戻り値 {"changed": bool, "moved": bool, "blocked": bool} (ver3 resolve11 §5.8)
+    def change_subtitle_role(self, clip_id, role):
+        command = commands.ChangeSubtitleRole(
+            clip_id, role, subtitle_tracks_cfg=self._cfg["subtitle_tracks"])
+        changed = self.execute(command)
+        return {"changed": changed, "moved": command.moved,
+                "blocked": command.move_blocked}
 
     # ------------------------------------------------------------------
     # コピー＆ペースト (ver3 resolve10 §5.4)
@@ -307,6 +319,7 @@ class TimelineController(QObject):
             ripple_scope=paste_cfg["ripple_scope"],
             archive_index_policy=paste_cfg["archive_index_policy"],
             max_video_tracks=self._cfg["media"]["max_video_tracks"],
+            subtitle_tracks_cfg=self._cfg["subtitle_tracks"],
         )
         if not self.execute(command):
             return {"pasted": 0,

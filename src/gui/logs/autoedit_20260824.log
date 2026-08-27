@@ -117,3 +117,213 @@
 2026-08-24 10:01:56,433 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:/develop/autoedit/output\vod_2854706666.archive.timeline.json
 2026-08-24 10:01:56,448 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\vod_2854706666.archive.timeline.json
 2026-08-24 10:02:02,134 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 5 件 / 再正規化 0 件 / 切り出しのまま 0 件
+2026-08-24 12:02:23,179 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-24 12:06:10,210 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-24 12:06:10,210 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kosui.mp4
+2026-08-24 12:06:10,290 [INFO] src.modules.output_profile: 縦動画と判定 (入力=954x1696 → 出力=1080x1920)
+2026-08-24 12:06:11,331 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-16.7 LUFS / TP=1.4 dBTP / LRA=13.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.9 dB)
+2026-08-24 12:06:13,020 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_ljmaio3e\loudness_normalized.mp4
+2026-08-24 12:06:16,340 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-31 (mean, 測定 6/6 区間)
+2026-08-24 12:06:18,261 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -31 dB
+2026-08-24 12:06:20,082 [INFO] src.modules.silence_cutter: 編集点検出: 無音 11 件 / 残す区間 11 件 (閾値=-31dB, 最小無音=0.60s, 総尺=30.0s)
+2026-08-24 12:06:20,082 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:06:22,190 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 11 区間 → 19.6s (元 29.2s)
+2026-08-24 12:06:55,930 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-24 12:06:55,930 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-24 12:07:03,071 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 12:09:36,379 [INFO] src.modules.subtitle_generator: 音声認識完了 (9 セグメント)
+2026-08-24 12:09:36,509 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 9 → 9 件 (カット区間のため 0 件除外)
+2026-08-24 12:09:36,509 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 9 → 9 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-24 12:09:36,509 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 9 件)
+2026-08-24 12:09:36,617 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-24 12:09:36,619 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-24 12:09:36,619 [INFO] src.timeline.builder: Timeline 構築: V1 11 クリップ (OP=無 / ED=無) / S1 9 字幕 / S2(コメント) 0 字幕 / 全長 21.0s / 60fps 1080x1920
+2026-08-24 12:09:36,623 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kosui.timeline.json
+2026-08-24 12:09:36,624 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:09:36,625 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-24 12:14:11,267 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-08-24 12:14:48,891 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-24 12:14:48,892 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/kosui.mp4
+2026-08-24 12:14:48,963 [INFO] src.modules.output_profile: 縦動画と判定 (入力=954x1696 → 出力=1080x1920)
+2026-08-24 12:14:49,987 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-16.7 LUFS / TP=1.4 dBTP / LRA=13.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.9 dB)
+2026-08-24 12:14:51,553 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_m5vo618p\loudness_normalized.mp4
+2026-08-24 12:14:51,628 [INFO] src.modules.silence_cutter: 無音カット無効のため全長 1 区間を編集点とします
+2026-08-24 12:14:51,628 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-31dB, 最小無音=0.60s, 総尺=30.0s)
+2026-08-24 12:14:51,628 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:14:52,586 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 30.0s (元 30.0s)
+2026-08-24 12:14:52,587 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-24 12:14:52,587 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-24 12:14:58,808 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-24 12:17:55,160 [INFO] src.modules.subtitle_generator: 音声認識完了 (11 セグメント)
+2026-08-24 12:17:55,305 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 11 → 11 件 (カット区間のため 0 件除外)
+2026-08-24 12:17:55,306 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 11 → 11 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-24 12:17:55,306 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 11 件)
+2026-08-24 12:17:55,397 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-24 12:17:55,398 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-24 12:17:55,398 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 11 字幕 / S2(コメント) 0 字幕 / 全長 30.6s / 60fps 1080x1920
+2026-08-24 12:17:55,401 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kosui.timeline.json
+2026-08-24 12:17:55,402 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:17:55,403 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-24 12:27:58,431 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 12:28:59,082 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 12:33:51,865 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 12:34:44,932 [INFO] src.timeline.commands: リップル: 23.104〜30.000s (6.90s) を除去 / 削除 1 件・短縮 0 件・移動 0 件
+2026-08-24 12:35:35,764 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 1 クリップ / オーバーレイ 0 件 / 字幕 9 件（使用 9 件）/ ギャップ 0 件
+2026-08-24 12:35:35,817 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\kosui.timeline.json
+2026-08-24 12:35:35,818 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 23.1s
+2026-08-24 12:35:35,821 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (954x1696 60fps → 1080x1920 60fps)
+2026-08-24 12:36:01,185 [INFO] src.timeline.renderer: ベース映像の尺: モデル 23.100s / 実測 23.100s (差 +0.000s / 1 部品)
+2026-08-24 12:36:01,190 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:36:01,190 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 2 件 / 縁の色 0 件
+2026-08-24 12:36:01,191 [INFO] src.timeline.renderer: 字幕焼き込み: 9 件
+2026-08-24 12:36:01,191 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-24 12:36:27,799 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\kosui_edited.mp4
+2026-08-24 12:36:27,799 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\kosui_edited.mp4
+2026-08-24 12:54:54,470 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-24 12:58:03,809 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-24 12:58:11,085 [INFO] src.archive.project_resume: ==================================================
+2026-08-24 12:58:11,086 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:/develop/autoedit/output\vod_2854706666.archive.timeline.json
+2026-08-24 12:58:11,098 [INFO] src.timeline.project_io: プロジェクト読込: D:/develop/autoedit/output\vod_2854706666.archive.timeline.json
+2026-08-24 12:58:17,467 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 5 件 / 再正規化 0 件 / 切り出しのまま 0 件
+2026-08-24 13:01:34,502 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 2226px / 使える幅 1920px)。font_size か max_line_length を下げると解消します
+2026-08-24 13:01:39,518 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:01:39,518 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:01:55,602 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-08-24 13:03:25,858 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:03:25,859 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:03:36,347 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:03:36,347 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:04:15,253 [INFO] src.timeline.commands: 移動先 S2 が空いていないため役割だけ変更しました: s25
+2026-08-24 13:04:19,555 [INFO] src.timeline.commands: 移動先 S2 が空いていないため役割だけ変更しました: s25
+2026-08-24 13:04:36,877 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:04:36,884 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:13:05,940 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:13:05,940 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:14:29,628 [INFO] src.timeline.commands: リップル: 125.335〜126.636s (1.30s) を除去 / 削除 1 件・短縮 0 件・移動 700 件
+2026-08-24 13:14:30,278 [INFO] src.timeline.commands: リップル: 125.335〜127.689s (2.35s) を除去 / 削除 1 件・短縮 0 件・移動 699 件
+2026-08-24 13:14:30,913 [INFO] src.timeline.commands: リップル: 125.335〜131.058s (5.72s) を除去 / 削除 1 件・短縮 0 件・移動 698 件
+2026-08-24 13:14:32,118 [INFO] src.timeline.commands: リップル: 125.335〜126.516s (1.18s) を除去 / 削除 1 件・短縮 0 件・移動 697 件
+2026-08-24 13:14:33,614 [INFO] src.timeline.commands: リップル: 125.335〜126.107s (0.77s) を除去 / 削除 1 件・短縮 0 件・移動 696 件
+2026-08-24 13:17:08,427 [INFO] src.timeline.commands: リップル: 126.626〜128.567s (1.94s) を除去 / 削除 1 件・短縮 2 件・移動 691 件
+2026-08-24 13:17:09,436 [INFO] src.timeline.commands: リップル: 126.626〜129.186s (2.56s) を除去 / 削除 1 件・短縮 0 件・移動 690 件
+2026-08-24 13:19:09,048 [INFO] src.timeline.commands: リップル: 144.069〜146.671s (2.60s) を除去 / 削除 1 件・短縮 0 件・移動 666 件
+2026-08-24 13:19:10,022 [INFO] src.timeline.commands: リップル: 144.069〜144.994s (0.93s) を除去 / 削除 1 件・短縮 0 件・移動 665 件
+2026-08-24 13:19:11,224 [INFO] src.timeline.commands: リップル: 144.069〜144.772s (0.70s) を除去 / 削除 1 件・短縮 0 件・移動 664 件
+2026-08-24 13:19:12,267 [INFO] src.timeline.commands: リップル: 144.069〜145.260s (1.19s) を除去 / 削除 1 件・短縮 0 件・移動 663 件
+2026-08-24 13:25:24,158 [INFO] src.timeline.commands: リップル: 188.635〜190.162s (1.53s) を除去 / 削除 1 件・短縮 0 件・移動 616 件
+2026-08-24 13:33:10,814 [INFO] src.timeline.commands: リップル: 212.873〜215.342s (2.47s) を除去 / 削除 1 件・短縮 0 件・移動 594 件
+2026-08-24 13:41:59,298 [INFO] src.timeline.commands: リップル: 230.832〜232.813s (1.98s) を除去 / 削除 1 件・短縮 0 件・移動 577 件
+2026-08-24 13:42:00,492 [INFO] src.timeline.commands: リップル: 230.832〜231.694s (0.86s) を除去 / 削除 1 件・短縮 0 件・移動 576 件
+2026-08-24 13:42:01,437 [INFO] src.timeline.commands: リップル: 230.832〜231.804s (0.97s) を除去 / 削除 1 件・短縮 0 件・移動 575 件
+2026-08-24 13:46:30,176 [INFO] src.timeline.commands: リップル: 243.690〜243.975s (0.28s) を除去 / 削除 1 件・短縮 1 件・移動 553 件
+2026-08-24 13:52:11,078 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:52:11,078 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:52:20,671 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 13:52:20,680 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 13:57:19,958 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 13:57:31,296 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 13:57:42,988 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 14:01:32,199 [INFO] src.timeline.commands: リップル: 294.030〜295.938s (1.91s) を除去 / 削除 1 件・短縮 0 件・移動 502 件
+2026-08-24 14:20:58,366 [INFO] src.timeline.commands: リップル: 348.307〜349.303s (1.00s) を除去 / 削除 1 件・短縮 0 件・移動 451 件
+2026-08-24 14:21:55,784 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 15:05:44,525 [INFO] src.timeline.commands: リップル: 381.220〜382.088s (0.87s) を除去 / 削除 0 件・短縮 1 件・移動 421 件
+2026-08-24 15:09:48,059 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 15:09:48,062 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 15:22:33,587 [INFO] src.timeline.commands: リップル: 426.820〜430.344s (3.52s) を除去 / 削除 1 件・短縮 0 件・移動 359 件
+2026-08-24 15:22:35,812 [INFO] src.timeline.commands: リップル: 426.820〜428.457s (1.64s) を除去 / 削除 1 件・短縮 0 件・移動 358 件
+2026-08-24 15:22:37,433 [INFO] src.timeline.commands: リップル: 426.820〜435.344s (8.52s) を除去 / 削除 1 件・短縮 0 件・移動 357 件
+2026-08-24 15:22:41,352 [INFO] src.timeline.commands: リップル: 426.821〜427.246s (0.43s) を除去 / 削除 1 件・短縮 0 件・移動 356 件
+2026-08-24 15:22:44,393 [INFO] src.timeline.commands: リップル: 426.821〜431.250s (4.43s) を除去 / 削除 1 件・短縮 0 件・移動 355 件
+2026-08-24 15:22:46,026 [INFO] src.timeline.commands: リップル: 426.821〜428.973s (2.15s) を除去 / 削除 1 件・短縮 0 件・移動 354 件
+2026-08-24 15:22:47,680 [INFO] src.timeline.commands: リップル: 426.821〜427.945s (1.12s) を除去 / 削除 1 件・短縮 0 件・移動 353 件
+2026-08-24 15:22:49,467 [INFO] src.timeline.commands: リップル: 426.821〜433.930s (7.11s) を除去 / 削除 1 件・短縮 0 件・移動 352 件
+2026-08-24 15:22:51,849 [INFO] src.timeline.commands: リップル: 426.821〜429.856s (3.04s) を除去 / 削除 1 件・短縮 0 件・移動 351 件
+2026-08-24 15:22:55,432 [INFO] src.timeline.commands: リップル: 426.821〜427.573s (0.75s) を除去 / 削除 1 件・短縮 0 件・移動 350 件
+2026-08-24 15:44:11,487 [INFO] src.timeline.commands: リップル: 434.631〜434.948s (0.32s) を除去 / 削除 1 件・短縮 0 件・移動 341 件
+2026-08-24 15:49:15,649 [INFO] src.timeline.commands: リップル: 453.591〜453.910s (0.32s) を除去 / 削除 2 件・短縮 0 件・移動 321 件
+2026-08-24 15:49:16,867 [INFO] src.timeline.commands: リップル: 453.591〜457.473s (3.88s) を除去 / 削除 3 件・短縮 0 件・移動 318 件
+2026-08-24 15:49:17,821 [INFO] src.timeline.commands: リップル: 453.591〜454.858s (1.27s) を除去 / 削除 2 件・短縮 0 件・移動 316 件
+2026-08-24 15:51:45,380 [INFO] src.timeline.commands: リップル: 470.622〜471.517s (0.89s) を除去 / 削除 1 件・短縮 1 件・移動 302 件
+2026-08-24 16:00:40,663 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 16:00:40,664 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 16:07:37,287 [INFO] src.timeline.commands: リップル: 522.673〜523.837s (1.16s) を除去 / 削除 1 件・短縮 0 件・移動 253 件
+2026-08-24 16:07:40,652 [INFO] src.timeline.commands: リップル: 522.673〜524.035s (1.36s) を除去 / 削除 1 件・短縮 0 件・移動 252 件
+2026-08-24 16:07:42,484 [INFO] src.timeline.commands: リップル: 522.673〜524.789s (2.12s) を除去 / 削除 1 件・短縮 0 件・移動 251 件
+2026-08-24 16:08:02,556 [INFO] src.timeline.commands: リップル: 522.673〜525.628s (2.96s) を除去 / 削除 2 件・短縮 0 件・移動 249 件
+2026-08-24 16:08:03,347 [INFO] src.timeline.commands: リップル: 522.674〜527.299s (4.62s) を除去 / 削除 3 件・短縮 0 件・移動 246 件
+2026-08-24 16:08:05,762 [INFO] src.timeline.commands: リップル: 522.674〜526.269s (3.60s) を除去 / 削除 2 件・短縮 0 件・移動 244 件
+2026-08-24 16:08:07,386 [INFO] src.timeline.commands: リップル: 522.674〜524.912s (2.24s) を除去 / 削除 2 件・短縮 0 件・移動 242 件
+2026-08-24 16:08:09,607 [INFO] src.timeline.commands: リップル: 522.674〜526.888s (4.21s) を除去 / 削除 3 件・短縮 0 件・移動 239 件
+2026-08-24 16:08:11,071 [INFO] src.timeline.commands: リップル: 522.675〜526.097s (3.42s) を除去 / 削除 2 件・短縮 0 件・移動 237 件
+2026-08-24 16:09:19,313 [INFO] src.timeline.commands: リップル: 522.675〜524.035s (1.36s) を除去 / 削除 2 件・短縮 0 件・移動 235 件
+2026-08-24 16:17:26,337 [INFO] src.timeline.commands: リップル: 532.505〜533.017s (0.51s) を除去 / 削除 1 件・短縮 1 件・移動 224 件
+2026-08-24 16:17:44,549 [INFO] src.timeline.commands: リップル: 533.016〜533.307s (0.29s) を除去 / 削除 1 件・短縮 2 件・移動 223 件
+2026-08-24 16:19:32,647 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 16:19:52,728 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 16:20:04,795 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 16:28:01,027 [INFO] src.timeline.commands: リップル: 576.517〜577.778s (1.26s) を除去 / 削除 1 件・短縮 0 件・移動 173 件
+2026-08-24 16:38:50,614 [INFO] src.timeline.commands: リップル: 584.373〜587.701s (3.33s) を除去 / 削除 1 件・短縮 1 件・移動 169 件
+2026-08-24 16:39:25,322 [INFO] src.timeline.commands: リップル: 584.373〜584.806s (0.43s) を除去 / 削除 1 件・短縮 1 件・移動 167 件
+2026-08-24 16:46:35,075 [INFO] src.timeline.commands: リップル: 588.876〜589.985s (1.11s) を除去 / 削除 0 件・短縮 2 件・移動 157 件
+2026-08-24 16:48:13,823 [INFO] src.timeline.commands: リップル: 606.680〜610.689s (4.01s) を除去 / 削除 4 件・短縮 2 件・移動 141 件
+2026-08-24 16:50:03,704 [INFO] src.timeline.commands: リップル: 611.835〜613.772s (1.94s) を除去 / 削除 1 件・短縮 2 件・移動 137 件
+2026-08-24 16:51:42,408 [INFO] src.timeline.commands: リップル: 618.266〜621.478s (3.21s) を除去 / 削除 0 件・短縮 2 件・移動 129 件
+2026-08-24 16:52:17,045 [INFO] src.timeline.commands: リップル: 623.042〜626.371s (3.33s) を除去 / 削除 0 件・短縮 2 件・移動 128 件
+2026-08-24 16:53:36,017 [INFO] src.timeline.commands: リップル: 628.467〜628.967s (0.50s) を除去 / 削除 1 件・短縮 1 件・移動 121 件
+2026-08-24 16:56:34,542 [INFO] src.timeline.commands: リップル: 649.463〜649.657s (0.19s) を除去 / 削除 1 件・短縮 2 件・移動 103 件
+2026-08-24 17:19:08,088 [INFO] src.timeline.commands: リップル: 674.178〜675.220s (1.04s) を除去 / 削除 2 件・短縮 1 件・移動 74 件
+2026-08-24 17:19:18,762 [INFO] src.timeline.commands: リップル: 674.178〜677.687s (3.51s) を除去 / 削除 1 件・短縮 0 件・移動 72 件
+2026-08-24 17:21:34,211 [INFO] src.timeline.commands: リップル: 679.714〜680.358s (0.64s) を除去 / 削除 2 件・短縮 0 件・移動 65 件
+2026-08-24 17:28:50,655 [INFO] src.timeline.commands: リップル: 698.425〜698.857s (0.43s) を除去 / 削除 1 件・短縮 1 件・移動 42 件
+2026-08-24 17:39:18,359 [INFO] src.timeline.commands: リップル: 709.637〜711.490s (1.85s) を除去 / 削除 2 件・短縮 0 件・移動 29 件
+2026-08-24 17:45:43,204 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 17:45:43,205 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 17:47:32,238 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 17:47:32,239 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 17:56:58,486 [INFO] src.timeline.commands: リップル: 730.415〜730.554s (0.14s) を除去 / 削除 1 件・短縮 1 件・移動 8 件
+2026-08-24 18:10:35,241 [INFO] src.timeline.commands: リップル: 14.811〜15.912s (1.10s) を除去 / 削除 1 件・短縮 0 件・移動 667 件
+2026-08-24 18:10:35,970 [INFO] src.timeline.commands: リップル: 14.811〜15.550s (0.74s) を除去 / 削除 1 件・短縮 0 件・移動 666 件
+2026-08-24 18:10:36,608 [INFO] src.timeline.commands: リップル: 14.811〜18.328s (3.52s) を除去 / 削除 1 件・短縮 0 件・移動 665 件
+2026-08-24 18:10:37,339 [INFO] src.timeline.commands: リップル: 14.812〜16.139s (1.33s) を除去 / 削除 1 件・短縮 0 件・移動 664 件
+2026-08-24 18:10:39,407 [INFO] src.timeline.commands: リップル: 14.812〜15.145s (0.33s) を除去 / 削除 1 件・短縮 0 件・移動 663 件
+2026-08-24 18:10:40,097 [INFO] src.timeline.commands: リップル: 14.812〜18.443s (3.63s) を除去 / 削除 1 件・短縮 0 件・移動 662 件
+2026-08-24 18:10:40,865 [INFO] src.timeline.commands: リップル: 14.812〜15.983s (1.17s) を除去 / 削除 1 件・短縮 0 件・移動 661 件
+2026-08-24 18:10:41,514 [INFO] src.timeline.commands: リップル: 14.813〜15.546s (0.73s) を除去 / 削除 1 件・短縮 0 件・移動 660 件
+2026-08-24 18:10:42,127 [INFO] src.timeline.commands: リップル: 14.813〜15.265s (0.45s) を除去 / 削除 1 件・短縮 0 件・移動 659 件
+2026-08-24 18:10:42,757 [INFO] src.timeline.commands: リップル: 14.813〜17.235s (2.42s) を除去 / 削除 1 件・短縮 0 件・移動 658 件
+2026-08-24 18:11:31,486 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 18:11:31,488 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 18:11:45,840 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\vod_2854706666.archive.timeline.json
+2026-08-24 18:11:45,845 [INFO] src.timeline.renderer: ベース映像構築: 22 クリップ / ギャップ 0 件 / 合計 67.8s
+2026-08-24 18:11:45,851 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-24 18:12:35,216 [INFO] src.timeline.renderer: ベース映像の尺: モデル 67.800s / 実測 67.800s (差 +0.000s / 22 部品)
+2026-08-24 18:12:35,222 [INFO] src.modules.subtitle_generator: コメント背景: 3 件
+2026-08-24 18:12:35,222 [INFO] src.timeline.renderer: 字幕焼き込み: 26 件
+2026-08-24 18:12:35,223 [INFO] src.modules.comment_decor: コメントアイコン: 3 件 / 位置 1 種類
+2026-08-24 18:13:28,411 [INFO] src.timeline.renderer: ベース映像構築: 169 クリップ / ギャップ 0 件 / 合計 439.5s
+2026-08-24 18:13:28,416 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-24 18:20:02,884 [INFO] src.timeline.renderer: ベース映像の尺: モデル 439.483s / 実測 439.485s (差 +0.001s / 169 部品)
+2026-08-24 18:20:02,928 [INFO] src.modules.subtitle_generator: コメント背景: 9 件
+2026-08-24 18:20:02,928 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 3 件 / 文字色 0 件 / 縁の色 0 件
+2026-08-24 18:20:02,929 [INFO] src.timeline.renderer: 字幕焼き込み: 241 件
+2026-08-24 18:20:02,929 [INFO] src.modules.comment_decor: コメントアイコン: 9 件 / 位置 1 種類
+2026-08-24 18:24:23,784 [INFO] src.timeline.renderer: ベース映像構築: 29 クリップ / ギャップ 1 件 / 合計 66.2s
+2026-08-24 18:24:23,790 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-24 18:25:21,195 [INFO] src.timeline.renderer: ベース映像の尺: モデル 66.183s / 実測 66.184s (差 +0.000s / 30 部品)
+2026-08-24 18:25:21,203 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-24 18:25:21,204 [INFO] src.timeline.renderer: 字幕焼き込み: 34 件
+2026-08-24 18:26:23,039 [INFO] src.archive.clip_writer: clip3: 左上テーマタグを焼き込み
+2026-08-24 18:26:26,218 [INFO] src.archive.clip_writer: clip3: イントロカード生成 (3.00s, テーマ=アロおじ大躍進)
+2026-08-24 18:26:26,220 [INFO] src.timeline.renderer: ベース映像構築: 32 クリップ / ギャップ 0 件 / 合計 85.3s
+2026-08-24 18:26:26,225 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-24 18:27:41,565 [INFO] src.timeline.renderer: ベース映像の尺: モデル 85.300s / 実測 85.300s (差 +0.000s / 32 部品)
+2026-08-24 18:27:41,574 [INFO] src.modules.subtitle_generator: コメント背景: 2 件
+2026-08-24 18:27:41,575 [INFO] src.timeline.renderer: 字幕焼き込み: 46 件
+2026-08-24 18:27:41,575 [INFO] src.modules.comment_decor: コメントアイコン: 2 件 / 位置 1 種類
+2026-08-24 18:28:31,392 [INFO] src.timeline.renderer: ベース映像構築: 30 クリップ / ギャップ 0 件 / 合計 65.5s
+2026-08-24 18:28:31,392 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (2560x1440 60fps → 1920x1080 60fps)
+2026-08-24 18:29:32,675 [INFO] src.timeline.renderer: ベース映像の尺: モデル 65.467s / 実測 65.467s (差 +0.000s / 30 部品)
+2026-08-24 18:29:32,681 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-08-24 18:29:32,682 [INFO] src.timeline.renderer: 字幕焼き込み: 37 件
+2026-08-24 18:29:32,682 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-08-24 18:35:53,662 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_vod_2854706666_combined.mp4 (使用5)
