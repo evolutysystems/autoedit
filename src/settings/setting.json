@@ -77,7 +77,7 @@
         "display_min_duration_sec": 0.5
     },
     "silence_cut": {
-        "enabled": false,
+        "enabled": true,
         "mode": "edit_points",
         "noise_threshold_db": -27,
         "min_silence_duration_sec": 0.6,
@@ -137,13 +137,9 @@
             "missing_media_policy": "renormalize",
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
-            "recent": [
-                "D:/develop/autoedit/output\\f1_oranda_2.timeline.json"
-            ],
+            "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [
-                "D:/develop/autoedit/output\\vod_2854706666.archive.timeline.json"
-            ],
+            "recent_archive": [],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
