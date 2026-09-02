@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -16
+        "last_cut_db": -28
     },
     "loudness": {
         "enabled": true,
