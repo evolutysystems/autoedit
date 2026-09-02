@@ -41,13 +41,13 @@ class CommentIconTest(unittest.TestCase):
     # 横 1920x1080 の既定値。設計書 §6.1 の「アイコン左端 40px / 垂直中央」
     def test_icon_box_landscape_defaults(self):
         box = comment_decor.icon_box(_comment(), _cfg(), 1920, 1080)
-        self.assertEqual((box["x"], box["y"], box["size"]), (40.0, 490.0, 100))
+        self.assertEqual((box["x"], box["y"], box["size"]), (40.0, 465.0, 150))
         self.assertFalse(box["clamped"])
 
     # 縦 1080x1920 は 50x50 (Q7 の回答)。左端はやはり 40px に揃う (§6.1.1)
     def test_icon_box_portrait_defaults(self):
         box = comment_decor.icon_box(_comment(), _vertical_cfg(), 1080, 1920)
-        self.assertEqual((box["x"], box["y"], box["size"]), (40.0, 935.0, 50))
+        self.assertEqual((box["x"], box["y"], box["size"]), (40.0, 910.0, 100))
 
     # 左余白を詰めてもキャンバス外へ出ない (クランプ)
     def test_icon_never_leaves_canvas(self):
@@ -60,7 +60,7 @@ class CommentIconTest(unittest.TestCase):
         item = _comment(pos_x=0.0, pos_y=0.0)   # キャンバス中心
         box = comment_decor.icon_box(item, _cfg(), 1920, 1080)
         # 左端 960 - 間隔 50 - アイコン 100 = 810 / 垂直中心 540 - 50 = 490
-        self.assertEqual((box["x"], box["y"]), (810.0, 490.0))
+        self.assertEqual((box["x"], box["y"]), (760.0, 465.0))
 
     # コメント以外の役割には付けない
     def test_no_icon_for_other_roles(self):
@@ -89,7 +89,7 @@ class CommentIconChainTest(unittest.TestCase):
         self.assertEqual(len(chains), 2)
         self.assertTrue(chains[0].startswith("movie="))
         self.assertIn("between(t,3.100,5.400)+between(t,9.000,11.200)", chains[1])
-        self.assertIn("overlay=40.0:490.0", chains[1])
+        self.assertIn("overlay=40.0:465.0", chains[1])
 
     # 位置が違えば split して overlay を鎖状に足す
     def test_different_positions_are_split(self):
@@ -141,9 +141,9 @@ class CommentBackgroundTest(unittest.TestCase):
     def test_background_box_landscape(self):
         box = comment_decor.background_box(_comment(), _cfg(), 1920, 1080)
         self.assertEqual(box["x"], 16.0)           # アイコン左端 40 - 余白 24
-        self.assertEqual(box["y"], 458.0)          # 540 - 58(高さの半分) - 24
-        self.assertEqual(box["w"], 723.0)          # (文字右端 715 - 40) + 24*2
-        self.assertEqual(box["h"], 164.0)          # 58*2 + 24*2
+        self.assertEqual(box["y"], 441.0)          # 540 - 75(アイコンの半分) - 24
+        self.assertEqual(box["w"], 773.0)          # (文字右端 765 - 40) + 24*2
+        self.assertEqual(box["h"], 198.0)          # 75*2 + 24*2 (アイコン 150 が文字 116 より高い)
         self.assertEqual(box["radius"], 24)
         self.assertFalse(box["clamped"])
 
@@ -151,7 +151,7 @@ class CommentBackgroundTest(unittest.TestCase):
     def test_background_without_icon(self):
         box = comment_decor.background_box(
             _comment(), _cfg(comment_icon_enabled=False), 1920, 1080)
-        self.assertEqual(box["x"], 166.0)
+        self.assertEqual(box["x"], 216.0)
 
     # 角丸半径は短辺の半分を超えない
     def test_radius_is_capped(self):
@@ -181,7 +181,7 @@ class CommentBackgroundTest(unittest.TestCase):
     def test_background_text_tags(self):
         text = comment_decor.build_background_text(
             _comment(), _cfg(), 1920, 1080)
-        self.assertIn("\\an7\\pos(16.0,458.0)", text)
+        self.assertIn("\\an7\\pos(16.0,441.0)", text)
         self.assertIn("\\1c&H000000&", text)
         self.assertIn("\\1a&H80&", text)
         self.assertIn("\\bord0\\shad0", text)

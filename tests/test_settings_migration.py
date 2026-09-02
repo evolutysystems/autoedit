@@ -12,7 +12,12 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from src.modules import comment_decor, subtitle_generator
 from src.settings import settings_window as sw
+
+# アイコン位置の確認に使うコメント役割の字幕 (resolve14 §10-3)
+_COMMENT = {"start": 3.1, "end": 5.4, "role": "comment",
+            "text": "ここにコメント"}
 
 
 def _existing(**auth_overrides):
@@ -132,6 +137,99 @@ class CommentLabelMigrationTest(unittest.TestCase):
         sw._normalize_legacy_values(merged)
         self.assertEqual(merged["subtitle"]["comment_label"], "視聴者：")
 
+
+
+
+class CommentIconSizeMigrationTest(unittest.TestCase):
+    """ver3 resolve14 §10-3: コメントアイコンの拡大を旧 setting.json へ反映する
+
+    アイコンの位置は x = comment_margin_l - gap - size で逆算されるため
+    (resolve14 §2.2)、大きさと左余白は対で意味を持つ。片方だけ寄せると
+    アイコンが画面端へはみ出す。移行は必ず 2 つまとめて行う。
+    """
+
+    # 旧既定値 (resolve14 以前)
+    LEGACY = {
+        "subtitle": {"comment_icon_size_px": 100, "comment_margin_l": 190},
+        "vertical": {"comment_icon_size_px": 50, "comment_margin_l": 140},
+    }
+
+    def _legacy_settings(self, **overrides):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        for section, values in self.LEGACY.items():
+            data[section] = dict(data[section], **values)
+        for section, values in overrides.items():
+            data[section] = dict(data[section], **values)
+        return data
+
+    def _new(self, section, key):
+        return sw.DEFAULT_SETTINGS[section][key]
+
+    # 旧既定のままなら新既定 (横 1.5 倍 / 縦 2 倍) へ寄せる
+    def test_comment_icon_size_migrated(self):
+        data = self._legacy_settings()
+        self.assertTrue(sw._migrate_comment_icon_size(data))
+        self.assertEqual(data["subtitle"]["comment_icon_size_px"], 150)
+        self.assertEqual(data["subtitle"]["comment_margin_l"], 240)
+        self.assertEqual(data["vertical"]["comment_icon_size_px"], 100)
+        self.assertEqual(data["vertical"]["comment_margin_l"], 190)
+
+    # 拡大の比が要望どおりであること (横 1.5 倍 / 縦 2 倍)
+    def test_scale_ratio(self):
+        self.assertEqual(self._new("subtitle", "comment_icon_size_px"),
+                         self.LEGACY["subtitle"]["comment_icon_size_px"] * 1.5)
+        self.assertEqual(self._new("vertical", "comment_icon_size_px"),
+                         self.LEGACY["vertical"]["comment_icon_size_px"] * 2)
+
+    # アイコンの大きさを独自に変えていれば、そのセクションは 2 つとも触らない
+    def test_custom_icon_size_is_kept(self):
+        data = self._legacy_settings(subtitle={"comment_icon_size_px": 120})
+        sw._migrate_comment_icon_size(data)
+        self.assertEqual(data["subtitle"]["comment_icon_size_px"], 120)
+        self.assertEqual(data["subtitle"]["comment_margin_l"], 190)   # 据え置き
+        # 触っていない縦だけは移行される
+        self.assertEqual(data["vertical"]["comment_icon_size_px"], 100)
+
+    # 左余白だけ独自に変えていても、そのセクションは 2 つとも触らない
+    def test_custom_margin_is_kept(self):
+        data = self._legacy_settings(subtitle={"comment_margin_l": 200})
+        sw._migrate_comment_icon_size(data)
+        self.assertEqual(data["subtitle"]["comment_icon_size_px"], 100)
+        self.assertEqual(data["subtitle"]["comment_margin_l"], 200)
+
+    # 2 度目は何も変えない (起動のたびに保存し直さない)
+    def test_migration_is_idempotent(self):
+        data = self._legacy_settings()
+        self.assertTrue(sw._migrate_comment_icon_size(data))
+        self.assertFalse(sw._migrate_comment_icon_size(data))
+
+    # 読み込み全体 (_normalize_legacy_values) からも呼ばれること
+    def test_called_from_normalize(self):
+        data = self._legacy_settings()
+        self.assertTrue(sw._normalize_legacy_values(data))
+        self.assertEqual(data["subtitle"]["comment_icon_size_px"], 150)
+
+    # 移行後もアイコンがキャンバスからはみ出さないこと (resolve14 §2.4 の担保)
+    # 大きさだけ寄せて左余白を放置すると、ここが clamped=True になって落ちる。
+    def test_icon_stays_inside_canvas_after_migration(self):
+        data = self._legacy_settings()
+        sw._migrate_comment_icon_size(data)
+
+        landscape = comment_decor.icon_box(_COMMENT, data["subtitle"], 1920, 1080)
+        self.assertEqual((landscape["x"], landscape["size"]), (40.0, 150))
+        self.assertFalse(landscape["clamped"])
+
+        portrait_cfg = subtitle_generator.build_effective_subtitle_cfg(
+            data["subtitle"], data["vertical"], {"is_portrait": True})
+        portrait = comment_decor.icon_box(_COMMENT, portrait_cfg, 1080, 1920)
+        self.assertEqual((portrait["x"], portrait["size"]), (40.0, 100))
+        self.assertFalse(portrait["clamped"])
+
+    # セクションが欠けていても落ちない (壊れた setting.json への保険)
+    def test_missing_section_is_ignored(self):
+        data = {"subtitle": dict(self.LEGACY["subtitle"])}
+        self.assertTrue(sw._migrate_comment_icon_size(data))
+        self.assertEqual(data["subtitle"]["comment_icon_size_px"], 150)
 
 if __name__ == "__main__":
     unittest.main()

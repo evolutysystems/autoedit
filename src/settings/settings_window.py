@@ -187,14 +187,16 @@ DEFAULT_SETTINGS = {
         # ── コメント役割だけの配置と装飾 (ver3 resolve11 §7.1 / §7.4)
         # 配置: 中央の左 (ASS an4)。アイコンを左横へ確実に置くため左寄せ (1/4/7) のみ許す。
         "comment_alignment": 4,
-        # 左余白 = margin_l(40) + アイコン幅(100) + 間隔(50)。アイコン左端が 40px に揃う。
-        "comment_margin_l": 190,
+        # 左余白 = margin_l(40) + アイコン幅(150) + 間隔(50)。アイコン左端 40px に揃う。
+        # アイコンは ver3 resolve14 で 1.5 倍 (100→150)。位置はこの左余白から
+        # 逆算される (x = comment_margin_l - gap - size) ため、必ず対で直すこと。
+        "comment_margin_l": 240,
         "comment_margin_r": 40,
         "comment_margin_v": 60,
         # アイコン (src/comment_icon.png) の表示
         "comment_icon_enabled": True,
         "comment_icon_path": "",          # 空 = 同梱の src/comment_icon.png
-        "comment_icon_size_px": 100,
+        "comment_icon_size_px": 150,      # ver3 resolve14 で 1.5 倍 (100→150)
         "comment_icon_gap_px": 50,        # アイコン右端と文字左端の間隔
         # enable 式が長くなったときに -filter_script:v へ逃がす閾値 (文字数)
         "comment_icon_filter_script_chars": 8000,
@@ -603,13 +605,14 @@ DEFAULT_SETTINGS = {
         "margin_r": 40,
         "margin_v": 320,
         # コメント役割の縦用上書き (ver3 resolve11 §7.2)。
-        # アイコンは 50x50 へ縮め、左余白 = 40 + 50 + 50 = 140 とする
-        # (横と同じくアイコン左端が 40px に揃う)。
+        # アイコンは 100x100 (ver3 resolve14 で 2 倍 / 50→100)。
+        # 左余白 = 40 + 100 + 50 = 190 とし、横と同じくアイコン左端 40px に揃える。
+        # 位置は左余白から逆算されるため、大きさと左余白は必ず対で直すこと。
         "comment_alignment": 4,
-        "comment_margin_l": 140,
+        "comment_margin_l": 190,
         "comment_margin_r": 40,
         "comment_margin_v": 320,
-        "comment_icon_size_px": 50,
+        "comment_icon_size_px": 100,
         "comment_icon_gap_px": 50,
     },
     "logging": {
@@ -664,6 +667,15 @@ DEFAULT_SETTINGS = {
         # 切り抜き出力ファイル名の接頭辞 (flow17 R1)
         "output": {
             "clip_prefix": "archive",
+        },
+        # セクション追加 (ver3 resolve13)。Timeline 編集画面から元動画の区間を
+        # 指定してセクションを足す。採点方式には影響しない。
+        "section_add": {
+            "enabled": True,            # false で「セクション追加...」ボタンを出さない
+            # 追加ダイアログの既定尺 (秒)。未指定なら scoring.window_sec を使う
+            "default_length_sec": 180,
+            "min_length_sec": 1.0,      # これより短い区間は追加させない
+            "merge_on_overlap": True,   # 既存セクションと重なったら 1 つへ統合する
         },
         # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
         "clip_pipeline": {
@@ -816,6 +828,8 @@ def _normalize_legacy_values(merged):
                     changed = True
     if _migrate_comment_label(merged):
         changed = True
+    if _migrate_comment_icon_size(merged):
+        changed = True
     if _fill_twitch_client_id(merged):
         changed = True
     if _fill_timeline_nested_defaults(merged):
@@ -845,6 +859,37 @@ def _migrate_comment_label(merged):
     subtitle["comment_label"] = ""
     _logger.info("コメント役割の先頭ラベルを撤去しました (アイコン表示へ置き換え)")
     return True
+
+
+# コメントアイコンの拡大 (ver3 resolve14)。
+# 背景: アイコンが小さいという要望で既定を横 1.5 倍 / 縦 2 倍にしたが、
+#   _merge_with_defaults は既存のユーザー値を温存するため、旧 setting.json では
+#   小さいままになる。_migrate_comment_label と同じ扱いで、既知の旧既定値のときだけ寄せる。
+# 【重要】comment_icon_size_px と comment_margin_l は対で意味を持つ
+#   (左余白 = 40 + アイコン + 間隔 / resolve14 §2.3)。アイコンの位置は
+#   x = comment_margin_l - gap - size で逆算されるため、片方だけ寄せると
+#   アイコンが画面端へはみ出す。2 つとも旧既定のときだけ 2 つまとめて動かす。
+_LEGACY_COMMENT_ICON = {
+    "subtitle": {"comment_icon_size_px": 100, "comment_margin_l": 190},
+    "vertical": {"comment_icon_size_px": 50, "comment_margin_l": 140},
+}
+
+
+def _migrate_comment_icon_size(merged):
+    changed = False
+    for section, legacy in _LEGACY_COMMENT_ICON.items():
+        target = merged.get(section)
+        if not isinstance(target, dict):
+            continue
+        # 1 つでも独自の値なら触らない (利用者の調整を尊重する)
+        if any(target.get(key) != value for key, value in legacy.items()):
+            continue
+        for key in legacy:
+            target[key] = DEFAULT_SETTINGS[section][key]
+        changed = True
+    if changed:
+        _logger.info("コメントアイコンを拡大しました (横 1.5 倍 / 縦 2 倍)")
+    return changed
 
 
 # 空のままの Twitch Client-ID を既定 (アプリが配布する公開値) で補う (error 20260820)

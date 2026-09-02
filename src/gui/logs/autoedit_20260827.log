@@ -1,0 +1,47 @@
+2026-08-27 10:40:47,121 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-08-27 10:41:11,762 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-08-27 10:41:11,762 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Documents/AutoEdit/output/yakiniku_clip.mov
+2026-08-27 10:41:12,261 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-08-27 10:41:13,006 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.2 LUFS / TP=-14.1 dBTP / LRA=6.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.1 dB)
+2026-08-27 10:41:13,849 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_4gsiwq6k\loudness_normalized.mp4
+2026-08-27 10:41:13,908 [INFO] src.modules.silence_cutter: 無音カット無効のため全長 1 区間を編集点とします
+2026-08-27 10:41:13,908 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-31dB, 最小無音=0.60s, 総尺=24.2s)
+2026-08-27 10:41:13,908 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-27 10:41:14,397 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 24.2s (元 24.2s)
+2026-08-27 10:41:39,298 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-08-27 10:41:39,298 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-08-27 10:41:45,603 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-08-27 10:42:03,884 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-08-27 10:42:03,973 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-08-27 10:42:03,973 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-08-27 10:42:03,973 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-08-27 10:42:04,041 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-08-27 10:42:04,041 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-08-27 10:42:04,042 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 24.2s / 60fps 1080x1920
+2026-08-27 10:42:04,043 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\yakiniku_clip.timeline.json
+2026-08-27 10:42:04,044 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-27 10:42:04,045 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-08-27 10:43:11,107 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-27 10:43:36,821 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-27 10:48:05,411 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-08-27 11:06:34,319 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-27 11:07:50,857 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-08-27 11:08:49,491 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 2 クリップ / オーバーレイ 0 件 / 字幕 8 件（使用 8 件）/ ギャップ 0 件
+2026-08-27 11:08:49,515 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\yakiniku_clip.timeline.json
+2026-08-27 11:08:49,521 [INFO] src.timeline.renderer: ベース映像構築: 2 クリップ / ギャップ 0 件 / 合計 24.2s
+2026-08-27 11:09:03,070 [WARNING] src.timeline.renderer: ベース映像の尺: モデル 24.200s / 実測 24.249s (差 +0.049s / 2 部品)
+2026-08-27 11:09:03,070 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-27 11:09:03,070 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 4 件 / 縁の色 0 件
+2026-08-27 11:09:03,070 [INFO] src.timeline.renderer: 字幕焼き込み: 8 件
+2026-08-27 11:09:03,070 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-08-27 11:09:19,278 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\yakiniku_clip_edited.mp4
+2026-08-27 11:09:19,279 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\yakiniku_clip_edited.mp4
+2026-08-27 11:17:07,261 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)
+2026-08-27 11:17:10,858 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:15,049 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:17,825 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)
+2026-08-27 11:17:20,512 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:23,432 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:26,005 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:29,514 [INFO] src.utils.trash: ゴミ箱へ移動しました (1 件)
+2026-08-27 11:17:44,899 [INFO] src.utils.trash: ゴミ箱へ移動しました (2 件)

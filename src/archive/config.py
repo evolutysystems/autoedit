@@ -96,6 +96,26 @@ def use_timeline_review(settings):
     return clip_pipeline_config(settings)["timeline_review"]
 
 
+# セクション追加の設定を平坦化して返す (ver3 resolve13 §5.2)
+# 編集画面から元動画の区間を指定してセクションを足す機能。既定は有効。
+def section_add_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    add = archive.get("section_add", {})
+    scoring = archive.get("scoring", {})
+    return {
+        "enabled": bool(add.get("enabled", True)),
+        # 追加ダイアログの既定尺。採点の窓幅へ揃える (別々に持つと意味が割れる)
+        "default_length_sec": float(add.get("default_length_sec",
+                                            scoring.get("window_sec", 180)) or 180),
+        "min_length_sec": float(add.get("min_length_sec", 1.0) or 1.0),
+        # 重なり時に 1 つへ統合するか (false = 別セクションとして並べる / 切り戻し用)
+        "merge_on_overlap": bool(add.get("merge_on_overlap", True)),
+        # マージ方式 "delta"=差分だけ用意 (既定 / §3-4 案B)。
+        # "rebuild" (和集合の作り直し) は未実装のため delta へ寄せる (§7)。
+        "merge_mode": "delta",
+    }
+
+
 # 切り抜き出力ファイル名の接頭辞を返す (既定 "archive")
 def clip_prefix(settings):
     archive = settings.get("archive", {}) if isinstance(settings, dict) else {}

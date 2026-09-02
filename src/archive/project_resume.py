@@ -232,14 +232,18 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
             raise InputError("復元できたクリップがありません（元 VOD を確認してください）")
         curve = list(archive_section(timeline).get("curve") or [])
         if result_callback is not None:
+            # workdir/clip_settings は編集画面でのセクション追加に要る (ver3 resolve13 §5.6)
             review = result_callback(prepared, curve, timeline,
                                      project_path=project_path,
-                                     created_at=meta.get("created_at"))
+                                     created_at=meta.get("created_at"),
+                                     workdir=workdir, clip_settings=clip_settings)
             if review is None:
                 raise PipelineCancelled("再編集がキャンセルされたため中断します")
             if isinstance(review, dict):
                 timeline = review.get("timeline") or timeline
                 edited = review.get("clips") or []
+                # 画面でセクションが追加されていれば prepared も差し替わる (resolve13 §3-6)
+                prepared = review.get("prepared") or prepared
             else:
                 edited = review
         else:

@@ -187,7 +187,11 @@ class PreviewPanel(QWidget):
         self._pending_rate = 0.0     # 音声チャンク生成の完了後に適用する速度
         self._silent_timer = None
         self._reverse_timer = None
-        self._last_frame_at = 0.0
+        # 最後に映像を更新した秒 (play_fps での間引き判定に使う)。
+        # None = この再生セッションではまだ未更新 → 次の 1 通知は必ず通す。
+        # 再生開始・停止でリセットしないと、戻して再生したとき前回の到達点を
+        # 越えるまで映像が更新されない (resolve12 §2.3)。
+        self._last_frame_at = None
 
         # スクラブ (再生ヘッドドラッグ中の音声 / resolve7 §5.13)
         #   ・self._rate は 0 のまま = 音声は再生ヘッドを動かさない (§2.5.2)
@@ -661,6 +665,9 @@ class PreviewPanel(QWidget):
     def _start_playback(self, path, chunk_start):
         rate = self._pending_rate or 1.0
         self._chunk_start = float(chunk_start)
+        # 間引き用の到達点を捨てる。持ち越すと、前回より手前から再生を始めたときに
+        # 前回の到達点を越えるまで再生ヘッドが動かない (resolve12 §2.3)
+        self._last_frame_at = None
         offset_ms = int(max(self._controller.playhead() - self._chunk_start, 0.0) * 1000)
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.setPosition(offset_ms)
@@ -691,6 +698,8 @@ class PreviewPanel(QWidget):
                 timer.stop()
                 setattr(self, name, None)
         self._pending_rate = 0.0
+        # 逆再生・スクラブで再生ヘッドが戻された場合の残留値も断つ (resolve12 §2.6)
+        self._last_frame_at = None
         self._set_rate(0.0)
 
     # 速度を切り替え、ボタン表示と playing_changed を更新する
@@ -747,7 +756,9 @@ class PreviewPanel(QWidget):
             return
         # 映像の更新は play_fps で頭打ちにする (音声を優先し、間に合わなければ間引く)
         min_interval = 1.0 / max(int(self._cfg["play_fps"]), 1)
-        if sec - self._last_frame_at >= min_interval:
+        # 再生開始直後の 1 通知は間引かずに通す (戻して再生したときの固まり防止)
+        if (self._last_frame_at is None
+                or sec - self._last_frame_at >= min_interval):
             self._last_frame_at = sec
             self._controller.set_playhead(sec)
 

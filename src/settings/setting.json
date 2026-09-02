@@ -45,12 +45,12 @@
         "margin_r": 40,
         "margin_v": 60,
         "comment_alignment": 4,
-        "comment_margin_l": 190,
+        "comment_margin_l": 240,
         "comment_margin_r": 40,
         "comment_margin_v": 60,
         "comment_icon_enabled": true,
         "comment_icon_path": "",
-        "comment_icon_size_px": 100,
+        "comment_icon_size_px": 150,
         "comment_icon_gap_px": 50,
         "comment_icon_filter_script_chars": 8000,
         "comment_bg_enabled": true,
@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -31
+        "last_cut_db": -16
     },
     "loudness": {
         "enabled": true,
@@ -327,10 +327,10 @@
         "margin_r": 40,
         "margin_v": 320,
         "comment_alignment": 4,
-        "comment_margin_l": 140,
+        "comment_margin_l": 190,
         "comment_margin_r": 40,
         "comment_margin_v": 320,
-        "comment_icon_size_px": 50,
+        "comment_icon_size_px": 100,
         "comment_icon_gap_px": 50
     },
     "logging": {
@@ -381,6 +381,12 @@
         },
         "output": {
             "clip_prefix": "archive"
+        },
+        "section_add": {
+            "enabled": true,
+            "default_length_sec": 180,
+            "min_length_sec": 1.0,
+            "merge_on_overlap": true
         },
         "clip_pipeline": {
             "silence_cut": true,

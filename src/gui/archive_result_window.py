@@ -287,14 +287,17 @@ class ArchiveResultBridge(QObject):
     # project_path/created_at: 保存済みプロジェクトを開き直した場合に渡る
     #   (ver3 resolve9 §5.7)。渡ると画面は「再編集」として振る舞い、
     #   保存先と初回作成時刻をそのまま引き継ぐ。
+    # workdir/clip_settings: 編集画面でセクションを追加するのに要る (ver3 resolve13 §5.6)。
+    # 渡らない経路 (従来画面・古い呼び出し) では追加機能を出さないだけで動作は変わらない。
     def __call__(self, prepared, curve, timeline=None, project_path=None,
-                 created_at=None):
+                 created_at=None, workdir=None, clip_settings=None):
         self._event.clear()
         self._result = None
         self.result_requested.emit({
             "prepared": prepared, "curve": curve, "timeline": timeline,
             "project_path": project_path, "created_at": created_at,
             "mode": "resume" if project_path else "pipeline",
+            "workdir": workdir, "clip_settings": clip_settings,
         })
         self._event.wait()
         return self._result
@@ -324,10 +327,14 @@ class ArchiveResultBridge(QObject):
             project_path=payload.get("project_path"),
             created_at=payload.get("created_at"),
             mode=payload.get("mode", "pipeline"),
+            clip_workdir=payload.get("workdir"),
+            clip_settings=payload.get("clip_settings"),
         )
         if window.exec() == QDialog.Accepted:
             self._result = {"timeline": window.result_timeline(),
-                            "clips": window.result_data()}
+                            "clips": window.result_data(),
+                            # セクション追加があれば差し替わる (ver3 resolve13 §3-6)
+                            "prepared": window.result_prepared()}
         else:
             self._result = None
 

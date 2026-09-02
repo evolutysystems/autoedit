@@ -1,0 +1,77 @@
+2026-09-01 11:41:57,666 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-01 11:45:03,668 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-01 11:45:03,668 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_source.mp4
+2026-09-01 11:45:04,242 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-09-01 11:45:05,411 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-17.4 LUFS / TP=-0.9 dBTP / LRA=14.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-09-01 11:45:06,341 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_d4cx7b3l\loudness_normalized.mp4
+2026-09-01 11:45:10,059 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-16 (mean, 測定 3/3 区間)
+2026-09-01 11:45:12,037 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -16 dB
+2026-09-01 11:45:14,026 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 4 件 (閾値=-16dB, 最小無音=0.60s, 総尺=16.9s)
+2026-09-01 11:45:14,693 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 4 区間 → 6.5s (元 16.2s)
+2026-09-01 11:45:47,883 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-01 11:45:47,883 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-01 11:45:55,295 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-01 11:46:19,775 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-01 11:46:19,903 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-01 11:46:19,903 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-01 11:46:19,903 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-01 11:46:19,974 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-09-01 11:46:19,974 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-09-01 11:46:19,974 [INFO] src.timeline.builder: Timeline 構築: V1 4 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 8.5s / 60fps 1920x1080
+2026-09-01 11:46:19,974 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_source.timeline.json
+2026-09-01 11:46:19,991 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-01 11:49:06,577 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-09-01 18:43:59,536 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-01 18:49:35,569 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-01 18:49:35,569 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_portrait.mp4
+2026-09-01 18:49:35,663 [INFO] src.modules.output_profile: 縦動画と判定 (入力=990x1760 → 出力=1080x1920)
+2026-09-01 18:49:36,225 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-17.4 LUFS / TP=-0.9 dBTP / LRA=14.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-09-01 18:49:37,113 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_3p0uxsbo\loudness_normalized.mp4
+2026-09-01 18:49:38,404 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-16 (mean, 測定 3/3 区間)
+2026-09-01 18:49:40,859 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -16 dB
+2026-09-01 18:49:41,489 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 4 件 (閾値=-16dB, 最小無音=0.60s, 総尺=16.9s)
+2026-09-01 18:49:41,489 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-01 18:49:42,160 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 4 区間 → 6.5s (元 16.2s)
+2026-09-01 18:49:45,080 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-01 18:49:45,080 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-01 18:49:52,137 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-01 18:50:11,857 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-01 18:50:11,960 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-01 18:50:11,960 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-01 18:50:11,960 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-01 18:50:12,035 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-09-01 18:50:12,035 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-09-01 18:50:12,035 [INFO] src.timeline.builder: Timeline 構築: V1 4 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 8.5s / 60fps 1080x1920
+2026-09-01 18:50:12,035 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_portrait.timeline.json
+2026-09-01 18:50:12,048 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-01 18:50:12,048 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-01 18:50:19,751 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-09-01 18:50:23,467 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-01 18:50:23,467 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-01 18:50:32,580 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-09-01 18:50:39,134 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-01 18:50:39,134 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_source.mp4
+2026-09-01 18:50:39,183 [INFO] src.modules.output_profile: 横動画と判定 (入力=2560x1440)
+2026-09-01 18:50:39,717 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-17.4 LUFS / TP=-0.9 dBTP / LRA=14.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.7 dB)
+2026-09-01 18:50:40,624 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_ls5nok9e\loudness_normalized.mp4
+2026-09-01 18:50:44,216 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-16 (mean, 測定 3/3 区間)
+2026-09-01 18:50:45,632 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -16 dB
+2026-09-01 18:50:47,591 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 4 件 (閾値=-16dB, 最小無音=0.60s, 総尺=16.9s)
+2026-09-01 18:50:48,237 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 4 区間 → 6.5s (元 16.2s)
+2026-09-01 18:50:48,237 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-01 18:50:48,237 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-01 18:50:59,860 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-01 18:51:20,214 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-01 18:51:20,297 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-01 18:51:20,297 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-01 18:51:20,297 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-01 18:51:20,374 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-09-01 18:51:20,374 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-09-01 18:51:20,374 [INFO] src.timeline.builder: Timeline 構築: V1 4 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 8.5s / 60fps 1920x1080
+2026-09-01 18:51:20,374 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260827_UglyEnthusiasticAntRaccAttack-zIokKKm2BqYKuZQH_source.timeline.json
+2026-09-01 18:51:20,378 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-01 18:51:26,487 [INFO] src.timeline.commands: コメント用の字幕トラックを作成しました: S2
+2026-09-01 18:51:26,488 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1988px / 使える幅 1920px)。font_size か max_line_length を下げると解消します
+2026-09-01 18:51:29,447 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-01 18:51:29,458 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-01 18:51:38,256 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル

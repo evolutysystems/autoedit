@@ -396,6 +396,86 @@ def _transcribe(prepared_path, settings, eff_cfg):
     ]
 
 
+# セクション 1 件を下ごしらえする (切り出し→正規化→音量解析→編集点検出→文字起こし)。
+# _prepare_clips のループ本体をそのまま切り出したもの。初回構築と、編集画面からの
+# セクション追加 (ver3 resolve13 §5.4) で同じ処理を使うために公開する。
+# 書き写すと片方だけ直されて挙動が割れるため、必ずこの関数を経由すること。
+#
+# clip         : {"index","start","end","score"} (start/end は元動画の秒)
+# use_timeline : True  = Timeline 経路。実カットせず編集点だけを求める
+#                False = 従来画面経路。実カットしてから認識する
+# progress_cb  : callable(工程名) — 呼び出し側が進捗率と文言を組み立てる
+# saved_db     : 元設定の保存済みカット閾値 (None なら settings から引く)
+# 戻り値: prepared 1 件ぶんの辞書 (_prepare_clips の要素と同一構成)
+def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
+                     use_timeline=False, progress_cb=None, saved_db=None):
+    subtitle_cfg = clip_settings.get("subtitle", {})
+    vertical_cfg = settings.get("vertical", {})
+    if saved_db is None:
+        saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
+
+    if progress_cb:
+        progress_cb("音声正規化")
+    # クリップ専用の作業サブフォルダ (無音カット出力名の衝突を防ぐ)
+    clip_dir = os.path.join(workdir, f"clip{clip['index']}")
+    os.makedirs(clip_dir, exist_ok=True)
+    raw = os.path.join(clip_dir, "raw.mp4")
+    cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
+    # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
+    # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
+    normalized = loudness_normalizer.normalize_file(
+        raw, os.path.join(clip_dir, "normalized.mp4"), settings)
+    # 音量解析: 正規化後のクリップからカット閾値を確定する (ダイアログ無し)
+    if progress_cb:
+        progress_cb("音量解析")
+    _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
+    if use_timeline:
+        # Timeline 経路: 実カットしない。字幕の時間軸を Timeline の軸へ一致させる (§4-2)
+        if progress_cb:
+            progress_cb("編集点検出・文字起こし")
+        # 出力プロファイルは寸法しか見ないため、実カット前の normalized で判定できる
+        # (extract_segment はスケーリングしないため実カット後と同値)。
+        profile = output_profile.resolve_output_profile(normalized, settings)
+        eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
+            subtitle_cfg, vertical_cfg, profile)
+        # 実カット後ファイルは作らない (参照するのは従来画面だけのため)
+        prepared_path = ""
+        keep_segments, items, normalized_duration = _prepare_edit_points(
+            normalized, clip_settings, clip_dir, profile)
+    else:
+        # 従来画面経路: 実カット後クリップをプレビュー・焼き込みに使う
+        if progress_cb:
+            progress_cb("文字起こし")
+        prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
+        profile = output_profile.resolve_output_profile(prepared_path, settings)
+        eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
+            subtitle_cfg, vertical_cfg, profile)
+        items = _transcribe(prepared_path, settings, eff_cfg)
+        normalized_duration = ffmpeg_runner.probe_duration(normalized, ffmpeg_cfg)
+
+    entry = {
+        "index": clip["index"], "start": clip["start"], "end": clip["end"],
+        "score": clip.get("score", 0.0),
+        # Timeline 経路では空文字。参照するのは従来画面 (_burn_one / 結果画面プレビュー) だけ
+        "prepared_path": prepared_path, "profile": profile,
+        "eff_cfg": eff_cfg, "items": items,
+        # クリップ内の無音カット編集点 (Resolve 出力用の一時データ / resolve20 §5.4)
+        "keep_segments": keep_segments,
+        # Timeline 編集の素材 (無音カット前・正規化済み / ver3 resolve5 §3-2)。
+        # 実カット後の prepared_path と違い、切った区間を編集画面で戻せる。
+        "normalized_path": normalized,
+        "normalized_duration": normalized_duration,
+        # 素材が正規化を通ったか (ver3 resolve9 §3-1)。normalize_file は
+        # 無効・音声無し・測定失敗のとき入力パスをそのまま返すためパスで判別できる。
+        # 開き直すときに音声サイドカーを貼るかどうかの判断に使う。
+        "media_role": "normalized" if normalized != raw else "original",
+    }
+    _logger.info(
+        "clip%s prepare 完了 (字幕 %d 件%s)",
+        clip["index"], len(items), " / 実カットなし" if use_timeline else "")
+    return entry
+
+
 # 全クリップを prepare する (切り出し→編集点検出/無音カット→文字起こし)。ダイアログは出さない。
 # use_timeline : True  = Timeline 経路。実カットせず編集点だけを求め、区間音声のみで認識する
 #                        (docs/error/20260811/resolve.md §4-2)。字幕の時間軸が Timeline と一致する。
@@ -406,71 +486,17 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
                    progress_cb, use_timeline=False):
     prepared = []
     total = len(used)
-    subtitle_cfg = clip_settings.get("subtitle", {})
-    vertical_cfg = settings.get("vertical", {})
     # 元設定の保存済みカット閾値 (クリップごとの音量解析が失敗した場合の戻し先)
     saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
     for pos, clip in enumerate(used, 1):
-        if progress_cb:
-            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音声正規化）")
-        # クリップ専用の作業サブフォルダ (無音カット出力名の衝突を防ぐ)
-        clip_dir = os.path.join(workdir, f"clip{clip['index']}")
-        os.makedirs(clip_dir, exist_ok=True)
-        raw = os.path.join(clip_dir, "raw.mp4")
-        cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
-        # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
-        # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
-        normalized = loudness_normalizer.normalize_file(
-            raw, os.path.join(clip_dir, "normalized.mp4"), settings)
-        # 音量解析: 正規化後のクリップからカット閾値を確定する (ダイアログ無し)
-        if progress_cb:
-            progress_cb((pos - 1) / total * 0.55, f"クリップ {pos}/{total} を準備中…（音量解析）")
-        _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
-        if use_timeline:
-            # Timeline 経路: 実カットしない。字幕の時間軸を Timeline の軸へ一致させる (§4-2)
+        # 工程名だけを受け取り、ここで進捗率と文言を組み立てる (文言は従来と同一)
+        def phase(label, _pos=pos):
             if progress_cb:
-                progress_cb((pos - 1) / total * 0.55,
-                            f"クリップ {pos}/{total} を準備中…（編集点検出・文字起こし）")
-            # 出力プロファイルは寸法しか見ないため、実カット前の normalized で判定できる
-            # (extract_segment はスケーリングしないため実カット後と同値)。
-            profile = output_profile.resolve_output_profile(normalized, settings)
-            eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
-                subtitle_cfg, vertical_cfg, profile)
-            # 実カット後ファイルは作らない (参照するのは従来画面だけのため)
-            prepared_path = ""
-            keep_segments, items, normalized_duration = _prepare_edit_points(
-                normalized, clip_settings, clip_dir, profile)
-        else:
-            # 従来画面経路: 実カット後クリップをプレビュー・焼き込みに使う
-            if progress_cb:
-                progress_cb((pos - 1) / total * 0.55,
-                            f"クリップ {pos}/{total} を準備中…（文字起こし）")
-            prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
-            profile = output_profile.resolve_output_profile(prepared_path, settings)
-            eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
-                subtitle_cfg, vertical_cfg, profile)
-            items = _transcribe(prepared_path, settings, eff_cfg)
-            normalized_duration = ffmpeg_runner.probe_duration(normalized, ffmpeg_cfg)
-        prepared.append({
-            "index": clip["index"], "start": clip["start"], "end": clip["end"],
-            "score": clip.get("score", 0.0),
-            # Timeline 経路では空文字。参照するのは従来画面 (_burn_one / 結果画面プレビュー) だけ
-            "prepared_path": prepared_path, "profile": profile,
-            "eff_cfg": eff_cfg, "items": items,
-            # クリップ内の無音カット編集点 (Resolve 出力用の一時データ / resolve20 §5.4)
-            "keep_segments": keep_segments,
-            # Timeline 編集の素材 (無音カット前・正規化済み / ver3 resolve5 §3-2)。
-            # 実カット後の prepared_path と違い、切った区間を編集画面で戻せる。
-            "normalized_path": normalized,
-            "normalized_duration": normalized_duration,
-            # 素材が正規化を通ったか (ver3 resolve9 §3-1)。normalize_file は
-            # 無効・音声無し・測定失敗のとき入力パスをそのまま返すためパスで判別できる。
-            # 開き直すときに音声サイドカーを貼るかどうかの判断に使う。
-            "media_role": "normalized" if normalized != raw else "original",
-        })
-        _logger.info(
-            "clip%d prepare 完了 (字幕 %d 件%s)",
-            clip["index"], len(items), " / 実カットなし" if use_timeline else "")
+                progress_cb((_pos - 1) / total * 0.55,
+                            f"クリップ {_pos}/{total} を準備中…（{label}）")
+        prepared.append(prepare_one_clip(
+            input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
+            use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db))
     return prepared
 
 
@@ -669,7 +695,9 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
 
         # ② 一括レビュー: 1つの画面で全クリップを編集
         if result_callback is not None:
-            review = result_callback(prepared, curve or [], timeline)
+            # workdir/clip_settings は編集画面でのセクション追加に要る (ver3 resolve13 §5.6)
+            review = result_callback(prepared, curve or [], timeline,
+                                     workdir=workdir, clip_settings=clip_settings)
             if review is None:
                 _logger.info("結果画面でキャンセル → 出力なし")
                 return []
@@ -677,6 +705,8 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
             if isinstance(review, dict):
                 timeline = review.get("timeline") or timeline
                 edited = review.get("clips") or []
+                # 画面でセクションが追加されていれば prepared も差し替わる (resolve13 §3-6)
+                prepared = review.get("prepared") or prepared
             else:
                 edited = review
                 timeline = None

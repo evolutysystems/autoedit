@@ -6,6 +6,7 @@
 #   ・設定で従来動作へ戻せること
 import unittest
 
+from src.gui.timeline.preview_panel import PreviewPanel
 from src.gui.timeline.timeline_controller import TimelineController
 from src.timeline import audio_source, frame_source
 from src.timeline.builder import timeline_config
@@ -256,6 +257,175 @@ class ScrubConfigTest(unittest.TestCase):
             {"timeline": {"preview": {"scrub_rate_mode": "unknown"}}})["preview"]
         self.assertEqual(cfg["scrub_rate_mode"], "grain")
 
+
+
+# ------------------------------------------------------------------
+# resolve12: 戻して再生したときの固まり (スタブ用の代用クラス)
+# ------------------------------------------------------------------
+
+# TimelineController の代用。set_playhead の「変化が無ければ何もしない」まで写す
+# (実物と挙動がずれると、固まりの再現条件そのものが変わってしまうため)
+class _StubController:
+
+    class _StubTimeline:
+        def __init__(self, total):
+            self._total = total
+
+        def duration_sec(self):
+            return self._total
+
+    def __init__(self, total=60.0, playhead=0.0):
+        self.timeline = _StubController._StubTimeline(total)
+        self._playhead = float(playhead)
+        self.moves = []          # 実際に動いた秒の列
+
+    def playhead(self):
+        return self._playhead
+
+    def set_playhead(self, sec):
+        value = min(max(float(sec), 0.0), self.timeline.duration_sec())
+        if abs(value - self._playhead) < 1e-6:
+            return
+        self._playhead = value
+        self.moves.append(value)
+
+
+# QMediaPlayer の代用 (呼ばれた seek 位置だけ覚える)
+class _StubPlayer:
+
+    def __init__(self, duration_ms=60_000):
+        self._duration_ms = duration_ms
+        self.position_ms = 0
+        self.rate = None
+        self.playing = False
+
+    def duration(self):
+        return self._duration_ms
+
+    def setSource(self, _url):
+        self.position_ms = 0
+
+    def setPosition(self, position_ms):
+        self.position_ms = position_ms
+
+    def setPlaybackRate(self, rate):
+        self.rate = rate
+
+    def play(self):
+        self.playing = True
+
+    def pause(self):
+        self.playing = False
+
+
+# PreviewPanel の代用 self (再生系メソッドが触る属性だけを持つ)
+class _StubPanel:
+
+    def __init__(self, cfg, playhead=0.0, last_frame_at=None):
+        self._cfg = cfg
+        self.controller = _StubController(playhead=playhead)
+        self._controller = self.controller
+        self.player = _StubPlayer()
+        self._player = self.player
+        self._rate = 1.0
+        self._pending_rate = 1.0
+        self._chunk_start = 0.0
+        self._last_frame_at = last_frame_at
+        self._silent_timer = None
+        self._reverse_timer = None
+        self.paused = False
+
+    def pause(self):
+        self.paused = True
+
+    def _set_rate(self, _rate):
+        pass
+
+    def _prefetch_next(self, _sec):
+        pass
+
+
+class ReplayAfterRewindTest(unittest.TestCase):
+    """resolve12 §10-2: 戻して再生したときに映像が固まらないこと
+
+    再生中の映像更新は QMediaPlayer の positionChanged から駆動される
+    (PreviewPanel._on_audio_position)。間引き用の到達点 _last_frame_at を
+    再生セッションを跨いで持ち越すと、前回より手前から再生を始めたときに
+    前回の到達点を越えるまで再生ヘッドが動かなかった (resolve12 §2.3)。
+
+    QApplication も音声デバイスも要らないよう、本番メソッドへスタブの self を渡す。
+    """
+
+    def setUp(self):
+        self.cfg = timeline_config({})["preview"]
+        # 既定 play_fps=15 → 映像更新の下限間隔は 1/15 秒
+        self.min_interval = 1.0 / self.cfg["play_fps"]
+        # 1 通知ぶん取りこぼしても許す幅 (固まり 5 秒とは桁が違うため判定は明確に付く)
+        self.tolerance = self.min_interval * 2.0
+
+    # positionChanged 相当の通知を from_sec → to_sec まで流し、通知回数を返す
+    def _play(self, panel, from_sec, to_sec, step=0.05):
+        count = 0
+        sec = from_sec
+        while sec <= to_sec + 1e-9:
+            position_ms = int(round((sec - panel._chunk_start) * 1000))
+            PreviewPanel._on_audio_position(panel, position_ms)
+            count += 1
+            sec += step
+        return count
+
+    def _panel(self, playhead=0.0, last_frame_at=None):
+        return _StubPanel(self.cfg, playhead=playhead, last_frame_at=last_frame_at)
+
+    # 戻した位置から再生したら、すぐ再生ヘッドが動き出す
+    def test_replay_after_rewind_moves_playhead(self):
+        panel = self._panel(playhead=15.0)
+        self._play(panel, 15.0, 15.3)
+        self.assertTrue(panel.controller.moves, "再生ヘッドが一度も動いていない")
+        self.assertLessEqual(panel.controller.moves[0] - 15.0, self.tolerance)
+
+    # 前回の到達点が残っていても固まらない (回帰の本体 / resolve12 §2.5)
+    # 修正前の初期値 0.0 から始める。番兵 None を前提にしないことで、
+    # このテストは修正前のコードに対しても走り、固まりそのものを検出する。
+    def test_stale_last_frame_at_does_not_freeze(self):
+        panel = self._panel(playhead=0.0, last_frame_at=0.0)
+        self._play(panel, 0.0, 20.0)
+        self.assertAlmostEqual(panel._last_frame_at, 20.0, places=3)
+
+        # 再生ヘッドを 15s へ手で戻し、同じチャンクから再生を始める
+        panel.controller.set_playhead(15.0)
+        panel.controller.moves.clear()
+        PreviewPanel._start_playback(panel, "dummy.wav", 0.0)
+        panel._rate = 1.0
+        self._play(panel, 15.0, 21.0)
+
+        self.assertTrue(panel.controller.moves, "再生ヘッドが一度も動いていない")
+        # 修正前はここが 20.1 になり、戻した 5 秒ぶん映像が止まっていた
+        self.assertLessEqual(panel.controller.moves[0] - 15.0, self.tolerance)
+
+    # 2 通知目以降は従来どおり play_fps で間引く (resolve12 E4 の退行防止)
+    def test_frame_thinning_still_applies(self):
+        panel = self._panel(playhead=5.0, last_frame_at=5.0)
+        notified = self._play(panel, 5.0, 5.2, step=0.005)
+        moves = panel.controller.moves
+        self.assertLess(len(moves), notified, "間引きが効いていない")
+        # 更新の間隔が下限を割らないこと
+        for previous, current in zip(moves, moves[1:]):
+            self.assertGreaterEqual(current - previous, self.min_interval - 1e-9)
+
+    # 再生開始で到達点を捨てる (resolve12 §5.4)
+    def test_start_playback_resets_last_frame_at(self):
+        panel = self._panel(playhead=15.0, last_frame_at=20.0)
+        PreviewPanel._start_playback(panel, "dummy.wav", 0.0)
+        self.assertIsNone(panel._last_frame_at)
+        # 再生開始位置へ seek していること (offset = 再生ヘッド - チャンク開始)
+        self.assertEqual(panel.player.position_ms, 15000)
+
+    # 停止でも到達点を捨てる (逆再生・スクラブの残留値対策 / resolve12 §5.5)
+    def test_pause_resets_last_frame_at(self):
+        panel = self._panel(playhead=15.0, last_frame_at=20.0)
+        PreviewPanel.pause(panel)
+        self.assertIsNone(panel._last_frame_at)
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,7 +53,7 @@ class RolePlacementTest(unittest.TestCase):
         styles = _styles(_lines([_COMMENT]))
         fields = styles["Comment"].split(",")
         self.assertEqual(fields[-5], "4")       # Alignment
-        self.assertEqual(fields[-4], "190")     # MarginL
+        self.assertEqual(fields[-4], "240")     # MarginL
 
     # 配信者・サブは現行と完全に一致する (回帰の要)
     def test_other_styles_unchanged(self):
@@ -74,11 +74,11 @@ class RolePlacementTest(unittest.TestCase):
         eff = subtitle_generator.build_effective_subtitle_cfg(
             dict(DEFAULT_SETTINGS["subtitle"]), dict(DEFAULT_SETTINGS["vertical"]),
             {"is_portrait": True})
-        self.assertEqual(eff["comment_margin_l"], 140)
-        self.assertEqual(eff["comment_icon_size_px"], 50)
+        self.assertEqual(eff["comment_margin_l"], 190)
+        self.assertEqual(eff["comment_icon_size_px"], 100)
         placement = _profile(eff).placement_for_role("comment")
         self.assertEqual(placement[0], 4)
-        self.assertEqual(placement[1], 140)
+        self.assertEqual(placement[1], 190)
 
 
 class PositionAnchorTest(unittest.TestCase):

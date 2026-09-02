@@ -109,9 +109,9 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
 
         # 字幕はクリップの開始位置ぶんだけ後ろへずらし、クリップの尺で打ち切る
         # (builder._append_subtitles と同じ規約 + 20260812 resolve2.md §5-1)
-        _append_subtitles(timeline, subtitle_track, entry.get("items"),
-                          clip_start, cursor - clip_start, segments,
-                          media.id, entry["index"])
+        append_subtitles(timeline, subtitle_track, entry.get("items"),
+                         clip_start, cursor - clip_start, segments,
+                         media.id, entry["index"])
 
         clip_meta.append({
             "index": entry["index"],
@@ -187,8 +187,8 @@ def _segments_of(entry, media):
 # (docs/error/20260812/Analyze.md §4)。整形の「発話末 +2 秒」がここに現れる。
 #
 # 由来の素材内時刻は TimeMap で逆算して origin へ残す (クリップ用と同じ扱い)。
-def _append_subtitles(timeline, subtitle_track, items, offset, clip_duration,
-                      segments, media_id, clip_index):
+def append_subtitles(timeline, subtitle_track, items, offset, clip_duration,
+                     segments, media_id, clip_index):
     timemap = TimeMap.from_segments(segments, media_id=media_id)
     trimmed = 0
     dropped = 0
@@ -443,6 +443,327 @@ def clip_range(timeline, clip_index):
     if not clips:
         return None
     return min(c.timeline_start for c in clips), max(c.timeline_end for c in clips)
+
+
+# ==================================================================
+# セクションの追加 (ver3 resolve13)
+# ==================================================================
+#
+# 編集画面から「元動画の区間」を指定してセクションを足す。挿入位置は元動画の
+# 時系列で決め、既存セクションと重なる (または接する) 場合は 1 つへ統合する。
+#
+#   plan_section_add()  : 何を用意し、何と統合するかを決める (副作用なし)
+#   AddArchiveSection   : 用意できた素材を Timeline へ入れるコマンド (Undo 対象)
+#
+# 採点方式 (archive/scoring.py) には一切触れない。追加は「採点結果へ後から足す」
+# 操作であり、スコアは既存の窓スコア列から推定する (estimate_section_score)。
+
+# セクションの重なり判定の許容誤差
+_SECTION_EPS = 1e-6
+
+
+# source.archive.clips のうち Timeline 上に実体があるものを vod_start 昇順で返す。
+# 実体が無い (= 全クリップを消された) セクションは並びの基準にしない。
+def sections_by_vod(timeline):
+    rows = []
+    for entry in (archive_section(timeline).get("clips") or []):
+        if not isinstance(entry, dict) or entry.get("index") is None:
+            continue
+        if clip_range(timeline, entry.get("index")) is None:
+            continue
+        rows.append(entry)
+    rows.sort(key=lambda e: float(e.get("vod_start", 0.0)))
+    return rows
+
+
+# 未使用のセクション番号 (既存の最大 + 1)。
+# 番号は振り直さない (resolve13 §3-3): 番号は V1/字幕の origin・テーマ・使用可否を
+# 繋ぐ唯一のキーであり、振り直すと全参照が壊れる。並び順は Timeline 位置が表す。
+def next_section_index(timeline):
+    used = [int(entry.get("index"))
+            for entry in (archive_section(timeline).get("clips") or [])
+            if isinstance(entry, dict) and entry.get("index") is not None]
+    return (max(used) + 1) if used else 1
+
+
+# 区間 [start, end] から covered (既存セクションの区間) を差し引いた残りを返す。
+# 「まだ素材が無く、これから用意しなければならない区間」がこれにあたる。
+def _subtract_covered(start, end, covered):
+    out = []
+    cursor = start
+    for cover_start, cover_end in sorted(covered):
+        if cover_start > cursor + _MIN_SEGMENT_SEC:
+            out.append((cursor, min(cover_start, end)))
+        cursor = max(cursor, cover_end)
+        if cursor >= end - _MIN_SEGMENT_SEC:
+            break
+    if end > cursor + _MIN_SEGMENT_SEC:
+        out.append((cursor, end))
+    return [(s, e) for s, e in out if e - s > _MIN_SEGMENT_SEC]
+
+
+# 追加操作の計画を立てる (副作用なし / resolve13 §3-2・§3-4)
+#
+# 重なり判定は scoring._merge_time_sections と同じ規約にする (接触も統合)。
+# 規約を 2 つ持つと、採点で統合された結果と手動追加の結果が食い違うため。
+#
+# 戻り値 (追加するものが無ければ None):
+#   {"ranges"       : [(開始, 終了)]  これから用意する VOD 区間 (昇順・既存と重ならない)
+#    "merge_indexes": [番号]          統合される既存セクション (昇順 / 単独追加なら空)
+#    "target_index" : 番号 or None    統合先 (= merge_indexes[0] / 単独追加なら None)
+#    "span"         : (開始, 終了)    追加後のセクションの VOD 区間 (統合時は和集合)}
+def plan_section_add(timeline, start_sec, end_sec, merge_on_overlap=True):
+    start = float(start_sec)
+    end = float(end_sec)
+    if end - start <= _MIN_SEGMENT_SEC:
+        return None
+
+    touched = []
+    if merge_on_overlap:
+        for entry in sections_by_vod(timeline):
+            entry_start = float(entry.get("vod_start", 0.0))
+            entry_end = float(entry.get("vod_end", 0.0))
+            # 接触も重なりとみなす (scoring._merge_time_sections と同規約)
+            if start <= entry_end + _SECTION_EPS and entry_start <= end + _SECTION_EPS:
+                touched.append(entry)
+
+    if not touched:
+        return {"ranges": [(start, end)], "merge_indexes": [],
+                "target_index": None, "span": (start, end)}
+
+    span_start = min(start, min(float(e.get("vod_start", 0.0)) for e in touched))
+    span_end = max(end, max(float(e.get("vod_end", 0.0)) for e in touched))
+    covered = [(float(e.get("vod_start", 0.0)), float(e.get("vod_end", 0.0)))
+               for e in touched]
+    ranges = _subtract_covered(span_start, span_end, covered)
+    if not ranges:
+        return None                      # 既存セクションに完全に含まれている
+    return {
+        "ranges": ranges,
+        "merge_indexes": [e.get("index") for e in touched],
+        "target_index": touched[0].get("index"),
+        "span": (span_start, span_end),
+    }
+
+
+# 追加区間のスコアを窓スコア列から推定する (resolve13 §5.4)
+# 採点はやり直さない (要望 G2)。区間に重なる窓の total の最大値を採り、
+# 重なる窓が 1 つも無ければ 0.0 とする。
+def estimate_section_score(curve, start_sec, end_sec):
+    best = 0.0
+    for entry in (curve or []):
+        if not isinstance(entry, dict):
+            continue
+        window_start = float(entry.get("start", 0.0))
+        window_end = float(entry.get("end", 0.0))
+        if window_start < float(end_sec) and float(start_sec) < window_end:
+            best = max(best, float(entry.get("total", 0.0)))
+    return round(best, 1)
+
+
+# 追加・統合の結果を prepared (書き出しが使う準備済みデータ) へ反映する。
+# 統合時は代表セクションの 1 件だけを残し、VOD 区間を和集合へ広げる。
+# start/end はイントロカードの切り出し位置 (clip_writer._build_intro_card) と
+# 個別出力のファイル名に使われるため、更新を忘れると統合後もイントロが
+# 古い位置の絵になる (resolve13 §3-4 ⑥)。
+def apply_prepared_after_add(prepared, plan, new_entries):
+    rows = [dict(row) for row in (prepared or [])]
+    target = (plan or {}).get("target_index")
+    if target is None:
+        return rows + list(new_entries or [])
+
+    span_start, span_end = plan["span"]
+    merged = set(plan.get("merge_indexes") or [])
+    merged.discard(target)
+    out = []
+    for row in rows:
+        if row.get("index") == target:
+            row["start"] = span_start
+            row["end"] = span_end
+            out.append(row)
+        elif row.get("index") in merged:
+            continue                     # 代表へ畳んだため落とす
+        else:
+            out.append(row)
+    return out
+
+
+# 用意できたセクション素材を Timeline へ挿入するコマンド (resolve13 §5.5)
+#
+# entries       : clip_writer.prepare_one_clip の戻り値の一覧。
+#                 統合時は「足りない差分」ぶんが複数入る (§3-4 案B)。
+#                 各要素は固有の index を持つ (挿入位置の算出を汚さないため)。
+# clip_settings : media_probe へ渡す設定 (OP/ED 無効化済みのコピー)
+# plan          : plan_section_add の戻り値
+#
+# 履歴はスナップショット方式のため逆操作は書かない。メディアプール・全トラック・
+# source がまとめて控えられており、Undo で完全に戻る (commands._snapshot)。
+class AddArchiveSection(commands.Command):
+
+    label = "セクションの追加"
+
+    def __init__(self, entries, clip_settings, plan, min_clip_sec=0.05):
+        self._entries = list(entries or [])
+        self._clip_settings = clip_settings or {}
+        self._plan = plan or {}
+        self._min_clip_sec = float(min_clip_sec)
+
+    def apply(self, timeline):
+        video = timeline.base_video_track()
+        if video is None or not self._entries:
+            return False
+        cfg = timeline_config(self._clip_settings)
+        audio = timeline.audio_track_for(video.id)
+        subtitle = self._subtitle_track(timeline)
+        if subtitle is None:
+            return False
+
+        # 挿入位置の基準は「追加前の」セクションの並び。追加した差分を基準に含めると
+        # 位置が自分自身へ引きずられるため、最初に 1 度だけ控える。
+        anchors = sections_by_vod(timeline)
+        # archive_section() は source.archive が無いとき使い捨ての {} を返すため、
+        # そこへ書いても Timeline へ残らない。アーカイブ用でなければ何もしない。
+        archive = archive_section(timeline)
+        if not archive:
+            _logger.warning("アーカイブ用 Timeline ではないためセクションを追加できません")
+            return False
+        meta = archive.setdefault("clips", [])
+
+        added = False
+        for entry in sorted(self._entries, key=lambda e: float(e.get("start", 0.0))):
+            if self._insert_one(timeline, entry, cfg, video, audio, subtitle,
+                                anchors, meta):
+                added = True
+        if not added:
+            return False
+
+        self._merge_sections(timeline, meta)
+        return True
+
+    # 字幕は構築時と同じ S1 へ載せる (build_archive_timeline と揃える)
+    def _subtitle_track(self, timeline):
+        track = timeline.track_by_id(BASE_SUBTITLE_TRACK_ID)
+        if track is not None and track.is_subtitle():
+            return track
+        tracks = sorted(timeline.subtitle_tracks(), key=lambda t: t.index)
+        return tracks[0] if tracks else None
+
+    # 差分 1 件を Timeline へ入れる
+    def _insert_one(self, timeline, entry, cfg, video, audio, subtitle, anchors, meta):
+        media = media_probe.probe(
+            entry["normalized_path"], timeline.next_id("m"),
+            self._clip_settings, cfg["media"])
+        duration_hint = float(entry.get("normalized_duration") or 0.0)
+        if duration_hint > 0:
+            media.duration_sec = duration_hint
+
+        segments = [(float(s), float(e)) for s, e in _segments_of(entry, media)
+                    if float(e) - float(s) > _MIN_SEGMENT_SEC]
+        duration = sum(e - s for s, e in segments)
+        if duration <= _MIN_SEGMENT_SEC:
+            _logger.warning("追加セクション clip%s は尺が短すぎるため入れません",
+                            entry.get("index"))
+            return False
+        timeline.media_pool.append(media)
+
+        at = self._insert_position(timeline, float(entry.get("end", 0.0)), anchors)
+        self._make_room(timeline, at, duration)
+
+        cursor = at
+        for seg_index, (start, end) in enumerate(segments):
+            clip_id = timeline.next_id("c")
+            video.clips.append(Clip(
+                clip_id, media.id, cursor, end - start,
+                source_in=start, source_out=end,
+                z_order=BASE_Z_ORDER,
+                origin={"type": ORIGIN_SILENCE_CUT,
+                        ORIGIN_ARCHIVE_INDEX: entry["index"],
+                        "segment_index": seg_index},
+            ))
+            if media.has_audio and audio is not None:
+                audio.clips.append(AudioClip(timeline.next_id("a"), clip_id))
+            cursor += end - start
+
+        # 字幕は構築時と同じ関数を通す (クリップ尺での打ち切り規約もそのまま効く)
+        append_subtitles(timeline, subtitle, entry.get("items"), at, cursor - at,
+                         segments, media.id, entry["index"])
+
+        meta.append({
+            "index": entry["index"],
+            "vod_start": float(entry.get("start", 0.0)),
+            "vod_end": float(entry.get("end", 0.0)),
+            "score": float(entry.get("score", 0.0)),
+            "timeline_start": at,
+            "timeline_end": cursor,
+            "media_id": media.id,
+            "theme": str(entry.get("theme", "") or ""),
+            "media_role": str(entry.get("media_role", "normalized") or "normalized"),
+        })
+        _logger.info(
+            "セクション追加: clip%s を %.2fs へ挿入 (VOD %.1f-%.1f / 尺 %.2fs)",
+            entry["index"], at, entry.get("start", 0.0), entry.get("end", 0.0), duration)
+        return True
+
+    # 元動画の時系列に合う Timeline 上の挿入位置を返す (resolve13 §3-2)
+    #   ・自分より後ろから始まる最初の既存セクションの手前へ入れる
+    #     (どのセクションよりも先頭なら、先頭セクションの位置 = Timeline の先頭)
+    #   ・見つからなければ末尾へ足す
+    # source.archive.clips の timeline_start は編集で古くなるため使わない (§2.10)。
+    # 実位置は clip_range() で取り直す。
+    def _insert_position(self, timeline, range_end, anchors):
+        for entry in anchors:
+            if float(entry.get("vod_start", 0.0)) >= range_end - _SECTION_EPS:
+                span = clip_range(timeline, entry.get("index"))
+                if span is not None:
+                    return span[0]
+        return timeline.duration_sec()
+
+    # 途中へ入れる場合は、その位置から後ろを尺ぶん右へずらす (resolve13 §3-2)
+    # 音声トラックとロック中トラックは make_room_for_range が自動で除外する。
+    # 挿入位置は必ずセクション境界のため、既存クリップが分割されることはない。
+    def _make_room(self, timeline, at, duration):
+        if at >= timeline.duration_sec() - _SECTION_EPS:
+            return
+        for track in list(timeline.tracks):
+            if track.is_audio():
+                continue
+            commands.make_room_for_range(
+                timeline, track, at, at + duration,
+                min_clip_sec=self._min_clip_sec, shift=duration)
+
+    # 統合: 触れた既存セクションと追加した差分を代表番号へ揃え、メタを 1 件へ畳む
+    def _merge_sections(self, timeline, meta):
+        target = self._plan.get("target_index")
+        if target is None:
+            return
+        merged = set(self._plan.get("merge_indexes") or [])
+        merged.update(entry["index"] for entry in self._entries)
+        merged.discard(target)
+        if not merged:
+            return
+
+        # V1 / 字幕の origin を代表番号へ書き換える
+        # (クリップは _snapshot が copy() しているため Undo で完全に戻る)
+        for track in timeline.tracks:
+            for clip in track.clips:
+                origin = getattr(clip, "origin", None)
+                if isinstance(origin, dict) and origin.get(ORIGIN_ARCHIVE_INDEX) in merged:
+                    origin[ORIGIN_ARCHIVE_INDEX] = target
+
+        span_start, span_end = self._plan["span"]
+        kept = []
+        for entry in meta:
+            if entry.get("index") == target:
+                entry["vod_start"] = span_start
+                entry["vod_end"] = span_end
+                kept.append(entry)
+            elif entry.get("index") in merged:
+                continue                 # 代表へ畳む
+            else:
+                kept.append(entry)
+        meta[:] = kept
+        _logger.info("セクション統合: clip%s へ %d 件を畳み込み (VOD %.1f-%.1f)",
+                     target, len(merged), span_start, span_end)
 
 
 # ==================================================================
