@@ -215,6 +215,73 @@ class QssTest(unittest.TestCase):
         qss = theme.build_qss(_settings("light"))
         self.assertEqual(qss.count("{"), qss.count("}"))
 
+    # ドロップダウンの押しボタンを潰している (ver3 resolve15 D3)。
+    # この規則が無いと右端だけスタイル既定の面が残り「浮き出て」見える。
+    def test_combo_dropdown_is_flat(self):
+        qss = theme.build_qss(_settings("dark"))
+        self.assertIn("QComboBox::drop-down", qss)
+        block = qss.split("QComboBox::drop-down", 1)[1].split("}", 1)[0]
+        self.assertIn("border: none", block)
+        self.assertIn("background: transparent", block)
+        # 矢印の大きさは定数と一致していること (QSS と Python でずれない)
+        self.assertIn(f"width: {theme.COMBO_ARROW_PX}px", qss)
+
+    # ドラッグ&ドロップ領域の規則がある (ver3 resolve15 C1)
+    def test_drop_area_rules(self):
+        qss = theme.build_qss(_settings("dark"))
+        self.assertIn(f"#{theme.DROP_AREA}", qss)
+        self.assertIn('#dropArea[dropActive="true"]', qss)
+        self.assertIn("dashed", qss)
+
+    # チェック済みの印が image: で載る (ver3 resolve15 D2)。
+    # 生成できない環境ではスキップ (印なしの塗りへ落ちるのが仕様 / §3-2)。
+    def test_checked_indicator_has_image(self):
+        settings = _settings("dark")
+        if not theme._indicator_assets(settings):
+            self.skipTest("記号アセットを生成できない環境")
+        qss = theme.build_qss(settings)
+        self.assertIn("QCheckBox::indicator:checked { image: url(", qss)
+        self.assertIn("QComboBox::down-arrow { image: url(", qss)
+
+    # 生成した PNG が実在し、2 回目はキャッシュから同じパスが返る
+    def test_indicator_assets_are_created(self):
+        settings = _settings("dark")
+        theme.invalidate_cache()
+        first = theme._indicator_assets(settings)
+        if not first:
+            self.skipTest("記号アセットを生成できない環境")
+        self.assertEqual(set(first), {"asset.check", "asset.arrow"})
+        for path in first.values():
+            self.assertTrue(os.path.exists(path), path)
+            # QSS の url() へ入れるため / 区切りであること
+            self.assertNotIn("\\", path)
+        self.assertEqual(theme._indicator_assets(settings), first)
+
+    # ライトとダークで別ファイルになる (色を取り違えない)
+    def test_indicator_assets_differ_by_mode(self):
+        theme.invalidate_cache()
+        dark = theme._indicator_assets(_settings("dark"))
+        theme.invalidate_cache()
+        light = theme._indicator_assets(_settings("light"))
+        if not dark or not light:
+            self.skipTest("記号アセットを生成できない環境")
+        # 矢印の色 (text.secondary) は明暗で変わるため別名になる
+        self.assertNotEqual(dark["asset.arrow"], light["asset.arrow"])
+
+    # アセットを作れなくても QSS は成立する (起動を妨げない / §3-2)
+    def test_qss_without_assets_still_valid(self):
+        original = theme._indicator_assets
+        theme._indicator_assets = lambda settings=None: {}
+        try:
+            theme.invalidate_cache()
+            qss = theme.build_qss(_settings("dark"))
+        finally:
+            theme._indicator_assets = original
+            theme.invalidate_cache()
+        self.assertNotIn("image: url(", qss)
+        self.assertEqual(qss.count("{"), qss.count("}"))
+        self.assertEqual(theme._PLACEHOLDER_RE.findall(qss), [])
+
     # パレットも両モードで生成できる (QSS が効かない箇所の保険)
     def test_build_palette(self):
         for mode in ("dark", "light"):
@@ -333,6 +400,28 @@ class SettingsIntegrationTest(unittest.TestCase):
         self.assertEqual(DEFAULT_SETTINGS["ui"]["theme_mode"], "auto")
         # 既定を書き換えても theme 側の定義には影響しない (複製されていること)
         self.assertIsNot(DEFAULT_SETTINGS["ui"], theme.DEFAULT_UI_SETTINGS)
+
+    # メイン画面の寸法設定が既定に揃っている (ver3 resolve15 §7)
+    def test_default_settings_contains_main_window(self):
+        window = theme.DEFAULT_UI_SETTINGS["main_window"]
+        self.assertEqual(
+            set(window),
+            {"width_px", "height_px", "drop_zone_ratio",
+             "drop_zone_min_height_px", "show_file_row"})
+        resolved = theme.main_window_config(_settings("dark"))
+        self.assertEqual(resolved["drop_zone_ratio"], 0.60)
+        self.assertFalse(resolved["show_file_row"])
+
+    # 不正な寸法は既定へ戻す (0 以下・非数値でウィンドウを壊さない)
+    def test_invalid_main_window_size_falls_back(self):
+        theme.invalidate_cache()
+        broken = _settings("dark", main_window={"width_px": 0, "height_px": "x",
+                                                "drop_zone_ratio": 5.0})
+        resolved = theme.main_window_config(broken)
+        defaults = theme.DEFAULT_UI_SETTINGS["main_window"]
+        self.assertEqual(resolved["width_px"], defaults["width_px"])
+        self.assertEqual(resolved["height_px"], defaults["height_px"])
+        self.assertEqual(resolved["drop_zone_ratio"], 1.0)   # 0.0〜1.0 へ丸める
 
     # 欠落した入れ子キーが補完される (利用者が setting.json で調整できるように)
     def test_nested_defaults_are_filled(self):

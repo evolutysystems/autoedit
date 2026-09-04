@@ -20,9 +20,12 @@
 # 例外方針 (§7):
 #   テーマの不具合でアプリが起動できない状態を作らない。
 #   本モジュールの公開関数はすべて失敗しても素の見た目へフォールバックする。
+import hashlib
 import logging
+import os
 import re
 import sys
+import tempfile
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
@@ -32,10 +35,12 @@ from PySide6.QtGui import (
     QLinearGradient,
     QPainter,
     QPalette,
+    QPen,
     QPixmap,
+    QPolygonF,
     QRadialGradient,
 )
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
 
 # モジュールロガー (標準ライブラリのみ使用。アプリ実行時は上位ハンドラへ伝播する)
 _logger = logging.getLogger(__name__)
@@ -57,9 +62,14 @@ PRIMARY_BUTTON_SOLID = "primaryButtonSolid"
 DANGER_BUTTON = "dangerButton"      # 破壊的動作 (輪郭のみ / §5.2-3)
 PREVIEW_CANVAS = "previewCanvas"    # プレビューの映像領域 (テーマ対象外・常に黒 / §5.6)
 
-# 各タブの主要動作ボタン (クリップ用「実行」/ アーカイブ用「採点開始」) の幅 (resolve4 §5.10)。
-# 両タブで同じ値を使うため theme に置く (archive_tab から main_window は import できない)。
-# 幅を明示しないと列に 1 つだけ残ったボタンが横幅いっぱいへ広がってしまう。
+# 画面中央に縦へ積むボタンの共通幅 (resolve4 §5.10 / ver3 resolve15 C8)。
+# 用途は 2 つある。
+#   ① 各タブの主要動作ボタン (クリップ用「実行」/ アーカイブ用「採点開始」)。
+#      幅を明示しないと列に 1 つだけ残ったボタンが横幅いっぱいへ広がってしまう。
+#   ② クリップ用タブの「続きから」(resolve15 §5.6-1)。実行ボタンの真上に並ぶため、
+#      幅が違うと左右の端が揃わない。幅を 2 か所で別々に持つと片方だけ直したときに
+#      再びずれるため、同じ定数を使う。
+# 両タブから使うため theme に置く (archive_tab から main_window は import できない)。
 PRIMARY_ACTION_BUTTON_WIDTH_PX = 96
 
 # アイコン描画サイズ (px) と記号 (resolve4 §3-5)。
@@ -70,6 +80,26 @@ RUN_GLYPH = "▶"         # ▶ 実行 / 採点開始 (再生)
 # 記号グリフを確実に描画するためのフォント候補 (Windows 標準の記号フォント)。
 # 既定 UI フォントは歯車(U+2699)等を持たない場合があるため明示する。
 ICON_FONT_FAMILIES = ["Segoe UI Symbol", "Segoe UI Emoji", "Segoe UI"]
+
+# チェック印・ドロップダウン矢印 (ver3 resolve15 §5.3)。
+# QSS の ::indicator / ::down-arrow と必ず同じ値にすること (ずれると印が欠ける)。
+CHECK_INDICATOR_PX = 14
+COMBO_ARROW_PX = 9
+COMBO_DROPDOWN_WIDTH_PX = 18
+
+# タブ右上コーナーの下余白 (ver3 resolve15 D1)。Qt のレイアウト既定間隔と同じ 6px。
+# QTabWidget はコーナーをタブバーの高さいっぱいに置くため、これが無いと
+# ボタンの下辺がペイン (タブの中身の面) へ接する。
+TAB_CORNER_BOTTOM_MARGIN_PX = 6
+
+# ドラッグ&ドロップ領域 (ver3 resolve15 C1)
+DROP_AREA = "dropArea"   # 破線のガラス面 (QSS の #dropArea)
+DROP_GLYPH = "⬇"         # ⬇ ここへ落とす
+CLEAR_GLYPH = "✕"        # ✕ 選択を消す
+DROP_ICON_PX = 44
+# D&D 領域の文言は画面の主役のため既定より 1 段大きくする (pt 加算)。
+# 選択後は太字にして「案内文」と「選ばれた名前」を見分けやすくする。
+DROP_TEXT_POINT_DELTA = 1
 
 
 # ==================================================================
@@ -121,6 +151,22 @@ DEFAULT_UI_SETTINGS = {
     "timeline_backdrop_opacity": {"dark": 0.55, "light": 0.82},
     # 可読性の下限。これを下回る不透明度は指定されても切り上げる (§3-4)
     "min_text_backdrop_opacity": 0.10,
+    # メイン画面 (ver3 resolve15 §7)。
+    # 従来 MainWindow は resize() を呼ばず中身に合わせて開いていたが、
+    # 「画面上部の一定割合」を D&D 領域にするには基準になる高さが要るため初期サイズを持たせる。
+    # timeline.ui.window_width / window_height と同じ考え方。
+    "main_window": {
+        "width_px": 700,             # 現行の最小幅 (実測 680) より狭いと効かない
+        "height_px": 520,            # 比率の基準になる高さ
+        # D&D 領域が占めるタブページ高の比率。
+        # 当初は要望どおり 0.40 だったが、画面下部に余白が残るため 0.60 へ広げた
+        # (request15 追加要望 / resolve15 C1)。
+        "drop_zone_ratio": 0.60,
+        "drop_zone_min_height_px": 140,   # 縮めたときの下限
+        # 隠したファイル選択欄と「参照...」を出すか (resolve15 C2)。
+        # 既定は非表示。true にすると従来どおりの行が戻る。
+        "show_file_row": False,
+    },
 }
 
 
@@ -316,6 +362,20 @@ def _validated_opacity(value, default, key):
     return number
 
 
+# 正の px を検証する。0 以下・非数値は既定へ戻す (ver3 resolve15 §7)。
+# 半径 (0 を許す) とは別関数にしている。ウィンドウ幅 0 は破綻するため。
+def _validated_size(value, default, key):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        _logger.warning('ui.%s が不正なため既定を使用します: "%s"', key, value)
+        return int(default)
+    if number <= 0:
+        _logger.warning("ui.%s が 0 以下のため既定を使用します: %s", key, number)
+        return int(default)
+    return number
+
+
 # 半径 (px) を検証する。負値・非数値は既定へ戻す。
 def _validated_radius(value, default, key):
     try:
@@ -420,6 +480,17 @@ def _resolve_config(settings=None):
             "background.{}".format(key))
     cfg["timeline_backdrop_opacity"] = _validated_timeline_opacity(
         cfg["timeline_backdrop_opacity"])
+
+    # メイン画面 (ver3 resolve15 §7)
+    window = cfg["main_window"]
+    defaults = DEFAULT_UI_SETTINGS["main_window"]
+    for key in ("width_px", "height_px", "drop_zone_min_height_px"):
+        window[key] = _validated_size(
+            window[key], defaults[key], "main_window.{}".format(key))
+    window["drop_zone_ratio"] = _validated_opacity(
+        window["drop_zone_ratio"], defaults["drop_zone_ratio"],
+        "main_window.drop_zone_ratio")
+    window["show_file_row"] = bool(window["show_file_row"])
     return cfg
 
 
@@ -441,6 +512,13 @@ def _validated_timeline_opacity(value):
 # ガラステーマが有効か (ui.theme = "system" のときは従来の Qt 既定へ完全に戻す / §7)
 def is_enabled(settings=None):
     return _config(settings)["theme"] != "system"
+
+
+# メイン画面の寸法設定を返す (ver3 resolve15 §7)。
+# 初期サイズ・D&D 領域の比率・隠した行の表示可否をまとめて持つ。
+# ui.theme = "system" でも寸法は使うため、is_enabled とは独立に返す。
+def main_window_config(settings=None):
+    return _config(settings)["main_window"]
 
 
 # ==================================================================
@@ -516,6 +594,9 @@ def invalidate_cache():
     global _config_cache, _mode_cache
     _token_cache.clear()
     _color_cache.clear()
+    # 記号アセットも色に依存するため引き直させる (ver3 resolve15 §5.3)。
+    # ファイル自体は残るが、同じ色なら同じ名前になるため増え続けない。
+    _asset_cache.clear()
     _config_cache = None
     _mode_cache = None
 
@@ -719,6 +800,31 @@ QComboBox QAbstractItemView {
     selection-background-color: {accent};
     selection-color: {accent.on};
 }
+/* ドロップダウンの押しボタンを消し、矢印だけを見せる (ver3 resolve15 §2.3)。
+   ::drop-down を書かないとスタイルが既定の押しボタンを描き、右端だけ一段明るい面
+   (実測 #4F4F4F / 本体 #383838) になって浮き出て見える。部品カタログ
+   (docs/layout/theme.css の .combo) は面を持たず三角だけのため、それに合わせる。
+   矢印そのものは _QSS_ASSET_TEMPLATE で載せる (生成できなければ素のスタイルへ落ちる)。 */
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: {combo.dropdown.width};
+    border: none;
+    background: transparent;
+}
+QComboBox::down-arrow { width: {combo.arrow.size}; height: {combo.arrow.size}; }
+
+/* ドラッグ&ドロップ領域 (ver3 resolve15 C1)。破線で「ここへ落とせる」ことを示す。
+   ドラッグ中は dropActive でアクセント色へ変える (受理できることの合図)。 */
+#dropArea {
+    background-color: {glass.bg};
+    border: {border.width} dashed {glass.border};
+    border-radius: {radius.panel};
+}
+#dropArea[dropActive="true"] {
+    background-color: {glass.bg.hover};
+    border-color: {accent.line};
+}
 
 QTabWidget::pane {
     background: {glass.bg};
@@ -831,13 +937,128 @@ QCheckBox::indicator:checked { background: {accent}; border-color: {accent}; }
 QCheckBox::indicator:disabled { border-color: {text.disabled}; }
 """
 
+# 実行時に描いた PNG を使う規則 (ver3 resolve15 §5.2)。
+# 生成に失敗したときは丸ごと出力しない。チェックは「印なしの塗り」(従来の見た目)、
+# 矢印は素のスタイルへ落ちるだけで、起動は妨げない (§7 の方針)。
+# パスは空白や日本語を含み得るため必ず引用符で囲む。
+_QSS_ASSET_TEMPLATE = """
+QCheckBox::indicator:checked { image: url("{asset.check}"); }
+QComboBox::down-arrow { image: url("{asset.arrow}"); }
+"""
+
+# 色ではない寸法トークン (QSS のプレースホルダへ埋める / ver3 resolve15)。
+# QSS の値と Python 側の定数が食い違わないよう、定数から組み立てる。
+_SHAPE_EXTRA = {
+    "combo.dropdown.width": "{}px".format(COMBO_DROPDOWN_WIDTH_PX),
+    "combo.arrow.size": "{}px".format(COMBO_ARROW_PX),
+}
+
 # プレースホルダ (英小文字・数字・ドットのみ) を拾う。CSS の { 改行 } とは一致しない。
 _PLACEHOLDER_RE = re.compile(r"\{([a-z][a-z0-9.]*)\}")
 
 
+# ==================================================================
+# 記号アセットの生成 (ver3 resolve15 §5.3)
+#
+# QSS の image: url(...) はファイルパスしか受け付けない (データ URI は使えない) ため、
+# チェック印と下向き矢印を PNG へ描いて一時フォルダへ置き、そのパスを QSS へ埋め込む。
+# 置き場所に tempfile を使うのは updater と同じ理由で、インストール先が
+# 書き込み不可 (Program Files) でも成立させるため。
+#
+# 記号フォントではなく QPainter の図形で描くのは、14px の枠に収める印は
+# フォント依存だと環境ごとに太さが揃わないため。
+# ==================================================================
+
+_ASSET_DIR_NAME = "stretheus_theme"
+# 高 DPI 用に実寸の 3 倍で描き、QSS の width/height で縮めさせる
+_ASSET_SCALE = 3
+
+# 生成済みアセットのキャッシュ ((モード, 印の色, 矢印の色) → {トークン名: パス})。
+# 色をキーに含めるのは、テーマやアクセント色を変えたときに取り違えないため。
+_asset_cache = {}
+
+
+# チェック印を描いた PNG を作りパスを返す (accent.on = アクセント塗りの上に載せる色)
+def _write_check_png(directory, stamp, color_value):
+    size = CHECK_INDICATOR_PX * _ASSET_SCALE
+    path = os.path.join(directory, "check_{}_{}.png".format(size, stamp))
+    if os.path.exists(path):
+        return path
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        pen = QPen(parse_color(color_value) or QColor("#000000"))
+        pen.setWidthF(size * 0.18)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPolyline(QPolygonF([
+            QPointF(size * 0.20, size * 0.52),
+            QPointF(size * 0.42, size * 0.74),
+            QPointF(size * 0.80, size * 0.26),
+        ]))
+    finally:
+        painter.end()
+    if not pixmap.save(path, "PNG"):
+        raise OSError("チェック印を保存できませんでした: {}".format(path))
+    return path
+
+
+# 下向き三角を描いた PNG を作りパスを返す (色は text.secondary = カタログと同じ)
+def _write_arrow_png(directory, stamp, color_value):
+    size = COMBO_ARROW_PX * _ASSET_SCALE
+    path = os.path.join(directory, "arrow_{}_{}.png".format(size, stamp))
+    if os.path.exists(path):
+        return path
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setBrush(parse_color(color_value) or QColor("#000000"))
+        painter.setPen(Qt.NoPen)
+        painter.drawPolygon(QPolygonF([
+            QPointF(size * 0.08, size * 0.30),
+            QPointF(size * 0.92, size * 0.30),
+            QPointF(size * 0.50, size * 0.74),
+        ]))
+    finally:
+        painter.end()
+    if not pixmap.save(path, "PNG"):
+        raise OSError("ドロップダウンの矢印を保存できませんでした: {}".format(path))
+    return path
+
+
+# チェック印・矢印の PNG を用意し、QSS へ埋めるパスを返す。
+# 作れなければ {} を返し、呼び出し側は image: の規則ごと出力しない (§3-2)。
+def _indicator_assets(settings=None):
+    resolved = tokens(settings)
+    key = (mode(settings), resolved["accent.on"], resolved["text.secondary"])
+    cached = _asset_cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        directory = os.path.join(tempfile.gettempdir(), _ASSET_DIR_NAME)
+        os.makedirs(directory, exist_ok=True)
+        stamp = hashlib.md5("|".join(key).encode("utf-8")).hexdigest()[:8]
+        paths = {
+            # QSS の url() は / 区切りで書く (Windows の \ はエスケープ扱いになる)
+            "asset.check": _write_check_png(directory, stamp, key[1]).replace("\\", "/"),
+            "asset.arrow": _write_arrow_png(directory, stamp, key[2]).replace("\\", "/"),
+        }
+    except Exception:  # noqa: BLE001 (印が出ないだけで起動は妨げない / §3-2)
+        _logger.exception("チェック印・矢印の生成に失敗しました (印なしで続行します)")
+        return {}
+    _asset_cache[key] = paths
+    return paths
+
+
 # トークンを埋め込んだ QSS 文字列を返す (§5.3)
 def build_qss(settings=None):
-    resolved = tokens(settings)
+    resolved = dict(tokens(settings))
+    resolved.update(_SHAPE_EXTRA)
 
     def replace(match):
         name = match.group(1)
@@ -847,7 +1068,13 @@ def build_qss(settings=None):
             return match.group(0)
         return value
 
-    return _PLACEHOLDER_RE.sub(replace, _QSS_TEMPLATE)
+    qss = _PLACEHOLDER_RE.sub(replace, _QSS_TEMPLATE)
+    # 記号の画像が作れたときだけ image: の規則を足す (ver3 resolve15 §3-2)
+    assets = _indicator_assets(settings)
+    if assets:
+        resolved.update(assets)
+        qss += _PLACEHOLDER_RE.sub(replace, _QSS_ASSET_TEMPLATE)
+    return qss
 
 
 # QSS が効かない箇所の保険となる QPalette を返す
@@ -1224,6 +1451,21 @@ def bind_tab_pane_corner(tab_widget):
 
     tab_widget.currentChanged.connect(sync)
     sync(tab_widget.currentIndex())
+
+
+# タブ右上のコーナーへウィジェットを置く (ver3 resolve15 D1)。
+# QTabWidget はコーナーをタブバーの高さいっぱいに置くため、直接入れると
+# ボタンの下辺がペインへ接する。QSS では余白を作れない (QTabBar の規則はタブにしか
+# 効かない) ため、余白付きの入れ物で包んでから渡す。
+# 戻り値は入れ物。呼び出し側は包んだウィジェット自身の参照をそのまま使い続けられる。
+def install_tab_corner(tab_widget, widget, corner=Qt.TopRightCorner):
+    holder = QWidget(tab_widget)
+    layout = QHBoxLayout(holder)
+    layout.setContentsMargins(0, 0, 0, TAB_CORNER_BOTTOM_MARGIN_PX)
+    layout.setSpacing(0)
+    layout.addWidget(widget)
+    tab_widget.setCornerWidget(holder, corner)
+    return holder
 
 
 # Unicode 記号を指定色で描画して QIcon 化する (resolve4 §3-5)。

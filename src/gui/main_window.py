@@ -18,8 +18,12 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.exceptions import PipelineCancelled
     from src.gui.archive_tab import ArchiveTabWidget
+    from src.gui.file_drop_area import FileDropArea
     from src.gui.project_library_dialog import ProjectLibraryDialog
-    from src.gui.project_resume_row import ProjectResumeRow
+    from src.gui.project_resume_row import (
+        PROJECT_FILE_FILTER,
+        confirm_project_kind,
+    )
     from src.gui.subtitle_editor_dialog import SubtitleEditorDialog
     from src.gui.timeline.missing_media_dialog import MediaRelinkBridge
     from src.gui.timeline.timeline_editor_dialog import TimelineEditorDialog
@@ -61,8 +65,9 @@ else:
     from ..version import __version__
     from . import theme
     from .archive_tab import ArchiveTabWidget
+    from .file_drop_area import FileDropArea
     from .project_library_dialog import ProjectLibraryDialog
-    from .project_resume_row import ProjectResumeRow
+    from .project_resume_row import PROJECT_FILE_FILTER, confirm_project_kind
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .timeline.missing_media_dialog import MediaRelinkBridge
     from .timeline.timeline_editor_dialog import TimelineEditorDialog
@@ -95,6 +100,28 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
 
 # 保存済みプロジェクトのファイルフィルタ・一覧の特殊項目は
 # 共有ウィジェット側 (gui/project_resume_row.py) へ移した (ver3 resolve9 §5.9)
+
+# クリップ用タブで選べるものの種別 (ver3 resolve15 §5.6-3)。
+# 選択は 1 つだけで、動画かプロジェクトのどちらかしか入らない。
+# 文言・× ボタン・実行ボタンはすべてこの選択を見る。
+_KIND_VIDEO = "video"
+_KIND_PROJECT = "project"
+
+# D&D 領域の案内文と補足 (ver3 resolve15 C1 / C4)
+_DROP_PLACEHOLDER = "ドラッグ＆ドロップでファイルを選択"
+_DROP_HINT = "動画ファイル / 保存した Timeline プロジェクト"
+_DROP_HINT_VIDEO = "実行すると無音カットからはじまります"
+_DROP_HINT_PROJECT = "実行すると編集の続きから書き出します"
+
+
+# ボタン 1 個を画面中央に置く行を作る (ver3 resolve15 §5.6-1)。
+# 両側に伸縮を入れるだけ。ボタン自身の幅は固定のため広がらない。
+def _centered(widget):
+    row = QHBoxLayout()
+    row.addStretch(1)
+    row.addWidget(widget)
+    row.addStretch(1)
+    return row
 
 # 稼働証明スピナーのコマ (Claude Code 風の回転記号) と更新間隔
 # 表示崩れ環境向けに ASCII 版 ["|", "/", "-", "\\"] へ差し替え可能
@@ -472,53 +499,68 @@ class ClipTabWidget(QWidget):
         self._timeline_bridge = None
         # 素材の再リンク画面の橋渡し参照 (ver3 resolve7 Phase 5)
         self._relink_bridge = None
+        # 選択は 1 つだけ (ver3 resolve15 §5.6-3)。(種別, パス) か (None, "")。
+        self._selection = (None, "")
         self._build_ui()
         # このタブ上で動画ファイルのドロップを受け付ける (resolve12)
         self.setAcceptDrops(True)
 
-    # 画面構築
+    # 画面構築 (ver3 resolve15 §5.6-1)
+    # 上から D&D 領域 (上部 40%) → 続きから → 実行 → 進捗バー → 実行状況ラベル。
     def _build_ui(self):
         root = QVBoxLayout(self)
 
-        # 入力動画選択 ("入力動画:" のラベルは廃止し、入力欄のプレースホルダで案内する)
+        # ① ドラッグ&ドロップ領域 (resolve15 C1 / C4)。
+        # 画面の主役。落としたファイル名をここへ出し、× で取り消す。
+        self.drop_area = FileDropArea(_DROP_PLACEHOLDER, _DROP_HINT)
+        self.drop_area.cleared.connect(self._clear_selection)
+        root.addWidget(self.drop_area)
+
+        # 入力動画選択 (resolve15 C2 で既定は非表示)。
+        # 消さずに残すのは、設定 ui.main_window.show_file_row で従来の行へ戻せるように
+        # するため。値の正は _selection 側にあり、この欄は表示用の控え。
         input_row = QHBoxLayout()
         self.input_edit = QLineEdit()
         # 動画ファイルを直接ドラッグ&ドロップできる旨を案内する (resolve12)
         self.input_edit.setPlaceholderText("動画ファイルをここにドラッグ&ドロップ、または「参照...」")
+        self.input_edit.editingFinished.connect(self._on_input_edited)
         input_row.addWidget(self.input_edit)
         self.browse_button = QPushButton("参照...")
         self.browse_button.clicked.connect(self._on_browse)
         input_row.addWidget(self.browse_button)
         root.addLayout(input_row)
+        show_file_row = theme.main_window_config(self._settings)["show_file_row"]
+        self.input_edit.setVisible(show_file_row)
+        self.browse_button.setVisible(show_file_row)
 
-        # 実行ボタン (文言ではなく再生アイコン。用途はツールチップで示す)
+        # ② 続きから (resolve15 C6)。押すと一覧を開く = 従来の「一覧...」と同じ動作。
+        # 幅は実行ボタンと同じにする (C8)。中央に縦へ 2 つ積むため、幅が違うと
+        # 左右の端が揃わない。塗りは付けない (主要動作は実行ボタンだけ)。
+        self.resume_button = QPushButton("続きから")
+        self.resume_button.setToolTip(
+            "保存した Timeline プロジェクトを一覧から選びます")
+        self.resume_button.setFixedWidth(theme.PRIMARY_ACTION_BUTTON_WIDTH_PX)
+        self.resume_button.clicked.connect(self._open_library)
+        root.addLayout(_centered(self.resume_button))
+
+        # ③ 実行ボタン (文言ではなく再生アイコン。用途はツールチップで示す)
         # アプリの主要動作のためアクセント塗り (primaryButton) にする (resolve3 §5.2-2)。
-        # 設定ボタンはタブ外へ移したため、この列には実行ボタンだけが残る (resolve4 M3)。
-        # 幅を明示しないと列いっぱいに広がって間延びする (resolve4 §5.10-2)。
-        button_row = QHBoxLayout()
+        # デザインは従来のままで、位置だけ画面中央へ移した (resolve15 C7)。
         self.run_button = QPushButton()
         self.run_button.clicked.connect(self._on_run)
         theme.setup_primary_action_button(self.run_button, theme.RUN_GLYPH, "実行")
-        button_row.addWidget(self.run_button)
-        button_row.addStretch(1)
-        root.addLayout(button_row)
+        root.addLayout(_centered(self.run_button))
 
-        # 編集の続き (保存済み Timeline プロジェクトを開き直す / ver3 resolve7 §5.11)
-        # 前半 (正規化・無音検出・音声認識) を飛ばし、保存した編集の続きから書き出す。
-        # 行はアーカイブタブと共有のウィジェット (ver3 resolve9 §5.9)。
-        self.resume_row = ProjectResumeRow(project_io.KIND_CLIP, self._settings)
-        self.resume_row.resume_requested.connect(self._start_resume)
-        self.resume_row.library_requested.connect(self._open_library)
-        self.resume_row.wrong_kind_selected.connect(
-            lambda path, kind: self.switch_tab_requested.emit(kind, path))
-        root.addWidget(self.resume_row)
-
-        # 進捗バー + ステータス
+        # ④ 進捗バー + ⑤ ステータス (デザインは従来のまま / resolve15 C7)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         root.addWidget(self.progress_bar)
         self.status_label = QLabel("待機中")
         root.addWidget(self.status_label)
+        # 余った縦の空きは最後にまとめて捨てる (ver3 resolve15 §5.6-1)。
+        # これが無いと空きが部品の間へ均等に配られ、ラベルが宙に浮いて見える。
+        # D&D 領域は固定高のため、この伸縮に吸われることはない。
+        root.addStretch(1)
 
         # 稼働証明スピナー: 実行中のみ status_label 先頭で回転させる
         # 進捗率が出ない工程 (音声認識等) でも「動いている」ことを示す
@@ -532,6 +574,71 @@ class ClipTabWidget(QWidget):
     # ボタンアイコンは QPixmap へ焼き込むため、OS の明暗が切り替わったら作り直す必要がある。
     def refresh_theme(self):
         theme.refresh_primary_action_icon(self.run_button, theme.RUN_GLYPH)
+        # D&D 領域のアイコン (⬇ / ✕) も同じ理由で描き直す (ver3 resolve15)
+        self.drop_area.refresh_theme()
+
+    # ===== 上部 40% の追従 (ver3 resolve15 §5.6-2) =====
+
+    # D&D 領域を「タブページの高さ × 比率」に合わせる。
+    # 子の固定高を変えるだけなので親の大きさは変わらず、再帰しない。
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_drop_zone_height()
+
+    # D&D 領域の高さを決める。
+    # 40% を守るより「下の部品 (続きから・実行・進捗・ラベル) が消えない」を優先する。
+    # 実行ボタンが見えなくなる方が実害が大きいため (resolve15 §3-4 / Q3)。
+    def _apply_drop_zone_height(self):
+        cfg = theme.main_window_config(self._settings)
+        minimum = cfg["drop_zone_min_height_px"]
+        target = max(minimum, int(self.height() * cfg["drop_zone_ratio"]))
+        layout = self.layout()
+        if layout is not None:
+            # 残りの部品が要る高さ = レイアウトの最小高 - D&D 領域が主張している高さ
+            rest = layout.minimumSize().height() - self.drop_area.minimumHeight()
+            if self.height() - target < rest:
+                target = max(minimum, self.height() - rest)
+        self.drop_area.setFixedHeight(target)
+
+    # ===== 選択 (動画 / プロジェクトのどちらか 1 つ / ver3 resolve15 §5.6-3) =====
+
+    # 入力動画を選択状態にする (相手側 = プロジェクトの選択は消える)
+    def _select_video(self, path):
+        self._selection = (_KIND_VIDEO, path)
+        self.input_edit.setText(path)
+        self.drop_area.set_selection(
+            os.path.basename(path), path, _DROP_HINT_VIDEO)
+
+    # 保存済みプロジェクトを選択状態にする (種別を確かめてから / resolve15 §5.6-5)。
+    # MainWindow からも呼ぶため公開名にしている (種別違いの受け渡し / §5.7)。
+    def select_project(self, path):
+        if not path:
+            return
+        ok, kind = confirm_project_kind(self, path, project_io.KIND_CLIP)
+        if not ok:
+            if kind:
+                # 相手のタブへ回す (選択状態にするところまで。実行はしない)
+                self.switch_tab_requested.emit(kind, path)
+            return
+        self._selection = (_KIND_PROJECT, path)
+        self.input_edit.clear()
+        self.drop_area.set_selection(
+            os.path.basename(path), path, _DROP_HINT_PROJECT)
+
+    # 選択を取り消して案内文へ戻す (× ボタン / resolve15 C4)
+    def _clear_selection(self):
+        self._selection = (None, "")
+        self.input_edit.clear()
+        self.drop_area.clear()
+        self.status_label.setText("待機中")
+
+    # 隠した入力欄が直接編集されたとき (show_file_row = true のときだけ起きる)
+    def _on_input_edited(self):
+        path = self.input_edit.text().strip()
+        if path:
+            self._select_video(path)
+        elif self._selection[0] == _KIND_VIDEO:
+            self._clear_selection()
 
     # スピナーを1コマ進めて status_label を更新する (QTimer 駆動)
     def _tick_spinner(self):
@@ -539,35 +646,44 @@ class ClipTabWidget(QWidget):
         self._spinner_index += 1
         self.status_label.setText(f"{frame} {self._spinner_message}")
 
-    # 入力動画をファイルダイアログで選択する
+    # 入力動画をファイルダイアログで選択する (show_file_row = true のときだけ押せる)
     def _on_browse(self):
         start_dir = self._settings.get("general", {}).get("video_directory", "")
         path, _ = QFileDialog.getOpenFileName(
             self, "入力動画を選択", start_dir, _VIDEO_FILE_FILTER
         )
         if path:
-            self.input_edit.setText(path)
+            self._select_video(path)
 
     # ===== ドラッグ&ドロップによる入力動画選択 (resolve12) =====
 
     # ドラッグされたものが単一のローカル動画ファイルのときのみ受理を通知する
+    # 受理できるあいだは D&D 領域の枠をアクセント色にする (ver3 resolve15 C3)
     def dragEnterEvent(self, event):
         if self._is_acceptable_drop(event):
+            self.drop_area.set_drop_active(True)
             event.acceptProposedAction()
         else:
             event.ignore()
 
+    # ドラッグが領域から出たら枠を戻す
+    def dragLeaveEvent(self, event):
+        self.drop_area.set_drop_active(False)
+        super().dragLeaveEvent(event)
+
     # ドロップされたファイルを受け取る
-    # 動画は入力欄へ、保存済みプロジェクトは「編集の続き」へ入れる (ver3 resolve7 §5.11)
+    # 動画もプロジェクトも「選ぶだけ」。長い処理は実行ボタンで明示的に始めさせる
+    # (ver3 resolve15 §5.6-5)。
     def dropEvent(self, event):
+        self.drop_area.set_drop_active(False)
         project = self._dropped_project_path(event)
         if project:
-            self._select_project(project)
+            self.select_project(project)
             event.acceptProposedAction()
             return
         path = self._dropped_video_path(event)
         if path:
-            self.input_edit.setText(path)
+            self._select_video(path)
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -593,21 +709,38 @@ class ClipTabWidget(QWidget):
 
     # ===== 編集の続き (保存済みプロジェクトの再編集 / ver3 resolve7 §5.11) =====
 
-    # 最近使ったプロジェクトの一覧を作り直す (setting.json timeline.project.recent)
+    # 履歴を読み直す (setting.json timeline.project.recent)。
+    # 「編集の続き」行は無くなった (ver3 resolve15 C5) ため画面には出さないが、
+    # 一覧画面へ最新の履歴を渡すために設定そのものは読み直す必要がある。
     def _refresh_recent_projects(self):
-        self.resume_row.set_settings(self._settings)
+        self._settings = load_settings()
 
-    # 一覧画面を開く (ver3 resolve9 §5.12)。開くときは自分のタブで再開する。
+    # 一覧画面を開く (ver3 resolve9 §5.12 / ver3 resolve15 C6 で「続きから」の動作)。
+    # 選ばれても実行はしない。文言へ名前を出すところまで (resolve15 §3-6)。
     def _open_library(self):
+        self._refresh_recent_projects()
+        if not timeline_config(self._settings)["project"]["library"]["enabled"]:
+            # 一覧を無効にしている設定でもボタンが死ににならないよう、
+            # ファイル選択ダイアログへ落とす
+            path = self._browse_project()
+            if path:
+                self.select_project(path)
+            return
         dialog = ProjectLibraryDialog(project_io.KIND_CLIP, self._settings, parent=self)
-        dialog.open_requested.connect(self._on_library_open)
+        dialog.open_requested.connect(self.select_project)
         dialog.changed.connect(self._refresh_recent_projects)
         dialog.exec()
         self._refresh_recent_projects()
 
-    def _on_library_open(self, path):
-        self.resume_row.select(path)
-        self._start_resume(path)
+    # プロジェクトファイルを直接選ぶ (初期フォルダ: project_dir → 出力先)
+    def _browse_project(self):
+        timeline_cfg = self._settings.get("timeline", {}) or {}
+        start_dir = (timeline_cfg.get("project_dir", "")
+                     or (self._settings.get("general", {}) or {}).get(
+                         "output_directory", ""))
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Timeline プロジェクトを選択", start_dir, PROJECT_FILE_FILTER)
+        return path
 
     # 自動保存が本体より新しければ、そちらから復元するか尋ねる (ver3 resolve7 §5.9)
     # 戻り値: 読み込みに使うパス (復元しないなら None = 本体をそのまま開く)
@@ -672,20 +805,32 @@ class ClipTabWidget(QWidget):
                 return local
         return None
 
-    # D&D されたプロジェクトを「編集の続き」の選択状態にする
-    # 落としただけで長い処理が始まらないよう、実行は「開く...」で明示的に行わせる。
-    def _select_project(self, path):
-        self.resume_row.select(path)
-        self.status_label.setText(
-            f"編集の続き: {os.path.basename(path)}（「開く...」で再開します）")
-
-    # 実行ボタン押下: パイプラインをワーカースレッドで起動する
+    # 実行ボタン押下: 選ばれているものに応じて経路を分ける (ver3 resolve15 §5.6-4)。
+    # 動画なら従来のパイプライン、プロジェクトなら「編集の続き」。
     def _on_run(self):
-        input_path = self.input_edit.text().strip()
-        if not input_path or not os.path.exists(input_path):
+        kind, path = self._selection
+        if kind is None:
+            QMessageBox.warning(
+                self, "入力エラー",
+                "動画ファイルをドラッグ&ドロップするか、"
+                "「続きから」でプロジェクトを選んでください。")
+            return
+        if kind == _KIND_PROJECT:
+            if not os.path.exists(path):
+                QMessageBox.warning(
+                    self, "開けません",
+                    f"プロジェクトファイルが見つかりません。\n{path}")
+                return
+            self._start_resume(path)
+            return
+        if not os.path.exists(path):
             QMessageBox.warning(self, "入力エラー", "存在する入力動画を指定してください。")
             return
+        self._run_pipeline(path)
 
+    # 入力動画からのパイプラインをワーカースレッドで起動する
+    # (旧 _on_run の入力チェック以降をそのまま移したもの / resolve15 §5.6-4)
+    def _run_pipeline(self, input_path):
         # 設定を最新化 (settings_window で変更された可能性に備える)
         self._settings = load_settings()
 
@@ -728,10 +873,12 @@ class ClipTabWidget(QWidget):
     # 実行中の UI 状態を切り替える
     def _set_running(self, running):
         self.run_button.setEnabled(not running)
+        # 隠している行も状態は揃えておく (show_file_row = true で出したときのため)
         self.browse_button.setEnabled(not running)
         self.input_edit.setEnabled(not running)
-        # 編集の続き (ver3 resolve7 §5.11 / 行は resolve9 で共有ウィジェットへ)
-        self.resume_row.set_busy(running)
+        # 続きから / D&D 領域の × (ver3 resolve15)。実行中は選択を変えさせない。
+        self.resume_button.setEnabled(not running)
+        self.drop_area.set_busy(running)
         if not running:
             # 編集画面で保存されていれば履歴が増えているため作り直す
             self._refresh_recent_projects()
@@ -790,6 +937,13 @@ class MainWindow(QWidget):
         # 実行中のタブ (resolve4 §5.7-4)。空でないあいだ設定ボタンを無効化する。
         self._running_tabs = set()
         self._build_ui()
+        # 初期サイズ (ver3 resolve15 §5.7)。
+        # 従来は中身に合わせて開いていたが、クリップ用タブの D&D 領域を
+        # 「タブページの高さの 40%」にするには基準になる高さが要る。
+        window_cfg = theme.main_window_config(self._settings)
+        self.resize(window_cfg["width_px"], window_cfg["height_px"])
+        # タブの中身の外 (タブバーの帯など) へ落とされたぶんを拾う (resolve15 C3)
+        self.setAcceptDrops(True)
 
         # ガラスモーフィズム (ver3 resolve3 §5.9)
         # 背景のグラデーションを描き、OS の明暗切り替えに追随する。
@@ -852,7 +1006,9 @@ class MainWindow(QWidget):
         self.settings_button.setToolTip("設定")
         theme.mark_icon_button(self.settings_button)
         self.settings_button.clicked.connect(self._on_open_settings)
-        self.tabs.setCornerWidget(self.settings_button, Qt.TopRightCorner)
+        # コーナーへ直接置くとボタンの下辺がペインへ接するため、
+        # 余白付きの入れ物で包んでから渡す (ver3 resolve15 D1)。
+        theme.install_tab_corner(self.tabs, self.settings_button)
         self._refresh_settings_icon()
 
         # どちらかのタブが実行中なら設定ボタンを無効化する (resolve4 §5.7-4 / 回答 Q1)
@@ -867,15 +1023,37 @@ class MainWindow(QWidget):
 
         root.addWidget(self.tabs)
 
-    # 種別違いのプロジェクトを、その種別のタブの「編集の続き」へ移す (ver3 resolve9 §3-4)
-    # 実行はしない (選択状態にするところまで)。長い処理は「開く...」で明示的に始めさせる。
+    # 種別違いのプロジェクトを、その種別のタブの選択状態へ移す (ver3 resolve9 §3-4)
+    # 実行はしない (選択状態にするところまで)。長い処理は各タブで明示的に始めさせる。
+    # クリップ用タブは「編集の続き」行を持たなくなったため、タブ共通の受け口
+    # select_project を呼ぶ (ver3 resolve15 §5.7)。
     def _switch_to_kind(self, kind, project_path):
         tab = (self.archive_tab if kind == project_io.KIND_ARCHIVE else self.clip_tab)
-        row = getattr(tab, "resume_row", None)
-        if row is None:
+        selector = getattr(tab, "select_project", None)
+        if selector is None:
             return
         self.tabs.setCurrentWidget(tab)
-        row.select(project_path)
+        selector(project_path)
+
+    # ===== 画面のどこへ落としても受け取る (ver3 resolve15 C3) =====
+    #
+    # タブの中身 (ClipTabWidget) が受理したものはここまで来ない。
+    # ここへ来るのはタブバーの帯など「タブの外側」へ落とされたぶんだけで、
+    # それを現在のタブへ回す。受け口を持たないタブ (アーカイブ用) では無視される。
+
+    def dragEnterEvent(self, event):
+        self._forward_drag("dragEnterEvent", event)
+
+    def dropEvent(self, event):
+        self._forward_drag("dropEvent", event)
+
+    # 現在のタブの同名ハンドラへ渡す (無ければ受け取らない)
+    def _forward_drag(self, handler_name, event):
+        handler = getattr(self.tabs.currentWidget(), handler_name, None)
+        if handler is None:
+            event.ignore()
+            return
+        handler(event)
 
     # 設定画面を開く (別ウィンドウとして表示する)
     # resolve4 M3: ClipTabWidget から移設。どのタブを選んでいても開ける。

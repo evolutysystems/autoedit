@@ -484,6 +484,13 @@
             "dark": 0.55,
             "light": 0.82
         },
-        "min_text_backdrop_opacity": 0.1
+        "min_text_backdrop_opacity": 0.1,
+        "main_window": {
+            "width_px": 700,
+            "height_px": 520,
+            "drop_zone_ratio": 0.6,
+            "drop_zone_min_height_px": 140,
+            "show_file_row": false
+        }
     }
 }

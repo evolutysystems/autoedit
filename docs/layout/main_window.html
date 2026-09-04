@@ -6,8 +6,8 @@
 <title>メイン画面 — Stretheus レイアウト</title>
 <link rel="stylesheet" href="theme.css">
 <style>
-/* このページ固有 (メイン画面はサイズ指定が無く内容に合わせて開く) */
-.win--main { width: 620px; }
+/* このページ固有 (setting.json ui.main_window.width_px / height_px) */
+.win--main { width: 700px; }
 </style>
 </head>
 <body>
@@ -18,7 +18,8 @@
     実装元: <code>src/gui/main_window.py</code> の <code>MainWindow</code> /
     <code>ClipTabWidget</code>、<code>src/gui/archive_tab.py</code> の <code>ArchiveTabWidget</code>、
     <code>src/gui/project_resume_row.py</code> の <code>ProjectResumeRow</code>。<br>
-    ウィンドウタイトルは <code>Stretheus</code>。サイズ指定は無く、中身に合わせて開く。
+    ウィンドウタイトルは <code>Stretheus</code>。初期サイズは 700 x 520
+    (<code>setting.json</code> の <code>ui.main_window</code> / ver3 resolve15)。
   </p>
   <div class="page-nav">
     <a href="index.html">一覧へ戻る</a>
@@ -61,34 +62,33 @@
                クリップ用 (ClipTabWidget._build_ui)
                ------------------------------------------------------ -->
           <div class="tabpage is-active" data-page="clip">
-            <!-- 入力動画。ラベルは置かずプレースホルダで案内する (resolve12) -->
-            <div class="row">
-              <input class="field grow" type="text"
-                     placeholder="動画ファイルをここにドラッグ&amp;ドロップ、または「参照...」">
-              <button type="button" class="btn">参照...</button>
+            <!-- ドラッグ&ドロップ領域 (FileDropArea / ver3 resolve15 C1)。
+                 高さはタブページの 60% (ui.main_window.drop_zone_ratio)。
+                 入力欄と「参照...」は隠してある (show_file_row = false)。 -->
+            <div class="dropzone" style="height: 280px;">
+              <div class="dz-icon">&#11015;</div>
+              <div class="dz-row">
+                <span class="dz-text is-placeholder">ドラッグ＆ドロップでファイルを選択</span>
+              </div>
+              <span class="note">動画ファイル / 保存した Timeline プロジェクト</span>
             </div>
 
-            <!-- 実行 (主要動作 / アクセント塗り・幅 96px 固定・左寄せ) -->
-            <div class="row">
+            <!-- 続きから (一覧を開く / resolve15 C6)。幅は実行ボタンと同じ 96px (C8) -->
+            <div class="row" style="justify-content: center;">
+              <button type="button" class="btn"
+                      style="width: var(--primary-action-width);">続きから</button>
+            </div>
+
+            <!-- 実行 (主要動作 / アクセント塗り・幅 96px 固定・中央寄せ / resolve15 C7) -->
+            <div class="row" style="justify-content: center;">
               <button type="button" class="btn btn--primary" title="実行"
                       style="width: var(--primary-action-width);">&#9654;</button>
-              <div class="spacer"></div>
-            </div>
-
-            <!-- 編集の続き (ProjectResumeRow) -->
-            <div class="row">
-              <span>編集の続き:</span>
-              <div class="combo grow is-placeholder">
-                <span class="combo-text">(保存済みプロジェクトはありません)</span>
-                <span class="combo-arrow">&#9660;</span>
-              </div>
-              <button type="button" class="btn">開く...</button>
-              <button type="button" class="btn">一覧...</button>
             </div>
 
             <!-- 進捗 + ステータス -->
             <div class="progress"><div class="chunk" style="width: 0;"></div><div class="value">0%</div></div>
             <div>待機中</div>
+            <div class="spacer"></div>
           </div>
 
           <!-- ------------------------------------------------------
@@ -157,7 +157,11 @@
 
   <p class="caption">
     タブを押すと表示が切り替わる。先頭タブ (クリップ用) を選んでいる間だけペイン左上の角丸が外れる
-    (<code>theme.bind_tab_pane_corner</code> / QSS の <code>QTabWidget[firstTabSelected="true"]::pane</code>)。
+    (<code>theme.bind_tab_pane_corner</code> / QSS の <code>QTabWidget[firstTabSelected="true"]::pane</code>)。<br>
+    クリップ用タブは ver3 resolve15 で作り直した。上部 60% がドラッグ&amp;ドロップ領域
+    (<code>FileDropArea</code>)、その下に「続きから」と「実行」を同じ幅で中央へ積む。
+    入力欄・「参照...」は隠し (<code>ui.main_window.show_file_row</code>)、
+    「編集の続き」行は一覧を開く「続きから」へ置き換えた。
   </p>
 
   <!-- ============================================================
@@ -185,23 +189,23 @@
 
         <div class="tabpane first-selected">
           <div class="tabpage is-active">
-            <div class="row">
-              <input class="field grow" type="text" value="D:/videos/2026-09-03_stream.mp4">
-              <button type="button" class="btn is-disabled" disabled>参照...</button>
-            </div>
-            <div class="row">
-              <button type="button" class="btn btn--primary" title="キャンセル"
-                      style="width: var(--primary-action-width);">&#9654;</button>
-              <div class="spacer"></div>
-            </div>
-            <div class="row">
-              <span>編集の続き:</span>
-              <div class="combo grow is-disabled" style="color: var(--text-disabled);">
-                <span class="combo-text">2026-09-03_stream.aeproj</span>
-                <span class="combo-arrow">&#9660;</span>
+            <!-- 選択済み: 文言がファイル名になり、右に × が出る (resolve15 C4)。
+                 実行中は × を押せない -->
+            <div class="dropzone" style="height: 280px;">
+              <div class="dz-row">
+                <span class="dz-text is-name">2026-09-03_stream.mp4</span>
+                <button type="button" class="btn btn--icon is-disabled" disabled
+                        title="選択を取り消す">&#10005;</button>
               </div>
-              <button type="button" class="btn is-disabled" disabled>開く...</button>
-              <button type="button" class="btn is-disabled" disabled>一覧...</button>
+              <span class="note">実行中は選択を変えられません</span>
+            </div>
+            <div class="row" style="justify-content: center;">
+              <button type="button" class="btn is-disabled" disabled
+                      style="width: var(--primary-action-width);">続きから</button>
+            </div>
+            <div class="row" style="justify-content: center;">
+              <button type="button" class="btn btn--primary is-disabled" disabled title="実行"
+                      style="width: var(--primary-action-width);">&#9654;</button>
             </div>
             <div class="progress">
               <div class="chunk" style="width: 42%;"></div>
@@ -209,6 +213,7 @@
             </div>
             <!-- 実行中は先頭でスピナーが回る (_SPINNER_FRAMES) -->
             <div>&#9585; 音声認識中...</div>
+            <div class="spacer"></div>
           </div>
         </div>
       </div>
@@ -216,7 +221,8 @@
   </div>
 
   <p class="caption">
-    実行中は入力欄・参照・編集の続き・設定ボタンが無効になり、ステータスラベルの先頭でスピナーが回る
+    実行中は D&amp;D 領域の &times; ・続きから・実行・設定ボタンが無効になり、
+    ステータスラベルの先頭でスピナーが回る
     (<code>ClipTabWidget._set_running</code> / <code>_tick_spinner</code>)。<br>
     進捗率が出ない工程 (音声認識など) でも「動いている」ことを示すための表示。
   </p>

@@ -50,6 +50,9 @@ PySide6 で実装済みの 3 画面のデザイン・レイアウトを HTML/CSS
 | `QTabWidget[firstTabSelected="true"]::pane` | `.tabpane.first-selected` |
 | `QProgressBar` / `QSlider` / `QScrollBar` | `.progress` / `.slider` / `.scrollbar` |
 | `QCheckBox::indicator` (14px / radius 3px) | `.check .box` |
+| `QCheckBox::indicator:checked` の印 (生成 PNG) | `.check.is-checked .box::after` |
+| `QComboBox::drop-down` / `::down-arrow` (面なし・三角のみ) | `.combo .combo-arrow` |
+| `#dropArea` (破線のドラッグ&ドロップ領域) | `.dropzone` |
 | `QSplitter::handle` | `.splitter-h` / `.splitter-v` |
 | `#previewCanvas` (常に黒) | `.preview-canvas` |
 
@@ -63,7 +66,10 @@ PySide6 で実装済みの 3 画面のデザイン・レイアウトを HTML/CSS
 | トラックヘッダ幅 88px | `timeline.ui.header_width_px` |
 | ルーラ高 26px | `timeline_view.RULER_HEIGHT` |
 | ズームボタン幅 40px | `timeline.ui.zoom_button_width_px` |
-| 実行 / 採点開始ボタン幅 96px | `theme.PRIMARY_ACTION_BUTTON_WIDTH_PX` |
+| 実行 / 採点開始 / 続きからボタン幅 96px | `theme.PRIMARY_ACTION_BUTTON_WIDTH_PX` |
+| メインウィンドウ 700 x 520 | `setting.json ui.main_window.width_px / height_px` |
+| D&D 領域の高さ = タブページの 60% (下限 140px) | `ui.main_window.drop_zone_ratio / drop_zone_min_height_px` |
+| タブ右上コーナーの下余白 6px | `theme.TAB_CORNER_BOTTOM_MARGIN_PX` |
 | 設定ウィンドウ 300 x 760 | `settings_window.WINDOW_WIDTH / WINDOW_HEIGHT` |
 | 項目名ラベル 100px / 入力欄 160px | `settings_window.COLUMN_LABEL_WIDTH / INPUT_FIELD_MIN_WIDTH` |
 | カラー欄 104px / アウトラインカラー欄 140px | `COLOR_FIELD_MIN_WIDTH` / `OUTLINE_COLOR_FIELD_MIN_WIDTH` |
@@ -83,8 +89,9 @@ Qt と HTML の描画モデルの違いから、以下だけは近似になっ�
 * **設定ウィンドウの横幅** — 実装値の 300px は「項目名ラベル + 入力欄」で決まる最小幅で、
   役割別カラー行 (3 列) は実際には横へ広げて使う。ページ上は中身が収まる 520px で描き、
   最小幅の内訳を注記している。
-* **メイン画面の横幅** — 実装は `resize()` を呼ばず中身に合わせて開くため、
-  ページ上は代表値として 620px を指定している。
+* **チェック印 / ドロップダウンの矢印** — 実装は QSS の `image: url(...)` で読ませるため、
+  記号を実行時に PNG へ描いて一時フォルダへ置いている (`theme._indicator_assets`)。
+  CSS 版は `::after` の枠線と文字の三角で同じ形を描いた見立てになっている。
 * **スピナー / 波形 / 高精度プレビュー** — 動きや実データを伴う表示は静的な見立てに置き換えている。
 
 ## 未収録の画面

@@ -600,6 +600,13 @@ class ArchiveTabWidget(QWidget):
 
     # ===== 編集の続き (保存済みプロジェクトの再編集 / ver3 resolve9 §5.8) =====
 
+    # プロジェクトを選択状態にする (タブ共通の受け口 / ver3 resolve15 §5.7)。
+    # MainWindow が種別違いのプロジェクトを回してくるときに呼ばれる。
+    # 実行はしない (選択状態にするところまで)。
+    def select_project(self, path):
+        if self.resume_row is not None:
+            self.resume_row.select(path)
+
     # 一覧画面を開く (開いたものは自分のタブで再開する)
     def _open_library(self):
         dialog = ProjectLibraryDialog(

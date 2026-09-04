@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>resolve15 画面イメージ — メイン画面のデザイン修正</title>
+<!-- 部品の見た目は実装から写した共通スタイル (docs/layout/theme.css) をそのまま使う。
+     ここで色や角丸を書き直すと「カタログと同じ」を目視で確かめられなくなるため。 -->
+<link rel="stylesheet" href="../../layout/theme.css">
+<style>
+/* このページ固有。メイン画面は resolve15 §7 で初期サイズを持つようになる */
+.win--main { width: 700px; }
+
+/* ------------------------------------------------------------------
+   ドラッグ&ドロップ領域 (#dropArea / resolve15 §5.2・§5.5)
+   ------------------------------------------------------------------ */
+.dropzone {
+    background-color: var(--glass-bg);
+    border: var(--border-width) dashed var(--glass-border);
+    border-radius: var(--radius-panel);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 280px;          /* タブページ高 (実測 468px) の 60% */
+    flex: none;
+    text-align: center;
+    padding: 0 16px;
+}
+/* ドラッグ中 (#dropArea[dropActive="true"]) */
+.dropzone.is-active {
+    background-color: var(--glass-bg-hover);
+    border-color: var(--accent-line);
+}
+.dropzone .dz-icon { font-size: 40px; line-height: 1; color: var(--text-secondary); }
+.dropzone .dz-row { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.dropzone .dz-text { font-size: 13px; }
+.dropzone .dz-text.is-placeholder { color: var(--text-secondary); }
+.dropzone .dz-text.is-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dropzone .dz-hint { color: var(--text-disabled); font-size: 11px; }
+
+/* ボタンを画面中央へ置く行 (resolve15 §5.6-1 _centered) */
+.center { display: flex; justify-content: center; }
+
+/* ------------------------------------------------------------------
+   Before / After の見比べ
+   ------------------------------------------------------------------ */
+.compare { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.compare > .side { flex: 1; min-width: 300px; }
+.side > h3 {
+    margin: 0 0 8px; font-size: 12px; font-weight: 600;
+    color: #A9A4AC; letter-spacing: 0.04em;
+}
+.side.bad > h3::before  { content: "✕ "; color: #E86C6C; }
+.side.good > h3::before { content: "✓ "; color: #7FC98B; }
+.sample {
+    background: linear-gradient(135deg, var(--bg-from), var(--bg-to));
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+
+/* 現行のチェック (塗りだけで印が無い) — .check.is-checked から ::after を消す */
+.check.no-mark .box::after { content: none; }
+
+/* 現行のコンボ (右端の押しボタンが浮き出て見える / 実測 #4F4F4F) */
+.combo--legacy { position: relative; }
+.combo--legacy .legacy-button {
+    width: 18px; align-self: stretch; margin: -4px -8px -4px 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.10);
+    border-left: 1px solid var(--glass-border);
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    color: var(--text-secondary); font-size: 9px;
+}
+
+/* コーナーの余白 (D1) の見比べ。theme.css の `.tabbar .corner` より
+   詳細度を上げないと上書きできないため、親セレクタごと書く。 */
+.tabbar .corner--tight { padding-bottom: 0; }
+.tabbar .corner--fixed { padding-bottom: 6px; }
+
+/* 状態切り替えボタン */
+.states { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.states button {
+    font: inherit; color: #F4F1F2; background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px;
+    padding: 5px 12px; cursor: pointer;
+}
+.states button.is-on { background: rgba(232, 161, 92, 0.22); border-color: #E8A15C; }
+
+/* 実測表 */
+table.mini { border-collapse: collapse; font-size: 11px; margin: 6px 0 0; }
+table.mini th, table.mini td {
+    border: 1px solid rgba(255, 255, 255, 0.14); padding: 4px 10px; text-align: left;
+}
+table.mini th { color: #A9A4AC; font-weight: 500; }
+table.mini code { color: #E8A15C; }
+h2.sec { font-size: 15px; font-weight: 600; margin: 34px 0 10px; }
+h2.sec .num { color: #E8A15C; margin-right: 6px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>resolve15 画面イメージ — メイン画面のデザイン修正 / クリップ用タブの再構成</h1>
+  <p>
+    設計書: <a href="resolve15.md">resolve15.md</a> ／ 要望: <a href="request15.md">request15.md</a><br>
+    部品のスタイルは実装から写した <code>docs/layout/theme.css</code> をそのまま読み込んでいる。
+    したがって、ここに描かれた見た目は<strong>部品カタログと同じ規則</strong>で描かれている。<br>
+    実装ではないため、寸法は実測値（ウィンドウ 700 × 520 / タブページ 468px / D&amp;D 領域 280px =
+    60%）で描いている（<code>ui.main_window</code>）。
+  </p>
+  <div class="page-nav">
+    <a href="../../layout/index.html">部品カタログへ</a>
+    <a href="../../layout/main_window.html">現行のメイン画面</a>
+    <button type="button" onclick="toggleTheme()">ライト / ダーク切り替え</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <!-- ============================================================
+       1. 変更後のメイン画面 (クリップ用タブ)
+       ============================================================ -->
+  <h2 class="sec"><span class="num">1</span>変更後 — クリップ用タブ（状態切り替え）</h2>
+
+  <div class="states">
+    <button type="button" class="is-on" data-state="empty">未選択（既定）</button>
+    <button type="button" data-state="drag">ドラッグ中</button>
+    <button type="button" data-state="video">動画を選んだ後</button>
+    <button type="button" data-state="project">「続きから」で選んだ後</button>
+    <button type="button" data-state="running">実行中</button>
+  </div>
+
+  <div class="win win--main">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+
+    <div class="titlebar">
+      <span class="title">Stretheus</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <div class="tabs">
+        <div class="tabbar">
+          <button type="button" class="tab is-selected">クリップ用</button>
+          <button type="button" class="tab">アーカイブ切り抜き用</button>
+          <!-- D1: 入れ物で包んで下に 6px の余白を作る (theme.install_tab_corner) -->
+          <div class="corner corner--fixed">
+            <button type="button" class="btn btn--icon" id="settingsBtn" title="設定">&#9881;</button>
+          </div>
+        </div>
+
+        <div class="tabpane first-selected">
+          <div class="tabpage is-active">
+
+            <!-- ① 上部 60%: ドラッグ&ドロップ領域 (C1 / C4) -->
+            <div class="dropzone" id="dropzone">
+              <div class="dz-icon" id="dzIcon">&#11015;</div>
+              <div class="dz-row">
+                <span class="dz-text is-placeholder" id="dzText">ドラッグ＆ドロップでファイルを選択</span>
+                <button type="button" class="btn btn--icon" id="dzClear"
+                        title="選択を取り消す" style="display: none;">&#10005;</button>
+              </div>
+              <div class="dz-hint" id="dzHint">動画ファイル / 保存した Timeline プロジェクト</div>
+            </div>
+
+            <!-- C2: 既存のファイル選択欄と「参照...」は隠す
+                 (ui.main_window.show_file_row = true で戻せる / resolve15 §7) -->
+
+            <!-- ② 続きから (C6) — 画面中央。幅は実行ボタンと同じ 96px (C8) -->
+            <div class="center">
+              <button type="button" class="btn" id="resumeBtn"
+                      style="width: var(--primary-action-width);">続きから</button>
+            </div>
+
+            <!-- ③ 実行 (C7) — デザインは従来のまま・画面中央 -->
+            <div class="center">
+              <button type="button" class="btn btn--primary" id="runBtn" title="実行"
+                      style="width: var(--primary-action-width);">&#9654;</button>
+            </div>
+
+            <!-- ④ 進捗バー (既存のまま) -->
+            <div class="progress">
+              <div class="chunk" id="progChunk" style="width: 0;"></div>
+              <div class="value" id="progValue">0%</div>
+            </div>
+
+            <!-- ⑤ 実行状況ラベル (既存のまま・左寄せ) -->
+            <div id="statusLabel">待機中</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    上から <b>D&amp;D 領域（タブページ高の 60%）→ 続きから → 実行 → 進捗バー → 実行状況ラベル</b> の順
+    （request15 の指定どおり）。「続きから」と「実行」だけが中央寄せで、進捗バーとラベルは従来どおり。<br>
+    中央へ縦に並ぶ 2 つのボタンは<b>同じ幅（96px = <code>theme.PRIMARY_ACTION_BUTTON_WIDTH_PX</code>）</b>にし、
+    左右の端を揃える（C8）。「続きから」の文字に必要な幅は約 78px で、切れる余地は無い。<br>
+    D&amp;D 領域は画面のどこへ落としても受け取る（<code>ClipTabWidget</code> がタブ全体で受理し、
+    タブバーの帯へ落とされたぶんは <code>MainWindow</code> が現在のタブへ回す / resolve15 §5.7）。<br>
+    実行中は × ・「続きから」・実行・設定ボタンが無効になり、ラベルの先頭でスピナーが回る（従来と同じ）。
+  </p>
+
+  <!-- ============================================================
+       2. 変更前 (比較用)
+       ============================================================ -->
+  <h2 class="sec"><span class="num">2</span>変更前 — 現行のクリップ用タブ（比較用）</h2>
+
+  <div class="win win--main" style="width: 620px;">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+
+    <div class="titlebar">
+      <span class="title">Stretheus</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <div class="tabs">
+        <div class="tabbar">
+          <button type="button" class="tab is-selected">クリップ用</button>
+          <button type="button" class="tab">アーカイブ切り抜き用</button>
+          <!-- D1 の症状: 余白が無くペインへ接している -->
+          <div class="corner corner--tight">
+            <button type="button" class="btn btn--icon" title="設定">&#9881;</button>
+          </div>
+        </div>
+
+        <div class="tabpane first-selected">
+          <div class="tabpage is-active">
+            <div class="row">
+              <input class="field grow" type="text"
+                     placeholder="動画ファイルをここにドラッグ&amp;ドロップ、または「参照...」">
+              <button type="button" class="btn">参照...</button>
+            </div>
+            <div class="row">
+              <button type="button" class="btn btn--primary" title="実行"
+                      style="width: var(--primary-action-width);">&#9654;</button>
+              <div class="spacer"></div>
+            </div>
+            <div class="row">
+              <span>編集の続き:</span>
+              <div class="combo grow is-placeholder combo--legacy">
+                <span class="combo-text">（保存されたプロジェクトはありません）</span>
+                <span class="legacy-button">&#9660;</span>
+              </div>
+              <button type="button" class="btn">開く...</button>
+              <button type="button" class="btn">一覧...</button>
+            </div>
+            <div class="progress"><div class="chunk" style="width: 0;"></div><div class="value">0%</div></div>
+            <div>待機中</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    赤字の対象は 3 つ。<b>①</b> 設定ボタンの下辺がペインへ接している（D1）。
+    <b>②</b> 入力欄と「参照...」の行（C2 で隠す）。
+    <b>③</b> 「編集の続き」行（C5 で削除し、「続きから」ボタンへ置き換える）。<br>
+    実行ボタンは左寄せから中央寄せへ移り、位置は「続きから」の下になる（C7）。
+  </p>
+
+  <!-- ============================================================
+       3. 部品の修正 (全画面へ効く)
+       ============================================================ -->
+  <h2 class="sec"><span class="num">3</span>部品の修正 — チェックボックス（D2）</h2>
+
+  <div class="compare">
+    <div class="side bad">
+      <h3>現行 — 塗りだけで印が無い</h3>
+      <div class="sample">
+        <span class="check is-checked no-mark"><span class="box"></span>無音カット</span>
+        <span class="check"><span class="box"></span>コメント採点を使う</span>
+        <span class="note">
+          <code>QCheckBox::indicator:checked</code> は背景と枠の色を変えるだけ。
+          <code>::indicator</code> へ QSS を当てた時点で Qt は既定の印を描かなくなる。
+        </span>
+      </div>
+      <table class="mini">
+        <tr><th>状態</th><th>実測（左 20×24px の色）</th></tr>
+        <tr><td>チェック済み</td><td><code>#E8A15C</code> 236 px / <code>#1B1B1F</code> <b>0 px</b></td></tr>
+      </table>
+    </div>
+
+    <div class="side good">
+      <h3>修正後 — 塗りの上にチェックマーク</h3>
+      <div class="sample">
+        <span class="check is-checked"><span class="box"></span>無音カット</span>
+        <span class="check"><span class="box"></span>コメント採点を使う</span>
+        <span class="note">
+          印を <code>accent.on</code>（アクセントの上に載せる文字色）で描いた PNG を作り、
+          <code>image:</code> で載せる。枠・角丸・大きさ（14px / 3px）は現行のまま。
+        </span>
+      </div>
+      <table class="mini">
+        <tr><th>状態</th><th>実測（同じ範囲）</th></tr>
+        <tr><td>チェック済み</td><td><code>#E8A15C</code> 184 px / <code>#1B1B1F</code> <b>14 px</b>（＋中間色）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="sec"><span class="num">4</span>部品の修正 — QComboBox の矢印（D3）</h2>
+
+  <div class="compare">
+    <div class="side bad">
+      <h3>現行 — 右端だけ面が浮き出ている</h3>
+      <div class="sample">
+        <div class="combo combo--legacy" style="min-width: 220px;">
+          <span class="combo-text">2026-09-03_stream.timeline.json</span>
+          <span class="legacy-button">&#9660;</span>
+        </div>
+        <span class="note">
+          QSS が <code>QComboBox::drop-down</code> を書いていないため、
+          右端の押しボタンだけスタイル既定の面が残る。
+        </span>
+      </div>
+      <table class="mini">
+        <tr><th>位置</th><th>実測（160×26px を grab）</th></tr>
+        <tr><td>右端 15px</td><td><code>#4F4F4F</code>（＝一段明るい面）</td></tr>
+        <tr><td>本体</td><td><code>#383838</code></td></tr>
+      </table>
+    </div>
+
+    <div class="side good">
+      <h3>修正後 — カタログと同じ「面なし・三角だけ」</h3>
+      <div class="sample">
+        <div class="combo" style="min-width: 220px;">
+          <span class="combo-text">2026-09-03_stream.timeline.json</span>
+          <span class="combo-arrow">&#9660;</span>
+        </div>
+        <span class="note">
+          <code>::drop-down</code> を透明・枠なしにし、<code>::down-arrow</code> へ
+          <code>text.secondary</code> の三角を載せる（<code>docs/layout/theme.css</code> の
+          <code>.combo-arrow</code> と同じ色）。
+        </span>
+      </div>
+      <table class="mini">
+        <tr><th>位置</th><th>実測（同じ条件）</th></tr>
+        <tr><td>右端 30px</td><td><code>#383838</code> 一色 ＋ <code>#B9AEB2</code> の三角</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="sec"><span class="num">5</span>部品の修正 — 設定ボタンの下余白（D1）</h2>
+
+  <div class="compare">
+    <div class="side bad">
+      <h3>現行 — ペインに接している</h3>
+      <div class="sample" style="padding-bottom: 0;">
+        <div class="tabs">
+          <div class="tabbar">
+            <button type="button" class="tab is-selected">クリップ用</button>
+            <button type="button" class="tab">アーカイブ切り抜き用</button>
+            <div class="corner corner--tight">
+              <button type="button" class="btn btn--icon" title="設定">&#9881;</button>
+            </div>
+          </div>
+          <div class="tabpane first-selected" style="min-height: 54px;"></div>
+        </div>
+        <span class="note">
+          <code>setCornerWidget</code> はタブバーの高さいっぱいにボタンを置くため、
+          下辺がペインの上辺へ接する。QSS では余白を作れない。
+        </span>
+      </div>
+    </div>
+
+    <div class="side good">
+      <h3>修正後 — 下に 6px の余白</h3>
+      <div class="sample" style="padding-bottom: 0;">
+        <div class="tabs">
+          <div class="tabbar">
+            <button type="button" class="tab is-selected">クリップ用</button>
+            <button type="button" class="tab">アーカイブ切り抜き用</button>
+            <div class="corner corner--fixed">
+              <button type="button" class="btn btn--icon" title="設定">&#9881;</button>
+            </div>
+          </div>
+          <div class="tabpane first-selected" style="min-height: 54px;"></div>
+        </div>
+        <span class="note">
+          余白付きの入れ物で包んでからコーナーへ渡す（<code>theme.install_tab_corner</code>）。
+          余白 6px は Qt のレイアウト既定間隔と同じ値。
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>3〜5 は QSS の共通部分のため、アプリ全体（設定画面・Timeline 編集画面・
+    アーカイブ用タブ・字幕編集画面）へ同時に効く。</b>
+    大きさと位置は変わらないため、各画面のレイアウトは崩れない（resolve15 §8）。<br>
+    表の実測値は <code>QT_QPA_PLATFORM=offscreen</code> / <code>ui.theme_mode=dark</code> で
+    ウィジェットを <code>grab()</code> して色を数えたもの（resolve15 §2.2 / §2.3）。
+  </p>
+
+</div>
+
+<script>
+// 状態切り替え (実装の見た目確認用)。resolve15 §5.6-3 の選択モデルに対応する。
+var STATES = {
+    empty: {
+        icon: true, text: "ドラッグ＆ドロップでファイルを選択", placeholder: true,
+        clear: false, hint: "動画ファイル / 保存した Timeline プロジェクト",
+        active: false, busy: false, progress: 0, status: "待機中"
+    },
+    drag: {
+        icon: true, text: "ドラッグ＆ドロップでファイルを選択", placeholder: true,
+        clear: false, hint: "ここへ落とすと選択されます",
+        active: true, busy: false, progress: 0, status: "待機中"
+    },
+    video: {
+        icon: false, text: "2026-09-03_stream.mp4", placeholder: false,
+        clear: true, hint: "実行すると無音カットからはじまります",
+        active: false, busy: false, progress: 0, status: "待機中"
+    },
+    project: {
+        icon: false, text: "2026-09-03_stream.timeline.json", placeholder: false,
+        clear: true, hint: "実行すると編集の続きから書き出します",
+        active: false, busy: false, progress: 0, status: "待機中"
+    },
+    running: {
+        icon: false, text: "2026-09-03_stream.mp4", placeholder: false,
+        clear: true, hint: "実行中は選択を変えられません",
+        active: false, busy: true, progress: 42, status: "╱ 音声認識中..."
+    }
+};
+
+function setDisabled(el, disabled) {
+    el.classList.toggle("is-disabled", disabled);
+    el.disabled = disabled;
+}
+
+function applyState(name) {
+    var s = STATES[name];
+    document.getElementById("dzIcon").style.display = s.icon ? "" : "none";
+    var text = document.getElementById("dzText");
+    text.textContent = s.text;
+    text.className = "dz-text " + (s.placeholder ? "is-placeholder" : "is-name");
+    document.getElementById("dzClear").style.display = s.clear ? "" : "none";
+    document.getElementById("dzHint").textContent = s.hint;
+    document.getElementById("dropzone").classList.toggle("is-active", s.active);
+    document.getElementById("progChunk").style.width = s.progress + "%";
+    document.getElementById("progValue").textContent = s.progress + "%";
+    document.getElementById("statusLabel").textContent = s.status;
+    // 実行中は操作できる部品をすべて無効化する (ClipTabWidget._set_running)
+    ["dzClear", "resumeBtn", "runBtn", "settingsBtn"].forEach(function (id) {
+        setDisabled(document.getElementById(id), s.busy);
+    });
+}
+
+document.querySelectorAll(".states button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+        document.querySelectorAll(".states button").forEach(function (b) {
+            b.classList.remove("is-on");
+        });
+        btn.classList.add("is-on");
+        applyState(btn.dataset.state);
+    });
+});
+applyState("empty");
+
+// ライト / ダーク切り替え (theme_mode の確認用)
+function toggleTheme() {
+    var root = document.documentElement;
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+}
+</script>
+
+</body>
+</html>

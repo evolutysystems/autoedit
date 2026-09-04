@@ -30,6 +30,37 @@ EMPTY_LABEL = "（保存されたプロジェクトはありません）"
 PROJECT_FILE_FILTER = "Timeline プロジェクト (*.json);;すべてのファイル (*)"
 
 
+# 種別が違うプロジェクトを開こうとしていないか確かめる (ver3 resolve9 §3-4)。
+# クリップ用とアーカイブ用は開く経路も書き出し方も違うため、取り違えると壊れる。
+#
+# クリップ用タブは「編集の続き」行を持たなくなった (ver3 resolve15 C5) が、
+# D&D と一覧からプロジェクトを選ぶため同じ確認が要る。行とタブの双方から
+# 使えるよう module 関数として置く (resolve15 §5.8)。
+#
+# 戻り値: (種別が一致したか, 実際の種別)。
+#   一致        → (True, 種別)
+#   種別違い    → (False, 実際の種別)  … 案内を出したうえで種別を返す
+#   読めない    → (False, "")          … 案内を出す。呼び出し側は何もしない
+def confirm_project_kind(parent, path, kind):
+    try:
+        timeline = project_io.load(path, validate_timeline=False)
+        actual = project_io.project_kind(timeline)
+    except Exception:  # noqa: BLE001 (壊れたファイルはここで弾いて案内する)
+        QMessageBox.warning(
+            parent, "開けません",
+            f"プロジェクトファイルを読めませんでした。\n{path}")
+        return False, ""
+    if actual == kind:
+        return True, actual
+    other = ("アーカイブ切り抜き用" if actual == project_io.KIND_ARCHIVE
+             else "クリップ用")
+    QMessageBox.information(
+        parent, "種別が違います",
+        f"このプロジェクトは{other}です。\n"
+        f"{other}のタブへ切り替えます。そちらで再開してください。")
+    return False, actual
+
+
 class ProjectResumeRow(QWidget):
 
     # 「開く...」で選ばれたプロジェクト (種別の確認済み)
@@ -164,24 +195,10 @@ class ProjectResumeRow(QWidget):
         return path
 
     # 種別が違うプロジェクトを開こうとしていないか確かめる (ver3 resolve9 §3-4)
-    # クリップ用とアーカイブ用は開く経路も書き出し方も違うため、取り違えると壊れる。
     def _check_kind(self, path):
-        try:
-            timeline = project_io.load(path, validate_timeline=False)
-            kind = project_io.project_kind(timeline)
-        except Exception:  # noqa: BLE001 (壊れたファイルはここで弾いて案内する)
-            QMessageBox.warning(
-                self, "開けません",
-                f"プロジェクトファイルを読めませんでした。\n{path}")
-            return False
-        if kind == self._kind:
-            return True
-        other = ("アーカイブ切り抜き用" if kind == project_io.KIND_ARCHIVE
-                 else "クリップ用")
-        QMessageBox.information(
-            self, "種別が違います",
-            f"このプロジェクトは{other}です。\n"
-            f"{other}のタブへ切り替えます。そちらの「開く...」で再開してください。")
+        ok, kind = confirm_project_kind(self, path, self._kind)
+        if ok or not kind:
+            return ok
         # タブの切り替えは親 (MainWindow) に任せる。選んだだけで長い処理が
         # 始まらないよう、実行はしない (選択状態にするところまで)。
         self.wrong_kind_selected.emit(path, kind)
