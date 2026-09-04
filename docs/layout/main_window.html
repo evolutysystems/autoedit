@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メイン画面 — Stretheus レイアウト</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+/* このページ固有 (メイン画面はサイズ指定が無く内容に合わせて開く) */
+.win--main { width: 620px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>メイン画面 (最初の実行画面)</h1>
+  <p>
+    実装元: <code>src/gui/main_window.py</code> の <code>MainWindow</code> /
+    <code>ClipTabWidget</code>、<code>src/gui/archive_tab.py</code> の <code>ArchiveTabWidget</code>、
+    <code>src/gui/project_resume_row.py</code> の <code>ProjectResumeRow</code>。<br>
+    ウィンドウタイトルは <code>Stretheus</code>。サイズ指定は無く、中身に合わせて開く。
+  </p>
+  <div class="page-nav">
+    <a href="index.html">一覧へ戻る</a>
+    <a class="current" href="main_window.html">メイン</a>
+    <a href="timeline_editor.html">Timeline 編集</a>
+    <a href="settings_window.html">設定</a>
+    <button type="button" onclick="toggleTheme()">ライト / ダーク切り替え</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <!-- ============================================================
+       クリップ用タブ (先頭タブ選択中)
+       ============================================================ -->
+  <div class="win win--main">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+
+    <div class="titlebar">
+      <span class="title">Stretheus</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <!-- QTabWidget + 右上コーナーウィジェットの設定ボタン (resolve4 M3) -->
+      <div class="tabs">
+        <div class="tabbar">
+          <button type="button" class="tab is-selected" data-tab="clip">クリップ用</button>
+          <button type="button" class="tab" data-tab="archive">アーカイブ切り抜き用</button>
+          <!-- どのタブを選んでいても開けるようタブの外に置く -->
+          <div class="corner">
+            <button type="button" class="btn btn--icon" title="設定">&#9881;</button>
+          </div>
+        </div>
+
+        <div class="tabpane first-selected" id="pane">
+
+          <!-- ------------------------------------------------------
+               クリップ用 (ClipTabWidget._build_ui)
+               ------------------------------------------------------ -->
+          <div class="tabpage is-active" data-page="clip">
+            <!-- 入力動画。ラベルは置かずプレースホルダで案内する (resolve12) -->
+            <div class="row">
+              <input class="field grow" type="text"
+                     placeholder="動画ファイルをここにドラッグ&amp;ドロップ、または「参照...」">
+              <button type="button" class="btn">参照...</button>
+            </div>
+
+            <!-- 実行 (主要動作 / アクセント塗り・幅 96px 固定・左寄せ) -->
+            <div class="row">
+              <button type="button" class="btn btn--primary" title="実行"
+                      style="width: var(--primary-action-width);">&#9654;</button>
+              <div class="spacer"></div>
+            </div>
+
+            <!-- 編集の続き (ProjectResumeRow) -->
+            <div class="row">
+              <span>編集の続き:</span>
+              <div class="combo grow is-placeholder">
+                <span class="combo-text">(保存済みプロジェクトはありません)</span>
+                <span class="combo-arrow">&#9660;</span>
+              </div>
+              <button type="button" class="btn">開く...</button>
+              <button type="button" class="btn">一覧...</button>
+            </div>
+
+            <!-- 進捗 + ステータス -->
+            <div class="progress"><div class="chunk" style="width: 0;"></div><div class="value">0%</div></div>
+            <div>待機中</div>
+          </div>
+
+          <!-- ------------------------------------------------------
+               アーカイブ切り抜き用 (ArchiveTabWidget._build_ui)
+               ------------------------------------------------------ -->
+          <div class="tabpage" data-page="archive">
+            <div style="line-height: 1.7;">
+              動画を採点し、上位の見どころを切り抜いて字幕を焼き込みます。<br>
+              入力はローカル動画、または Twitch VOD (ログインして自分のアーカイブを自動取得) が選べます。
+            </div>
+
+            <!-- 入力ソース選択 -->
+            <div class="row">
+              <span>入力ソース:</span>
+              <div class="combo" style="min-width: 140px;">
+                <span class="combo-text">ローカル動画</span>
+                <span class="combo-arrow">&#9660;</span>
+              </div>
+              <div class="spacer"></div>
+            </div>
+
+            <!-- ローカル入力グループ (既定で表示) -->
+            <div class="col">
+              <div class="row">
+                <input class="field grow" type="text" placeholder="採点する動画ファイルを選択、または「参照...」">
+                <button type="button" class="btn">参照...</button>
+              </div>
+              <div class="row">
+                <input class="field grow" type="text" placeholder="(任意) コメントJSONを指定するとコメント採点が有効に">
+                <button type="button" class="btn">参照...</button>
+              </div>
+            </div>
+
+            <!-- 実行オプション -->
+            <div class="row">
+              <span class="check is-checked"><span class="box"></span>無音カット</span>
+              <div class="spacer"></div>
+            </div>
+
+            <!-- 採点開始 (クリップ用タブの実行ボタンと同じ形・同じ幅) -->
+            <div class="row">
+              <button type="button" class="btn btn--primary" title="採点開始"
+                      style="width: var(--primary-action-width);">&#9654;</button>
+              <div class="spacer"></div>
+            </div>
+
+            <!-- 編集の続き (ProjectResumeRow / アーカイブ種別) -->
+            <div class="row">
+              <span>編集の続き:</span>
+              <div class="combo grow is-placeholder">
+                <span class="combo-text">(保存済みプロジェクトはありません)</span>
+                <span class="combo-arrow">&#9660;</span>
+              </div>
+              <button type="button" class="btn">開く...</button>
+              <button type="button" class="btn">一覧...</button>
+            </div>
+
+            <div class="progress"><div class="chunk" style="width: 0;"></div><div class="value">0%</div></div>
+            <div>待機中</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    タブを押すと表示が切り替わる。先頭タブ (クリップ用) を選んでいる間だけペイン左上の角丸が外れる
+    (<code>theme.bind_tab_pane_corner</code> / QSS の <code>QTabWidget[firstTabSelected="true"]::pane</code>)。
+  </p>
+
+  <!-- ============================================================
+       状態違い: 実行中
+       ============================================================ -->
+  <div class="win win--main">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+
+    <div class="titlebar">
+      <span class="title">Stretheus</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <div class="tabs">
+        <div class="tabbar">
+          <button type="button" class="tab is-selected">クリップ用</button>
+          <button type="button" class="tab">アーカイブ切り抜き用</button>
+          <div class="corner">
+            <!-- 実行中はどちらのタブでも設定ボタンを無効化する (resolve4 5.7-4) -->
+            <button type="button" class="btn btn--icon is-disabled" disabled title="設定">&#9881;</button>
+          </div>
+        </div>
+
+        <div class="tabpane first-selected">
+          <div class="tabpage is-active">
+            <div class="row">
+              <input class="field grow" type="text" value="D:/videos/2026-09-03_stream.mp4">
+              <button type="button" class="btn is-disabled" disabled>参照...</button>
+            </div>
+            <div class="row">
+              <button type="button" class="btn btn--primary" title="キャンセル"
+                      style="width: var(--primary-action-width);">&#9654;</button>
+              <div class="spacer"></div>
+            </div>
+            <div class="row">
+              <span>編集の続き:</span>
+              <div class="combo grow is-disabled" style="color: var(--text-disabled);">
+                <span class="combo-text">2026-09-03_stream.aeproj</span>
+                <span class="combo-arrow">&#9660;</span>
+              </div>
+              <button type="button" class="btn is-disabled" disabled>開く...</button>
+              <button type="button" class="btn is-disabled" disabled>一覧...</button>
+            </div>
+            <div class="progress">
+              <div class="chunk" style="width: 42%;"></div>
+              <div class="value">42%</div>
+            </div>
+            <!-- 実行中は先頭でスピナーが回る (_SPINNER_FRAMES) -->
+            <div>&#9585; 音声認識中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    実行中は入力欄・参照・編集の続き・設定ボタンが無効になり、ステータスラベルの先頭でスピナーが回る
+    (<code>ClipTabWidget._set_running</code> / <code>_tick_spinner</code>)。<br>
+    進捗率が出ない工程 (音声認識など) でも「動いている」ことを示すための表示。
+  </p>
+
+</div>
+
+<script>
+// タブ切り替え (QTabWidget の見た目確認用)
+document.querySelectorAll('.tab[data-tab]').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+        var bar = tab.parentElement;
+        bar.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('is-selected'); });
+        tab.classList.add('is-selected');
+        var pane = document.getElementById('pane');
+        pane.querySelectorAll('.tabpage').forEach(function (p) {
+            p.classList.toggle('is-active', p.dataset.page === tab.dataset.tab);
+        });
+        // 先頭タブのときだけペイン左上を四角にする
+        pane.classList.toggle('first-selected', tab.dataset.tab === 'clip');
+    });
+});
+
+// ライト / ダーク切り替え (theme_mode の確認用)
+function toggleTheme() {
+    var root = document.documentElement;
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+}
+</script>
+
+</body>
+</html>

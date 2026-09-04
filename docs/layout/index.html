@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stretheus 画面レイアウト一覧</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+.cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.card {
+    width: 340px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    padding: 16px;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+.card:hover { background: rgba(255, 255, 255, 0.10); border-color: rgba(232, 161, 92, 0.5); }
+.card h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.card p { margin: 0 0 10px; color: #A9A4AC; font-size: 12px; line-height: 1.8; }
+.card .src { color: #E8A15C; font-size: 11px; word-break: break-all; }
+
+/* 色見本の一覧 */
+.tokens { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.token { width: 150px; font-size: 11px; color: #A9A4AC; }
+.token .chip { height: 34px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); margin-bottom: 4px; }
+.token b { display: block; color: #F4F1F2; font-weight: 500; }
+h2.sec { font-size: 15px; font-weight: 600; margin: 34px 0 8px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Stretheus 画面レイアウト (HTML / CSS 版)</h1>
+  <p>
+    PySide6 で実装された 3 画面のデザイン・レイアウトを HTML/CSS へ置き換えたもの。<br>
+    色・角丸・余白は <code>src/gui/theme.py</code> のデザイントークンと QSS、
+    寸法は <code>src/settings/setting.json</code> の実値をそのまま使っている。
+    実装の変更ではなく、デザイン確認・共有のための資料。
+  </p>
+  <div class="page-nav">
+    <button type="button" onclick="toggleTheme()">ライト / ダーク切り替え</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <div class="cards">
+    <a class="card" href="main_window.html">
+      <h2>1. メイン画面 (最初の実行画面)</h2>
+      <p>
+        「クリップ用 / アーカイブ切り抜き用」の 2 タブ。入力動画の指定、実行ボタン、
+        編集の続き、進捗バー、ステータス。設定ボタンはタブ外の右上コーナー。
+      </p>
+      <span class="src">src/gui/main_window.py / archive_tab.py / project_resume_row.py</span>
+    </a>
+
+    <a class="card" href="timeline_editor.html">
+      <h2>2. Timeline 編集画面</h2>
+      <p>
+        プレビュー + インスペクタ + Timeline の二重分割。ルーラ、トラックヘッダ、
+        クリップ、再生ヘッド、ズーム操作、下部ボタン行。
+      </p>
+      <span class="src">src/gui/timeline/timeline_editor_dialog.py / preview_panel.py / timeline_view.py</span>
+    </a>
+
+    <a class="card" href="settings_window.html">
+      <h2>3. 設定画面</h2>
+      <p>
+        「一般 / 字幕 / 縦動画 / アーカイブ」の 4 タブ。項目名 + 入力欄の 2 列グリッドと、
+        全タブ共通でタブ外に置かれる保存ボタン。
+      </p>
+      <span class="src">src/settings/settings_window.py</span>
+    </a>
+  </div>
+
+  <h2 class="sec">共通のデザイントークン</h2>
+  <p class="caption" style="margin-bottom: 4px;">
+    出どころは <code>theme.DARK</code> / <code>theme.LIGHT</code> と <code>setting.json</code> の
+    <code>ui</code> セクション。上のトグルで表示中のモードの実値に切り替わる。
+  </p>
+  <div class="tokens">
+    <div class="token"><div class="chip" style="background: var(--accent);"></div><b>accent</b>#E8A15C</div>
+    <div class="token"><div class="chip" style="background: var(--accent-bright);"></div><b>accent.bright</b>暗: #D9822B / 明: #E8A15C</div>
+    <div class="token"><div class="chip" style="background: var(--accent-line);"></div><b>accent.line</b>暗: #E8A15C / 明: #B98049</div>
+    <div class="token"><div class="chip" style="background: linear-gradient(to bottom right, var(--bg-from), var(--bg-to));"></div><b>bg.from / bg.to</b>ウィンドウ背景</div>
+    <div class="token"><div class="chip" style="background: var(--bg-glow-a);"></div><b>bg.glow.a</b>光球 (暖色)</div>
+    <div class="token"><div class="chip" style="background: var(--bg-glow-b);"></div><b>bg.glow.b</b>光球 (寒色)</div>
+    <div class="token"><div class="chip" style="background: var(--glass-bg);"></div><b>glass.bg</b>薄いガラス</div>
+    <div class="token"><div class="chip" style="background: var(--glass-bg-strong);"></div><b>glass.bg.strong</b>濃いガラス</div>
+    <div class="token"><div class="chip" style="background: var(--text-primary);"></div><b>text.primary</b>本文</div>
+    <div class="token"><div class="chip" style="background: var(--text-secondary);"></div><b>text.secondary</b>補足 (noteLabel)</div>
+  </div>
+
+  <h2 class="sec">Timeline のクリップ色 (常にダーク・ガラス化の対象外)</h2>
+  <div class="tokens">
+    <div class="token"><div class="chip" style="background: var(--clip-body);"></div><b>本編</b>rgb(58,108,168)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-opening);"></div><b>オープニング</b>rgb(126,87,168)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-ending);"></div><b>エンディング</b>rgb(96,87,168)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-overlay);"></div><b>追加メディア</b>rgb(40,132,130)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-subtitle);"></div><b>字幕</b>rgb(178,130,46)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-audio);"></div><b>音声</b>rgb(56,130,78)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-disabled);"></div><b>無効</b>rgb(96,96,96)</div>
+    <div class="token"><div class="chip" style="background: var(--clip-selected-border);"></div><b>選択枠</b>rgb(255,214,92)</div>
+    <div class="token"><div class="chip" style="background: var(--playhead);"></div><b>再生ヘッド</b>rgb(232,84,84)</div>
+  </div>
+
+  <h2 class="sec">部品カタログ</h2>
+  <div class="win" style="max-width: 760px;">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+    <div class="win-body" style="gap: 12px;">
+      <div class="row" style="flex-wrap: wrap;">
+        <button type="button" class="btn">通常 (QPushButton)</button>
+        <button type="button" class="btn btn--icon" style="width: 40px;">&#9881;</button>
+        <button type="button" class="btn btn--primary" style="width: var(--primary-action-width);">&#9654;</button>
+        <button type="button" class="btn btn--primary-solid">主要動作 (単色)</button>
+        <button type="button" class="btn btn--danger">キャンセル</button>
+        <button type="button" class="btn is-disabled" disabled>無効</button>
+      </div>
+      <div class="row" style="flex-wrap: wrap;">
+        <input class="field" type="text" placeholder="QLineEdit">
+        <div class="combo" style="min-width: 160px;"><span class="combo-text">QComboBox</span><span class="combo-arrow">&#9660;</span></div>
+        <span class="check is-checked"><span class="box"></span>チェック済み</span>
+        <span class="check"><span class="box"></span>未チェック</span>
+      </div>
+      <div class="progress"><div class="chunk" style="width: 62%;"></div><div class="value">62%</div></div>
+      <div class="row">
+        <div class="slider" style="width: 120px;"><div class="groove"></div><div class="handle" style="left: 45%;"></div></div>
+        <span class="note">補足テキスト (#noteLabel)</span>
+      </div>
+      <div class="panel" style="padding: 10px;">薄いガラスパネル (#glassPanel)</div>
+      <div class="panel-strong" style="padding: 10px;">濃いガラスパネル (#glassPanelStrong / 文字・入力を載せる面)</div>
+    </div>
+  </div>
+
+  <p class="caption">
+    実装との対応は <a href="README.md" style="color:#E8A15C;">README.md</a> を参照。
+  </p>
+
+</div>
+
+<script>
+function toggleTheme() {
+    var root = document.documentElement;
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+}
+</script>
+
+</body>
+</html>

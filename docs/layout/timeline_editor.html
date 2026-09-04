@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timeline 編集画面 — Stretheus レイアウト</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+/* ------------------------------------------------------------------
+   Timeline 編集画面 固有のレイアウト
+   setting.json timeline.ui : window 1280x820 / split_ratio 0.55 /
+   track_height_px 56 / subtitle_track_height_px 40 / header_width_px 88 /
+   zoom_button_width_px 40
+   ------------------------------------------------------------------ */
+
+.win--timeline { width: 1280px; height: 820px; display: flex; flex-direction: column; }
+.win--timeline .win-body { flex: 1; min-height: 0; }
+
+/* 縦分割 (上: プレビュー+インスペクタ / 下: Timeline)。上が 55% */
+.split-v { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.split-v > .upper { flex: 55 1 0; min-height: 0; display: flex; }
+.split-v > .lower { flex: 45 1 0; min-height: 0; display: flex; }
+
+/* 横分割 (プレビュー 4 : インスペクタ 1) */
+.split-v > .upper > .preview-pane { flex: 4 1 0; min-width: 0; display: flex; flex-direction: column; }
+.split-v > .upper > .inspector-pane { flex: 1 1 0; min-width: 220px; display: flex; flex-direction: column; }
+
+/* --- プレビュー (PreviewPanel) --- */
+.preview-pane .canvas { flex: 1; min-height: 0; position: relative; }
+.preview-pane .transport { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
+.transport .t-btn { width: 34px; padding: 6px 0; text-align: center; }
+.transport .t-btn--wide { width: 46px; }
+.preview-pane .status { padding: 2px 4px; min-height: 18px; }
+
+/* プレビュー内に重ねた字幕・オーバーレイの見立て (preview_items.py) */
+.canvas .sub-sample {
+    position: absolute;
+    left: 50%; bottom: 42px;
+    transform: translateX(-50%);
+    font-size: 22px;
+    font-weight: 700;
+    color: #ED1C24;                     /* subtitle.color 既定 (配信者) */
+    -webkit-text-stroke: 3px #000;
+    paint-order: stroke fill;
+    white-space: nowrap;
+}
+.canvas .overlay-sample {
+    position: absolute;
+    left: 26px; top: 22px;
+    width: 132px; height: 74px;
+    border: 2px dashed rgba(255, 214, 92, 0.9);   /* 選択中オーバーレイの枠 */
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255, 214, 92, 0.9);
+    font-size: 11px;
+}
+
+/* --- インスペクタ (_InspectorPanel) --- */
+.inspector-pane { padding: 6px; gap: 6px; overflow: auto; }
+.inspector-pane .insp-title { font-weight: 700; }
+
+/* --- Timeline パネル (TimelinePanel) --- */
+.tl { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tl-ruler-row { display: flex; height: var(--ruler-height); flex: none; }
+.tl-ruler-row .spacer-cell { width: var(--track-header-width); flex: none; background: var(--timeline-ruler); }
+.tl-ruler {
+    flex: 1; position: relative; min-width: 0;
+    background: var(--timeline-ruler);
+    border-left: 1px solid var(--timeline-grid);
+}
+.tl-ruler .tick { position: absolute; bottom: 0; width: 1px; height: 8px; background: var(--timeline-grid); }
+.tl-ruler .tick span {
+    position: absolute; left: 3px; bottom: 6px;
+    color: var(--timeline-text); font-size: 10px; white-space: nowrap;
+}
+
+.tl-track-row { display: flex; flex: 1; min-height: 0; }
+.tl-header { width: var(--track-header-width); flex: none; background: var(--timeline-ruler); }
+.tl-header .hdr {
+    display: flex; align-items: center;
+    padding-left: 8px;
+    color: var(--timeline-text);
+    border-bottom: 1px solid var(--timeline-grid);
+}
+.tl-view { flex: 1; min-width: 0; position: relative; overflow: hidden; border-left: 1px solid var(--timeline-grid); }
+.tl-view .track { position: relative; border-bottom: 1px solid var(--timeline-grid); }
+.tl-row-even { background: var(--timeline-track); }
+.tl-row-odd { background: var(--timeline-track-alt); }
+.tl-h-track { height: var(--track-height); }
+.tl-h-sub { height: var(--subtitle-track-height); }
+
+/* トラック領域の下地 (timeline.bg)。半透明なのでウィンドウ背景が透ける */
+.tl-backdrop { background: var(--timeline-bg); }
+
+/* クリップ */
+.clip {
+    position: absolute; top: 3px; bottom: 3px;
+    border: 2px solid rgba(0, 0, 0, 0.45);
+    border-radius: 3px;
+    overflow: hidden;
+    color: #FFFFFF;
+    font-size: 10px;
+    padding: 2px 5px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.clip--selected { border: 3px solid var(--clip-selected-border); }
+.clip--body { background: var(--clip-body); }
+.clip--opening { background: var(--clip-opening); }
+.clip--ending { background: var(--clip-ending); }
+.clip--overlay { background: var(--clip-overlay); }
+.clip--subtitle { background: var(--clip-subtitle); }
+.clip--audio { background: var(--clip-audio); }
+.clip--disabled { background: var(--clip-disabled); }
+
+/* 音声クリップの波形 (waveform.py 相当の見立て) */
+.clip--audio .wave {
+    position: absolute; inset: 14px 0 4px;
+    background: repeating-linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.55) 0 1px,
+        transparent 1px 3px);
+    -webkit-mask-image: radial-gradient(ellipse 100% 60% at 50% 50%, #000 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 100% 60% at 50% 50%, #000 40%, transparent 100%);
+    opacity: 0.7;
+}
+
+/* 再生ヘッド (ルーラ・本体を貫く) */
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--playhead); z-index: 3; }
+
+/* 横スクロール + ズーム行 */
+.tl-scroll-row { display: flex; flex: none; }
+.tl-scroll-row .spacer-cell { width: var(--track-header-width); flex: none; }
+.tl-zoom-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; flex: none; }
+.tl-zoom-row .zoom-btn { width: 40px; padding: 6px 0; text-align: center; }
+/* 案内は QLabel と同じく 1 行のまま。幅が足りなければ切り詰める */
+.tl-zoom-row .hint {
+    flex: 1; min-width: 0; font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 下部ボタン行 */
+.dialog-buttons { display: flex; align-items: center; gap: 6px; flex: none; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Timeline 編集画面</h1>
+  <p>
+    実装元: <code>src/gui/timeline/timeline_editor_dialog.py</code> (<code>TimelineEditorDialog</code> /
+    <code>_InspectorPanel</code>)、<code>src/gui/timeline/preview_panel.py</code> (<code>PreviewPanel</code>)、
+    <code>src/gui/timeline/timeline_view.py</code> (<code>TimelinePanel</code> / <code>TimelineRuler</code> /
+    <code>TrackHeaderWidget</code> / <code>TimelineView</code>)。<br>
+    ウィンドウタイトルは <code>Timeline 編集 — &lt;プロジェクト名&gt;</code>、サイズは
+    <code>setting.json timeline.ui.window_width / window_height</code> = 1280 x 820。
+  </p>
+  <div class="page-nav">
+    <a href="index.html">一覧へ戻る</a>
+    <a href="main_window.html">メイン</a>
+    <a class="current" href="timeline_editor.html">Timeline 編集</a>
+    <a href="settings_window.html">設定</a>
+    <button type="button" onclick="toggleTheme()">ライト / ダーク切り替え</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <div class="win win--timeline">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+
+    <div class="titlebar">
+      <span class="title">Timeline 編集 &#8212; 2026-09-03_stream</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <div class="split-v">
+
+        <!-- ==========================================================
+             上部: プレビュー (4) + インスペクタ (1)
+             ========================================================== -->
+        <div class="upper">
+
+          <!-- ---- プレビュー (PreviewPanel) ---- -->
+          <div class="preview-pane">
+            <div class="canvas preview-canvas">
+              <!-- 映像の周囲は常に黒のまま。焼き込み結果の色判断を誤らせないため (5.6) -->
+              <div class="overlay-sample">overlay.png</div>
+              <div class="sub-sample">ここに字幕が出ます</div>
+            </div>
+
+            <!-- トランスポート -->
+            <div class="transport">
+              <button type="button" class="btn btn--icon t-btn" title="先頭へ (Home)">&#9198;</button>
+              <button type="button" class="btn btn--icon t-btn t-btn--wide" title="2 倍速逆再生 (Q)">&#9664;&#9664;</button>
+              <button type="button" class="btn btn--icon t-btn is-checked" title="再生 / 停止 (Space)">&#9654;</button>
+              <button type="button" class="btn btn--icon t-btn t-btn--wide" title="2 倍速再生 (E)">&#9654;&#9654;</button>
+              <button type="button" class="btn btn--icon t-btn" title="末尾へ (End)">&#9197;</button>
+              <span>0:01:12.40 / 0:14:38.16</span>
+              <div class="spacer"></div>
+              <button type="button" class="btn btn--icon t-btn" title="ミュート切り替え">&#128266;</button>
+              <div class="slider" style="width: 90px;">
+                <div class="groove"></div>
+                <div class="handle" style="left: 70%;"></div>
+              </div>
+              <button type="button" class="btn">高精度プレビュー</button>
+            </div>
+
+            <!-- ステータス (操作できなかったときの案内もここへ出る) -->
+            <div class="status note">再生中 (音声あり)</div>
+          </div>
+
+          <div class="splitter-h"></div>
+
+          <!-- ---- インスペクタ (_InspectorPanel / 濃いめのガラス・角丸なし) ---- -->
+          <div class="inspector-pane panel-strong flat">
+            <div class="insp-title">字幕クリップ</div>
+            <div class="note">0:01:10.20 &#8211; 0:01:13.85 (3.65 秒) / トラック S1</div>
+
+            <!-- 字幕用の編集欄 (QFormLayout) -->
+            <div class="form-rows" style="margin-top: 6px;">
+              <span class="label">字幕</span>
+              <textarea class="textarea" style="height: 80px;">ここに字幕が出ます</textarea>
+
+              <span class="label">役割</span>
+              <div class="combo"><span class="combo-text">配信者</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">フォント</span>
+              <div class="combo"><span class="combo-text">(設定のフォント)</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">サイズ</span>
+              <div class="field spin"><span class="spin-text">既定</span>
+                <span class="spin-buttons"><span>&#9650;</span><span>&#9660;</span></span></div>
+
+              <span class="label">文字色</span>
+              <div class="row">
+                <button type="button" class="btn swatch" style="background: #ED1C24; border-color: #ED1C24;"></button>
+                <input class="field grow" type="text" placeholder="既定">
+                <button type="button" class="btn">既定へ</button>
+              </div>
+
+              <span class="label">縁の色</span>
+              <div class="row">
+                <button type="button" class="btn swatch" style="background: #000000;"></button>
+                <input class="field grow" type="text" placeholder="既定">
+                <button type="button" class="btn">既定へ</button>
+              </div>
+
+              <!-- 複数選択のときだけ出す案内 (既定は非表示) -->
+              <span class="label"></span>
+              <span class="note" style="display: none;">
+                ※ 文字色・縁の色は選択中の 3 件すべてに適用されます（字幕・役割・フォント・サイズはこの 1 件のみ）
+              </span>
+            </div>
+
+            <!-- オーバーレイ (画像・動画) 用の編集欄。選択種別で切り替える -->
+            <div class="form-rows" style="margin-top: 6px; display: none;">
+              <span class="label">大きさ</span>
+              <div class="field spin"><span class="spin-text">100.0 %</span>
+                <span class="spin-buttons"><span>&#9650;</span><span>&#9660;</span></span></div>
+              <span class="label"></span>
+              <span class="note">原寸 1920 x 1080 px</span>
+              <span class="label"></span>
+              <div class="row">
+                <button type="button" class="btn">原寸</button>
+                <button type="button" class="btn">画面幅に合わせる</button>
+              </div>
+            </div>
+
+            <button type="button" class="btn" style="margin-top: 6px;">位置を既定へ戻す</button>
+            <div class="spacer"></div>
+          </div>
+        </div>
+
+        <div class="splitter-v"></div>
+
+        <!-- ==========================================================
+             下部: Timeline (TimelinePanel)
+             ========================================================== -->
+        <div class="lower">
+          <div class="tl tl-backdrop">
+
+            <!-- ルーラ行 (ヘッダ幅ぶんの余白 + ルーラ / 高さ 26px) -->
+            <div class="tl-ruler-row">
+              <div class="spacer-cell"></div>
+              <div class="tl-ruler">
+                <div class="tick" style="left: 0;"><span>0:00</span></div>
+                <div class="tick" style="left: 10%;"><span>1:30</span></div>
+                <div class="tick" style="left: 20%;"><span>3:00</span></div>
+                <div class="tick" style="left: 30%;"><span>4:30</span></div>
+                <div class="tick" style="left: 40%;"><span>6:00</span></div>
+                <div class="tick" style="left: 50%;"><span>7:30</span></div>
+                <div class="tick" style="left: 60%;"><span>9:00</span></div>
+                <div class="tick" style="left: 70%;"><span>10:30</span></div>
+                <div class="tick" style="left: 80%;"><span>12:00</span></div>
+                <div class="tick" style="left: 90%;"><span>13:30</span></div>
+                <div class="playhead" style="left: 8.2%;"></div>
+              </div>
+            </div>
+
+            <!-- トラック行 (ヘッダ + 本体)
+                 並び順は build_rows のとおり 上から 字幕 → 追加映像 → ベース映像 → 音声 -->
+            <div class="tl-track-row">
+              <div class="tl-header">
+                <div class="hdr tl-h-sub tl-row-even">S1</div>
+                <div class="hdr tl-h-sub tl-row-odd">S2</div>
+                <div class="hdr tl-h-track tl-row-even">V2</div>
+                <div class="hdr tl-h-track tl-row-odd">V1</div>
+                <div class="hdr tl-h-track tl-row-even">A1</div>
+              </div>
+
+              <div class="tl-view">
+                <!-- S1: 配信者の字幕 -->
+                <div class="track tl-h-sub tl-row-even">
+                  <div class="clip clip--subtitle" style="left: 1.5%; width: 6%;">よろしくお願いします</div>
+                  <div class="clip clip--subtitle clip--selected" style="left: 8%; width: 5%;">ここに字幕が出ます</div>
+                  <div class="clip clip--subtitle" style="left: 15%; width: 9%;">今日はこの構成でいきます</div>
+                  <div class="clip clip--subtitle" style="left: 27%; width: 7%;">では始めましょう</div>
+                  <div class="clip clip--subtitle" style="left: 40%; width: 11%;">ここが一番の見どころでした</div>
+                  <div class="clip clip--subtitle" style="left: 58%; width: 8%;">危ない、避けます</div>
+                  <div class="clip clip--subtitle" style="left: 72%; width: 10%;">ありがとうございました</div>
+                  <div class="clip clip--disabled" style="left: 86%; width: 6%;">(非表示)</div>
+                </div>
+
+                <!-- S2: コメント字幕 (comment_source 由来 / COMMENT_SUBTITLE_TRACK_ID) -->
+                <div class="track tl-h-sub tl-row-odd">
+                  <div class="clip clip--subtitle" style="left: 4%; width: 4%;">88888</div>
+                  <div class="clip clip--subtitle" style="left: 18%; width: 4%;">www</div>
+                  <div class="clip clip--subtitle" style="left: 43%; width: 5%;">神プレイ</div>
+                  <div class="clip clip--subtitle" style="left: 60%; width: 4%;">おしい</div>
+                  <div class="clip clip--subtitle" style="left: 75%; width: 4%;">おつ</div>
+                </div>
+
+                <!-- V2: 追加メディア (オーバーレイ) -->
+                <div class="track tl-h-track tl-row-even">
+                  <div class="clip clip--overlay" style="left: 6%; width: 14%;">overlay.png</div>
+                  <div class="clip clip--overlay" style="left: 46%; width: 9%;">effect.mp4</div>
+                </div>
+
+                <!-- V1: ベース映像 (オープニング + 本編の編集点 + エンディング) -->
+                <div class="track tl-h-track tl-row-odd">
+                  <div class="clip clip--opening" style="left: 0; width: 5%;">opening.mp4</div>
+                  <div class="clip clip--body" style="left: 5%; width: 17%;">本編 01</div>
+                  <div class="clip clip--body" style="left: 22%; width: 12%;">本編 02</div>
+                  <div class="clip clip--body" style="left: 34%; width: 21%;">本編 03</div>
+                  <div class="clip clip--body" style="left: 55%; width: 15%;">本編 04</div>
+                  <div class="clip clip--body" style="left: 70%; width: 24%;">本編 05</div>
+                  <div class="clip clip--ending" style="left: 94%; width: 6%;">ending.mp4</div>
+                </div>
+
+                <!-- A1: 音声 (波形付き) -->
+                <div class="track tl-h-track tl-row-even">
+                  <div class="clip clip--audio" style="left: 0; width: 94%;">audio<div class="wave"></div></div>
+                  <div class="clip clip--disabled" style="left: 94%; width: 6%;">(ミュート)</div>
+                </div>
+
+                <div class="playhead" style="left: 8.2%;"></div>
+              </div>
+            </div>
+
+            <!-- 横スクロールバー (ヘッダ幅ぶんの余白 + つまみ) -->
+            <div class="tl-scroll-row">
+              <div class="spacer-cell"></div>
+              <div class="scrollbar" style="flex: 1;">
+                <div class="handle" style="left: 0; width: 62%;"></div>
+              </div>
+            </div>
+
+            <!-- ズーム操作 + ショートカットの案内 -->
+            <div class="tl-zoom-row">
+              <button type="button" class="btn btn--icon zoom-btn" title="Timeline を縮小">&#65293;</button>
+              <button type="button" class="btn btn--icon zoom-btn" title="Timeline を拡大">&#65291;</button>
+              <button type="button" class="btn">全体</button>
+              <span class="hint note">W 分割 / A 前をリップル削除 / D 後ろをリップル削除 / Delete リップル削除・BackSpace 削除のみ / Space 再生・Q 倍速逆再生・E 倍速再生 / Alt で吸着オフ</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==========================================================
+           下部ボタン行
+           ========================================================== -->
+      <div class="dialog-buttons">
+        <button type="button" class="btn" title="Ctrl+Z">元に戻す</button>
+        <button type="button" class="btn is-disabled" disabled title="Ctrl+Y">やり直す</button>
+        <div class="spacer"></div>
+        <button type="button" class="btn" title="現在の Timeline をプロジェクトファイルへ保存します (Ctrl+S)">保存</button>
+        <button type="button" class="btn" title="保存先を選んで保存します (Ctrl+Shift+S)">名前を付けて保存...</button>
+        <button type="button" class="btn">DaVinci Resolve ファイル出力</button>
+        <button type="button" class="btn btn--primary" title="Timeline の内容を反映した動画を書き出します">決定</button>
+        <button type="button" class="btn btn--danger">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    構造は縦分割 (上 55% : 下 45%) の中に横分割 (プレビュー 4 : インスペクタ 1) が入る二重の
+    <code>QSplitter</code>。比率は <code>setting.json timeline.ui.split_ratio</code>。
+    <ul>
+      <li>トラックの並び順は <code>timeline_view.build_rows</code> のとおり 上から 字幕 → 追加映像 → ベース映像 → 音声。</li>
+      <li>クリップ・再生ヘッド・選択枠はガラス化の対象外で、編集点の判別精度を保つため不透明色のまま (R10)。</li>
+      <li>Timeline の背景 (下地) だけが半透明で、ウィンドウ背景のグラデーションが透ける。ライト時も常にダーク基調。</li>
+      <li>アーカイブ用 (<code>archive_timeline_dialog.py</code>) は同じ画面を <code>QMainWindow</code> で包み、
+          上部へ採点グラフのドックを足したもの。決定ボタンの文言は「完了（切り抜き＋字幕焼き込み）」。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+// ライト / ダーク切り替え (Timeline 自体は常にダーク基調のまま追従しない)
+function toggleTheme() {
+    var root = document.documentElement;
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+}
+</script>
+
+</body>
+</html>

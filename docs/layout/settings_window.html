@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定画面 — Stretheus レイアウト</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+/* ------------------------------------------------------------------
+   設定画面 固有のレイアウト
+   settings_window.py : WINDOW_WIDTH 300 / WINDOW_HEIGHT 760
+   COLUMN_LABEL_WIDTH 100 / INPUT_FIELD_MIN_WIDTH 160
+   COLOR_FIELD_MIN_WIDTH 104 / OUTLINE_COLOR_FIELD_MIN_WIDTH 140
+
+   横幅 300 は「項目名ラベル幅 + 入力欄最小幅」で決まる最小値であり、
+   役割別カラー行 (3 列) は実際には横へ広げて使う。ここでは中身が
+   すべて見える幅 (520px) で描き、最小幅の内訳を注記で示す。
+   ------------------------------------------------------------------ */
+
+.win--settings { width: 520px; height: 760px; display: flex; flex-direction: column; }
+.win--settings .win-body { flex: 1; min-height: 0; }
+
+.settings-field { min-width: var(--input-min-width); }
+.color-field { min-width: 104px; }        /* COLOR_FIELD_MIN_WIDTH */
+.outline-color-field { min-width: 140px; }/* OUTLINE_COLOR_FIELD_MIN_WIDTH */
+
+/* 役割別カラー 3 種を横 1 行に組む (_make_color_role_row)。
+   各列は「役割名 (上) + 入力欄 + 色見本 (下)」の縦積み */
+.role-colors { display: flex; gap: 6px; flex-wrap: wrap; }
+.role-colors .role-col { display: flex; flex-direction: column; gap: 2px; }
+.role-colors .role-col > .note { font-size: 11px; }
+
+.font-preview { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>設定画面</h1>
+  <p>
+    実装元: <code>src/settings/settings_window.py</code> の <code>SettingsWindow</code>。<br>
+    ウィンドウタイトルは <code>切り抜き自動編集 設定</code>、サイズは <code>WINDOW_WIDTH x WINDOW_HEIGHT</code> = 300 x 760。
+    タブは「一般 / 字幕 / 縦動画 / アーカイブ」の 4 つで、保存ボタンだけが全タブ共通でタブの外 (右下) に置かれる。
+  </p>
+  <div class="page-nav">
+    <a href="index.html">一覧へ戻る</a>
+    <a href="main_window.html">メイン</a>
+    <a href="timeline_editor.html">Timeline 編集</a>
+    <a class="current" href="settings_window.html">設定</a>
+    <button type="button" onclick="toggleTheme()">ライト / ダーク切り替え</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <div class="win win--settings">
+    <div class="glow glow--a glow--tall"></div>
+    <div class="glow glow--b glow--tall"></div>
+
+    <div class="titlebar">
+      <span class="title">切り抜き自動編集 設定</span>
+      <span class="caption-buttons"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>
+    </div>
+
+    <div class="win-body">
+      <div class="tabs">
+        <div class="tabbar">
+          <button type="button" class="tab is-selected" data-tab="general">一般</button>
+          <button type="button" class="tab" data-tab="subtitle">字幕</button>
+          <button type="button" class="tab" data-tab="vertical">縦動画</button>
+          <button type="button" class="tab" data-tab="archive">アーカイブ</button>
+        </div>
+
+        <div class="tabpane first-selected" id="pane">
+
+          <!-- ======================================================
+               一般タブ (_build_general_tab)
+               ====================================================== -->
+          <div class="tabpage is-active" data-page="general">
+            <div class="form-grid">
+              <span class="label">動画ディレクトリ</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" value="D:/videos">
+                <button type="button" class="btn">参照&#8230;</button>
+              </div>
+
+              <span class="label">オープニング動画</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" value="D:/assets/opening.mp4">
+                <button type="button" class="btn">参照&#8230;</button>
+                <span class="check is-checked"><span class="box"></span>結合する</span>
+              </div>
+
+              <span class="label">エンディング動画</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" value="D:/assets/ending.mp4">
+                <button type="button" class="btn">参照&#8230;</button>
+                <span class="check is-checked"><span class="box"></span>結合する</span>
+              </div>
+
+              <span class="label">出力ディレクトリ</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" placeholder="(空欄なら入力動画と同じ場所)">
+                <button type="button" class="btn">参照&#8230;</button>
+              </div>
+
+              <span class="label">自動更新</span>
+              <span class="check is-checked"><span class="box"></span>起動時に更新を確認する</span>
+
+              <span class="label">無音カット</span>
+              <span class="check is-checked"><span class="box"></span>無音カットを有効にする</span>
+
+              <span class="label">フェード</span>
+              <span class="check"><span class="box"></span>セグメント境界にフェードを付与する</span>
+
+              <span class="label">フェード時間(秒)</span>
+              <input class="field settings-field" type="text" placeholder="境界フェードの秒数(例: 0.05)">
+            </div>
+          </div>
+
+          <!-- ======================================================
+               字幕タブ (_build_subtitle_tab)
+               ====================================================== -->
+          <div class="tabpage" data-page="subtitle">
+            <div class="form-grid">
+              <span class="label">テロップ生成</span>
+              <span class="check is-checked"><span class="box"></span>テロップ生成を有効にする</span>
+
+              <span class="label">字幕編集</span>
+              <span class="check is-checked"><span class="box"></span>焼き込み前に字幕編集画面を開く</span>
+
+              <span class="label">発話検出</span>
+              <span class="check"><span class="box"></span>発話区間のみテロップを表示する</span>
+
+              <span class="label">発話最小無音長(秒)</span>
+              <input class="field settings-field" type="text" placeholder="発話区間検出の最小無音長(例: 0.2)">
+
+              <span class="label">絞り込み方式</span>
+              <div class="combo settings-field"><span class="combo-text">前後の無音を切詰め</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">前後パディング(秒)</span>
+              <input class="field settings-field" type="text" placeholder="表示区間の前後パディング秒(例: 0.1)">
+
+              <span class="label">実行デバイス</span>
+              <div class="combo settings-field"><span class="combo-text">CPU</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">計算精度</span>
+              <div class="combo settings-field"><span class="combo-text">自動</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">字幕言語</span>
+              <div class="combo settings-field"><span class="combo-text">ja</span><span class="combo-arrow">&#9660;</span></div>
+
+              <!-- テロップ役割別カラー: 縦 3 行から横 1 行へ (resolve4 S2) -->
+              <span class="label">テロップカラー</span>
+              <div class="role-colors">
+                <div class="role-col">
+                  <span class="note">配信者</span>
+                  <div class="row">
+                    <input class="field color-field" type="text" placeholder="#ED1C24">
+                    <button type="button" class="btn swatch" style="background: #ED1C24; border-color: #ED1C24;"></button>
+                  </div>
+                </div>
+                <div class="role-col">
+                  <span class="note">サブ</span>
+                  <div class="row">
+                    <input class="field color-field" type="text" placeholder="#FFF100">
+                    <button type="button" class="btn swatch" style="background: #FFF100; border-color: #FFF100;"></button>
+                  </div>
+                </div>
+                <div class="role-col">
+                  <span class="note">コメント</span>
+                  <div class="row">
+                    <input class="field color-field" type="text" placeholder="#FFFFFF">
+                    <button type="button" class="btn swatch" style="background: #FFFFFF; border-color: #FFFFFF;"></button>
+                  </div>
+                </div>
+              </div>
+
+              <span class="label">フォントの大きさ</span>
+              <input class="field settings-field" type="text" value="48">
+
+              <span class="label">フォント種類</span>
+              <div class="row">
+                <div class="combo grow settings-field"><span class="combo-text">Yu Gothic UI</span><span class="combo-arrow">&#9660;</span></div>
+                <button type="button" class="btn" title="フォントファイル(.ttf/.otf/.ttc)を追加する">追加&#8230;</button>
+              </div>
+
+              <span class="label">プレビュー</span>
+              <span class="font-preview">あいうえお 永 ABCabc 0123</span>
+
+              <span class="label"></span>
+              <span class="note" style="font-size: 11px;">追加できるのは .ttf / .otf / .ttc のみ</span>
+
+              <span class="label">改行方式</span>
+              <div class="combo settings-field"><span class="combo-text">BudouX(文節)</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">1行下限文字数</span>
+              <input class="field settings-field" type="text" value="12">
+
+              <span class="label">1行最大文字数</span>
+              <input class="field settings-field" type="text" value="20">
+
+              <!-- アウトライン役割別カラー: ASS 形式 &HAABBGGRR (透明度あり) -->
+              <span class="label">アウトラインカラー</span>
+              <div class="role-colors">
+                <div class="role-col">
+                  <span class="note">配信者</span>
+                  <div class="row">
+                    <input class="field outline-color-field" type="text" placeholder="&amp;H00000000">
+                    <button type="button" class="btn swatch" style="background: #000000;"></button>
+                  </div>
+                </div>
+                <div class="role-col">
+                  <span class="note">サブ</span>
+                  <div class="row">
+                    <input class="field outline-color-field" type="text" placeholder="&amp;H00000000">
+                    <button type="button" class="btn swatch" style="background: #000000;"></button>
+                  </div>
+                </div>
+                <div class="role-col">
+                  <span class="note">コメント</span>
+                  <div class="row">
+                    <input class="field outline-color-field" type="text" placeholder="&amp;H00000000">
+                    <button type="button" class="btn swatch" style="background: #000000;"></button>
+                  </div>
+                </div>
+              </div>
+
+              <span class="label">アウトラインの太さ</span>
+              <input class="field settings-field" type="text" value="3">
+
+              <span class="label">背景/影の色</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" placeholder="&amp;H64000000">
+                <button type="button" class="btn swatch" style="background: #000000;"></button>
+              </div>
+
+              <span class="label">装飾</span>
+              <div class="row">
+                <span class="check is-checked"><span class="box"></span>太字</span>
+                <span class="check"><span class="box"></span>斜体</span>
+                <span class="check"><span class="box"></span>下線</span>
+                <span class="check"><span class="box"></span>打消し線</span>
+              </div>
+
+              <span class="label">文字間隔</span>
+              <input class="field settings-field" type="text" value="0">
+
+              <span class="label">回転角度</span>
+              <input class="field settings-field" type="text" value="0">
+
+              <span class="label">縁取りスタイル</span>
+              <div class="combo settings-field"><span class="combo-text">縁取り + ドロップシャドウ</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">表示位置</span>
+              <div class="combo settings-field"><span class="combo-text">下段（中央）</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">余白</span>
+              <div class="row">
+                <span>左</span><input class="field grow" type="text" value="60">
+                <span>右</span><input class="field grow" type="text" value="60">
+                <span>下</span><input class="field grow" type="text" value="60">
+              </div>
+            </div>
+          </div>
+
+          <!-- ======================================================
+               縦動画タブ (_build_vertical_tab)
+               ====================================================== -->
+          <div class="tabpage" data-page="vertical">
+            <div class="form-grid">
+              <span class="label">縦動画対応</span>
+              <span class="check is-checked"><span class="box"></span>縦動画を自動判定して縦仕様で出力する</span>
+
+              <span class="label">出力サイズ</span>
+              <div class="row">
+                <span>幅</span><input class="field grow" type="text" value="1080">
+                <span>高</span><input class="field grow" type="text" value="1920">
+              </div>
+
+              <span class="label">フォントの大きさ</span>
+              <input class="field settings-field" type="text" value="64">
+
+              <span class="label">1行下限文字数</span>
+              <input class="field settings-field" type="text" value="10">
+
+              <span class="label">1行最大文字数</span>
+              <input class="field settings-field" type="text" value="15">
+
+              <span class="label">表示位置</span>
+              <div class="combo settings-field"><span class="combo-text">下段（中央）</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">余白</span>
+              <div class="row">
+                <span>左</span><input class="field grow" type="text" value="40">
+                <span>右</span><input class="field grow" type="text" value="40">
+                <span>下</span><input class="field grow" type="text" value="320">
+              </div>
+            </div>
+          </div>
+
+          <!-- ======================================================
+               アーカイブタブ (_build_archive_tab)
+               見出し・説明・機能チェックはグリッドの外 (layout 直下) に置き、
+               「テーマ・イントロカード」節より前に来る順序を保つ
+               ====================================================== -->
+          <div class="tabpage" data-page="archive">
+            <div class="section-title">アーカイブ切り抜き</div>
+            <div class="note" style="line-height: 1.7;">
+              メイン画面の「アーカイブ切り抜き」タブを使えるようにします。<br>
+              変更はアプリの再起動後に反映されます。
+            </div>
+            <div class="row">
+              <span class="label" style="min-width: var(--column-label-width);">機能</span>
+              <span class="check is-checked"><span class="box"></span>アーカイブ切り抜きを有効にする</span>
+              <div class="spacer"></div>
+            </div>
+
+            <div class="section-title" style="margin-top: 6px;">テーマ・イントロカード</div>
+            <div class="note" style="line-height: 1.7;">
+              字幕一覧画面でテーマを入力したクリップに、開始前バッファを復元して<br>
+              ブラー+黒帯+中央テーマのイントロを付け、本編には左上へテーマを焼きます。
+            </div>
+
+            <div class="form-grid">
+              <span class="label">機能</span>
+              <span class="check is-checked"><span class="box"></span>テーマ・イントロカードを有効にする</span>
+
+              <span class="label">開始前バッファ(秒)</span>
+              <input class="field settings-field" type="text" value="3.0">
+
+              <span class="label">ブラー強度</span>
+              <input class="field settings-field" type="text" value="20.0">
+
+              <span class="label">黒帯の余白(px)</span>
+              <div class="row">
+                <span>上</span><input class="field grow" type="text" value="360">
+                <span>下</span><input class="field grow" type="text" value="360">
+              </div>
+
+              <span class="label">黒帯</span>
+              <div class="row">
+                <span>色</span><input class="field grow settings-field" type="text" placeholder="black">
+                <span>不透明度</span><input class="field grow" type="text" value="0.5">
+              </div>
+
+              <span class="label">中央テーマ フォント</span>
+              <div class="combo settings-field"><span class="combo-text">(字幕フォントに従う)</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">中央テーマ サイズ</span>
+              <input class="field settings-field" type="text" value="96">
+
+              <span class="label">中央テーマ 文字色</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" value="#FFFFFF">
+                <button type="button" class="btn swatch" style="background: #FFFFFF; border-color: #FFFFFF;"></button>
+              </div>
+
+              <span class="label">左上タグ フォント</span>
+              <div class="combo settings-field"><span class="combo-text">(字幕フォントに従う)</span><span class="combo-arrow">&#9660;</span></div>
+
+              <span class="label">左上タグ サイズ</span>
+              <input class="field settings-field" type="text" value="42">
+
+              <span class="label">左上タグ 文字色</span>
+              <div class="row">
+                <input class="field grow settings-field" type="text" value="#FFFFFF">
+                <button type="button" class="btn swatch" style="background: #FFFFFF; border-color: #FFFFFF;"></button>
+              </div>
+
+              <span class="label">左上タグ 背景不透明度</span>
+              <input class="field settings-field" type="text" value="0.4">
+
+              <span class="label">左上タグ 余白(px)</span>
+              <div class="row">
+                <span>左</span><input class="field grow" type="text" value="40">
+                <span>上</span><input class="field grow" type="text" value="40">
+              </div>
+
+              <span class="label">イントロ音声</span>
+              <span class="check is-checked"><span class="box"></span>イントロの音声を無音化する</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 保存ボタン (全タブ共通・タブ外に配置 / 最小高さ 32px) -->
+      <div class="row">
+        <div class="spacer"></div>
+        <button type="button" class="btn" style="min-height: 32px;">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    全タブが「項目名ラベル (最小 100px) + 入力欄 (最小 160px)」の 2 列グリッド
+    (<code>QGridLayout</code> / 横 12px・縦 8px 間隔)。実装上の最小幅 300px はこの 2 列の合計で決まる。
+    <ul>
+      <li>役割別カラー (テロップ / アウトライン) だけは横 1 行へ 3 列並べ、各列を「役割名 + 入力欄 + 色見本」の縦積みにする (resolve4 S2 / S3)。</li>
+      <li>アーカイブタブのみ見出し (<code>#sectionTitle</code>) と注記をグリッドの外へ置き、節の順序を保っている。</li>
+      <li>先頭タブ (一般) 選択中だけペイン左上の角丸が外れる (<code>theme.bind_tab_pane_corner</code>)。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+// タブ切り替え
+document.querySelectorAll('.tab[data-tab]').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+        var bar = tab.parentElement;
+        bar.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('is-selected'); });
+        tab.classList.add('is-selected');
+        var pane = document.getElementById('pane');
+        pane.querySelectorAll('.tabpage').forEach(function (p) {
+            p.classList.toggle('is-active', p.dataset.page === tab.dataset.tab);
+        });
+        pane.classList.toggle('first-selected', tab.dataset.tab === 'general');
+        pane.scrollTop = 0;
+    });
+});
+
+// ライト / ダーク切り替え
+function toggleTheme() {
+    var root = document.documentElement;
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+}
+</script>
+
+</body>
+</html>

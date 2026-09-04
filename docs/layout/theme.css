@@ -1,0 +1,484 @@
+/* ==================================================================
+   Stretheus 画面レイアウトの HTML/CSS 版 共通スタイル
+
+   src/gui/theme.py のデザイントークンと QSS (_QSS_TEMPLATE) を
+   そのまま CSS へ置き換えたもの。値の出どころは以下のとおり。
+
+     * 色       : theme.DARK / theme.LIGHT + setting.json の ui セクション
+     * 形状     : theme.SHAPE (radius.panel = 16px / radius.control = 10px)
+     * 部品規則 : theme._QSS_TEMPLATE (QPushButton / QLineEdit / QTabBar …)
+     * Timeline : theme.TIMELINE + src/gui/timeline/timeline_view.py の色定数
+
+   ライト/ダークは data-theme 属性で切り替える (theme.py の theme_mode 相当)。
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   デザイントークン
+   ------------------------------------------------------------------ */
+
+:root {
+    /* 形状 (両モード共通 / setting.json ui.corner_radius_px / control_radius_px) */
+    --radius-panel: 16px;
+    --radius-control: 10px;
+    --border-width: 1px;
+
+    /* Timeline は明暗に追従せず常にダーク基調 (theme.py 3-6-3) */
+    --timeline-track: rgba(255, 255, 255, 0.04);
+    --timeline-track-alt: rgba(255, 255, 255, 0.06);
+    --timeline-ruler: rgba(255, 255, 255, 0.08);
+    --timeline-grid: rgba(255, 255, 255, 0.16);
+    --timeline-text: #ECECEC;
+
+    /* クリップ色 (timeline_view.py。ガラス化の対象外・不透明のまま / R10) */
+    --clip-body: rgb(58, 108, 168);
+    --clip-opening: rgb(126, 87, 168);
+    --clip-ending: rgb(96, 87, 168);
+    --clip-overlay: rgb(40, 132, 130);
+    --clip-subtitle: rgb(178, 130, 46);
+    --clip-audio: rgb(56, 130, 78);
+    --clip-disabled: rgb(96, 96, 96);
+    --clip-selected-border: rgb(255, 214, 92);
+    --playhead: rgb(232, 84, 84);
+
+    /* レイアウト実測値 (setting.json timeline.ui / settings_window.py の定数) */
+    --ruler-height: 26px;
+    --track-header-width: 88px;
+    --track-height: 56px;
+    --subtitle-track-height: 40px;
+    --primary-action-width: 96px;   /* theme.PRIMARY_ACTION_BUTTON_WIDTH_PX */
+    --column-label-width: 100px;    /* settings_window.COLUMN_LABEL_WIDTH */
+    --input-min-width: 160px;       /* settings_window.INPUT_FIELD_MIN_WIDTH */
+}
+
+/* ダーク (既定)。ガラス層は暗い下地に「白を薄く」乗せる (3-6-2) */
+[data-theme="dark"] {
+    --bg-from: #14111A;
+    --bg-to: #221A20;
+    --bg-glow-a: #6E2A18;
+    --bg-glow-b: #1E2440;
+
+    --glass-bg: rgba(255, 255, 255, 0.07);
+    --glass-bg-strong: rgba(255, 255, 255, 0.12);
+    --glass-bg-hover: rgba(255, 255, 255, 0.14);
+    --glass-border: rgba(255, 255, 255, 0.16);
+    --glass-highlight: rgba(255, 255, 255, 0.28);
+    --glass-shadow: rgba(0, 0, 0, 0.35);
+
+    --text-primary: #F4F1F2;
+    --text-secondary: #B9AEB2;
+    --text-disabled: #7A6E72;
+
+    --accent: #E8A15C;
+    --accent-bright: #D9822B;
+    --accent-hover: #FFB771;
+    --accent-pressed: #C1864D;
+    --accent-on: #1B1B1F;
+    --accent-line: #E8A15C;
+    --danger-line: #E8A15C;
+
+    --timeline-bg: rgba(20, 18, 24, 0.55);
+}
+
+/* ライト。明るい下地では「白を濃く」乗せないとガラスが成立しない (3-6-2) */
+[data-theme="light"] {
+    --bg-from: #F5F4F6;
+    --bg-to: #EAE7EC;
+    --bg-glow-a: #F7DCD0;
+    --bg-glow-b: #E2E4EF;
+
+    --glass-bg: rgba(255, 255, 255, 0.55);
+    --glass-bg-strong: rgba(255, 255, 255, 0.75);
+    --glass-bg-hover: rgba(255, 255, 255, 0.77);
+    --glass-border: rgba(255, 255, 255, 0.80);
+    --glass-highlight: rgba(255, 255, 255, 0.95);
+    --glass-shadow: rgba(0, 0, 0, 0.12);
+
+    --text-primary: #1B1B1F;
+    --text-secondary: #5A555C;
+    --text-disabled: #9A949B;
+
+    --accent: #E8A15C;
+    --accent-bright: #E8A15C;
+    --accent-hover: #FFB771;
+    --accent-pressed: #C1864D;
+    --accent-on: #1B1B1F;
+    --accent-line: #B98049;   /* 明背景では 3:1 まで暗く寄せた線色を使う (3-4) */
+    --danger-line: #B88049;
+
+    --timeline-bg: rgba(20, 18, 24, 0.82);
+}
+
+/* ------------------------------------------------------------------
+   ページ土台 (アプリ本体ではなく、この見本ページ自身の見た目)
+   ------------------------------------------------------------------ */
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 24px;
+    background: #2A2A2E;
+    /* Windows の既定 UI フォント。Qt もこの系列を使う */
+    font-family: "Yu Gothic UI", "Meiryo UI", "Segoe UI", system-ui, sans-serif;
+    font-size: 12px;   /* Qt の既定 9pt 相当 */
+    color: #F4F1F2;
+}
+
+.page-head { max-width: 1330px; margin: 0 auto 18px; }
+.page-head h1 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+.page-head p { margin: 0; color: #A9A4AC; font-size: 12px; line-height: 1.8; }
+.page-head a { color: #E8A15C; }
+.page-nav { margin: 12px 0 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.page-nav a,
+.page-nav button {
+    font: inherit;
+    color: #F4F1F2;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    padding: 5px 12px;
+    text-decoration: none;
+    cursor: pointer;
+}
+.page-nav a:hover,
+.page-nav button:hover { background: rgba(255, 255, 255, 0.16); }
+.page-nav .current { background: rgba(232, 161, 92, 0.22); border-color: rgba(232, 161, 92, 0.5); }
+.stage { max-width: 1330px; margin: 0 auto; }
+.caption { margin: 10px 0 26px; color: #A9A4AC; font-size: 11px; line-height: 1.9; }
+.caption code { color: #E8A15C; }
+.caption ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* ------------------------------------------------------------------
+   ウィンドウ (背景グラデーション + 光球 / theme.paint_background)
+   ------------------------------------------------------------------ */
+
+.win {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    color: var(--text-primary);
+    /* 斜めグラデーション (左上 → 右下) */
+    background: linear-gradient(to bottom right, var(--bg-from), var(--bg-to));
+}
+
+/* 光球 (QRadialGradient 2 つ / theme._GLOW_A / _GLOW_B)。
+   中心を left/top で置き、transform で自身の半分だけ戻して中心合わせにする。
+   直径 = max(幅, 高さ) x 半径比 x 2。横長ウィンドウは幅基準 (既定)、
+   縦長ウィンドウは .glow--tall で高さ基準へ切り替える。 */
+.glow {
+    position: absolute;
+    width: 124%;            /* 0.62 x 2 */
+    aspect-ratio: 1 / 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.glow--a {
+    left: 22%; top: 16%;
+    background: radial-gradient(closest-side, var(--bg-glow-a) 0%, transparent 100%);
+    opacity: 0.55;
+}
+.glow--b {
+    left: 84%; top: 82%; width: 116%;   /* 0.58 x 2 */
+    background: radial-gradient(closest-side, var(--bg-glow-b) 0%, transparent 100%);
+    opacity: 0.45;
+}
+.glow--tall { width: auto; height: 124%; }
+.glow--tall.glow--b { width: auto; height: 116%; }
+
+/* タイトルバー (DWM のキャプション色を背景へ合わせている / theme._DWMWA_CAPTION_COLOR) */
+.titlebar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 32px;
+    padding-left: 12px;
+    font-size: 12px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--glass-border);
+}
+.titlebar .title { flex: 1; }
+.titlebar .caption-buttons { display: flex; }
+.titlebar .caption-buttons span {
+    width: 44px;
+    text-align: center;
+    line-height: 32px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+/* ウィンドウの中身 (QVBoxLayout の既定マージン 9px / 間隔 6px) */
+.win-body {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 9px;
+    min-height: 0;
+}
+
+/* ------------------------------------------------------------------
+   ガラスパネル (#glassPanel / #glassPanelStrong)
+   ------------------------------------------------------------------ */
+
+.panel {
+    background-color: var(--glass-bg);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-panel);
+}
+.panel-strong {
+    background-color: var(--glass-bg-strong);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-panel);
+}
+/* 分割ウィンドウの一区画のように周囲と接する面は角丸を外す (resolve4 E1) */
+.flat { border-radius: 0; }
+
+/* 補足テキスト (#noteLabel) */
+.note { color: var(--text-secondary); }
+/* 見出し (#sectionTitle) */
+.section-title {
+    padding-top: 8px;
+    border-bottom: var(--border-width) solid var(--glass-border);
+    font-weight: 700;
+    font-size: 14px;      /* settings_window.TITLE_FONT_SIZE */
+    margin: 0;
+}
+
+/* ------------------------------------------------------------------
+   ボタン (QPushButton)
+   ------------------------------------------------------------------ */
+
+.btn {
+    font: inherit;
+    color: var(--text-primary);
+    background-color: var(--glass-bg-strong);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-control);
+    padding: 6px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn:hover { background-color: var(--glass-bg-hover); border-color: var(--glass-highlight); }
+.btn:active { background-color: var(--accent-pressed); color: var(--accent-on); }
+.btn:disabled,
+.btn.is-disabled { color: var(--text-disabled); background-color: var(--glass-bg); cursor: default; }
+
+/* アイコンだけを載せるボタン (QPushButton[iconOnly="true"]) */
+.btn--icon { padding: 6px 6px; }
+/* 押し込み状態 (QPushButton:checked) */
+.btn.is-checked { background-color: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+
+/* 主要動作 (#primaryButton)。アクセントのグラデーションで塗る (5.2-2) */
+.btn--primary {
+    background: linear-gradient(to bottom right, var(--accent), var(--accent-bright));
+    color: var(--accent-on);
+    border: none;
+}
+.btn--primary:hover { background: var(--accent-hover); }
+/* 長い文言の主要動作は単色で塗る (#primaryButtonSolid) */
+.btn--primary-solid { background: var(--accent); color: var(--accent-on); border: none; }
+/* 破壊的動作 (#dangerButton)。色では分けず輪郭で示す (5.2-3) */
+.btn--danger {
+    background: transparent;
+    color: var(--danger-line);
+    border: var(--border-width) solid var(--danger-line);
+}
+.btn--danger:hover { background-color: var(--glass-bg-hover); }
+
+/* ------------------------------------------------------------------
+   入力欄 (QLineEdit / QPlainTextEdit / QComboBox / QSpinBox)
+   ------------------------------------------------------------------ */
+
+.field,
+.combo,
+.textarea {
+    font: inherit;
+    color: var(--text-primary);
+    background-color: var(--glass-bg-strong);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-control);
+    padding: 4px 8px;
+    min-width: 0;
+}
+.field::placeholder,
+.textarea::placeholder { color: var(--text-disabled); }
+.field:focus,
+.textarea:focus { outline: none; border-color: var(--accent-line); }
+.textarea { resize: none; line-height: 1.5; }
+
+/* ドロップダウン。矢印は QComboBox の下向き三角に合わせる */
+.combo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+    min-height: 26px;
+}
+.combo .combo-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo .combo-arrow { color: var(--text-secondary); font-size: 9px; }
+.combo.is-placeholder .combo-text { color: var(--text-disabled); }
+
+/* 数値スピンボックス (QDoubleSpinBox) */
+.spin { display: flex; align-items: center; }
+.spin .spin-text { flex: 1; }
+.spin .spin-buttons { display: flex; flex-direction: column; line-height: 1; color: var(--text-secondary); font-size: 7px; gap: 2px; }
+
+/* ------------------------------------------------------------------
+   チェックボックス (QCheckBox::indicator)
+   ------------------------------------------------------------------ */
+
+.check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.check .box {
+    width: 14px;
+    height: 14px;
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: 3px;
+    background: var(--glass-bg-strong);
+    flex: none;
+}
+.check.is-checked .box {
+    background: var(--accent);
+    border-color: var(--accent);
+    position: relative;
+}
+.check.is-checked .box::after {
+    content: "";
+    position: absolute;
+    left: 4px; top: 1px;
+    width: 3px; height: 7px;
+    border: solid var(--accent-on);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* ------------------------------------------------------------------
+   タブ (QTabWidget / QTabBar)
+   ------------------------------------------------------------------ */
+
+.tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tabbar { display: flex; align-items: flex-end; }
+.tab {
+    font: inherit;
+    background: transparent;
+    border: none;
+    padding: 8px 18px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.tab:hover { color: var(--text-primary); }
+.tab.is-selected {
+    background: var(--glass-bg-strong);
+    color: var(--text-primary);
+    border-top-left-radius: var(--radius-control);
+    border-top-right-radius: var(--radius-control);
+}
+/* コーナーウィジェット (設定ボタン / resolve4 M3) */
+.tabbar .corner { margin-left: auto; padding-bottom: 4px; }
+
+.tabpane {
+    flex: 1;
+    min-height: 0;
+    background: var(--glass-bg);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-panel);
+    padding: 9px;
+    overflow: auto;
+}
+/* 先頭タブ選択中はペイン左上を四角にする (QTabWidget[firstTabSelected="true"]) */
+.tabpane.first-selected { border-top-left-radius: 0; }
+.tabpage { display: none; flex-direction: column; gap: 6px; }
+.tabpage.is-active { display: flex; }
+
+/* ------------------------------------------------------------------
+   進捗バー (QProgressBar)
+   ------------------------------------------------------------------ */
+
+.progress {
+    position: relative;
+    height: 22px;
+    flex: none;
+    background: var(--glass-bg);
+    border: var(--border-width) solid var(--glass-border);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+}
+.progress .chunk { position: absolute; inset: 0 auto 0 0; background: var(--accent-line); border-radius: var(--radius-control); }
+.progress .value {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 11px;
+    color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------
+   スライダ (QSlider) / スクロールバー (QScrollBar)
+   ------------------------------------------------------------------ */
+
+.slider { position: relative; height: 16px; display: flex; align-items: center; }
+.slider .groove { height: 4px; width: 100%; background: var(--glass-bg-strong); border-radius: 2px; }
+.slider .handle {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: var(--accent-line);
+    border-radius: 6px;
+    transform: translateX(-50%);
+}
+
+.scrollbar { height: 10px; background: transparent; position: relative; flex: none; }
+.scrollbar .handle {
+    position: absolute;
+    top: 0; height: 10px;
+    min-width: 24px;
+    background: var(--glass-bg-hover);
+    border-radius: 5px;
+}
+
+/* 分割線 (QSplitter::handle) */
+.splitter-h { width: 4px; background: var(--glass-border); flex: none; cursor: col-resize; }
+.splitter-v { height: 4px; background: var(--glass-border); flex: none; cursor: row-resize; }
+
+/* ------------------------------------------------------------------
+   行レイアウト (QHBoxLayout / QGridLayout の置き換え)
+   ------------------------------------------------------------------ */
+
+.row { display: flex; align-items: center; gap: 6px; }
+.row > .grow { flex: 1; min-width: 0; }
+.col { display: flex; flex-direction: column; gap: 6px; }
+.spacer { flex: 1; }
+
+/* 項目名 + 入力欄の 2 列グリッド (settings_window の QGridLayout) */
+.form-grid {
+    display: grid;
+    grid-template-columns: minmax(var(--column-label-width), max-content) 1fr;
+    column-gap: 12px;
+    row-gap: 8px;
+    align-items: center;
+}
+.form-grid > .label { white-space: nowrap; }
+.form-grid > .span2 { grid-column: 1 / -1; }
+.form-grid > .col2 { grid-column: 2; }
+
+/* QFormLayout (インスペクタ) */
+.form-rows { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; row-gap: 6px; align-items: center; }
+.form-rows > .label { color: var(--text-primary); white-space: nowrap; }
+
+/* 色入力欄 + 色見本ボタン (settings_window._make_color_picker / ColorField) */
+.swatch { width: 28px; flex: none; padding: 6px 0; }
+
+/* プレビュー領域 (#previewCanvas)。テーマ対象外・常に黒 (5.6) */
+.preview-canvas {
+    background: #111111;
+    color: #AAAAAA;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
