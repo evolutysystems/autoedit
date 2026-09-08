@@ -139,7 +139,9 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [],
+            "recent_archive": [
+                "D:/develop/autoedit/output\\vod_2866841954.archive.timeline.json"
+            ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
@@ -378,6 +380,11 @@
                     "rate_spike_bonus": 10
                 }
             }
+        },
+        "markers": {
+            "enabled": true,
+            "before_sec": 120,
+            "after_sec": 120
         },
         "output": {
             "clip_prefix": "archive"

@@ -40,6 +40,24 @@ def auth_config(settings):
         "client_secret": str(auth.get("client_secret", "") or ""),
         "redirect_port": int(auth.get("redirect_port", 3737)),
         "owner_only": bool(auth.get("owner_only", True)),
+        # 認可を求めるスコープ (ver3 resolve16 §5.7)。ストリームマーカーの取得に
+        # user:read:broadcast が要る。既存 setting.json の archive.auth にはこのキーが
+        # 無く、入れ子の補完も行われないためコード側の既定が効く (resolve16 §2.6/§3-5)。
+        # 空リストにすると従来どおりスコープ無しで認可する (マーカーは使えない)。
+        "scopes": [str(s) for s in auth.get("scopes", ["user:read:broadcast"]) if str(s)],
+    }
+
+
+# ストリームマーカーの設定を平坦化して返す (ver3 resolve16 §7)
+# マーカー位置の前後を「必ず残すセクション」にするための秒数を持つ。
+def marker_config(settings):
+    archive = settings.get("archive", {}) if isinstance(settings, dict) else {}
+    markers = archive.get("markers", {})
+    return {
+        "enabled": bool(markers.get("enabled", True)),
+        # マーカー位置の前後に必ず含める秒数 (要望: 前後 2 分)
+        "before_sec": float(markers.get("before_sec", 120)),
+        "after_sec": float(markers.get("after_sec", 120)),
     }
 
 

@@ -469,6 +469,10 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         # 無効・音声無し・測定失敗のとき入力パスをそのまま返すためパスで判別できる。
         # 開き直すときに音声サイドカーを貼るかどうかの判断に使う。
         "media_role": "normalized" if normalized != raw else "original",
+        # ストリームマーカー由来を含むセクションか (ver3 resolve16 §5.8)。
+        # Timeline の clip_meta まで運び、保存プロジェクトにも残す。
+        "marker": bool(clip.get("marker")),
+        "marker_labels": list(clip.get("marker_labels") or []),
     }
     _logger.info(
         "clip%s prepare 完了 (字幕 %d 件%s)",

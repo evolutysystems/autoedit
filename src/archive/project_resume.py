@@ -155,6 +155,10 @@ def rebuild_prepared(timeline):
             "normalized_duration": float(media.duration_sec or 0.0),
             "theme": str(entry.get("theme", "") or ""),
             "media_role": str(entry.get("media_role", "normalized") or "normalized"),
+            # ストリームマーカー由来の印 (ver3 resolve16 §5.8)。旧プロジェクトには
+            # このキーが無いため既定 (False/空) で補う。
+            "marker": bool(entry.get("marker")),
+            "marker_labels": [str(label) for label in (entry.get("marker_labels") or [])],
         })
     prepared.sort(key=lambda p: p["index"] if p["index"] is not None else 0)
     return prepared

@@ -24,6 +24,16 @@ _AUTH_BASE = "https://id.twitch.tv/oauth2"
 _HELIX_BASE = "https://api.twitch.tv/helix"
 _HTTP_TIMEOUT = 20
 
+# ストリームマーカー取得に必要なスコープ (Helix streams/markers / ver3 resolve16 §5.3)。
+# 旧バージョンでログイン済みのトークンは scope が空のため、has_scope で判定して
+# マーカー取得だけを飛ばす (ログアウトはさせない / resolve16 §3-5)。
+MARKER_SCOPE = "user:read:broadcast"
+
+# マーカー取得の 1 ページあたり件数 (Helix の上限は 100)
+_MARKER_PAGE_SIZE = 100
+# 暴走防止のページ数上限 (100 件 × 20 ページ = 2000 マーカー)
+_MARKER_MAX_PAGES = 20
+
 # 認可完了後にブラウザへ返す簡易ページ (日本語)。
 _DONE_HTML = (
     "<!doctype html><html><head><meta charset='utf-8'><title>Stretheus</title></head>"
@@ -144,6 +154,13 @@ class TwitchAuth:
     def is_logged_in(self):
         return bool(self._token and self._token.get("access_token"))
 
+    # 保存済みトークンが指定スコープを持つか (ver3 resolve16 §3-5)
+    # 旧バージョンでログイン済みのトークンは scope が空文字のため False になる。
+    # 呼び出し側はこれを見て、マーカー取得を飛ばすか再ログインを促すかを決める。
+    def has_scope(self, scope):
+        granted = str((self._token or {}).get("scope", "") or "").split()
+        return str(scope) in granted
+
     def logout(self):
         self._token = None
         try:
@@ -245,6 +262,12 @@ class TwitchAuth:
             if e.code == 401:
                 self.logout()
                 raise TwitchError("Twitch トークンが失効しました。再度ログインしてください。")
+            # 403 はスコープ不足か、自分の配信ではない対象を引いたとき (ver3 resolve16 §5.3)。
+            # 何を直せばよいか分かるよう、素の HTTP コードではなく手順を返す。
+            if e.code == 403:
+                raise TwitchError(
+                    "Twitch API の権限が不足しています。"
+                    "一度ログアウトして再ログインしてください。")
             raise TwitchError(f"Twitch API 呼び出しに失敗しました (HTTP {e.code})。")
         except (urllib.error.URLError, ValueError) as e:
             raise TwitchError(f"Twitch API 呼び出しに失敗しました: {e}")
@@ -287,3 +310,25 @@ class TwitchAuth:
                 "created_at": v.get("created_at", ""),
             })
         return out
+
+    # VOD のストリームマーカーを取得する (ver3 resolve16 §5.3)
+    # 戻り値: [{"offset_sec","description","id"}] (marker_source.normalize_markers 済み)。
+    # 前提: user:read:broadcast スコープ + 自分が配信者である VOD であること。
+    #   条件を満たさないときは Helix が 401/403 を返すため TwitchError になる。
+    #   呼び出し側は握りつぶしてマーカー無しで続行してよい (コメント取得と同じ規約)。
+    def get_video_markers(self, video_id):
+        from . import marker_source
+
+        collected = []
+        cursor = None
+        for _ in range(_MARKER_MAX_PAGES):
+            query = {"video_id": str(video_id), "first": _MARKER_PAGE_SIZE}
+            if cursor:
+                query["after"] = cursor
+            payload = self._helix_get("streams/markers", query)
+            collected.extend(marker_source.normalize_markers(payload))
+            cursor = (payload.get("pagination") or {}).get("cursor")
+            if not cursor:
+                break
+        collected.sort(key=lambda m: m["offset_sec"])
+        return collected

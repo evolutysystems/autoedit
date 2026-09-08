@@ -664,6 +664,16 @@ DEFAULT_SETTINGS = {
                 "comment": {"w_point_per_char": 1, "rate_spike_bonus": 10},
             },
         },
+        # ストリームマーカー (ver3 resolve16)。Twitch VOD に打たれたマーカーの
+        # 前後を「必ず残すセクション」にする。採点式そのものには影響しない
+        # (採点結果と合流させ、重なりは既存のマージ規約で 1 つに統合する)。
+        # 取得には Twitch ログインの user:read:broadcast スコープが要るため、
+        # 旧バージョンでログイン済みの場合は再ログインが必要 (resolve16 §3-5)。
+        "markers": {
+            "enabled": True,            # false でマーカーを取得も反映もしない
+            "before_sec": 120,          # マーカー位置の前に必ず含める秒数 (要望: 2分)
+            "after_sec": 120,           # マーカー位置の後に必ず含める秒数 (要望: 2分)
+        },
         # 切り抜き出力ファイル名の接頭辞 (flow17 R1)
         "output": {
             "clip_prefix": "archive",

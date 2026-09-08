@@ -108,13 +108,44 @@ def _overlaps(a_start, a_end, b_start, b_end):
     return a_start < b_end and b_start < a_end
 
 
+# 区間 [start,end] に重なる窓のうち total が最大のものを返す (無ければ None)
+# 採点し直さずに区間のスコアを決める唯一の規則。追加セクション (ver3 resolve13 §5.4) と
+# マーカー由来セクション (ver3 resolve16 §5.4) の両方がこれを使う。
+def best_window_for_range(scored, start_sec, end_sec):
+    best = None
+    for w in (scored or []):
+        if not w:
+            continue
+        if (float(w.get("start", 0.0)) < float(end_sec)
+                and float(start_sec) < float(w.get("end", 0.0))):
+            if best is None or float(w.get("total", 0.0)) > float(best.get("total", 0.0)):
+                best = w
+    return best
+
+
+# 区間のスコア (重なる窓の total 最大 / 重なりが無ければ 0.0)
+def score_for_range(scored, start_sec, end_sec):
+    best = best_window_for_range(scored, start_sec, end_sec)
+    return round(float(best.get("total", 0.0)), 1) if best else 0.0
+
+
+# 統合先として控える 1 件を複製する。labels は統合で追記するため実体も分ける
+# (呼び出し側が渡したリストを書き換えないため)。
+def _copy_section(clip):
+    copied = dict(clip)
+    copied["labels"] = list(clip.get("labels") or [])
+    copied["marker"] = bool(clip.get("marker"))
+    return copied
+
+
 # start 昇順のクリップ列から、時間が連続(接触)または重なる区間を1つのセクションへ統合する。
 # 統合区間は union([start,end]) とし、3分窓の固定枠を外して実際の連続範囲にする。
 # 代表スコア(score/emotion/comment)は統合対象のうち最大 total の窓の値を採用する。
+# マーカー由来の印 (marker/labels) は統合先へ引き継ぐ (ver3 resolve16 §5.4)。
 def _merge_time_sections(clips):
     if not clips:
         return []
-    merged = [dict(clips[0])]
+    merged = [_copy_section(clips[0])]
     for c in clips[1:]:
         cur = merged[-1]
         # next.start <= cur.end なら「連続 or 重なり」 → 統合して区間を伸ばす
@@ -125,8 +156,14 @@ def _merge_time_sections(clips):
                 cur["total"] = c["total"]
                 cur["emotion"] = c["emotion"]
                 cur["comment"] = c["comment"]
+            # 片方でもマーカー由来なら統合後もマーカー由来として扱う
+            cur["marker"] = bool(cur.get("marker")) or bool(c.get("marker"))
+            cur.setdefault("labels", [])
+            for label in (c.get("labels") or []):
+                if label not in cur["labels"]:
+                    cur["labels"].append(label)
         else:
-            merged.append(dict(c))
+            merged.append(_copy_section(c))
     return merged
 
 
@@ -136,7 +173,12 @@ def _merge_time_sections(clips):
 # 2) clip_pad_sec で前後に余白を付け duration でクランプ。
 # 3) 連続(接触)/重なりの採用区間を union で1セクションに統合 (3分枠を外す)。要望: TOP10内の
 #    継続 or 重なりは1クリップ。
-def select_top_events(scored, top_n, clip_pad_sec, duration):
+# forced : 必ず残す区間 [{"start","end","label"}] (ver3 resolve16 / 要望 I2)。
+#   ストリームマーカーの前後 N 分がこれにあたる。top_n の枠は消費せず、採点で選ばれた
+#   区間と合流させてから同じマージ規約に通す (resolve16 §3-3・§3-4)。スコアは採点し
+#   直さず、重なる窓の最大値を代表として採る (best_window_for_range)。
+#   None/空なら結果は従来と同一 (marker/marker_labels が付くだけ)。
+def select_top_events(scored, top_n, clip_pad_sec, duration, forced=None):
     ordered = sorted((w for w in scored if w), key=lambda w: w["total"], reverse=True)
     chosen = []
     for w in ordered:
@@ -155,7 +197,26 @@ def select_top_events(scored, top_n, clip_pad_sec, duration):
         padded.append({
             "start": cstart, "end": cend, "total": w["total"],
             "emotion": w["emotion"], "comment": w["comment"],
+            "marker": False, "labels": [],
         })
+
+    # 強制区間 (マーカー由来) を合流させる。パディングは付けない
+    # (前後 N 分の指定そのものが余白のため / resolve16 §5.4)。
+    for f in (forced or []):
+        fstart = max(0.0, float(f["start"]))
+        fend = min(duration, float(f["end"])) if duration > 0 else float(f["end"])
+        if fend <= fstart:
+            continue
+        best = best_window_for_range(scored, fstart, fend)
+        padded.append({
+            "start": fstart, "end": fend,
+            "total": round(float(best["total"]), 1) if best else 0.0,
+            "emotion": float(best["emotion"]) if best else 0.0,
+            "comment": float(best["comment"]) if best else 0.0,
+            "marker": True,
+            "labels": [f["label"]] if f.get("label") else [],
+        })
+    padded.sort(key=lambda w: w["start"])
 
     # 連続/重なりを1セクションへ統合し、クリップ番号を振る
     merged = _merge_time_sections(padded)
@@ -169,5 +230,8 @@ def select_top_events(scored, top_n, clip_pad_sec, duration):
             "emotion": m["emotion"],
             "comment": m["comment"],
             "use": True,
+            # ストリームマーカー由来を含むか / そのマーカーの説明 (ver3 resolve16 §5.8)
+            "marker": bool(m.get("marker")),
+            "marker_labels": list(m.get("labels") or []),
         })
     return clips

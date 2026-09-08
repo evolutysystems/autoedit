@@ -32,6 +32,7 @@ from ..timeline.model import (
 )
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
+from . import scoring
 
 _logger = get_logger(__name__)
 
@@ -127,6 +128,10 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
             # 素材が「正規化後」か「切り出しそのまま」か。開き直すときに
             # 音声サイドカーを貼るか、正規化をやり直すかの判断に使う (§3-1)
             "media_role": str(entry.get("media_role", "normalized") or "normalized"),
+            # ストリームマーカー由来を含むセクションか / そのマーカーの説明
+            # (ver3 resolve16 §5.8。表示には使わず、保存して残すだけ)
+            "marker": bool(entry.get("marker")),
+            "marker_labels": [str(label) for label in (entry.get("marker_labels") or [])],
         })
 
     # 採点グラフとの対応付け (VOD 時間) を残す。編集で失われないよう Timeline 側に持たせる。
@@ -549,16 +554,10 @@ def plan_section_add(timeline, start_sec, end_sec, merge_on_overlap=True):
 # 追加区間のスコアを窓スコア列から推定する (resolve13 §5.4)
 # 採点はやり直さない (要望 G2)。区間に重なる窓の total の最大値を採り、
 # 重なる窓が 1 つも無ければ 0.0 とする。
+# 規則の実体は scoring.score_for_range に置く (ver3 resolve16 §5.4)。
+# マーカー由来セクションのスコアも同じ規則で決めるため、2 か所に書かない。
 def estimate_section_score(curve, start_sec, end_sec):
-    best = 0.0
-    for entry in (curve or []):
-        if not isinstance(entry, dict):
-            continue
-        window_start = float(entry.get("start", 0.0))
-        window_end = float(entry.get("end", 0.0))
-        if window_start < float(end_sec) and float(start_sec) < window_end:
-            best = max(best, float(entry.get("total", 0.0)))
-    return round(best, 1)
+    return scoring.score_for_range(curve, start_sec, end_sec)
 
 
 # 追加・統合の結果を prepared (書き出しが使う準備済みデータ) へ反映する。

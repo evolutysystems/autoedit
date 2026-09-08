@@ -30,7 +30,7 @@ from ..archive import (
     project_resume,
     twitch_source,
 )
-from ..archive.twitch_auth import TwitchAuth
+from ..archive.twitch_auth import MARKER_SCOPE, TwitchAuth
 from ..exceptions import PipelineCancelled, TwitchError
 from ..timeline import project_io
 from ..timeline.builder import timeline_config
@@ -97,25 +97,27 @@ class ArchiveAnalyzeWorker(QThread):
 
     def run(self):
         try:
-            input_path, comments = self._prepare_source()
+            input_path, comments, markers = self._prepare_source()
             result = pipeline.analyze(input_path, self._settings,
-                                      progress_cb=self._emit, comments=comments)
+                                      progress_cb=self._emit,
+                                      comments=comments, markers=markers)
             self.finished_ok.emit({"result": result, "input_path": input_path})
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("アーカイブ採点に失敗")
             self.failed.emit(str(e))
 
-    # モードに応じて (ローカル動画パス, 正規化コメント or None) を用意する
+    # モードに応じて (ローカル動画パス, 正規化コメント or None, マーカー or None) を用意する
     def _prepare_source(self):
         if self._job.get("mode") == _MODE_TWITCH:
             return self._fetch_twitch()
         # ローカル: 任意で chat json を読み込みコメント採点を有効化
+        # (マーカーは VOD ID が要るため Twitch モード限定 / ver3 resolve16 §9 Q4)
         input_path = self._job["input_path"]
         comments = None
         chat_path = self._job.get("chat_path")
         if chat_path:
             comments = comment_source.load_comments(chat_path)
-        return input_path, comments
+        return input_path, comments, None
 
     # Twitch VOD/コメントを取得する (所有判定 → download → chat json)
     def _fetch_twitch(self):
@@ -153,7 +155,33 @@ class ArchiveAnalyzeWorker(QThread):
         except TwitchError as e:
             _logger.warning("コメント取得に失敗 (コメント無しで継続): %s", e)
             comments = None
-        return input_path, comments
+
+        # ストリームマーカー取得 (ver3 resolve16)。失敗してもマーカー無しで続行する
+        # (コメント取得と同じ規約)。旧トークンはスコープが無いため事前に判定する。
+        markers = self._fetch_markers(video_id)
+        return input_path, comments, markers
+
+    # VOD のストリームマーカーを取得する (取得できなければ None / ver3 resolve16 §5.6)
+    def _fetch_markers(self, video_id):
+        marker_cfg = config.marker_config(self._settings)
+        if not marker_cfg["enabled"]:
+            return None
+        if not (self._auth and self._auth.is_logged_in()):
+            _logger.info("未ログインのためストリームマーカーは使いません")
+            return None
+        if not self._auth.has_scope(MARKER_SCOPE):
+            _logger.warning(
+                "ストリームマーカーの権限がありません。一度ログアウトして"
+                "再ログインすると使えるようになります (%s)", MARKER_SCOPE)
+            return None
+        self.progress.emit(0.0, "マーカー取得中…")
+        try:
+            markers = self._auth.get_video_markers(video_id)
+        except TwitchError as e:
+            _logger.warning("マーカー取得に失敗 (マーカー無しで継続): %s", e)
+            return None
+        _logger.info("ストリームマーカー取得: %d件", len(markers))
+        return markers
 
     def _emit(self, ratio, label):
         self.progress.emit(float(ratio), str(label))
@@ -416,6 +444,9 @@ class ArchiveTabWidget(QWidget):
             client_secret=auth_cfg["client_secret"],
             redirect_port=auth_cfg["redirect_port"],
             token_path=config.twitch_token_path(self._settings),
+            # ストリームマーカー取得に user:read:broadcast が要る (ver3 resolve16 §5.7)。
+            # 保存済みトークンはスコープ無しのため、再ログインで初めて有効になる。
+            scopes=auth_cfg["scopes"],
         )
         if self._auth.is_logged_in():
             # 保存済みトークンで自分情報を引ければログイン表示にする (失敗時は未ログイン)
@@ -483,7 +514,14 @@ class ArchiveTabWidget(QWidget):
 
     def _set_logged_in(self, me):
         name = (me or {}).get("display_name") or (me or {}).get("login") or "?"
-        self.login_status.setText(f"ログイン中: {name}")
+        # 旧トークンはスコープが空でストリームマーカーを取れない (ver3 resolve16 §5.6)。
+        # ログアウトはさせず、再ログインで直せることを表示とヒントで伝える。
+        has_marker = bool(self._auth and self._auth.has_scope(MARKER_SCOPE))
+        suffix = "" if has_marker else "（マーカー未許可）"
+        self.login_status.setText(f"ログイン中: {name}{suffix}")
+        self.login_status.setToolTip(
+            "" if has_marker
+            else "一度ログアウトして再ログインすると、ストリームマーカーを採点に使えます。")
 
     def _populate_own_vods(self):
         try:
