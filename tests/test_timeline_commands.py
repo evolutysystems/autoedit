@@ -155,6 +155,112 @@ class TrimTest(unittest.TestCase):
         self.stack.push(self.timeline, commands.TrimClip("c1", commands.EDGE_RIGHT, 0.001, _MIN))
         self.assertGreaterEqual(self.timeline.clip_by_id("c1").duration, _MIN - 1e-9)
 
+    # 動画は素材の先頭で止まる (ver4 resolve §2.7 / T5)
+    # 上の c1 は「直前クリップ無し=0 秒」と「素材の先頭=0 秒」が同じ値で区別できないため、
+    # 直前クリップが無く素材の先頭の制限だけが効く配置 (V2 / source_in=3.0) で確かめる。
+    def test_video_trim_left_stops_at_source_head_with_gap(self):
+        self.timeline.tracks.append(Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+            Clip("o1", "m1", 5.0, 5.0, 3.0, 8.0, z_order=10, origin={"type": "user_media"}),
+        ]))
+        self.stack.push(self.timeline, commands.TrimClip("o1", commands.EDGE_LEFT, 0.0, _MIN))
+        clip = self.timeline.clip_by_id("o1")
+        self.assertAlmostEqual(clip.timeline_start, 2.0)
+        self.assertAlmostEqual(clip.source_in, 0.0)
+        self.assertAlmostEqual(clip.source_out, 8.0)
+
+    # 素材が見つからないクリップは動画として扱い、素材の先頭で止める (ver4 resolve §3-1)
+    def test_trim_left_unknown_media_keeps_source_clamp(self):
+        self.timeline.tracks.append(Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+            Clip("o1", "missing", 5.0, 5.0, 3.0, 8.0, z_order=10,
+                 origin={"type": "user_media"}),
+        ]))
+        self.stack.push(self.timeline, commands.TrimClip("o1", commands.EDGE_LEFT, 0.0, _MIN))
+        self.assertAlmostEqual(self.timeline.clip_by_id("o1").timeline_start, 2.0)
+
+
+# 画像クリップの左端トリム (ver4 resolve / StretheusPlan P0)
+# 画像は素材内の時間を持たないため、左端も素材の先頭では止めない。
+# V2 に画像クリップ i1 (5.0〜10.0 秒 / source 0.0〜5.0) を 1 つ置いた状態から始める。
+class ImageTrimTest(unittest.TestCase):
+
+    def setUp(self):
+        self.timeline = _build()
+        self.timeline.media_pool.append(
+            MediaRef("m2", "image", "D:/assets/logo.png", None, 800, 600, 0, False))
+        self.overlay = Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+            Clip("i1", "m2", 5.0, 5.0, 0.0, 5.0, z_order=10, origin={"type": "user_media"}),
+        ])
+        self.timeline.tracks.append(self.overlay)
+        self.stack = commands.CommandStack()
+
+    # 左端トリムを 1 回積む
+    def _trim_left(self, clip_id, value):
+        return self.stack.push(
+            self.timeline, commands.TrimClip(clip_id, commands.EDGE_LEFT, value, _MIN))
+
+    # 左端を前方へ伸ばせる (T1)。source_in は据え置き、source_out だけ尺に合わせる
+    def test_image_trim_left_extends(self):
+        self.assertTrue(self._trim_left("i1", 2.0))
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 2.0)
+        self.assertAlmostEqual(clip.duration, 8.0)
+        self.assertAlmostEqual(clip.source_in, 0.0)
+        self.assertAlmostEqual(clip.source_out, 8.0)
+
+    # 0 秒より前へは伸びない (T4)
+    def test_image_trim_left_clamps_at_zero(self):
+        self._trim_left("i1", -3.0)
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 0.0)
+        self.assertAlmostEqual(clip.duration, 10.0)
+
+    # 直前クリップの終端を越えない (T2)
+    def test_image_trim_left_stops_at_previous_clip(self):
+        self.overlay.clips.append(
+            Clip("i0", "m2", 0.0, 3.0, 0.0, 3.0, z_order=20, origin={"type": "user_media"}))
+        self._trim_left("i1", 1.0)
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 3.0)
+        self.assertAlmostEqual(clip.duration, 7.0)
+
+    # 最小尺を割らない (T3)
+    def test_image_trim_left_respects_min_clip_sec(self):
+        self._trim_left("i1", 9.999)
+        clip = self.timeline.clip_by_id("i1")
+        self.assertGreaterEqual(clip.duration, _MIN - 1e-9)
+        self.assertAlmostEqual(clip.timeline_end, 10.0)
+
+    # source_in が 0 でない画像 (分割後の後半など / resolve §2.4) も素材の先頭で止まらない
+    def test_image_trim_left_ignores_source_in(self):
+        clip = self.timeline.clip_by_id("i1")
+        clip.source_in, clip.source_out = 2.0, 7.0
+        self._trim_left("i1", 0.0)
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 0.0)
+        self.assertAlmostEqual(clip.duration, 10.0)
+        self.assertAlmostEqual(clip.source_in, 2.0)
+        self.assertAlmostEqual(clip.source_out, clip.source_in + clip.duration)
+
+    # 縮めても source_in は動かさない (resolve §3-2)
+    def test_image_trim_left_shrink_keeps_source_in(self):
+        self._trim_left("i1", 7.0)
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 7.0)
+        self.assertAlmostEqual(clip.duration, 3.0)
+        self.assertAlmostEqual(clip.source_in, 0.0)
+        self.assertAlmostEqual(clip.source_out, 3.0)
+
+    # Undo で元の位置・尺・ソース範囲へ戻る
+    def test_image_trim_left_undo(self):
+        self._trim_left("i1", 2.0)
+        self.stack.undo(self.timeline)
+        # Undo はスナップショットから復元するためクリップを引き直す
+        clip = self.timeline.clip_by_id("i1")
+        self.assertAlmostEqual(clip.timeline_start, 5.0)
+        self.assertAlmostEqual(clip.duration, 5.0)
+        self.assertAlmostEqual(clip.source_in, 0.0)
+        self.assertAlmostEqual(clip.source_out, 5.0)
+
 
 class SplitTest(unittest.TestCase):
     """R18 の明示的な追随①: 分割ではリンク音声も 2 つへ分ける"""

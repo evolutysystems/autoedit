@@ -247,6 +247,16 @@ def _source_limit(timeline, clip):
     return media.max_source_sec()
 
 
+# 静止画クリップか (素材内の時間を持たず、尺を前後どちらへも伸ばせる素材か)
+# 素材が見つからないときは False (= 動画として扱い、素材の制限を残す安全側 / ver4 resolve §3-1)。
+# 字幕クリップは素材を持たないため False。
+def _is_still_image(timeline, clip):
+    if not isinstance(clip, Clip):
+        return False
+    media = timeline.media_by_id(clip.media_id)
+    return media is not None and media.is_image()
+
+
 # オーバーレイ要素 (V2 以降 + 字幕) を z_order 昇順で返す
 def _overlay_elements(timeline):
     return timeline.overlay_elements(include_disabled=True)
@@ -554,7 +564,7 @@ class MoveClip(Command):
 
 
 # クリップの左右端をドラッグして尺を変える (R10)
-# 左端: source_in と timeline_start を同量動かす / 右端: source_out を動かす
+# 左端: source_in と timeline_start を同量動かす (静止画は source_in を動かさない) / 右端: source_out を動かす
 class TrimClip(Command):
 
     label = "クリップの長さ変更"
@@ -574,18 +584,21 @@ class TrimClip(Command):
             return self._trim_left(timeline, track, clip)
         return self._trim_right(timeline, track, clip)
 
-    # 左端: 新しい開始時刻へ寄せる。素材の先頭 (source_in>=0) と直前クリップを超えない。
+    # 左端: 新しい開始時刻へ寄せる。直前クリップの終端を超えない (0 秒未満にもならない)。
+    # 動画は素材の先頭 (source_in>=0) も超えない。静止画は素材内の時間を持たないため
+    # 素材先頭の制限を掛けない (右端で _source_limit が画像に None を返すのと対称 / ver4 resolve §2.3)。
     def _trim_left(self, timeline, track, clip):
         target = float(self._new_value)
-        # 直前クリップの終端より前へは伸ばせない
+        # 直前クリップの終端より前へは伸ばせない (直前が無ければ 0 秒)
         previous_end = max(
             (c.timeline_end for c in track.clips
              if c.id != clip.id and c.timeline_end <= clip.timeline_start + _EPS),
             default=0.0,
         )
         target = max(target, previous_end)
-        # 素材の先頭より前へは伸ばせない (字幕クリップは素材を持たないため無制限)
-        if isinstance(clip, Clip):
+        still = _is_still_image(timeline, clip)
+        # 素材の先頭より前へは伸ばせない (字幕・静止画は素材内の時間を持たないため無制限)
+        if isinstance(clip, Clip) and not still:
             target = max(target, clip.timeline_start - clip.source_in)
         # 最小尺を割らない
         target = min(target, clip.timeline_end - self._min_clip_sec)
@@ -594,7 +607,11 @@ class TrimClip(Command):
             return False
         clip.timeline_start = target
         clip.duration -= delta
-        if isinstance(clip, Clip):
+        if still:
+            # 静止画は source_in を動かさず、source_out だけ尺に合わせる (ver4 resolve §3-2)。
+            # source_in は描画・出力のどちらからも参照されない (§2.5)。
+            clip.source_out = clip.source_in + clip.duration
+        elif isinstance(clip, Clip):
             clip.source_in += delta
         return True
 

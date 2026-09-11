@@ -1,0 +1,149 @@
+2026-09-08 13:45:29,570 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-08 13:45:42,713 [INFO] src.archive.project_resume: ==================================================
+2026-09-08 13:45:42,713 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2866841954.archive.timeline.json
+2026-09-08 13:45:42,721 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2866841954.archive.timeline.json
+2026-09-08 13:45:48,118 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (182.15s / 期待 183.85s) → 使いません
+2026-09-08 13:45:48,118 [INFO] src.archive.project_resume: 音声サイドカーが無いため clip9 の正規化をやり直します
+2026-09-08 13:45:52,489 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-16.3 LUFS / TP=0.3 dBTP / LRA=15.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.0 dB)
+2026-09-08 13:45:59,140 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_94oar5cs\clip9\normalized.mp4
+2026-09-08 13:45:59,665 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 9 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-08 13:45:59,665 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-08 13:46:20,948 [INFO] src.timeline.commands: リップル: 0.000〜0.976s (0.98s) を除去 / 削除 2 件・短縮 0 件・移動 596 件
+2026-09-08 13:46:21,619 [INFO] src.timeline.commands: リップル: 0.000〜2.173s (2.17s) を除去 / 削除 4 件・短縮 0 件・移動 592 件
+2026-09-08 13:46:22,634 [INFO] src.timeline.commands: リップル: 0.000〜2.443s (2.44s) を除去 / 削除 2 件・短縮 0 件・移動 590 件
+2026-09-08 13:46:24,560 [INFO] src.timeline.commands: リップル: -0.000〜0.802s (0.80s) を除去 / 削除 1 件・短縮 0 件・移動 589 件
+2026-09-08 13:46:25,313 [INFO] src.timeline.commands: リップル: 0.000〜1.296s (1.30s) を除去 / 削除 2 件・短縮 0 件・移動 587 件
+2026-09-08 13:46:29,382 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2866841954.archive.timeline.json
+2026-09-08 13:46:29,390 [INFO] src.timeline.renderer: ベース映像構築: 11 クリップ / ギャップ 0 件 / 合計 24.0s
+2026-09-08 13:46:29,391 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 29.9fps → 1920x1080 60fps)
+2026-09-08 13:46:56,871 [INFO] src.timeline.renderer: ベース映像の尺: モデル 23.967s / 実測 23.967s (差 +0.000s / 11 部品)
+2026-09-08 13:46:56,881 [INFO] src.timeline.renderer: オーバーレイ合成: 7 層 (追加入力 3 件)
+2026-09-08 13:47:47,133 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-09-08 13:47:49,820 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=衝撃の予選)
+2026-09-08 13:47:49,824 [INFO] src.timeline.renderer: ベース映像構築: 44 クリップ / ギャップ 0 件 / 合計 107.9s
+2026-09-08 13:47:49,830 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 27.9fps → 1920x1080 60fps)
+2026-09-08 13:49:52,357 [INFO] src.timeline.renderer: ベース映像の尺: モデル 107.917s / 実測 107.917s (差 +0.000s / 44 部品)
+2026-09-08 13:49:52,375 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 3 件 / 文字色 2 件 / 縁の色 0 件
+2026-09-08 13:49:52,375 [INFO] src.timeline.renderer: オーバーレイ合成: 13 層 (追加入力 6 件)
+2026-09-08 13:55:28,449 [INFO] src.archive.clip_writer: clip2: 左上テーマタグを焼き込み
+2026-09-08 13:55:31,214 [INFO] src.archive.clip_writer: clip2: イントロカード生成 (3.00s, テーマ=50G)
+2026-09-08 13:55:31,221 [INFO] src.timeline.renderer: ベース映像構築: 50 クリップ / ギャップ 0 件 / 合計 119.8s
+2026-09-08 13:55:31,226 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.5fps → 1920x1080 60fps)
+2026-09-08 13:57:43,479 [INFO] src.timeline.renderer: ベース映像の尺: モデル 119.817s / 実測 119.817s (差 +0.000s / 50 部品)
+2026-09-08 13:57:43,502 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-08 13:57:43,502 [INFO] src.timeline.renderer: オーバーレイ合成: 3 層 (追加入力 1 件)
+2026-09-08 14:01:55,458 [INFO] src.archive.clip_writer: clip3: 左上テーマタグを焼き込み
+2026-09-08 14:01:57,879 [INFO] src.archive.clip_writer: clip3: イントロカード生成 (3.00s, テーマ=レース再開)
+2026-09-08 14:01:57,880 [INFO] src.timeline.renderer: ベース映像構築: 25 クリップ / ギャップ 0 件 / 合計 68.0s
+2026-09-08 14:01:57,888 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.4fps → 1920x1080 60fps)
+2026-09-08 14:03:16,478 [INFO] src.timeline.renderer: ベース映像の尺: モデル 67.950s / 実測 67.950s (差 +0.000s / 25 部品)
+2026-09-08 14:03:16,493 [INFO] src.timeline.renderer: 字幕焼き込み: 29 件
+2026-09-08 14:04:26,535 [INFO] src.timeline.renderer: ベース映像構築: 25 クリップ / ギャップ 0 件 / 合計 84.4s
+2026-09-08 14:04:26,540 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.6fps → 1920x1080 60fps)
+2026-09-08 14:05:58,780 [INFO] src.timeline.renderer: ベース映像の尺: モデル 84.400s / 実測 84.400s (差 +0.000s / 25 部品)
+2026-09-08 14:05:58,801 [INFO] src.timeline.renderer: オーバーレイ合成: 3 層 (追加入力 1 件)
+2026-09-08 14:08:46,763 [INFO] src.archive.clip_writer: clip5: 左上テーマタグを焼き込み
+2026-09-08 14:08:49,096 [INFO] src.archive.clip_writer: clip5: イントロカード生成 (3.00s, テーマ=無限NEW LAP LEADER編)
+2026-09-08 14:08:49,112 [INFO] src.timeline.renderer: ベース映像構築: 24 クリップ / ギャップ 0 件 / 合計 64.1s
+2026-09-08 14:08:49,112 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.5fps → 1920x1080 60fps)
+2026-09-08 14:10:00,955 [INFO] src.timeline.renderer: ベース映像の尺: モデル 64.067s / 実測 64.067s (差 +0.000s / 24 部品)
+2026-09-08 14:10:00,985 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 2074px / 使える幅 1920px)。font_size か max_line_length を下げると解消します
+2026-09-08 14:10:00,985 [INFO] src.modules.subtitle_generator: コメント背景: 3 件
+2026-09-08 14:10:00,986 [INFO] src.modules.comment_decor: コメントアイコン: 3 件 / 位置 1 種類
+2026-09-08 14:10:00,986 [INFO] src.timeline.renderer: オーバーレイ合成: 5 層 (追加入力 1 件)
+2026-09-08 14:11:25,814 [INFO] src.timeline.renderer: ベース映像構築: 23 クリップ / ギャップ 0 件 / 合計 70.7s
+2026-09-08 14:11:25,814 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.6fps → 1920x1080 60fps)
+2026-09-08 14:12:46,407 [INFO] src.timeline.renderer: ベース映像の尺: モデル 70.733s / 実測 70.734s (差 +0.000s / 23 部品)
+2026-09-08 14:12:46,424 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-08 14:12:46,424 [INFO] src.timeline.renderer: 字幕焼き込み: 11 件
+2026-09-08 14:14:03,101 [INFO] src.timeline.renderer: ベース映像構築: 28 クリップ / ギャップ 0 件 / 合計 78.9s
+2026-09-08 14:14:03,101 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.4fps → 1920x1080 60fps)
+2026-09-08 14:15:36,835 [INFO] src.timeline.renderer: ベース映像の尺: モデル 78.883s / 実測 78.884s (差 +0.000s / 28 部品)
+2026-09-08 14:15:36,844 [INFO] src.timeline.renderer: 字幕焼き込み: 26 件
+2026-09-08 14:18:28,700 [INFO] src.archive.clip_writer: clip8: 左上テーマタグを焼き込み
+2026-09-08 14:18:31,202 [INFO] src.archive.clip_writer: clip8: イントロカード生成 (3.00s, テーマ=お咎めなし)
+2026-09-08 14:18:31,207 [INFO] src.timeline.renderer: ベース映像構築: 24 クリップ / ギャップ 0 件 / 合計 60.9s
+2026-09-08 14:18:31,215 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.4fps → 1920x1080 60fps)
+2026-09-08 14:19:40,231 [INFO] src.timeline.renderer: ベース映像の尺: モデル 60.933s / 実測 60.934s (差 +0.000s / 24 部品)
+2026-09-08 14:19:40,248 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-08 14:19:40,249 [INFO] src.timeline.renderer: オーバーレイ合成: 3 層 (追加入力 1 件)
+2026-09-08 14:21:43,466 [INFO] src.archive.clip_writer: clip9: 左上テーマタグを焼き込み
+2026-09-08 14:21:45,771 [INFO] src.archive.clip_writer: clip9: イントロカード生成 (3.00s, テーマ=最後のトップ争い)
+2026-09-08 14:21:45,775 [INFO] src.timeline.renderer: ベース映像構築: 14 クリップ / ギャップ 0 件 / 合計 31.4s
+2026-09-08 14:21:45,780 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (1920x1080 23.5fps → 1920x1080 60fps)
+2026-09-08 14:22:23,450 [INFO] src.timeline.renderer: ベース映像の尺: モデル 31.350s / 実測 31.350s (差 +0.000s / 14 部品)
+2026-09-08 14:22:23,460 [INFO] src.timeline.renderer: オーバーレイ合成: 3 層 (追加入力 1 件)
+2026-09-08 14:23:31,776 [INFO] src.archive.clip_writer: clip10: 左上テーマタグを焼き込み
+2026-09-08 14:23:34,071 [INFO] src.archive.clip_writer: clip10: イントロカード生成 (3.00s, テーマ=ANT優勝)
+2026-09-08 14:34:27,316 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_vod_2866841954_combined.mp4 (使用10)
+2026-09-08 15:57:07,368 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-08 16:06:17,149 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-08 16:06:17,149 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260908_WrongEagerAmazonPoooound-fCZHQPZ5WFdPQ6qc_portrait.mp4
+2026-09-08 16:06:17,213 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-09-08 16:06:17,860 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-10.4 LUFS / TP=-0.4 dBTP / LRA=14.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset -2.6 dB)
+2026-09-08 16:06:18,640 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_qyz2_8cd\loudness_normalized.mp4
+2026-09-08 16:06:20,217 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-19 (mean, 測定 5/5 区間)
+2026-09-08 16:06:21,649 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -19 dB
+2026-09-08 16:06:22,124 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 5 件 (閾値=-19dB, 最小無音=0.60s, 総尺=21.7s)
+2026-09-08 16:06:22,124 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:06:22,788 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 5 区間 → 9.4s (元 21.7s)
+2026-09-08 16:06:47,390 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-08 16:06:47,390 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-08 16:06:54,798 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-08 16:07:16,078 [INFO] src.modules.subtitle_generator: 音声認識完了 (5 セグメント)
+2026-09-08 16:07:16,178 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 5 → 5 件 (カット区間のため 0 件除外)
+2026-09-08 16:07:16,178 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 5 → 5 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-08 16:07:16,178 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 5 件)
+2026-09-08 16:07:16,263 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-09-08 16:07:16,263 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-09-08 16:07:16,263 [INFO] src.timeline.builder: Timeline 構築: V1 5 クリップ (OP=無 / ED=無) / S1 5 字幕 / S2(コメント) 0 字幕 / 全長 10.8s / 60fps 1080x1920
+2026-09-08 16:07:16,263 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260908_WrongEagerAmazonPoooound-fCZHQPZ5WFdPQ6qc_portrait.timeline.json
+2026-09-08 16:07:16,263 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:07:16,263 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-08 16:12:52,670 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-09-08 16:13:45,274 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-08 16:14:09,923 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 5 クリップ / オーバーレイ 0 件 / 字幕 6 件（使用 6 件）/ ギャップ 0 件
+2026-09-08 16:14:09,939 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260908_WrongEagerAmazonPoooound-fCZHQPZ5WFdPQ6qc_portrait.timeline.json
+2026-09-08 16:14:09,939 [INFO] src.timeline.renderer: ベース映像構築: 5 クリップ / ギャップ 0 件 / 合計 9.4s
+2026-09-08 16:14:09,947 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (1080x1920 24fps → 1080x1920 60fps)
+2026-09-08 16:14:16,132 [INFO] src.timeline.renderer: ベース映像の尺: モデル 9.400s / 実測 9.400s (差 +0.000s / 5 部品)
+2026-09-08 16:14:16,132 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:14:16,132 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-08 16:14:16,132 [INFO] src.timeline.renderer: 字幕焼き込み: 6 件
+2026-09-08 16:14:16,132 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:14:21,791 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\20260908_WrongEagerAmazonPoooound-fCZHQPZ5WFdPQ6qc_portrait_edited.mp4
+2026-09-08 16:14:21,791 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\20260908_WrongEagerAmazonPoooound-fCZHQPZ5WFdPQ6qc_portrait_edited.mp4
+2026-09-08 16:16:29,770 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-08 16:16:29,770 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260908_SullenAffluentHippoKevinTurtle-O0HqlgIdBeQOh4Yr_portrait.mp4
+2026-09-08 16:16:29,828 [INFO] src.modules.output_profile: 縦動画と判定 (入力=1080x1920 → 出力=1080x1920)
+2026-09-08 16:16:30,528 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-11.4 LUFS / TP=-0.5 dBTP / LRA=10.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-09-08 16:16:31,056 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_wc9fs4z0\loudness_normalized.mp4
+2026-09-08 16:16:32,587 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-24 (mean, 測定 4/4 区間)
+2026-09-08 16:17:23,166 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -24 dB
+2026-09-08 16:17:23,736 [INFO] src.modules.silence_cutter: 編集点検出: 無音 3 件 / 残す区間 4 件 (閾値=-24dB, 最小無音=0.60s, 総尺=25.0s)
+2026-09-08 16:17:23,736 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:17:24,366 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 4 区間 → 12.7s (元 25.0s)
+2026-09-08 16:17:24,368 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-08 16:17:24,368 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-08 16:17:30,111 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-08 16:17:54,221 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-08 16:17:54,348 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-08 16:17:54,349 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-08 16:17:54,349 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-08 16:17:54,433 [INFO] src.timeline.builder: オープニング配置スキップ (縦動画のため)
+2026-09-08 16:17:54,434 [INFO] src.timeline.builder: エンディング配置スキップ (縦動画のため)
+2026-09-08 16:17:54,434 [INFO] src.timeline.builder: Timeline 構築: V1 4 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 14.2s / 60fps 1080x1920
+2026-09-08 16:17:54,437 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260908_SullenAffluentHippoKevinTurtle-O0HqlgIdBeQOh4Yr_portrait.timeline.json
+2026-09-08 16:17:54,438 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:17:54,438 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-08 16:19:51,174 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-09-08 16:20:43,312 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 4 クリップ / オーバーレイ 0 件 / 字幕 4 件（使用 4 件）/ ギャップ 0 件
+2026-09-08 16:20:43,327 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260908_SullenAffluentHippoKevinTurtle-O0HqlgIdBeQOh4Yr_portrait.timeline.json
+2026-09-08 16:20:43,327 [INFO] src.timeline.renderer: ベース映像構築: 4 クリップ / ギャップ 0 件 / 合計 12.7s
+2026-09-08 16:20:52,239 [INFO] src.timeline.renderer: ベース映像の尺: モデル 12.667s / 実測 12.667s (差 +0.000s / 4 部品)
+2026-09-08 16:20:52,239 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:20:52,239 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 0 件 / 縁の色 0 件
+2026-09-08 16:20:52,239 [INFO] src.timeline.renderer: 字幕焼き込み: 4 件
+2026-09-08 16:20:52,239 [INFO] src.modules.subtitle_generator: 縦動画のため字幕設定を縦用へ上書き (font/改行/配置/余白)
+2026-09-08 16:21:05,936 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\20260908_SullenAffluentHippoKevinTurtle-O0HqlgIdBeQOh4Yr_portrait_edited.mp4
+2026-09-08 16:21:05,937 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\20260908_SullenAffluentHippoKevinTurtle-O0HqlgIdBeQOh4Yr_portrait_edited.mp4
