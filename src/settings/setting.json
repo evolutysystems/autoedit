@@ -139,9 +139,7 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [
-                "D:/develop/autoedit/output\\vod_2866841954.archive.timeline.json"
-            ],
+            "recent_archive": [],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
