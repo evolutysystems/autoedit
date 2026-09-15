@@ -17,7 +17,7 @@ import webbrowser
 
 from ..exceptions import ApiError, AutoEditError, ReauthRequiredError
 from ..utils.logger import get_logger
-from .api_client import ApiClient
+from .api_client import ApiClient, CODE_INVALID_TOKEN
 from .auth_store import AuthStore
 
 _logger = get_logger(__name__)
@@ -186,6 +186,13 @@ class StretheusAuth:
                 self._discard()
                 return False
             except ApiError as e:
+                # 署名が合わない (接続先を変えた・鍵が変わった) トークンは、
+                # 何度リフレッシュしても回復しない。保持し続けず捨てる。
+                if e.code == CODE_INVALID_TOKEN:
+                    _logger.warning("保持している JWT を検証できませんでした。再ログインが必要です。")
+                    self._discard()
+                    return False
+
                 _logger.warning("JWT のリフレッシュに失敗しました: %s", e)
                 return False
 

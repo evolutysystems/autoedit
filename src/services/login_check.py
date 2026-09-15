@@ -13,7 +13,7 @@ import json
 import os
 import sys
 
-from ..exceptions import AutoEditError
+from ..exceptions import AutoEditError, ReauthRequiredError
 from .config import api_config
 from .stretheus_auth import StretheusAuth
 
@@ -53,7 +53,14 @@ def main(argv=None):
             user = auth.login(timeout=args.timeout)
             print(f"ログインしました: {user.get('displayName')} (Twitch ID {user.get('twitchUserId')})")
 
-        profile = auth.client.get("/api/auth/me")
+        try:
+            profile = auth.client.get("/api/auth/me")
+        except ReauthRequiredError:
+            # 接続先を変えた場合など、保存済みトークンをこのサーバーが検証できないとき。
+            print("保存済みの JWT は使えませんでした。ログインし直します。")
+            user = auth.login(timeout=args.timeout)
+            print(f"ログインしました: {user.get('displayName')} (Twitch ID {user.get('twitchUserId')})")
+            profile = auth.client.get("/api/auth/me")
         print("GET /api/auth/me →", json.dumps(profile, ensure_ascii=False))
         expires_at = auth.session_expires_at()
         print("セッション期限:", expires_at.isoformat() if expires_at else "不明")

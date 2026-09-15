@@ -16,6 +16,11 @@ _logger = get_logger(__name__)
 
 # 再ログインが必要なことを示す API のエラーコード (resolve2 §4.2)
 CODE_REAUTH_REQUIRED = "reauth_required"
+# JWT の署名・形式が不正。別のサーバーが発行したトークンを提示した場合もこれになる
+CODE_INVALID_TOKEN = "invalid_token"
+
+# リフレッシュでは回復できず、ログインし直すしかないエラーコード
+_UNRECOVERABLE_CODES = frozenset({CODE_REAUTH_REQUIRED, CODE_INVALID_TOKEN})
 # 楽観的排他の競合。時間をおいて再送してよい (resolve2 §3.6)
 CODE_CONCURRENCY_CONFLICT = "concurrency_conflict"
 
@@ -59,10 +64,17 @@ class ApiClient:
             # 送信前の先回りリフレッシュ (expires_at − 5 分を過ぎていれば更新される)。
             token = self._token_provider.access_token()
 
+            # リフレッシュの結果トークンを失った場合を含め、資格情報が無いまま
+            # 認証必須の API を呼ばない。匿名要求の 401 は code を持たず、
+            # 呼び出し側が再ログインの必要性を判別できないため。
+            if not token:
+                raise ReauthRequiredError(
+                    "ログインが必要です。", status=401, code=CODE_REAUTH_REQUIRED)
+
         try:
             return self._send(method, url, body, token)
         except ApiError as e:
-            if e.status == 401 and e.code == CODE_REAUTH_REQUIRED:
+            if e.status == 401 and e.code in _UNRECOVERABLE_CODES:
                 if self._token_provider is not None:
                     self._token_provider.on_reauth_required()
                 raise ReauthRequiredError(str(e), status=e.status, code=e.code) from e

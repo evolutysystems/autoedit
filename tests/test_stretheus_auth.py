@@ -50,6 +50,11 @@ class _FakeApiHandler(BaseHTTPRequestHandler):
             self._json(401, {"title": "Authentication failed", "detail": "再ログインが必要です。",
                              "code": "reauth_required"})
             return
+        if self.path == "/api/auth/me":
+            # 別のサーバーが発行したトークンを提示した状態
+            self._json(401, {"title": "Authentication failed", "detail": "トークンを検証できませんでした。",
+                             "code": "invalid_token"})
+            return
         if self.path == "/api/auth/twitch/authorize-params":
             self._json(200, {
                 "clientId": "fake-client-id",
@@ -172,6 +177,25 @@ class StretheusAuthTest(unittest.TestCase):
 
         self.assertFalse(self._auth.is_logged_in())
         self.assertIsNone(AuthStore(self._store.path).load())
+
+    def test_invalid_token_discards_stored_token(self):
+        # 接続先を変えた場合など、サーバーが検証できない JWT はリフレッシュでは回復しない。
+        self._auth.login(timeout=10)
+
+        with self.assertRaises(ReauthRequiredError):
+            self._auth.client.get("/api/auth/me")
+
+        self.assertFalse(self._auth.is_logged_in())
+        self.assertIsNone(AuthStore(self._store.path).load())
+
+    def test_authenticated_call_without_login_requires_reauth(self):
+        # 匿名要求の 401 は code を持たないため、送る前に判断する。
+        self.assertFalse(self._auth.is_logged_in())
+
+        with self.assertRaises(ReauthRequiredError):
+            self._auth.client.get("/api/auth/me")
+
+        self.assertEqual([], self._server.calls)
 
     def test_logout_sends_bearer_and_clears_storage(self):
         self._auth.login(timeout=10)
