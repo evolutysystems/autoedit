@@ -57,3 +57,27 @@ class TwitchError(AutoEditError):
 # 編集操作の前提違反などを表す。
 class TimelineError(AutoEditError):
     pass
+
+
+# Stretheus API 呼び出しエラー (StretheusAPI resolve2 §6.5)
+# status は HTTP ステータス、code は ProblemDetails の機械判読用コード
+# (validation_failed / reauth_required / insufficient_scope など)。
+class ApiError(AutoEditError):
+
+    def __init__(self, message, status=None, code=None, retry_after=None):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.retry_after = retry_after
+
+
+# 再ログインが必要 (401 reauth_required)。
+# リフレッシュでは回復できないため、呼び出し側はログインを促す。
+class ReauthRequiredError(ApiError):
+    pass
+
+
+# API へ到達できない (5xx / 接続失敗 / タイムアウト)。
+# オフライン扱いとし、機能を止めずに縮退させる判断材料にする。
+class ApiOfflineError(ApiError):
+    pass

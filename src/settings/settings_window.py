@@ -748,6 +748,15 @@ DEFAULT_SETTINGS = {
             },
         },
     },
+    # Stretheus API の接続先 (StretheusAPI resolve2 §6.2)。
+    # Client ID / RedirectUri / scope はここに持たない。API の
+    # GET /api/auth/twitch/authorize-params から取得する (§2.4)。
+    # 開発時は dev (https://stretheusapi-dev.azurewebsites.net) や
+    # localhost へ base_url を差し替える。
+    "api": {
+        "base_url": "https://stretheusapi.azurewebsites.net",
+        "timeout_sec": 15,
+    },
     # 画面の見た目 (ガラスモーフィズム / resolve3 §6)。
     # 既定の実体は src/gui/theme.py が持つ (デザイントークンの唯一の出どころ)。
     # ui.theme = "system" で従来の Qt 既定へ完全に戻せる。

@@ -446,6 +446,10 @@
             }
         }
     },
+    "api": {
+        "base_url": "https://stretheusapi.azurewebsites.net",
+        "timeout_sec": 15
+    },
     "ui": {
         "theme": "glass",
         "theme_mode": "auto",
