@@ -13,3 +13,8 @@ src/ffmpeg/
 src/settings/archive_work/
 # プロジェクト一覧のサムネイルキャッシュ (実行時に作り直せる中間物 / ver3 resolve9 §5.15)
 src/settings/project_thumbs/
+
+# トラッキングぼかしのモデル (ver5 resolve2 §3.7)。容量が大きいため配布物にだけ入れる。
+# 入手方法は src/models/README.md を参照 (YOLOX は公式配布 / OSNet は tools/export_osnet.py)
+src/models/*.onnx
+tools/weights/

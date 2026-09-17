@@ -282,6 +282,10 @@ def _build_group_timeline(timeline, clips):
     )
     # メディアプールは参照を共有する (書き出しは読むだけのため複製しない)
     sub.media_pool = list(timeline.media_pool)
+    # source も引き継ぐ (ver5 resolve2 §5.5.4)。ぼかしの指定は source["blur"] にあり、
+    # ここで渡さないと**アーカイブ用の書き出しだけぼかしが消える**。
+    # 浅いコピーで足りる (書き出しは読むだけ。メディアプールと同じ方針)。
+    sub.source = dict(timeline.source or {})
 
     video_track = Track(BASE_VIDEO_TRACK_ID, TRACK_VIDEO, 1, name="Video 1", is_base=True)
     audio_track = Track(BASE_AUDIO_TRACK_ID, TRACK_AUDIO, 1, name="Audio 1",

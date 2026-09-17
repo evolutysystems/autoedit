@@ -4,8 +4,14 @@ import logging
 import os
 import shutil
 import sys
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator, QFont, QFontDatabase, QIntValidator
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import (
+    QDesktopServices,
+    QDoubleValidator,
+    QFont,
+    QFontDatabase,
+    QIntValidator,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -105,6 +111,21 @@ BORDER_STYLE_OPTIONS = [
 # CUDA 不使用方針 (docs/request/resolve8.md) により GPU(CUDA) 実行は廃止し CPU のみ提供する
 WHISPER_DEVICE_OPTIONS = [
     ("cpu", "CPU"),
+]
+
+# トラッキングぼかしの選択肢 (ver5 resolve2 §5.8)
+BLUR_MODE_OPTIONS = [
+    ("gaussian", "ぼかし"),
+    ("pixelate", "モザイク"),
+]
+BLUR_POLICY_OPTIONS = [
+    ("blur_others", "ぼかす (映り込みを取りこぼさない)"),
+    ("manual_only", "ぼかさない (囲ったものだけ)"),
+]
+BLUR_SAMPLE_FPS_OPTIONS = [
+    (3.0, "速い (3fps)"),
+    (5.0, "標準 (5fps)"),
+    (10.0, "丁寧 (10fps)"),
 ]
 
 # 計算精度 (compute_type) 選択肢 (value, 表示テキスト)
@@ -751,11 +772,89 @@ DEFAULT_SETTINGS = {
     # Stretheus API の接続先 (StretheusAPI resolve2 §6.2)。
     # Client ID / RedirectUri / scope はここに持たない。API の
     # GET /api/auth/twitch/authorize-params から取得する (§2.4)。
-    # 開発時は dev (https://stretheusapi-dev.azurewebsites.net) や
-    # localhost へ base_url を差し替える。
+    #
+    # 本番 (https://stretheusapi.azurewebsites.net) は未デプロイのため dev を指す。
+    # 本番へデプロイする際にここを戻す (ver5 resolve §9-5 / docs/HowToRelease.md)。
     "api": {
-        "base_url": "https://stretheusapi.azurewebsites.net",
+        "base_url": "https://stretheusapi-dev.azurewebsites.net",
         "timeout_sec": 15,
+    },
+    # 透かしの見え方 (ver5 resolve §7)。
+    # 利用者が無効化できないよう、設定画面には出さない (R10)。
+    # 大きさ・余白はキャンバス幅に対する比率で指定する。
+    # 横 1920 と縦 1080 で同じ見え方にするため (R8)。
+    "watermark": {
+        # 2026-09-15 に実出力のサンプルを見て決定 (ver5 resolve §9-2)。
+        # 横 1920 → 幅 480px / 縦 1080 → 幅 270px。
+        "scale_ratio": 0.25,            # 透かしの幅 / キャンバス幅
+        "opacity": 0.75,                # 0.0〜1.0
+        "position": "bottom_right",     # bottom_right | bottom_left | top_right | top_left
+        "margin_ratio": 0.02,           # 余白 / キャンバス幅
+    },
+    # ポイント制のクライアント側の挙動 (ver5 resolve §7)。設定画面には出さない。
+    "points": {
+        # オフライン時にサブスク判定を信用する時間 (ver5 resolve §3.3)
+        "subscription_cache_hours": 72,
+        # 残高インジケータの更新間隔 (秒)
+        "balance_refresh_sec": 300,
+    },
+    # トラッキングぼかし (ver5 resolve2 §7)。
+    # 既定は無効。有効にしたときだけ解析・マスク生成・焼き込みが走る (R1 / R9)。
+    # 設定画面に出すのは「使うかどうか」と見え方だけで、モデルやしきい値は出さない (§5.8)。
+    "blur": {
+        # 機能の有効化 (R1)。false のとき解析もボタン表示も一切行わない
+        "enabled": False,
+        # 囲っていない人物をどう扱うか (§9-1)
+        #   "blur_others" = 主役以外はぼかす / "manual_only" = 囲ったものだけぼかす
+        "default_policy": "blur_others",
+        # プレビューへぼかし対象の目印を出す (§5.7)
+        "preview_marker": True,
+        # ── モデル (設定画面には出さない / §3.7)
+        "model": {
+            "detector": "models/yolox_tiny.onnx",   # src/ からの相対パス。Apache-2.0
+            "detector_format": "yolox",             # 出力の解釈方法 (差し替えの切り替え点)
+            "detector_input": 416,                  # 入力の一辺 (px)。YOLOX-Tiny は 416
+            "detector_pad_value": 114,              # letterbox の余白色 (YOLOX の既定)
+            "detector_score": 0.4,                  # 採用する最低スコア (obj x cls)
+            "detector_nms": 0.5,                    # NMS の IoU しきい値
+            "reid": "models/osnet_x0_25.onnx",      # OSNet-x0.25 / MIT
+            "reid_format": "osnet",                 # 前後処理の切り替え点
+            "reid_input": [128, 256],               # 幅 x 高さ (縦横比は無視して伸ばす)
+            "reid_dim": 512,                        # 出力ベクトルの次元 (L2 正規化して保存)
+            "providers": ["CPUExecutionProvider"],  # onnxruntime の実行プロバイダ
+        },
+        # ── 解析 (設定画面に出すのは sample_fps だけ)
+        "analysis": {
+            "sample_fps": 5.0,        # 1 秒あたり何枚を検出にかけるか
+            "auto_start": True,       # Timeline 画面を開いた直後に背後で始める (§3.6)
+            "min_track_sec": 0.6,     # これより短い tracklet は捨てる (誤検出よけ)
+            "iou_threshold": 0.3,     # 連続フレームを同一とみなす重なり
+            "embed_threshold": 0.35,  # 同一人物とみなす特徴ベクトルの距離
+            "merge_threshold": 0.30,  # 全体クラスタリングで統合する距離 (§3.2 ②)
+            "max_identities": 50,     # 人物 ID の上限 (超えたら短いものから捨てる)
+        },
+        # ── 領域 (建物など / §3.4)
+        "region": {
+            "follow": "track",        # track = 位相相関で追従 / fixed = 固定
+            "search_scale": 0.5,      # 相関を取るときの縮小率 (速度のため)
+            "match_psr": 25.0,        # 相関ピークの PSR がこれを下回ったら見失ったとみなす
+            "hold_sec": 1.0,          # 見失ってから位置を保持する時間
+        },
+        # ── ぼかしの見え方。大きさはキャンバス幅に対する比率で決める (watermark と同じ方針)
+        "render": {
+            "mode": "gaussian",       # gaussian | pixelate
+            "strength": 50,           # 1〜100。sigma = キャンバス幅 x 0.00025 x strength
+            "margin_ratio": 0.06,     # 検出枠を広げる量 (枠 / 幅の比)
+            "feather_ratio": 0.006,   # 境界をぼかす量 (キャンバス幅比)
+            "pad_sec": 0.2,           # トラックの前後へ伸ばす時間 (取りこぼし対策)
+            "mask_scale": 0.25,       # マスクを作る解像度 (キャンバスに対する比)
+            "shape": "rounded",       # rounded | rect | ellipse (人物の塗り方)
+        },
+        # ── 指定画面
+        "spec": {
+            "hit_ratio": 0.5,         # 囲みと検出枠の重なりがこの比率以上なら選択
+            "thumb_px": 96,           # 人物一覧に出す見本の一辺
+        },
     },
     # 画面の見た目 (ガラスモーフィズム / resolve3 §6)。
     # 既定の実体は src/gui/theme.py が持つ (デザイントークンの唯一の出どころ)。
@@ -855,6 +954,8 @@ def _normalize_legacy_values(merged):
         changed = True
     if _fill_ui_nested_defaults(merged):
         changed = True
+    if _fill_blur_nested_defaults(merged):
+        changed = True
     if _migrate_ripple_delete(merged):
         changed = True
     return changed
@@ -952,6 +1053,13 @@ def _fill_ui_nested_defaults(merged):
     return _fill_nested_defaults(merged, "ui")
 
 
+# blur セクションの入れ子 (model / analysis / region / render / spec) も補完する
+# (ver5 resolve2 §7)。モデルのパスやしきい値は設定画面に出さず setting.json で
+# 調整する前提のため、新バージョンで増えたキーがファイル上に現れる必要がある。
+def _fill_blur_nested_defaults(merged):
+    return _fill_nested_defaults(merged, "blur")
+
+
 # 指定セクションの入れ子辞書について、欠落キーを既定で再帰的に補完する。
 # _merge_with_defaults はセクション単位の浅いマージのため、入れ子辞書はユーザー値で
 # まるごと置き換わり、新バージョンで増えたキーが setting.json へ現れない。
@@ -1029,6 +1137,28 @@ def save_settings(settings):
     os.makedirs(SETTINGS_DIR, exist_ok=True)
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(settings, f, ensure_ascii=False, indent=4)
+
+
+# 同梱物のライセンス表記フォルダを解決する (ver5 resolve2 §5.10.3)
+# 凍結配布: exe と同じ階層の licenses/ (datas ではなくリリース手順でコピーする)
+# 非凍結  : リポジトリ直下の licenses/
+# 見つからなければ None を返す (呼び出し側はボタンを無効にする)。
+def resolve_licenses_dir():
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "licenses"))
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            # 念のため _internal 側も見る (将来 datas で入れた場合の保険)
+            candidates.append(os.path.join(meipass, "licenses"))
+    else:
+        # src/settings/settings_window.py → リポジトリ直下
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        candidates.append(os.path.join(root, "licenses"))
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
 
 
 # 追加フォント格納ディレクトリを解決する (resolve16 §4.5)
@@ -1167,6 +1297,7 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._build_subtitle_tab(), "字幕")
         tabs.addTab(self._build_vertical_tab(), "縦動画")
         tabs.addTab(self._build_archive_tab(), "アーカイブ")
+        tabs.addTab(self._build_blur_tab(), "ぼかし")
         # 先頭 (「一般」) タブ選択時のみペイン左上を四角にする (resolve4 S1)
         theme.bind_tab_pane_corner(tabs)
         root_layout.addWidget(tabs)
@@ -1563,6 +1694,96 @@ class SettingsWindow(QWidget):
         layout.addLayout(grid)
         layout.addStretch(1)
         return page
+
+    # 「ぼかし」タブを構築する (ver5 resolve2 §5.8)
+    # 出すのは「使うかどうか」と見え方だけ。モデルのパス・しきい値・マスクの
+    # 解像度は画面に出さない (setting.json で変えられれば足りる)。
+    def _build_blur_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        row = 0
+
+        # 機能の有効化 (R1)。外すと解析もボタン表示も行わない (R9)
+        self.blur_enabled_check = QCheckBox("トラッキングぼかしを使用する")
+        self.blur_enabled_check.setToolTip(
+            "人物・建物を追跡して、出力へぼかしを焼き込みます。"
+            "使用しない場合、解析もぼかし指定ボタンも一切出ません。")
+        grid.addWidget(self._make_column_label("トラッキングぼかし"), row, 0)
+        grid.addWidget(self.blur_enabled_check, row, 1)
+        row += 1
+
+        # ぼかしの種類
+        self.blur_mode_combo = self._make_value_combo(BLUR_MODE_OPTIONS)
+        grid.addWidget(self._make_column_label("ぼかしの種類"), row, 0)
+        grid.addWidget(self.blur_mode_combo, row, 1)
+        row += 1
+
+        # ぼかしの強さ (1〜100)。実際の sigma はキャンバス幅に対する比率で決まる
+        self.blur_strength_edit = self._make_int_edit()
+        self.blur_strength_edit.setToolTip(
+            "1〜100。数字が大きいほど強くぼけます。"
+            "実際の強さはキャンバス幅に対する比率で決まるため、横動画と縦動画で"
+            "同じ見え方になります。")
+        grid.addWidget(self._make_column_label("ぼかしの強さ"), row, 0)
+        grid.addWidget(self.blur_strength_edit, row, 1)
+        row += 1
+
+        # 囲っていない人物をどう扱うか (§9-1)
+        self.blur_policy_combo = self._make_value_combo(BLUR_POLICY_OPTIONS)
+        self.blur_policy_combo.setToolTip(
+            "一番映っている人物 (主役) は、どちらを選んでもぼかしません。")
+        grid.addWidget(self._make_column_label("囲っていない人物"), row, 0)
+        grid.addWidget(self.blur_policy_combo, row, 1)
+        row += 1
+
+        # 解析の細かさ (1 秒あたり何枚を検出にかけるか)
+        self.blur_sample_fps_combo = self._make_value_combo(BLUR_SAMPLE_FPS_OPTIONS)
+        self.blur_sample_fps_combo.setToolTip(
+            "細かくするほど追従が良くなりますが、解析に時間がかかります。")
+        grid.addWidget(self._make_column_label("解析の細かさ"), row, 0)
+        grid.addWidget(self.blur_sample_fps_combo, row, 1)
+        row += 1
+
+        # モデルの状態 (見つからなければ理由を出す / §8-6)
+        self.blur_status_label = QLabel("")
+        self.blur_status_label.setWordWrap(True)
+        grid.addWidget(self._make_column_label("状態"), row, 0)
+        grid.addWidget(self.blur_status_label, row, 1)
+        row += 1
+
+        # 同梱物のライセンス表記 (§5.10.3)
+        self.blur_license_button = QPushButton("ライセンス表記を開く")
+        self.blur_license_button.clicked.connect(self._open_licenses_dir)
+        grid.addWidget(self._make_column_label("ライセンス"), row, 0)
+        grid.addWidget(self.blur_license_button, row, 1)
+        row += 1
+
+        layout.addLayout(grid)
+        note = QLabel(
+            "ぼかす対象は Timeline 編集画面の「ぼかし指定...」で選びます。"
+            "囲んだ人物は、Timeline 上の全セクションへまとめて反映されます。")
+        note.setWordWrap(True)
+        theme.mark_note(note)
+        note_font = QFont(note.font())
+        note_font.setPointSize(FONT_NOTE_POINT_SIZE)
+        note.setFont(note_font)
+        layout.addWidget(note)
+        layout.addStretch(1)
+        return page
+
+    # 同梱物のライセンス表記のフォルダを開く (§5.10.3)
+    # 凍結配布では exe と同じ階層、開発時はリポジトリ直下の licenses/。
+    def _open_licenses_dir(self):
+        path = resolve_licenses_dir()
+        if not path:
+            QMessageBox.information(
+                self, "ライセンス表記",
+                "ライセンス表記のフォルダが見つかりませんでした。")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     # 「アーカイブ」タブを構築する (resolve19 §5)
     # アーカイブ切り抜きのテーマ・イントロカード演出を設定する。
@@ -1972,6 +2193,19 @@ class SettingsWindow(QWidget):
         self.vertical_margin_r_edit.setText(str(vertical.get("margin_r", 40)))
         self.vertical_margin_v_edit.setText(str(vertical.get("margin_v", 320)))
 
+        # トラッキングぼかし (ver5 resolve2 §5.8)
+        blur = self._loaded_settings.get("blur", {}) or {}
+        blur_render = blur.get("render", {}) or {}
+        blur_analysis = blur.get("analysis", {}) or {}
+        self.blur_enabled_check.setChecked(bool(blur.get("enabled", False)))
+        self._set_combo_data(self.blur_mode_combo, blur_render.get("mode", "gaussian"))
+        self.blur_strength_edit.setText(str(blur_render.get("strength", 50)))
+        self._set_combo_data(self.blur_policy_combo,
+                             blur.get("default_policy", "blur_others"))
+        self._set_combo_data(self.blur_sample_fps_combo,
+                             float(blur_analysis.get("sample_fps", 5.0) or 5.0))
+        self._update_blur_status(self._loaded_settings)
+
         # アーカイブ切り抜き: 本体の有効/無効 (メイン画面タブの表示可否)。
         # 既定は archive_tab の判定 (.get("enabled", False)) に合わせ、キー欠落時は無効表示にする。
         self.archive_enabled_check.setChecked(bool(archive.get("enabled", False)))
@@ -2220,7 +2454,29 @@ class SettingsWindow(QWidget):
             "tag_margin_v": self._to_int(self.intro_tag_margin_v_edit.text(), 30),
             "mute_intro": self.intro_mute_check.isChecked(),
         }
+
+        # トラッキングぼかし (ver5 resolve2 §5.8)。
+        # 画面に出していない値 (モデル・しきい値・マスクの解像度) は触らない。
+        blur = settings.setdefault("blur", {})
+        blur["enabled"] = self.blur_enabled_check.isChecked()
+        blur["default_policy"] = self.blur_policy_combo.currentData() or "blur_others"
+        blur.setdefault("render", {})["mode"] = self.blur_mode_combo.currentData() or "gaussian"
+        blur["render"]["strength"] = self._to_int(self.blur_strength_edit.text(), 50)
+        blur.setdefault("analysis", {})["sample_fps"] = float(
+            self.blur_sample_fps_combo.currentData() or 5.0)
         return settings
+
+    # モデルの状態を出す (見つからなければ理由をそのまま出す / §8-6)
+    def _update_blur_status(self, settings):
+        try:
+            from ..blur import models                # noqa: PLC0415 (機能 OFF なら読まない)
+            from ..blur.config import config         # noqa: PLC0415
+
+            _available, reason = models.availability(config(settings))
+        except Exception as error:                   # noqa: BLE001 (設定画面を落とさない)
+            reason = f"ぼかし機能の状態を確認できません: {error}"
+        self.blur_status_label.setText(reason)
+        self.blur_license_button.setEnabled(resolve_licenses_dir() is not None)
 
     # 現在の UI 値を保存する (成功時 True を返す)
     # show_message=True のときのみ完了ダイアログを表示する

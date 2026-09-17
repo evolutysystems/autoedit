@@ -14,7 +14,8 @@ class PipelineContext:
     # 初期化
     def __init__(self, input_path, settings, progress_callback=None,
                  working_dir=None, total_steps=4, subtitle_review_callback=None,
-                 volume_analysis_callback=None, timeline_review_callback=None):
+                 volume_analysis_callback=None, timeline_review_callback=None,
+                 blur_failure_callback=None):
         self.input_path = input_path
         self.settings = settings
         self.progress_callback = progress_callback or _noop_progress
@@ -63,6 +64,19 @@ class PipelineContext:
         # も同じ寿命で保持し、cleanup() で破棄する (回答 Q10: 永続化しない)。
         self.timeline = None
         self.project_path = None
+
+        # トラッキングぼかし (ver5 resolve2 §5.5.3)。
+        # 既定はどれも「無し」。ぼかし機能を通らない呼び出し (CLI / テスト) では
+        # 従来と完全に同じ挙動になる。
+        # ぼかしを掛けられなかったときの確認フック (GUI 実行時のみ注入 / §5.9)。
+        # 形式: callback(reason: str) -> True (ぼかし無しで続ける) / False (中止)
+        # None のときは**中止**する。「ぼかすと指定したのに素で出た」を防ぐため、
+        # 黙って続行だけは絶対にしない (§4-5)。
+        self.blur_failure_callback = blur_failure_callback
+
+        self.blur_mask_path = None      # マスク動画のパス (無ければ None)
+        self.blur_applied = False       # 適用済みか
+        self.blur_mask_failed = False   # マスクを作れなかったか (§5.9 の確認に使う)
         # 読み込んだプロジェクトの初回作成時刻 (上書き保存で引き継ぐ / ver3 resolve7 §5.7)。
         # 新規実行では None のまま = 保存時の時刻がそのまま created_at になる。
         self.project_created_at = None

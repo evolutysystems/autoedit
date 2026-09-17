@@ -823,7 +823,7 @@ def _format_ass_time(seconds):
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
                   total_duration=0.0, on_progress=None, target_size=None,
                   fonts_dir=None, extra_chains=None, filter_script_path=None,
-                  filter_script_chars=0):
+                  filter_script_chars=0, pre_chains=None, pre_out_label="[vpre]"):
     # subtitles フィルタは2段階エスケープに従う (resolve 20260630 resolve2.md 対策A):
     #   ・シングルクォートでフィルタグラフ階層(空白/カンマ)を保護し、内側の '\' を下位へ通す
     #   ・フィルタ内オプション階層では ':' がなお区切り文字のため '\:' でエスケープする
@@ -879,6 +879,12 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
     # subtitles の出力へラベルを付けて鎖の続きを繋ぐ (-filter_complex へ作り替えない)。
     if extra_chains:
         filter_spec = f"{filter_spec}[vsub];" + ";".join(extra_chains)
+    # 字幕を焼く**前**に掛けるフィルタチェーン (ぼかし / ver5 resolve2 §5.5.2)。
+    # 字幕やコメントアイコンをぼかしてはいけない (R8) ため、後ろ (extra_chains) ではなく
+    # 先頭へ繋ぐ。pre_chains の最終出力ラベルを、字幕チェーンの入力として受け取る。
+    # 空なら 1 文字も足さない = 従来と完全に同一のコマンドになる。
+    if pre_chains:
+        filter_spec = ";".join(pre_chains) + f";{pre_out_label}{filter_spec}"
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
     # 表示区間が多いと enable 式が長くなりコマンドライン長の上限に触れるため、

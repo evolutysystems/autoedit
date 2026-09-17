@@ -1,6 +1,7 @@
 # Stretheus API 接続設定の読み出しと、認証オブジェクトの生成
 # (StretheusAPI docs/request/resolve2.md §6.2)
 # ハードコードを避け、setting.json の api セクションを唯一の出どころとする。
+from .points import PointsService
 from .stretheus_auth import StretheusAuth
 
 # 設定が空だった場合の接続先 (§5.5 で確定した本番ホスト名)。
@@ -22,3 +23,8 @@ def api_config(settings):
 def create_auth(settings, store=None):
     config = api_config(settings)
     return StretheusAuth(config["base_url"], config["timeout_sec"], store=store)
+
+
+# 設定から PointsService を作る。認証と同じく 1 つだけ持ち回る。
+def create_points(settings, auth=None, store_dir=None):
+    return PointsService(auth or create_auth(settings), settings, store_dir=store_dir)

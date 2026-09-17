@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "同梱物のライセンス表記 (ver5 resolve2 §5.10) の材料。tools/collect_licenses.py が読む。",
+    "python_roots  : アプリが直接 import する配布物。ここから Requires-Dist をたどって同梱物を割り出す。",
+    "python_extra  : 依存関係からはたどれないが凍結配布に入っている配布物 (PyInstaller が拾うもの)。",
+    "                src/dist/Stretheus/_internal を --scan-bundle で調べて増減させる。",
+    "components    : pip の配布物ではない同梱物。ライセンス全文の出どころを text で指定する。",
+    "                spdx:<id>  = tools/license_texts/<id>.txt   file:<path> = リポジトリ相対のパス"
+  ],
+  "python_roots": [
+    "PySide6",
+    "av",
+    "budoux",
+    "faster-whisper",
+    "numpy",
+    "onnxruntime",
+    "pillow",
+    "twitch-dl"
+  ],
+  "python_extra": [
+    "certifi",
+    "charset-normalizer",
+    "librosa",
+    "llvmlite",
+    "msgpack",
+    "numba",
+    "protobuf",
+    "safetensors",
+    "scikit-learn",
+    "scipy",
+    "sentencepiece",
+    "soundfile",
+    "soxr",
+    "torch",
+    "torchaudio",
+    "transformers"
+  ],
+  "python_overrides": {
+    "PySide6": {
+      "text": "spdx:LGPL-3.0",
+      "note": "Qt for Python。LGPL-3.0 で利用している (商用ライセンスは購入していない)。"
+    },
+    "PySide6_Addons": {
+      "text": "spdx:LGPL-3.0"
+    },
+    "PySide6_Essentials": {
+      "text": "spdx:LGPL-3.0"
+    },
+    "shiboken6": {
+      "text": "spdx:LGPL-3.0"
+    },
+    "ctranslate2": {
+      "text": "spdx:MIT-ctranslate2"
+    },
+    "flatbuffers": {
+      "text": "spdx:Apache-2.0",
+      "license": "Apache-2.0"
+    },
+    "sentencepiece": {
+      "text": "spdx:Apache-2.0",
+      "license": "Apache-2.0"
+    },
+    "tokenizers": {
+      "text": "spdx:Apache-2.0",
+      "license": "Apache-2.0"
+    }
+  },
+  "components": [
+    {
+      "id": "FFmpeg",
+      "name": "FFmpeg",
+      "usage": "動画の切り出し・連結・テロップ焼き込み・エンコード",
+      "url": "https://ffmpeg.org/",
+      "source_url": "https://www.gyan.dev/ffmpeg/builds/ (ソース: https://ffmpeg.org/download.html)",
+      "license": "GPL-3.0-or-later",
+      "text": "spdx:GPL-3.0",
+      "files": [
+        "ffmpeg.exe",
+        "ffprobe.exe"
+      ],
+      "note": [
+        "同梱しているのは gyan.dev の full build で、--enable-gpl --enable-version3 で",
+        "構成されているため GPL-3.0 が適用される。Stretheus 本体は FFmpeg を",
+        "別プロセスとして起動しているだけであり、FFmpeg のソースは上記から取得できる。"
+      ]
+    },
+    {
+      "id": "Python",
+      "name": "Python",
+      "usage": "アプリの実行環境 (PyInstaller で同梱)",
+      "url": "https://www.python.org/",
+      "license": "PSF-2.0",
+      "text": "file:tools/license_texts/Python-PSF.txt"
+    },
+    {
+      "id": "YOLOX",
+      "name": "YOLOX",
+      "usage": "トラッキングぼかしの人物検出 (yolox_tiny.onnx)",
+      "url": "https://github.com/Megvii-BaseDetection/YOLOX",
+      "license": "Apache-2.0",
+      "text": "spdx:Apache-2.0",
+      "files": [
+        "_internal/src/models/yolox_tiny.onnx"
+      ],
+      "verify_on_bundle": true,
+      "note": [
+        "同梱物: yolox_tiny.onnx (公式配布の重みをそのまま使用 / release 0.1.1rc0)。",
+        "NOTICE ファイルが配布元にある場合は同じフォルダへ併せて置くこと。"
+      ]
+    },
+    {
+      "id": "torchreid",
+      "name": "torchreid (OSNet)",
+      "usage": "トラッキングぼかしの人物同定 (osnet_x0_25.onnx)",
+      "url": "https://github.com/KaiyangZhou/deep-person-reid",
+      "license": "MIT",
+      "text": "spdx:torchreid-MIT",
+      "files": [
+        "_internal/src/models/osnet_x0_25.onnx"
+      ],
+      "verify_on_bundle": true,
+      "note": [
+        "同梱物: osnet_x0_25.onnx (osnet_x0_25 の重みを ONNX へ変換したもの)。",
+        "重み: Model Zoo の MSMT17 (combineall) 学習版 (Google Drive ID 1Kkx2zW89jq_NETu4u42CFZTMVD5Hwm6e)。",
+        "変換手順は tools/export_osnet.py。"
+      ]
+    }
+  ]
+}

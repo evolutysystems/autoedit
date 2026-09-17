@@ -13,6 +13,7 @@ import os
 
 from ..exceptions import InputError, TimelineError
 from ..modules import (
+    blur_overlay,
     comment_decor,
     ffmpeg_runner,
     silence_cutter,
@@ -55,15 +56,60 @@ def render(timeline, context):
     base_path = _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec)
     context.set_current_video_path(base_path)
 
+    # ── Step 1.5: ぼかしマスクの用意 (ver5 resolve2 §5.5.2)
+    # 機能 OFF・指定なしなら None が返り、以降のコマンドは 1 文字も変わらない (R9)。
+    context.blur_mask_path = _prepare_blur_mask(timeline, context, settings)
+
     # ── Step 2 / 3: オーバーレイ合成と字幕焼き込み
     result_path = _render_overlays_and_subtitles(
         timeline, context, base_path, cfg, ffmpeg_cfg)
+
+    # ── Step 3.4: ぼかしが未適用のまま先へ進めない (§5.5.3)
+    # オーバーレイも字幕も無い経路はここで単独パスとして焼き込む。
+    result_path = blur_overlay.ensure_applied(
+        context, result_path, (timeline.width, timeline.height), ffmpeg_cfg,
+        total_duration=timeline.duration_sec())
 
     # ── Step 3.5: 焼き込みもオーバーレイも走らなかった場合の最終化 (resolve3 §5.5)
     # 焼き込みを通っていれば既に mp4/AAC なので、その場合は何もしない。
     result_path = _finalize_base(timeline, context, result_path, ffmpeg_cfg)
     context.set_current_video_path(result_path)
     return result_path
+
+
+# ぼかしマスクを用意する (ver5 resolve2 §5.4 prepare)
+# 機能 OFF なら blur パッケージを **import すらしない** (§4-1)。
+def _prepare_blur_mask(timeline, context, settings):
+    from ..blur.config import is_enabled        # noqa: PLC0415 (機能 OFF なら読まない)
+
+    if not is_enabled(settings):
+        return None
+    from ..blur import mask_builder             # noqa: PLC0415
+
+    context.blur_mask_failed = False
+    mask_path = mask_builder.prepare(timeline, context)
+    if mask_path is None and getattr(context, "blur_mask_failed", False):
+        _confirm_blur_failure(context)
+    return mask_path
+
+
+# ぼかしを掛けられなかったときの扱い (§5.9)
+#
+# **「ぼかすと指定したのに素で出た」が最も損害の大きい失敗**であるため、
+# 黙って続行することだけは絶対にしない。GUI ではフックで利用者に選ばせ、
+# フックが無い呼び出し (CLI / テスト) では出力を中止する。
+def _confirm_blur_failure(context):
+    reason = ("ぼかしの解析結果が見つからないため、ぼかしを掛けられません。\n"
+              "ぼかしを入れずに出力しますか？")
+    callback = getattr(context, "blur_failure_callback", None)
+    if callback is None:
+        raise TimelineError(
+            "ぼかしを掛けられないため出力を中止しました。"
+            "Timeline 画面を開き直して、ぼかしの解析をやり直してください。")
+
+    if not callback(reason):
+        raise TimelineError("ぼかしを掛けられないため、利用者の指示で出力を中止しました。")
+    _logger.warning("利用者の指示により、ぼかしを入れずに出力します")
 
 
 # ------------------------------------------------------------------
@@ -462,6 +508,8 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
     chains, _count, _groups = comment_decor.build_icon_chains(
         items, eff_cfg, timeline.width, timeline.height,
         in_label="[vsub]", out_label="")
+    # ぼかしは字幕より**前**へ入れる (字幕やアイコンはぼかさない / R8)
+    pre_chains, _label = _blur_chains(context, timeline, "", "[vpre]")
     subtitle_generator.burn_subtitle(
         base_path, ass_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -472,8 +520,25 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
         extra_chains=chains,
         filter_script_path=context.allocate_intermediate("timeline_subtitle_vf.txt"),
         filter_script_chars=eff_cfg.get("comment_icon_filter_script_chars", 8000),
+        pre_chains=pre_chains,
     )
+    if pre_chains:
+        context.blur_applied = True
     return output_path
+
+
+# ぼかしのフィルタチェーンを組む (マスクが無ければ空リスト / §5.5.2)
+# 呼び出し側はチェーンの**先頭**へ足すこと。後ろへ足すと字幕までぼける (R8)。
+def _blur_chains(context, timeline, in_label, out_label, prefix="bl"):
+    mask_path = getattr(context, "blur_mask_path", None)
+    if not mask_path or getattr(context, "blur_applied", False):
+        return [], in_label
+
+    from ..blur.config import config            # noqa: PLC0415 (機能 OFF なら読まない)
+
+    return blur_overlay.build_chains(
+        mask_path, in_label, out_label, timeline.width, timeline.height,
+        config(context.settings), prefix=prefix)
 
 
 # ass フィルタ用にパスをエスケープする (burn_subtitle と同一の 2 段階エスケープ)
@@ -498,6 +563,14 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
     audio_labels = ["[0:a]"]
     current = "[0:v]"
     step = 0
+
+    # ぼかしはチェーンの**先頭**へ足す (§5.5.2)。後ろへ足すと字幕・アイコン・
+    # オーバーレイ素材までぼけてしまう (R8)。movie= で読むため入力は増えない。
+    blur_chains, blur_label = _blur_chains(context, timeline, current, "[blout]")
+    if blur_chains:
+        chains.extend(blur_chains)
+        current = blur_label
+        context.blur_applied = True
 
     for layer in layers:
         if layer["kind"] == "subtitles":

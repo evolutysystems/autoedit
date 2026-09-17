@@ -8,7 +8,7 @@ import os
 import shutil
 from datetime import datetime
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from ...exceptions import TimelineError
 from ...export import resolve_export
 from ...settings.settings_window import save_settings
-from ...timeline import media_sidecar, project_io
+from ...timeline import commands, media_sidecar, project_io
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
 from ...version import __version__
@@ -94,8 +94,18 @@ class TimelineEditorDialog(QDialog):
         # 起動用音声の先読みを 1 回だけ行うための印 (resolve6 §5.9)
         self._prefetched = False
 
+        # トラッキングぼかしの解析 (ver5 resolve2 §3.6 案 2)。
+        # 画面を開いた直後に背後で走らせ、終わったらボタンを有効にする。
+        self._blur_worker = None
+        self._blur_analysis = None
+        self._blur_cache_path = None
+        self._work_dir = work_dir
+        self._start_blur_analysis()
+
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.timeline_changed.connect(self._on_timeline_changed)
+        # ぼかし対象の目印をプレビューへ出す (§5.7)。機能 OFF なら何も起きない。
+        self.controller.playhead_moved.connect(self._update_blur_markers)
         self.controller.saved_state_changed.connect(self._update_window_title)
         self.preview.playing_changed.connect(self._on_playing_changed)
         # Timeline 側で実行できなかった操作の案内をプレビュー下へ出す
@@ -169,6 +179,16 @@ class TimelineEditorDialog(QDialog):
             self.save_as_button.setToolTip("保存先を選んで保存します (Ctrl+Shift+S)")
             self.save_as_button.clicked.connect(lambda: self.save_project(ask=True))
             button_row.addWidget(self.save_as_button)
+
+        # ぼかし指定 (ver5 resolve2 §5.6.1)。
+        # blur.enabled が False のときは**ボタンを出さない** (R1 / R9)。
+        self.blur_button = None
+        if self._blur_enabled():
+            self.blur_button = QPushButton("ぼかし指定...")
+            self.blur_button.setAutoDefault(False)
+            self.blur_button.setEnabled(False)
+            self.blur_button.clicked.connect(self._open_blur_spec)
+            button_row.addWidget(self.blur_button)
 
         # DaVinci Resolve 出力 (既存ボタンをそのまま流用する / resolve20)
         self.export_button = None
@@ -405,6 +425,151 @@ class TimelineEditorDialog(QDialog):
             self.preview.prefetch_initial()
         except Exception:  # noqa: BLE001 (先読みの失敗で画面を開けなくしない)
             _logger.exception("プレビュー音声の先読みに失敗しました (再生時に作り直します)")
+
+    # ------------------------------------------------------------------
+    # トラッキングぼかし (ver5 resolve2 §5.6.1)
+    # ------------------------------------------------------------------
+
+    # 機能が有効か (設定だけを見る。モデルの有無は解析を始めるときに確かめる)
+    def _blur_enabled(self):
+        from ...blur.config import is_enabled       # noqa: PLC0415 (機能 OFF なら読まない)
+
+        return is_enabled(self._settings)
+
+    # 解析を背後で始める。モデルが無ければボタンを無効のままにして理由を出す。
+    def _start_blur_analysis(self):
+        if self.blur_button is None:
+            return
+        from ...blur import models, store           # noqa: PLC0415
+        from ...blur.config import config           # noqa: PLC0415
+        from .blur_spec_dialog import BlurAnalysisWorker   # noqa: PLC0415
+
+        cfg = config(self._settings)
+        available, reason = models.availability(cfg)
+        if not available:
+            # モデルが見つからない: ボタンは出すが無効。理由をツールチップに出す (§5.6.1)
+            self.blur_button.setEnabled(False)
+            self.blur_button.setToolTip(reason)
+            _logger.warning("ぼかし機能を無効にします: %s", reason)
+            return
+        if not cfg["analysis"]["auto_start"]:
+            self.blur_button.setEnabled(True)
+            self.blur_button.setToolTip("押すと解析を始めます")
+            return
+
+        self._blur_cache_path = store.cache_path_for(self._project_path, self._work_dir)
+        self.blur_button.setText("ぼかし解析中… 0%")
+        self._blur_worker = BlurAnalysisWorker(
+            self.controller.timeline, self._settings, self._blur_cache_path, parent=self)
+        self._blur_worker.progress.connect(self._on_blur_progress)
+        self._blur_worker.finished_analysis.connect(self._on_blur_analysis_done)
+        # プレビュー再生を邪魔しないよう優先度を下げる (§5.3.5)
+        self._blur_worker.start(QThread.LowPriority)
+
+    def _on_blur_progress(self, ratio, _label):
+        if self.blur_button is not None:
+            self.blur_button.setText(f"ぼかし解析中… {int(ratio * 100)}%")
+
+    def _on_blur_analysis_done(self, analysis):
+        self._blur_worker = None
+        if self.blur_button is None:
+            return
+        self._blur_analysis = analysis
+        if not analysis:
+            self.blur_button.setText("ぼかし指定...")
+            self.blur_button.setEnabled(False)
+            self.blur_button.setToolTip(
+                "ぼかしの解析ができなかったため、ぼかし指定は使えません。"
+                "ログに理由が残っています。Timeline の編集と書き出しは続けられます。")
+            return
+
+        # 解析結果の在りかと指紋を指定へ書き留める。
+        # これが無いと書き出しのときに解析結果を見つけられない (§5.4 prepare)。
+        from ...blur.config import config           # noqa: PLC0415
+
+        self.controller.execute(commands.SetBlurAnalysis(
+            self._blur_cache_path, analysis.get("fingerprint", ""),
+            project_path=self._project_path,
+            default_policy=config(self._settings)["default_policy"]))
+
+        self._update_blur_markers()
+        count = len(analysis.get("identities", []))
+        self.blur_button.setText("ぼかし指定...")
+        self.blur_button.setEnabled(True)
+        self.blur_button.setToolTip(f"検出した人物: {count} 人")
+
+    # ぼかし指定画面を開く (R4)
+    def _open_blur_spec(self):
+        if not self._blur_analysis:
+            QMessageBox.information(
+                self, "ぼかし指定",
+                "ぼかしの解析がまだ終わっていません。しばらく待ってからお試しください。")
+            return
+        from .blur_spec_dialog import BlurSpecDialog     # noqa: PLC0415
+
+        dialog = BlurSpecDialog(
+            self.controller, self._blur_analysis, parent=self,
+            cache_path=self._blur_cache_path)
+        dialog.exec()
+        self._update_history_buttons()
+
+    # プレビューへぼかし対象の目印を出す (§5.7)
+    # 実際のぼかしはしない (1 枚ずつ取得しているため、画像処理を足すと重くなる)。
+    def _update_blur_markers(self, _timeline_sec=None):
+        if not self._blur_analysis or not hasattr(self.preview, "set_blur_markers"):
+            return
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
+        from ...blur import geometry, store               # noqa: PLC0415
+        from ...blur.config import config                 # noqa: PLC0415
+
+        cfg = config(self._settings)
+        if not cfg["preview_marker"]:
+            return
+
+        resolved = self.controller.source_at_playhead()
+        if resolved is None:
+            self.preview.set_blur_markers([])
+            return
+        media, source_sec = resolved
+
+        timeline = self.controller.timeline
+        transform = geometry.source_to_canvas_transform(
+            media, timeline.width, timeline.height)
+        decisions = blur_decisions.load(timeline)
+        main_id = store.main_identity_id(self._blur_analysis)
+        regions = {str(r.get("id")): r for r in decisions["regions"]}
+
+        markers = []
+        for track in self._blur_analysis.get("tracks", []):
+            if str(track.get("media_id") or "") != str(media.id):
+                continue
+            rect = _blur_sample_rect(track, source_sec)
+            if rect is None:
+                continue
+            identity = str(track.get("identity") or "")
+            if str(track.get("kind", "person")) == "person":
+                blur = blur_decisions.should_blur_identity(
+                    identity, decisions, cfg, main_id)
+                label = "ぼかし"
+            else:
+                blur = blur_decisions.should_blur_region(regions.get(identity))
+                label = str((regions.get(identity) or {}).get("label") or "ぼかし")
+            if not blur:
+                continue
+            markers.append({
+                "rect": geometry.source_rect_to_canvas(rect, transform),
+                "label": label,
+            })
+        self.preview.set_blur_markers(markers)
+
+    # 解析スレッドを必ず止めてから閉じる (§5.3.5)
+    def _stop_blur_analysis(self):
+        worker = self._blur_worker
+        if worker is None:
+            return
+        worker.cancel()
+        worker.wait()
+        self._blur_worker = None
 
     def _on_timeline_changed(self):
         self._update_history_buttons()
@@ -664,6 +829,7 @@ class TimelineEditorDialog(QDialog):
         # 決定後はパイプラインが本体を上書き保存するため、自動保存は不要になる
         if self._save_enabled:
             self._discard_autosave()
+        self._stop_blur_analysis()
         super().accept()
 
     # 編集済みのまま閉じようとしたら確認する (誤操作でパイプラインを中断させない)
@@ -671,6 +837,7 @@ class TimelineEditorDialog(QDialog):
     def reject(self):
         if not self._confirm_close():
             return
+        self._stop_blur_analysis()
         super().reject()
 
     # 閉じてよければ True。保存できる画面では 3 択で確認する (resolve7 §5.7 / C5)。
@@ -1140,3 +1307,27 @@ class _InspectorPanel(QWidget):
         if self._clip is None:
             return
         self._controller.move_overlay(self._clip.id, None, None)
+
+
+# トラックの samples から、その時刻の矩形を線形補間で求める (§5.7 の目印用)
+# 範囲外なら None (その時刻には映っていない)。
+def _blur_sample_rect(track, source_sec):
+    samples = track.get("samples") or []
+    if not samples:
+        return None
+    if source_sec < float(samples[0]["t"]) or source_sec > float(samples[-1]["t"]):
+        return None
+
+    previous = samples[0]
+    for sample in samples:
+        if float(sample["t"]) >= source_sec:
+            span = float(sample["t"]) - float(previous["t"])
+            ratio = (source_sec - float(previous["t"])) / span if span > 1e-9 else 0.0
+            return (
+                previous["x"] + (sample["x"] - previous["x"]) * ratio,
+                previous["y"] + (sample["y"] - previous["y"]) * ratio,
+                previous["w"] + (sample["w"] - previous["w"]) * ratio,
+                previous["h"] + (sample["h"] - previous["h"]) * ratio,
+            )
+        previous = sample
+    return (previous["x"], previous["y"], previous["w"], previous["h"])

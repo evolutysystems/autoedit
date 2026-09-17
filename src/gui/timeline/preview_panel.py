@@ -11,6 +11,7 @@ import subprocess
 from PySide6.QtCore import (
     QMutex,
     QMutexLocker,
+    QRectF,
     QThread,
     QTimer,
     QUrl,
@@ -18,11 +19,13 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsSimpleTextItem,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
@@ -387,6 +390,43 @@ class PreviewPanel(QWidget):
         media, source_sec = resolved
         self._frame_job += 1
         self._frame_worker.request(self._frame_job, media, source_sec)
+
+    # ------------------------------------------------------------------
+    # ぼかし対象の目印 (ver5 resolve2 §5.7)
+    # ------------------------------------------------------------------
+
+    # ぼかす対象の位置を半透明の塗りで重ねる。
+    # **実際のぼかし処理はしない。** プレビューは 1 枚ずつ取得しており、
+    # ここへ画像処理を足すとスクラブが目に見えて重くなるため (§5.7)。
+    #   boxes: [{"rect": (x, y, w, h), "label": 文字列}] キャンバス座標
+    def set_blur_markers(self, boxes):
+        for item in getattr(self, "_blur_marker_items", []):
+            self._scene.removeItem(item)
+        self._blur_marker_items = []
+
+        for entry in boxes or []:
+            rect = entry.get("rect")
+            if not rect:
+                continue
+            item = QGraphicsRectItem(QRectF(rect[0], rect[1], rect[2], rect[3]))
+            item.setPen(QPen(QColor(232, 80, 80, 220), max(self._canvas[0] / 400.0, 2.0)))
+            item.setBrush(QBrush(QColor(232, 80, 80, 60)))
+            item.setZValue(9000)            # 目印は常に最前面 (出力には影響しない)
+            item.setAcceptedMouseButtons(Qt.NoButton)
+            self._scene.addItem(item)
+            self._blur_marker_items.append(item)
+
+            label = QGraphicsSimpleTextItem(str(entry.get("label") or "ぼかし"))
+            label.setBrush(QBrush(QColor(232, 80, 80)))
+            font = label.font()
+            font.setPointSizeF(max(self._canvas[0] / 90.0, 10.0))
+            font.setBold(True)
+            label.setFont(font)
+            label.setPos(rect[0], max(rect[1] - font.pointSizeF() * 1.6, 0))
+            label.setZValue(9001)
+            label.setAcceptedMouseButtons(Qt.NoButton)
+            self._scene.addItem(label)
+            self._blur_marker_items.append(label)
 
     def _on_frame_ready(self, job_id, width, height, data):
         if job_id != self._frame_job:

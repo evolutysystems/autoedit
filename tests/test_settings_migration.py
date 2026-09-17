@@ -233,3 +233,48 @@ class CommentIconSizeMigrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# トラッキングぼかしの設定 (ver5 resolve2 §7 / §5.8)
+class BlurSettingsTest(unittest.TestCase):
+
+    # 旧 setting.json (blur セクションが無い) でも起動時に補われること。
+    # 更新インストールでは旧ファイルが復元されるため、ここが効かないと
+    # 新しいキーがいつまでも届かない。
+    def test_blur_section_is_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data.pop("blur", None)
+        merged = sw._merge_with_defaults(data)
+        self.assertIn("blur", merged)
+        self.assertFalse(merged["blur"]["enabled"])        # 既定は無効 (R9)
+        self.assertEqual(merged["blur"]["model"]["detector_input"], 416)
+
+    # 入れ子 (model / analysis / render …) の欠落キーも補われること
+    def test_blur_nested_keys_are_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["blur"] = {"enabled": True, "render": {"strength": 80}}
+        merged = sw._merge_with_defaults(data)
+        sw._normalize_legacy_values(merged)
+        self.assertEqual(merged["blur"]["render"]["strength"], 80)      # 利用者の値は残る
+        self.assertEqual(merged["blur"]["render"]["mask_scale"], 0.25)  # 欠落は補う
+        self.assertIn("detector", merged["blur"]["model"])
+
+    # 画面に出していない値 (モデル・しきい値) が保存で消えないこと
+    def test_settings_window_round_trip(self):
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        window = sw.SettingsWindow()
+        try:
+            window.blur_enabled_check.setChecked(True)
+            window.blur_strength_edit.setText("70")
+            collected = window._collect_settings()
+        finally:
+            window.close()
+        self.assertTrue(collected["blur"]["enabled"])
+        self.assertEqual(collected["blur"]["render"]["strength"], 70)
+        # 画面に出していない値はそのまま残る
+        self.assertEqual(collected["blur"]["model"]["detector"], "models/yolox_tiny.onnx")
+        self.assertEqual(collected["blur"]["render"]["mask_scale"], 0.25)
+        self.assertIn("sample_fps", collected["blur"]["analysis"])
+        del app

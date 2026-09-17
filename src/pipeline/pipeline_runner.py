@@ -35,7 +35,8 @@ _DEFAULT_CUT_DB = -28
 # volume_analysis_callback  : 音量解析の閾値確認フック (GUI 実行時のみ。None でダイアログ無し)
 # 戻り値                    : 出力動画パス
 def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callback=None,
-                 volume_analysis_callback=None, timeline_review_callback=None):
+                 volume_analysis_callback=None, timeline_review_callback=None,
+                 blur_failure_callback=None):
     _logger.info("=" * 50)
     _logger.info("パイプライン開始: %s", input_path)
 
@@ -48,7 +49,8 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
     use_timeline = is_timeline_mode(settings)
     context = _prepare_context(input_path, settings, progress_cb, subtitle_review_callback,
                                volume_analysis_callback, timeline_review_callback,
-                               use_timeline)
+                               use_timeline,
+                               blur_failure_callback=blur_failure_callback)
     # 出力プロファイル(縦/横)を入力動画から1回だけ解決し、以降の全工程で共有する (request14)
     context.output_profile = output_profile.resolve_output_profile(input_path, settings)
     try:
@@ -88,7 +90,7 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
 # 戻り値               : 出力動画パス
 def run_from_project(project_path, settings, progress_cb=None,
                      timeline_review_callback=None, media_relink_callback=None,
-                     restore_path=None):
+                     restore_path=None, blur_failure_callback=None):
     _logger.info("=" * 50)
     _logger.info("保存済みプロジェクトから再開: %s", project_path)
 
@@ -124,6 +126,7 @@ def run_from_project(project_path, settings, progress_cb=None,
         progress_callback=progress_cb,
         total_steps=2,
         timeline_review_callback=timeline_review_callback,
+        blur_failure_callback=blur_failure_callback,
     )
     # 出力プロファイルは Timeline のキャンバスから復元する (保存時と同じ寸法で出す)
     context.output_profile = {
@@ -185,7 +188,7 @@ def is_timeline_mode(settings):
 # コンテキストを準備する
 def _prepare_context(input_path, settings, progress_cb, subtitle_review_callback=None,
                      volume_analysis_callback=None, timeline_review_callback=None,
-                     use_timeline=False):
+                     use_timeline=False, blur_failure_callback=None):
     # 進捗の総工程数
     #   従来  : 音声解析・正規化, 無音カット, テロップ, OP結合, ED結合 の 5 (resolve22)
     #   ver3  : 音声解析・正規化, 無音検出, 音声認識, Timeline レンダリング の 4
@@ -198,6 +201,7 @@ def _prepare_context(input_path, settings, progress_cb, subtitle_review_callback
         subtitle_review_callback=subtitle_review_callback,
         volume_analysis_callback=volume_analysis_callback,
         timeline_review_callback=timeline_review_callback,
+        blur_failure_callback=blur_failure_callback,
     )
 
 

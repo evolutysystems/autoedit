@@ -1451,3 +1451,136 @@ class SetAudioMuted(Command):
             return False
         clip.muted = self._muted
         return True
+
+
+# ------------------------------------------------------------------
+# トラッキングぼかしの指定 (ver5 resolve2 §5.6.5)
+# ------------------------------------------------------------------
+#
+# 指定は timeline.source["blur"] にあり、_snapshot が source を deepcopy するため
+# **apply の中で書き換えるだけで Undo/Redo が効く**。Timeline 編集画面の
+# 「元に戻す」からぼかし指定も戻せるため、利用者から見て操作の一貫性がある。
+
+
+# 人物 1 人ぶんのぼかし指定を変える (R5 / R6)
+# 人物 ID に対する指定のため、**全セクションへ同時に効く** (§5.6.4)。
+class SetBlurDecision(Command):
+
+    label = "ぼかし指定の変更"
+
+    # mode: "blur" (ぼかす) / "keep" (ぼかさない) / None (指定を消して既定に戻す)
+    def __init__(self, identity_id, mode):
+        self._identity_id = str(identity_id)
+        self._mode = mode
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415 (機能 OFF なら読まない)
+
+        current = blur_decisions.load(timeline)
+        if current["identities"].get(self._identity_id) == self._mode:
+            return False
+        updated = blur_decisions.with_identity(current, self._identity_id, self._mode)
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 領域 (建物など) を足す (R7)
+class AddBlurRegion(Command):
+
+    label = "ぼかし領域の追加"
+
+    def __init__(self, region):
+        self._region = dict(region or {})
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        if not self._region.get("path"):
+            return False
+        current = blur_decisions.load(timeline)
+        if not self._region.get("id"):
+            self._region["id"] = blur_decisions.next_region_id(current)
+        blur_decisions.store(timeline, blur_decisions.with_region(current, self._region))
+        return True
+
+
+# 領域を消す
+class RemoveBlurRegion(Command):
+
+    label = "ぼかし領域の削除"
+
+    def __init__(self, region_id):
+        self._region_id = str(region_id)
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        updated = blur_decisions.without_region(current, self._region_id)
+        if len(updated["regions"]) == len(current["regions"]):
+            return False
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 2 人の人物を同じ人物として統合する (§5.6.6)
+# 着替え・長時間の不在で人物 ID が割れた場合の救済。
+# 統合の指定は解析結果ではなく source 側に残るため、**解析をやり直しても残る**。
+class MergeBlurIdentities(Command):
+
+    label = "人物の統合"
+
+    def __init__(self, first_id, second_id):
+        self._first_id = str(first_id)
+        self._second_id = str(second_id)
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        if self._first_id == self._second_id:
+            return False
+        current = blur_decisions.load(timeline)
+        updated = blur_decisions.with_merge(current, self._first_id, self._second_id)
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 解析結果の在りかと指紋を指定へ書き留める (解析が終わった直後に 1 回だけ)
+# これが無いと、書き出しのときに解析結果を見つけられない (§5.4 prepare)。
+class SetBlurAnalysis(Command):
+
+    label = "ぼかし解析の反映"
+
+    def __init__(self, cache_path, fingerprint, project_path=None, default_policy=""):
+        self._cache_path = str(cache_path or "")
+        self._fingerprint = str(fingerprint or "")
+        self._project_path = project_path
+        self._default_policy = str(default_policy or "")
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        relative = self._relative_cache()
+        if (current.get("cache_abs") == self._cache_path
+                and current.get("fingerprint") == self._fingerprint
+                and current.get("cache") == relative):
+            return False
+        current["cache"] = relative
+        # 絶対パスも持つ。アーカイブ用のサブ Timeline は project_path を持たず、
+        # 相対パスの起点が無いため、これが無いと解析結果を見つけられない。
+        current["cache_abs"] = self._cache_path
+        current["fingerprint"] = self._fingerprint
+        if self._default_policy:
+            current["default_policy"] = self._default_policy
+        blur_decisions.store(timeline, current)
+        return True
+
+    # プロジェクトからの相対パス (プロジェクトごと移しても効く / §5.2.2)
+    def _relative_cache(self):
+        if not self._cache_path or not self._project_path:
+            return ""
+        try:
+            return os.path.relpath(self._cache_path, os.path.dirname(self._project_path))
+        except ValueError:
+            return ""        # 別ドライブなど相対にできない場合は絶対パスだけで運用する

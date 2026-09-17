@@ -227,6 +227,41 @@ class SubtitleReviewBridge(QObject):
         return theme
 
 
+# ぼかしを掛けられなかったときの確認をワーカースレッド→メインスレッドで橋渡しする
+# (ver5 resolve2 §5.9)。TimelineReviewBridge と同じ機構。
+#
+# 「ぼかすと指定したのに素で出た」が最も損害の大きい失敗のため、**黙って続行しない**。
+# 利用者に「ぼかしを入れずに出力 / 中止」を選ばせる。
+class BlurFailureBridge(QObject):
+
+    confirm_requested = Signal(str)
+
+    def __init__(self, parent_window=None):
+        super().__init__()
+        self._parent_window = parent_window
+        self._event = threading.Event()
+        self._result = False
+        self.confirm_requested.connect(self._on_confirm_requested, Qt.QueuedConnection)
+
+    # ワーカースレッドから呼ばれる。True = ぼかし無しで続ける / False = 中止
+    def __call__(self, reason):
+        self._event.clear()
+        self._result = False
+        self.confirm_requested.emit(str(reason))
+        self._event.wait()
+        return self._result
+
+    def _on_confirm_requested(self, reason):
+        try:
+            answer = QMessageBox.question(
+                self._parent_window, "ぼかしを掛けられません",
+                reason, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            # 既定は「中止」。取りこぼしの損害の方が大きいため安全側へ倒す。
+            self._result = answer == QMessageBox.Yes
+        finally:
+            self._event.set()
+
+
 # Timeline 編集画面をワーカースレッド→メインスレッドで橋渡しする (ver3)
 # SubtitleReviewBridge と同じ機構 (threading.Event によるブロッキング同期)。
 # 既存の SubtitleReviewBridge は無改変で併存し、timeline.enabled=false のときは
@@ -355,13 +390,15 @@ class PipelineWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, input_path, settings, review_callback,
-                 volume_callback=None, timeline_callback=None, parent=None):
+                 volume_callback=None, timeline_callback=None, parent=None,
+                 blur_failure_callback=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
         self._review_callback = review_callback
         self._volume_callback = volume_callback
         self._timeline_callback = timeline_callback
+        self._blur_failure_callback = blur_failure_callback
 
     # スレッド本体
     def run(self):
@@ -373,6 +410,7 @@ class PipelineWorker(QThread):
                 subtitle_review_callback=self._review_callback,
                 volume_analysis_callback=self._volume_callback,
                 timeline_review_callback=self._timeline_callback,
+                blur_failure_callback=self._blur_failure_callback,
             )
             self.finished_ok.emit(output)
         except PipelineCancelled:
@@ -397,7 +435,8 @@ class ProjectResumeWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, project_path, settings, timeline_callback,
-                 relink_callback=None, restore_path=None, parent=None):
+                 relink_callback=None, restore_path=None, parent=None,
+                 blur_failure_callback=None):
         super().__init__(parent)
         self._project_path = project_path
         self._settings = settings
@@ -405,6 +444,7 @@ class ProjectResumeWorker(QThread):
         self._relink_callback = relink_callback
         # 自動保存から復元する場合の読み込み元 (保存先は project_path のまま)
         self._restore_path = restore_path
+        self._blur_failure_callback = blur_failure_callback
 
     def run(self):
         try:
@@ -415,6 +455,7 @@ class ProjectResumeWorker(QThread):
                 timeline_review_callback=self._timeline_callback,
                 media_relink_callback=self._relink_callback,
                 restore_path=self._restore_path,
+                blur_failure_callback=self._blur_failure_callback,
             )
             self.finished_ok.emit(output)
         except PipelineCancelled:
@@ -499,6 +540,8 @@ class ClipTabWidget(QWidget):
         self._timeline_bridge = None
         # 素材の再リンク画面の橋渡し参照 (ver3 resolve7 Phase 5)
         self._relink_bridge = None
+        # ぼかしを掛けられなかったときの確認の橋渡し参照 (ver5 resolve2 §5.9)
+        self._blur_failure_bridge = None
         # 選択は 1 つだけ (ver3 resolve15 §5.6-3)。(種別, パス) か (None, "")。
         self._selection = (None, "")
         self._build_ui()
@@ -779,10 +822,12 @@ class ClipTabWidget(QWidget):
         self._timeline_bridge = TimelineReviewBridge(parent_window=self)
         # 見つからない素材の再リンク画面フック
         self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
+        # ぼかしを掛けられなかったときの確認フック (ver5 resolve2 §5.9)
+        self._blur_failure_bridge = BlurFailureBridge(parent_window=self)
         self._worker = ProjectResumeWorker(
             project_path, self._settings, self._timeline_bridge,
             relink_callback=self._relink_bridge, restore_path=restore_path,
-            parent=self)
+            parent=self, blur_failure_callback=self._blur_failure_bridge)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished_ok)
         self._worker.cancelled.connect(self._on_cancelled)
@@ -855,11 +900,15 @@ class ClipTabWidget(QWidget):
             TimelineReviewBridge(parent_window=self)
             if is_timeline_mode(self._settings) else None
         )
+        # ぼかしを掛けられなかったときの確認フック (ver5 resolve2 §5.9)。
+        # 注入しないと「ぼかせないまま出力」を止める手段が無くなるため常に渡す。
+        self._blur_failure_bridge = BlurFailureBridge(parent_window=self)
 
         self._worker = PipelineWorker(
             input_path, self._settings, self._bridge,
             volume_callback=self._volume_bridge,
             timeline_callback=self._timeline_bridge, parent=self,
+            blur_failure_callback=self._blur_failure_bridge,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished_ok)

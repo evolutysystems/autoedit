@@ -273,6 +273,43 @@ New-Item -ItemType Directory -Force "dist/Stretheus/ffmpeg" | Out-Null
 Copy-Item "<入手した>/ffmpeg.exe","<入手した>/ffprobe.exe" "dist/Stretheus/ffmpeg/"
 ```
 
+### 5.2.1 ライセンス表記の同梱（ver5 resolve2 §5.10）
+
+同梱している第三者ソフトウェア（FFmpeg / Qt / モデルなど）は、いずれも
+**再配布にあたって著作権表示とライセンス全文を添えること**を条件にしている。
+`licenses/` を **exe と同じ階層**へ置く。`_internal/` の下は利用者が開く場所ではないため、
+PyInstaller の `datas` ではなく**コピーで配置する**（同梱 FFmpeg と同じ理由）。
+
+```powershell
+# 1. リポジトリの licenses/ を作り直す（依存を増やした後は必ず実行する）
+python tools/collect_licenses.py
+
+# 2. 不足が無いか確認する（不足があれば終了コード 1）
+python tools/collect_licenses.py --check
+#    凍結配布に入っているのに manifest へ載っていない同梱物を探す
+python tools/collect_licenses.py --scan-bundle
+
+# 3. 配布フォルダへコピーする（zip 化の前）
+Copy-Item -Recurse -Force "licenses" "src/dist/Stretheus/licenses"
+```
+
+> **FFmpeg は GPL ビルド**（gyan.dev full build / `--enable-gpl --enable-version3`）。
+> 全文とソース入手先を `licenses/FFmpeg/` に入れている。LGPL ビルドへ替える場合は
+> `tools/license_manifest.json` の該当項目も直すこと。
+
+### 5.2.2 トラッキングぼかしのモデル同梱（ver5 resolve2 §8-3）
+
+`src/models/*.onnx` は `main.spec` の `datas` が拾って `_internal/src/models/` へ入る。
+**モデルが無くてもビルドは通り、アプリは通常どおり起動する**（設定画面に
+「モデルが見つかりません」と出て、ぼかし機能だけが無効になる）。
+
+| ファイル | 大きさの目安 | 入手 |
+| --- | --- | --- |
+| `yolox_tiny.onnx` | 約 20MB | YOLOX 公式配布の ONNX をそのまま置く |
+| `osnet_x0_25.onnx` | 約 1MB | `python tools/export_osnet.py` で変換する |
+
+同梱すると**配布ペイロードが約 21MB 増える**。詳細は `src/models/README.md`。
+
 ### 5.3 配布フォルダのレイアウト（例）
 
 ```
@@ -284,9 +321,17 @@ Stretheus/                      ← これを zip 化して配布
 ├─ ffmpeg/
 │   ├─ ffmpeg.exe
 │   └─ ffprobe.exe
+├─ licenses/                   ← 同梱物のライセンス全文（§5.2.1 でコピー）
+│   ├─ README.txt              ← 日本語の一覧（何が入っているか）
+│   ├─ FFmpeg/LICENSE.txt
+│   ├─ PySide6/LICENSE.txt
+│   └─ …（依存ごとに 1 フォルダ）
 ├─ README.txt                  ← 動作要件・初回DL・使い方・連絡先
 └─ LICENSE / サードパーティライセンス表記
 ```
+
+> `licenses/` はアプリの「設定 → ぼかし → ライセンス表記を開く」からも開ける。
+> アンインストール時は `{app}` ごと消えるため `AutoEdit.iss` の変更は要らない。
 
 ---
 
