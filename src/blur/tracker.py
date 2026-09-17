@@ -14,9 +14,13 @@ from .geometry import containment, iou
 
 _logger = get_logger(__name__)
 
-# 同じ時刻の 2 つの枠が、小さい方の面積のこの割合以上重なっていれば「同じ人への重複した枠」
-# とみなす。実素材では重複枠が 0.98 前後、並んだ 2 人が 0.0〜0.49 だった。
-_SAME_BOX_CONTAINMENT = 0.5
+# 同じ時刻の 2 つの枠を「同じ人への重複した枠」とみなす条件の既定値
+# (setting.json の blur.analysis.same_box_containment / same_box_center_ratio / ver5 resolve3 §5.8)。
+#   ・小さい方の枠がこの割合以上、大きい枠に入っている (実素材の重複枠は 0.98 前後)
+#   ・横の中心のずれが、小さい方の枠の幅のこの倍率以内
+# 割合だけで判定すると、隣り合って座った 2 人 (実測 0.78 / 中心のずれ 0.60 倍) を 1 人にしてしまう。
+_SAME_BOX_CONTAINMENT = 0.85
+_SAME_BOX_CENTER_RATIO = 0.5
 
 
 # tracklet 1 本 (同じ素材の中で連続して追えた 1 人ぶん)
@@ -26,7 +30,7 @@ class Tracklet:
         self.id = track_id
         self.media_id = media_id
         self.kind = kind
-        self.samples = []            # [{"t","x","y","w","h","score"}, …] 素材ピクセル座標
+        self.samples = []            # [{"t","x","y","w","h","score"[,"sil"]}, …] 素材ピクセル座標
         self.embeddings = []         # サンプルごとの特徴ベクトル
         self.identity = None         # 全体クラスタリングで決まる人物 ID
         self.last_sec = 0.0
@@ -58,10 +62,14 @@ class Tracklet:
         norm = float(np.linalg.norm(mean))
         return mean / norm if norm > 1e-9 else None
 
-    def add(self, sec, box, embedding):
+    #   silhouette: 身体の輪郭 (枠に対する相対座標 / contour.encode 済みの文字列) or None
+    def add(self, sec, box, embedding, silhouette=None):
         x, y, w, h = (float(v) for v in box[:4])
         score = float(box[4]) if len(box) > 4 else 1.0
-        self.samples.append({"t": float(sec), "x": x, "y": y, "w": w, "h": h, "score": score})
+        sample = {"t": float(sec), "x": x, "y": y, "w": w, "h": h, "score": score}
+        if silhouette:
+            sample["sil"] = silhouette
+        self.samples.append(sample)
         if embedding is not None:
             self.embeddings.append(np.asarray(embedding, dtype=np.float32))
         self.last_sec = float(sec)
@@ -74,16 +82,21 @@ class Tracklet:
             "kind": self.kind,
             "start_sec": round(self.start_sec, 3),
             "end_sec": round(self.end_sec, 3),
-            "samples": [
-                {
-                    "t": round(s["t"], 3),
-                    "x": round(s["x"], 1), "y": round(s["y"], 1),
-                    "w": round(s["w"], 1), "h": round(s["h"], 1),
-                    "score": round(s["score"], 3),
-                }
-                for s in self.samples
-            ],
+            "samples": [_sample_dict(s) for s in self.samples],
         }
+
+
+# サンプルを保存用の辞書にする (輪郭があるときだけ "sil" を持たせる)
+def _sample_dict(sample):
+    result = {
+        "t": round(sample["t"], 3),
+        "x": round(sample["x"], 1), "y": round(sample["y"], 1),
+        "w": round(sample["w"], 1), "h": round(sample["h"], 1),
+        "score": round(sample["score"], 3),
+    }
+    if sample.get("sil"):
+        result["sil"] = sample["sil"]
+    return result
 
 
 # 1 素材ぶんの区間内トラッキング
@@ -108,20 +121,23 @@ class Tracker:
     #   sec        : 素材内の時刻
     #   boxes      : [(x, y, w, h, score), …]
     #   embeddings : boxes と同じ並びの特徴ベクトル (無ければ None)
-    def update(self, sec, boxes, embeddings=None):
+    #   silhouettes: boxes と同じ並びの輪郭 (encode 済みの文字列 or None / ver5 resolve3 §5.3.3)
+    def update(self, sec, boxes, embeddings=None, silhouettes=None):
         sec = float(sec)
         # サンプル 2 回ぶん途切れたら別人として切る (途中で見失った扱い)
         self._retire(sec, self._sample_interval * 2.5)
 
         boxes = list(boxes or [])
         vectors = list(embeddings) if embeddings is not None and len(embeddings) else []
+        shapes = list(silhouettes or [])
         pairs = self._match(boxes, vectors)
 
         used = set()
         for box_index, track in pairs.items():
             used.add(box_index)
             vector = vectors[box_index] if box_index < len(vectors) else None
-            track.add(sec, boxes[box_index], vector)
+            shape = shapes[box_index] if box_index < len(shapes) else None
+            track.add(sec, boxes[box_index], vector, shape)
 
         # 対応が付かなかった検出は新しい tracklet にする
         for index, box in enumerate(boxes):
@@ -130,7 +146,8 @@ class Tracker:
             self._counter += 1
             track = Tracklet(f"{self._prefix}{self._counter}", self._media_id)
             vector = vectors[index] if index < len(vectors) else None
-            track.add(sec, box, vector)
+            shape = shapes[index] if index < len(shapes) else None
+            track.add(sec, box, vector, shape)
             self._active.append(track)
 
     # 検出と追跡中 tracklet の対応を決める (貪欲マッチ)。
@@ -219,6 +236,8 @@ def cluster(tracklets, cfg, merges=None):
 
     threshold = float(cfg["analysis"]["merge_threshold"])
     max_identities = int(cfg["analysis"]["max_identities"])
+    same_box = (float(cfg["analysis"].get("same_box_containment", _SAME_BOX_CONTAINMENT)),
+                float(cfg["analysis"].get("same_box_center_ratio", _SAME_BOX_CENTER_RATIO)))
 
     # 登場順に並べる = 人物 ID の採番を決定的にする (§8-7)
     tracks.sort(key=lambda t: (t.start_sec, t.id))
@@ -232,7 +251,7 @@ def cluster(tracklets, cfg, merges=None):
             for index, group in enumerate(groups):
                 if group["vector"] is None:
                     continue
-                if _appears_together(track, group["tracks"]):
+                if _appears_together(track, group["tracks"], same_box):
                     continue
                 gap = float(1.0 - np.dot(group["vector"], vector))
                 if gap < best_gap:
@@ -300,7 +319,8 @@ def _first_start(tracks):
 # その 2 本は同じ時刻に映っていても同一人物である。そこで、共通する時刻の
 # **過半数で枠が離れている**ときだけ「並んで映っている」とみなす。
 # 枠の乗り換えの瞬間は重なりが一時的に下がるため、1 回だけでは決めない。
-def _appears_together(track, others):
+#   same_box: (入っている割合の下限, 横の中心のずれの上限倍率) / _same_box を参照
+def _appears_together(track, others, same_box=(_SAME_BOX_CONTAINMENT, _SAME_BOX_CENTER_RATIO)):
     samples = _samples_by_time(track)
     for other in others:
         if other.media_id != track.media_id:
@@ -310,10 +330,21 @@ def _appears_together(track, others):
         if not shared:
             continue
         apart = sum(1 for t in shared
-                    if containment(_rect(samples[t]), _rect(other_samples[t])) < _SAME_BOX_CONTAINMENT)
+                    if not _same_box(_rect(samples[t]), _rect(other_samples[t]), same_box))
         if apart * 2 > len(shared):
             return True
     return False
+
+
+# 同じ時刻の 2 つの枠が、1 人への重複した枠 (全身と上半身など) か。
+# 小さい枠がほぼ丸ごと大きい枠に入り、しかも横方向の中心がそろっているときだけ真。
+def _same_box(a, b, same_box):
+    min_containment, max_center_ratio = same_box
+    if containment(a, b) < min_containment:
+        return False
+    smaller_width = min(float(a[2]), float(b[2]))
+    center_gap = abs((a[0] + a[2] / 2.0) - (b[0] + b[2] / 2.0))
+    return center_gap <= max_center_ratio * max(smaller_width, 1e-6)
 
 
 # サンプル時刻は素材ごとに同じ刻みで取るため、ミリ秒へ丸めて突き合わせる

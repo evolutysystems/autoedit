@@ -485,7 +485,14 @@ class TimelineEditorDialog(QDialog):
 
         # 解析結果の在りかと指紋を指定へ書き留める。
         # これが無いと書き出しのときに解析結果を見つけられない (§5.4 prepare)。
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
         from ...blur.config import config           # noqa: PLC0415
+
+        # 前回と違う解析結果で、人物への明示指定がある = 人物の番号が変わって指定が別人を指すことがある
+        # (ver5 resolve3 §10 #8)。解析のたびに作業を止めないよう、ボタンの表示で知らせる。
+        previous = blur_decisions.load(self.controller.timeline)
+        needs_review = bool(previous["identities"] and previous["fingerprint"]
+                            and previous["fingerprint"] != analysis.get("fingerprint", ""))
 
         self.controller.execute(commands.SetBlurAnalysis(
             self._blur_cache_path, analysis.get("fingerprint", ""),
@@ -494,9 +501,18 @@ class TimelineEditorDialog(QDialog):
 
         self._update_blur_markers()
         count = len(analysis.get("identities", []))
-        self.blur_button.setText("ぼかし指定...")
         self.blur_button.setEnabled(True)
-        self.blur_button.setToolTip(f"検出した人物: {count} 人")
+        if needs_review:
+            _logger.info("ぼかしの解析をやり直したため、人物への指定の確認を案内します")
+            self.blur_button.setText("ぼかし指定... (確認してください)")
+            self.blur_button.setToolTip(
+                f"検出した人物: {count} 人\n"
+                "素材や設定が変わったため、ぼかしの解析をやり直しました。"
+                "人物の番号が変わり、「ぼかす / ぼかさない」の指定が別の人を指している場合があります。"
+                "見本画像を見て確認してください。")
+        else:
+            self.blur_button.setText("ぼかし指定...")
+            self.blur_button.setToolTip(f"検出した人物: {count} 人")
 
     # ぼかし指定画面を開く (R4)
     def _open_blur_spec(self):
@@ -512,15 +528,22 @@ class TimelineEditorDialog(QDialog):
             cache_path=self._blur_cache_path)
         dialog.exec()
         self._update_history_buttons()
+        # 指定画面で変えた指定・追加した枠をプレビューの目印へ反映する
+        self._update_blur_markers()
+        # 指定画面を開いた = 確認した。案内の表示を戻す
+        self.blur_button.setText("ぼかし指定...")
 
     # プレビューへぼかし対象の目印を出す (§5.7)
     # 実際のぼかしはしない (1 枚ずつ取得しているため、画像処理を足すと重くなる)。
+    # 何をぼかすかは指定画面・出力と同じ blur.plan で決める (ver5 resolve3 §5.9)。
+    # 削除した枠・指定に無い領域の古い追従は出さない。
     def _update_blur_markers(self, _timeline_sec=None):
         if not self._blur_analysis or not hasattr(self.preview, "set_blur_markers"):
             return
+        from ...blur import contour                       # noqa: PLC0415
         from ...blur import decisions as blur_decisions   # noqa: PLC0415
-        from ...blur import geometry, store               # noqa: PLC0415
         from ...blur.config import config                 # noqa: PLC0415
+        from ...blur.plan import ROLE_BLUR, BlurPlan      # noqa: PLC0415
 
         cfg = config(self._settings)
         if not cfg["preview_marker"]:
@@ -533,32 +556,17 @@ class TimelineEditorDialog(QDialog):
         media, source_sec = resolved
 
         timeline = self.controller.timeline
-        transform = geometry.source_to_canvas_transform(
-            media, timeline.width, timeline.height)
-        decisions = blur_decisions.load(timeline)
-        main_id = store.main_identity_id(self._blur_analysis)
-        regions = {str(r.get("id")): r for r in decisions["regions"]}
-
+        plan = BlurPlan(timeline, self._blur_analysis, blur_decisions.load(timeline), cfg)
         markers = []
-        for track in self._blur_analysis.get("tracks", []):
-            if str(track.get("media_id") or "") != str(media.id):
+        for shape in plan.shapes_at(media.id, source_sec):
+            if shape["role"] != ROLE_BLUR:
                 continue
-            rect = _blur_sample_rect(track, source_sec)
-            if rect is None:
-                continue
-            identity = str(track.get("identity") or "")
-            if str(track.get("kind", "person")) == "person":
-                blur = blur_decisions.should_blur_identity(
-                    identity, decisions, cfg, main_id)
-                label = "ぼかし"
-            else:
-                blur = blur_decisions.should_blur_region(regions.get(identity))
-                label = str((regions.get(identity) or {}).get("label") or "ぼかし")
-            if not blur:
-                continue
+            relative = shape["silhouette"] if shape["silhouette"] is not None else shape["outline"]
             markers.append({
-                "rect": geometry.source_rect_to_canvas(rect, transform),
-                "label": label,
+                "rect": shape["rect"],
+                "polygon": (contour.to_absolute(relative, shape["rect"])
+                            if relative is not None else None),
+                "label": shape["label"] if shape["kind"] != "person" else "ぼかし",
             })
         self.preview.set_blur_markers(markers)
 
@@ -1307,27 +1315,3 @@ class _InspectorPanel(QWidget):
         if self._clip is None:
             return
         self._controller.move_overlay(self._clip.id, None, None)
-
-
-# トラックの samples から、その時刻の矩形を線形補間で求める (§5.7 の目印用)
-# 範囲外なら None (その時刻には映っていない)。
-def _blur_sample_rect(track, source_sec):
-    samples = track.get("samples") or []
-    if not samples:
-        return None
-    if source_sec < float(samples[0]["t"]) or source_sec > float(samples[-1]["t"]):
-        return None
-
-    previous = samples[0]
-    for sample in samples:
-        if float(sample["t"]) >= source_sec:
-            span = float(sample["t"]) - float(previous["t"])
-            ratio = (source_sec - float(previous["t"])) / span if span > 1e-9 else 0.0
-            return (
-                previous["x"] + (sample["x"] - previous["x"]) * ratio,
-                previous["y"] + (sample["y"] - previous["y"]) * ratio,
-                previous["w"] + (sample["w"] - previous["w"]) * ratio,
-                previous["h"] + (sample["h"] - previous["h"]) * ratio,
-            )
-        previous = sample
-    return (previous["x"], previous["y"], previous["w"], previous["h"])

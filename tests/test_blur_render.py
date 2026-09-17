@@ -51,7 +51,7 @@ def _build_timeline():
 # 解析結果の最小形 (人物 2 人 / 主役は p1)
 def _build_analysis():
     return {
-        "schema": 1,
+        "schema": 2,
         "fingerprint": "fp",
         "canvas": {"width": 1920, "height": 1080},
         "sample_fps": 5.0,

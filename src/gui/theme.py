@@ -693,9 +693,13 @@ def color(name, settings=None):
 # QSS テンプレート。{token.name} をトークンで置換する。
 # CSS のブロック括弧は改行が続くため、プレースホルダ正規表現とは衝突しない。
 _QSS_TEMPLATE = """
-/* 土台。ウィンドウ自体は背景を描かない (paintEvent が描く / §3-2) */
+/* 土台。背景を描くのは install_window_background を取り付けたウィンドウだけ (§3-2)。
+   取り付けていないダイアログ (QMessageBox / QProgressDialog / QColorDialog など) は
+   透明のままだと何も描かれず Windows では黒く抜け、ライトモードでは濃い文字が読めなくなる。
+   そのため既定は背景の起点色で塗り、取り付け済み (glassBackground) だけを透明にする。 */
 QWidget { color: {text.primary}; }
-QDialog, QMainWindow { background: transparent; }
+QDialog, QMainWindow { background-color: {bg.from}; }
+QDialog[glassBackground="true"], QMainWindow[glassBackground="true"] { background: transparent; }
 
 /* ガラスパネル (objectName="glassPanel") */
 #glassPanel {
@@ -1417,6 +1421,11 @@ def install_window_background(widget):
     widget.installEventFilter(painter_filter)
     # ガベージコレクトを防ぐためウィジェット側で参照を持つ
     widget._glass_background_filter = painter_filter
+    # QSS の既定の塗り (bg.from) を外し、グラデーションが見えるよう透明にする。
+    # スタイル適用済みでも効くよう、プロパティを立てた後に磨き直す。
+    widget.setProperty("glassBackground", True)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 # ウィジェットをガラスパネルとして扱う (§5.9)。

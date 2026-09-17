@@ -215,6 +215,31 @@ class QssTest(unittest.TestCase):
         qss = theme.build_qss(_settings("light"))
         self.assertEqual(qss.count("{"), qss.count("}"))
 
+    # 背景を描かないダイアログ (QMessageBox 等) は塗り、描くウィンドウだけ透明にする。
+    # 全ダイアログを透明にすると Windows で黒く抜け、ライトモードで文字が読めなくなる。
+    def test_dialog_background_is_filled_unless_glass(self):
+        for mode in ("dark", "light"):
+            theme.invalidate_cache()
+            settings = _settings(mode)
+            qss = theme.build_qss(settings)
+            block = qss.split("QDialog, QMainWindow {", 1)[1].split("}", 1)[0]
+            self.assertIn(f"background-color: {theme.tokens(settings)['bg.from']}", block, mode)
+            glass = qss.split('QDialog[glassBackground="true"]', 1)[1].split("}", 1)[0]
+            self.assertIn("background: transparent", glass, mode)
+
+    # 背景を描くウィンドウには、透明にするためのプロパティが立つこと
+    def test_install_window_background_marks_widget(self):
+        from PySide6.QtWidgets import QApplication, QDialog
+
+        app = QApplication.instance() or QApplication([])
+        theme.apply(app, _settings("light"))
+        try:
+            dialog = QDialog()
+            theme.install_window_background(dialog)
+            self.assertTrue(dialog.property("glassBackground"))
+        finally:
+            app.setStyleSheet("")
+
     # ドロップダウンの押しボタンを潰している (ver3 resolve15 D3)。
     # この規則が無いと右端だけスタイル既定の面が残り「浮き出て」見える。
     def test_combo_dropdown_is_flat(self):

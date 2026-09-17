@@ -14,6 +14,7 @@ import numpy as np
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
+from . import decisions as decisions_module
 from . import detector, reid, store
 from .tracker import Tracker, cluster
 
@@ -28,6 +29,14 @@ except Exception:  # noqa: BLE001
 
 # 隣接する区間をまとめるときの許容 (この秒数以内なら 1 区間にする)
 _MERGE_GAP_SEC = 1.0
+# 輪郭の推論がこの枚数続けて失敗したら、その解析では輪郭をやめる (ver5 resolve3 §5.12)
+_SILHOUETTE_MAX_FAILURES = 10
+# 輪郭の持ち越し (_carry_silhouettes): 相関を取る縮小率・人物のまわりに足す余白・採用する PSR の下限
+_CARRY_SCALE = 0.25
+_CARRY_PAD = 0.15
+_CARRY_MIN_PSR = 8.0
+# 持ち越すのは、枠の幅・高さの変化がこの割合以内のときだけ (大きく変わったら姿勢が変わった)
+_CARRY_MAX_RESIZE = 0.2
 
 
 # Timeline から解析対象の区間を決め、検出 → トラッキング → クラスタリングまで行う。
@@ -49,13 +58,21 @@ def analyze(timeline, settings, cache_path=None, on_progress=None, cancel=None):
     media_paths = [_media_path(timeline, media_id) for media_id, _ranges in spans]
     fingerprint = store.fingerprint(timeline, cfg, media_paths)
 
+    decisions = decisions_module.load(timeline)
+
     # 既に同じ指紋の結果があれば解析しない (2 回目以降は省略できる / §5.3.4)
     cached = store.load(cache_path, fingerprint)
     if cached is not None:
         _logger.info("ぼかし解析: キャッシュを再利用します")
+        ensure_added_tracks(timeline, settings, cached, decisions, cfg, cache_path, cancel)
         return cached
 
     analysis = store.new_analysis(timeline, cfg, fingerprint)
+    analysis["_silhouette"] = _silhouette_state(cfg)
+    analysis["silhouette"] = ({"format": cfg["silhouette"]["format"],
+                               "every_n_samples": cfg["silhouette"]["every_n_samples"],
+                               "points": cfg["silhouette"]["points"]}
+                              if analysis["_silhouette"]["enabled"] else None)
     total_sec = sum(end - start for _media, ranges in spans for start, end in ranges)
     done_sec = 0.0
     tracklets = []
@@ -83,16 +100,42 @@ def analyze(timeline, settings, cache_path=None, on_progress=None, cancel=None):
         tracklets.extend(tracker.finish())
         next_index = tracker.next_index()
 
-    identities = cluster(tracklets, cfg)
+    # 「同じ人物にする」の指定を当て込む (ver5 resolve3 §2.5 (b) / §5.8 (2))
+    identities = cluster(tracklets, cfg, merges=decisions.get("merges"))
     analysis["identities"] = [_identity_to_dict(identity) for identity in identities]
     analysis["tracks"] = [track.to_dict() for track in tracklets if track.identity]
 
     attach_thumbs(analysis)
+    analysis.pop("_silhouette", None)
+
+    # 追加した枠の追従は解析結果と一緒に消えるため、ここで作り直す (ver5 resolve3 §2.5 (c))
+    ensure_added_tracks(timeline, settings, analysis, decisions, cfg, None, cancel)
 
     _report(on_progress, 1.0)
     if cache_path:
         store.save(cache_path, analysis)
     return analysis
+
+
+# 指定にある領域・手動の枠のうち、追従トラックが無いものを作る (ver5 resolve3 §5.7 (3))。
+# 何か足したら (cache_path があれば) 保存する。戻り値: 足したトラックの件数
+def ensure_added_tracks(timeline, settings, analysis, decisions, cfg, cache_path=None,
+                        cancel=None):
+    from . import manual_tracker, region_tracker  # noqa: PLC0415 (循環 import を避ける)
+
+    if not (decisions or {}).get("regions"):
+        return 0
+    added = 0
+    try:
+        added += region_tracker.build_region_tracks(
+            timeline, settings, analysis, decisions, cfg, cancel=cancel)
+        added += manual_tracker.build_manual_tracks(
+            timeline, settings, analysis, decisions, cfg, cancel=cancel)
+    except Exception as error:                  # noqa: BLE001 (追従の失敗で解析結果を捨てない)
+        _logger.exception("追加した枠の追従を作り直せませんでした: %s", error)
+    if added and cache_path:
+        store.save(cache_path, analysis)
+    return added
 
 
 # 解析対象の区間を集める (§5.3.2)
@@ -156,7 +199,9 @@ def _analyze_span(media, start, end, cfg, tracker, settings, on_progress, cancel
 
         boxes = detector.detect(image, cfg)
         embeddings = reid.embed(image, boxes, cfg) if boxes else []
-        tracker.update(sec, boxes, embeddings)
+        silhouettes = _silhouettes(image, boxes, cfg, analysis.get("_silhouette"))
+        tracker.update(sec, boxes, embeddings, silhouettes)
+        _carry_silhouettes(sec, image, boxes, tracker, cfg, analysis.get("_silhouette"))
 
         # 見本画像は解析中にしか作れない (後からでは素材を開き直すことになる)
         _keep_thumb(thumbs, tracker, image, boxes, thumb_px)
@@ -164,6 +209,127 @@ def _analyze_span(media, start, end, cfg, tracker, settings, on_progress, cancel
 
     on_progress(1.0)
     return True
+
+
+# 輪郭を作るかどうかの状態 (解析 1 回ぶん)。人物の形が輪郭で、モデルが使えるときだけ作る。
+def _silhouette_state(cfg):
+    from . import silhouette                    # noqa: PLC0415 (使うときだけ読む)
+    from .config import SHAPE_SILHOUETTE        # noqa: PLC0415
+
+    enabled = False
+    if str(cfg["render"]["shape"]) == SHAPE_SILHOUETTE:
+        enabled, reason = silhouette.availability(cfg)
+        _logger.info("ぼかし解析: %s", reason)
+    return {"enabled": enabled, "index": 0, "failures": 0,
+            "every_n": int(cfg["silhouette"]["every_n_samples"])}
+
+
+# 解析サンプル N 枚に 1 枚で、枠ごとの輪郭を作る (ver5 resolve3 §3.2 / §5.3.3)。
+# 戻り値: boxes と同じ並びの encode 済み輪郭 (作らない枚は None)
+def _silhouettes(image, boxes, cfg, state):
+    if not state or not state["enabled"] or not boxes:
+        return None
+    index = state["index"]
+    state["index"] += 1
+    if index % max(state["every_n"], 1):
+        return None
+
+    from . import contour, silhouette           # noqa: PLC0415
+
+    try:
+        shapes = silhouette.segment(image, boxes, cfg)
+    except Exception as error:                  # noqa: BLE001 (輪郭の失敗で解析を止めない)
+        _logger.debug("輪郭の推論に失敗しました: %s", error, exc_info=True)
+        shapes = []
+    if not shapes or all(shape is None for shape in shapes):
+        state["failures"] += 1
+        if state["failures"] >= _SILHOUETTE_MAX_FAILURES:
+            # 続けて失敗する = 環境の問題。以降は作らず、矩形で塗る (§5.12)
+            state["enabled"] = False
+            _logger.warning("輪郭を %d 枚続けて作れなかったため、以降は四角でぼかします",
+                            state["failures"])
+        return None
+    state["failures"] = 0
+    return [contour.encode(shape) if shape is not None else None for shape in shapes]
+
+
+# 輪郭を作らなかった枚へ、直前の輪郭を「動いたぶんだけずらして」持ち越す (ver5 resolve3 §3.3 の補強)。
+#
+# 輪郭は N 枚に 1 枚しか作らない (時間の都合)。その間に手ぶれや体の移動があると、
+# 枠の補間だけでは輪郭が人物からずれ、「ぼかさない」人物の顔がぼける (実素材で確認)。
+# そこで、輪郭を作った枚と今の枚で人物のまわりを縮小して位相相関を取り、平行移動ぶんだけ輪郭をずらす。
+# 相関が弱い (PSR が低い) 枚は持ち越さない = 前後の本物の輪郭か矩形で塗る。
+# ずらした輪郭からさらにずらすと誤差が積もるため、基準は常に「本物の輪郭を作った枚」にする。
+def _carry_silhouettes(sec, image, boxes, tracker, cfg, state):
+    if not state or not state["enabled"] or not boxes:
+        return
+    from . import contour                       # noqa: PLC0415
+    from .region_tracker import _shrink, phase_correlate, to_gray  # noqa: PLC0415
+
+    carry = state.setdefault("carry", {})
+    max_gap = float(cfg["silhouette"]["max_gap_sec"])
+    small = None
+    for box in boxes:
+        track = _track_of_box(tracker, box)
+        if track is None or not track.samples:
+            continue
+        sample = track.samples[-1]
+        rect = (sample["x"], sample["y"], sample["w"], sample["h"])
+        if small is None:
+            small = _shrink(to_gray(image), _CARRY_SCALE)
+        if sample.get("sil"):
+            relative = contour.decode(sample["sil"])
+            if relative is not None:
+                carry[track.id] = {"t": float(sec), "gray": small, "rect": rect,
+                                   "points": contour.to_absolute(relative, rect)}
+            continue
+        base = carry.get(track.id)
+        if base is None or float(sec) - base["t"] > max_gap:
+            continue
+        # 枠の形が大きく変わった = 姿勢が変わった (かがむ・腕を広げる)。ずらしても形が合わないため持ち越さない
+        if not _similar_size(base["rect"], rect):
+            continue
+        shift = _local_shift(base["gray"], small, base["rect"], rect, phase_correlate)
+        if shift is None:
+            continue
+        moved = [(px + shift[0], py + shift[1]) for px, py in base["points"]]
+        relative = contour.normalize(contour.to_relative(moved, rect),
+                                     int(cfg["silhouette"]["points"]))
+        sample["sil"] = contour.encode(relative)
+
+
+# 2 つの枠の幅・高さが、どちらも _CARRY_MAX_RESIZE 以内の変化か
+def _similar_size(before, after):
+    for index in (2, 3):
+        previous = max(float(before[index]), 1e-6)
+        if abs(float(after[index]) / previous - 1.0) > _CARRY_MAX_RESIZE:
+            return False
+    return True
+
+
+# 2 枚の縮小画像で、人物のまわり (前後の枠を合わせて広げた範囲) の平行移動を求める。
+# 戻り値 (dx, dy) 素材ピクセル。相関が弱ければ None。
+def _local_shift(before, after, rect_before, rect_after, phase_correlate):
+    if before.shape != after.shape:
+        return None
+    height, width = after.shape[:2]
+    left = min(rect_before[0], rect_after[0])
+    top = min(rect_before[1], rect_after[1])
+    right = max(rect_before[0] + rect_before[2], rect_after[0] + rect_after[2])
+    bottom = max(rect_before[1] + rect_before[3], rect_after[1] + rect_after[3])
+    pad_x = (right - left) * _CARRY_PAD
+    pad_y = (bottom - top) * _CARRY_PAD
+    x0 = int(max((left - pad_x) * _CARRY_SCALE, 0))
+    y0 = int(max((top - pad_y) * _CARRY_SCALE, 0))
+    x1 = int(min((right + pad_x) * _CARRY_SCALE, width))
+    y1 = int(min((bottom + pad_y) * _CARRY_SCALE, height))
+    if x1 - x0 < 16 or y1 - y0 < 16:
+        return None
+    dx, dy, _peak, psr = phase_correlate(before[y0:y1, x0:x1], after[y0:y1, x0:x1])
+    if psr < _CARRY_MIN_PSR:
+        return None
+    # region_tracker と同じ符号: 基準 → 今 の移動は (-dx, -dy)
+    return -dx / _CARRY_SCALE, -dy / _CARRY_SCALE
 
 
 # tracklet ごとに「一番大きく映った」矩形の見本を控える

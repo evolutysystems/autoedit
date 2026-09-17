@@ -188,17 +188,18 @@ def match_in_frame(anchor_image, anchor_rect, image, cfg):
 #   on_progress : (0.0〜1.0) を受け取るコールバック
 #   cancel      : True を返したら中断する callable
 # 戻り値: 追加したトラックの件数
+#
+# 作り直しの判断は「ID が同じトラックがあるか」ではなく「**ID と形の指紋 (shape_hash) が一致するか**」で行う
+# (ver5 resolve3 §5.7 (2))。ID が重なっても、前に囲んだ位置の古いトラックが使われることは無い。
+# 指紋が違う古いトラックはここで取り除く。
 def build_region_tracks(timeline, settings, analysis, decisions, cfg,
                         on_progress=None, cancel=None):
     from . import analyzer                      # noqa: PLC0415 (循環 import を避ける)
+    from . import decisions as decisions_module  # noqa: PLC0415
 
-    regions = [r for r in (decisions or {}).get("regions", []) if r.get("path")]
-    if not regions:
-        return 0
-
-    existing = {str(t.get("identity")) for t in analysis.get("tracks", [])
-                if str(t.get("kind")) == "region"}
-    targets = [r for r in regions if str(r.get("id")) not in existing]
+    regions = [r for r in (decisions or {}).get("regions", [])
+               if r.get("path") and decisions_module.region_kind(r) == decisions_module.KIND_PLACE]
+    targets = missing_regions(analysis, regions, "region")
     if not targets:
         return 0
 
@@ -212,12 +213,59 @@ def build_region_tracks(timeline, settings, analysis, decisions, cfg,
             lambda ratio, base=index: _report(
                 on_progress, (base + ratio) / float(len(targets))),
             cancel)
-        analysis.setdefault("tracks", []).extend(tracks)
+        replace_tracks(analysis, region, tracks)
         added += len(tracks)
 
     _report(on_progress, 1.0)
     _logger.info("領域の追従: %d 件のトラックを追加しました", added)
     return added
+
+
+# 指定のうち、指紋の合うトラックがまだ無い領域 (追従を作る必要があるもの)
+#   kind: トラックの種類 ("region" = 場所 / "manual" = 人物・物)
+def missing_regions(analysis, regions, kind):
+    from . import decisions as decisions_module  # noqa: PLC0415
+
+    ready = {(str(t.get("identity")), str(t.get("shape_hash") or ""))
+             for t in (analysis or {}).get("tracks", []) if str(t.get("kind")) == kind}
+    return [r for r in regions
+            if (str(r.get("id")), decisions_module.region_shape_hash(r)) not in ready]
+
+
+# 領域の古いトラック (同じ ID で指紋が違うもの) を捨て、新しいトラックを足す
+def replace_tracks(analysis, region, tracks):
+    from . import decisions as decisions_module  # noqa: PLC0415
+
+    region_id = str(region.get("id"))
+    shape_hash = decisions_module.region_shape_hash(region)
+    kept = [t for t in analysis.get("tracks", [])
+            if str(t.get("identity")) != region_id or str(t.get("kind", "person")) == "person"
+            or str(t.get("shape_hash") or "") == shape_hash]
+    tracks = list(tracks)
+    if not tracks:
+        # 追えなかった印を残す。無いと、開くたびに同じ追従をやり直して待たせてしまう。
+        # サンプルが空のため、画面にも出力にも出ない (plan.untracked_regions で「追従できていない」と分かる)
+        kind = "manual" if str(region.get("kind") or "") == "object" else "region"
+        tracks = [{"id": f"{region_id}_none", "identity": region_id, "media_id":
+                   str(region.get("media_id") or ""), "kind": kind, "samples": []}]
+    for track in tracks:
+        track["shape_hash"] = shape_hash
+    analysis["tracks"] = kept + tracks
+
+
+# 囲みの形を、枠に対する相対座標で保存できる形にする (ver5 resolve3 §3.6 「追加した枠の形」)。
+#   canvas_path : キャンバス座標の囲み
+#   transform   : 素材 → キャンバスの変換
+#   source_rect : 囲みの外接矩形 (素材ピクセル)
+def outline_of(canvas_path, transform, source_rect):
+    from . import contour                       # noqa: PLC0415
+
+    scale, offset_x, offset_y = transform
+    if scale <= 0 or len(canvas_path or []) < 3:
+        return ""
+    source_points = [((float(x) - offset_x) / scale, (float(y) - offset_y) / scale)
+                     for x, y in canvas_path]
+    return contour.encode(contour.to_relative(source_points, source_rect))
 
 
 def _report(on_progress, ratio):
@@ -247,12 +295,17 @@ def _tracks_for_region(timeline, settings, region, spans, cfg, on_progress, canc
         anchor_media, timeline.width, timeline.height)
     anchor_rect = geometry.canvas_rect_to_source(canvas_rect, transform)
 
+    outline = outline_of(canvas_path, transform, anchor_rect)
+    sample_fps = float(cfg["analysis"]["sample_fps"])
+    if str(region.get("follow") or cfg["region"]["follow"]) == "fixed":
+        # 固定: 相関を取らず、囲んだ素材の区間すべてに同じ位置で置く (§3.4)
+        return _fixed_tracks(region, spans, anchor_media_id, anchor_rect, sample_fps, outline)
+
     anchor_image = _frame_at(analyzer, anchor_media, anchor_sec, settings)
     if anchor_image is None:
         _logger.warning("領域の基準フレームを取得できないため追従できません")
         return []
 
-    sample_fps = float(cfg["analysis"]["sample_fps"])
     scale = float(cfg["region"]["search_scale"])
     threshold = float(cfg["region"]["match_psr"])
     reference = _shrink(to_gray(anchor_image), scale)
@@ -275,20 +328,45 @@ def _tracks_for_region(timeline, settings, region, spans, cfg, on_progress, canc
             on_progress(done / float(total))
             if len(samples) < 2:
                 continue
-            tracks.append({
-                "id": f"{region['id']}_{media_id}_{int(start)}",
-                "identity": str(region["id"]),
-                "media_id": media_id,
-                "kind": "region",
-                "start_sec": round(samples[0]["t"], 3),
-                "end_sec": round(samples[-1]["t"], 3),
-                "samples": [
-                    {"t": round(s["t"], 3), "x": round(s["x"], 1), "y": round(s["y"], 1),
-                     "w": round(s["w"], 1), "h": round(s["h"], 1),
-                     "score": round(s["score"], 3)}
-                    for s in samples
-                ],
-            })
+            tracks.append(make_track(region, media_id, start, "region", samples, outline))
+    return tracks
+
+
+# 追従トラック 1 本を作る (場所・人物/物で共通)
+def make_track(region, media_id, start, kind, samples, outline=""):
+    track = {
+        "id": f"{region['id']}_{media_id}_{int(start)}",
+        "identity": str(region["id"]),
+        "media_id": media_id,
+        "kind": kind,
+        "start_sec": round(samples[0]["t"], 3),
+        "end_sec": round(samples[-1]["t"], 3),
+        "samples": [
+            {"t": round(s["t"], 3), "x": round(s["x"], 1), "y": round(s["y"], 1),
+             "w": round(s["w"], 1), "h": round(s["h"], 1),
+             "score": round(s.get("score", 1.0), 3)}
+            for s in samples
+        ],
+    }
+    if outline:
+        track["outline"] = outline
+    return track
+
+
+# 固定の領域: 囲んだ素材の解析区間に、同じ位置のサンプルを並べる
+def _fixed_tracks(region, spans, media_id, rect, sample_fps, outline):
+    x, y, width, height = (float(v) for v in rect)
+    interval = 1.0 / max(sample_fps, 0.01)
+    tracks = []
+    for span_media_id, ranges in spans:
+        if span_media_id != media_id:
+            continue
+        for start, end in ranges:
+            count = max(int((end - start) / interval), 1)
+            samples = [{"t": start + index * interval, "x": x, "y": y, "w": width, "h": height,
+                        "score": 1.0} for index in range(count + 1)]
+            samples[-1]["t"] = end
+            tracks.append(make_track(region, media_id, start, "region", samples, outline))
     return tracks
 
 

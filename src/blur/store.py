@@ -20,7 +20,8 @@ from ..version import __version__
 _logger = get_logger(__name__)
 
 # キャッシュの書式版。増やしたら古いキャッシュは読まずに作り直す。
-SCHEMA_VERSION = 1
+#   2: 人物のまとめ方の修正・輪郭 (sil)・追加した枠の形 (outline / shape_hash) (ver5 resolve3)
+SCHEMA_VERSION = 2
 
 # プロジェクトファイルの隣へ置くときの拡張子
 CACHE_SUFFIX = ".blur.json"
@@ -65,8 +66,36 @@ def fingerprint(timeline, cfg, media_paths=None):
     parts.append(f"reid={cfg['model']['reid']}")
     # モデルファイルの更新時刻も入れる = 差し替えたら解析し直す
     parts.append(f"models={_model_stamp(cfg)}")
+    # 人物のまとめ方 (ver5 resolve3 §5.8)。変えたら人物 ID が変わるため解析し直す
+    parts.append(f"same_box={cfg['analysis']['same_box_containment']:.3f},"
+                 f"{cfg['analysis']['same_box_center_ratio']:.3f}")
+    # 輪郭 (ver5 resolve3 §5.2.3)。人物の形が輪郭のときだけ入れる。
+    # 矩形系どうしの切り替えは塗り方が変わるだけなので、解析し直さない。
+    parts.append(f"silhouette={silhouette_stamp(cfg)}")
 
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+# 輪郭の解析条件を 1 つの文字列にする。輪郭を使わない・モデルが無いときは "off"。
+def silhouette_stamp(cfg):
+    from . import models              # noqa: PLC0415 (循環 import を避けるため関数内で読む)
+    from .config import SHAPE_SILHOUETTE  # noqa: PLC0415
+
+    if str(cfg["render"]["shape"]) != SHAPE_SILHOUETTE:
+        return "off"
+    sil = cfg["silhouette"]
+    stamps = []
+    for key in ("model", "decoder"):
+        path = models.resolve_path(sil[key])
+        if path is None:
+            return "off"
+        try:
+            stat = os.stat(path)
+            stamps.append(f"{stat.st_size}:{int(stat.st_mtime)}")
+        except OSError:
+            return "off"
+    return (f"{sil['format']}:{sil['input']}:{sil['every_n_samples']}:{sil['points']}:"
+            f"{sil['threshold']}:" + ",".join(stamps))
 
 
 # 同梱モデルの版 (ファイルサイズと更新時刻) を 1 つの文字列にする

@@ -122,6 +122,12 @@ BLUR_POLICY_OPTIONS = [
     ("blur_others", "ぼかす (映り込みを取りこぼさない)"),
     ("manual_only", "ぼかさない (囲ったものだけ)"),
 ]
+BLUR_SHAPE_OPTIONS = [
+    ("silhouette", "身体の輪郭に沿う"),
+    ("rounded", "角の丸い四角"),
+    ("rect", "四角"),
+    ("ellipse", "楕円"),
+]
 BLUR_SAMPLE_FPS_OPTIONS = [
     (3.0, "速い (3fps)"),
     (5.0, "標準 (5fps)"),
@@ -832,6 +838,9 @@ DEFAULT_SETTINGS = {
             "embed_threshold": 0.35,  # 同一人物とみなす特徴ベクトルの距離
             "merge_threshold": 0.30,  # 全体クラスタリングで統合する距離 (§3.2 ②)
             "max_identities": 50,     # 人物 ID の上限 (超えたら短いものから捨てる)
+            # 同じ時刻の 2 つの枠を「1 人への重複した枠」とみなす条件 (ver5 resolve3 §5.8)
+            "same_box_containment": 0.85,   # 小さい枠がこの割合以上入っている
+            "same_box_center_ratio": 0.5,   # 横の中心のずれが小さい枠の幅のこの倍率以内
         },
         # ── 領域 (建物など / §3.4)
         "region": {
@@ -848,7 +857,43 @@ DEFAULT_SETTINGS = {
             "feather_ratio": 0.006,   # 境界をぼかす量 (キャンバス幅比)
             "pad_sec": 0.2,           # トラックの前後へ伸ばす時間 (取りこぼし対策)
             "mask_scale": 0.25,       # マスクを作る解像度 (キャンバスに対する比)
-            "shape": "rounded",       # rounded | rect | ellipse (人物の塗り方)
+            # 人物の塗り方: silhouette | rounded | rect | ellipse (ver5 resolve3 §3.1)
+            # silhouette は輪郭モデルで身体に沿わせる。モデルが無い・取れない時刻は rounded
+            "shape": "silhouette",
+            "keep_margin_ratio": 0.0, # ぼかさない形を広げる量 (0 = 形ちょうどで削る / resolve3 §3.4)
+            # ぼかさない人物が激しく動いた時刻だけ、動いた量ぶん守る形を広げる。
+            # 守る人物はぼけにくくなるが、重なったぼかす人物が見えやすくなる (既定 false / resolve3 §3.3.3)
+            "keep_motion_margin": False,
+        },
+        # ── 身体の輪郭 (ver5 resolve3 §3.1〜§3.3 / 設定画面には出さない)
+        "silhouette": {
+            "model": "models/silhouette_encoder.onnx",    # 画像エンコーダ
+            "decoder": "models/silhouette_decoder.onnx",  # 枠プロンプトのデコーダ
+            "format": "mobilesam",    # 前後処理の切り替え点 (mobilesam | efficientsam | sam2)
+            "input": 1024,            # エンコーダの入力の長辺 (px)
+            "threshold": 0.0,         # 確率マップ (logit) の 2 値化しきい値
+            "every_n_samples": 4,     # 解析サンプルの何枚に 1 枚で輪郭を作るか
+            "points": 64,             # 輪郭の点数
+            "min_fill_ratio": 0.15,   # 枠に対する面積がこれ未満なら取り損ねとして四角へ落とす
+            "max_gap_sec": 1.0,       # 前後の輪郭からこれ以上離れたら四角へ落とす
+            # 輪郭の外側へ取る余白 (ver5 resolve3 §3.3.3)。激しい動きでぼかしが外れないようにする
+            #   余白 = max(画面幅 x dilate_ratio, 人物の幅 x margin_box_ratio) + 前後の動いた量
+            "dilate_ratio": 0.01,     # 画面幅に対する最低限の余白
+            "margin_box_ratio": 0.15, # 人物の幅に対する余白
+            "max_margin_box_ratio": 0.5,   # 余白の上限 (人物の枠の長い辺に対する比)
+            "motion_lookahead_sec": 0.3,   # 前後この秒数の枠の動きを余白へ足す (0 = 足さない)
+            # 動いた量が人物の幅のこの割合を超える時刻は、輪郭をやめて四角 (+ 余白) でぼかす (0 = しない)
+            "fast_motion_box_ratio": 0.15,
+        },
+        # ── 手で足した人物・物の追従 (ver5 resolve3 §3.6)
+        "manual": {
+            "detector_score": 0.2,    # 探すときの検出しきい値 (通常の解析より低くする)
+            "search_ratio": 1.0,      # 前の位置の周りを枠の何倍ぶん広げて探すか
+            "min_iou": 0.3,           # 乗り換える枠の最小 IoU
+            "fixed_span_sec": 2.0,    # 追えなかった枠を固定で置くときの前後の秒数
+            # 検出できない時刻に位置を補う相関の合格ライン (PSR)。場所の追従 (region.match_psr) は
+            # 画面全体で相関を取るため高くてよいが、人物のまわりの小さな範囲では動きで下がりやすい
+            "match_psr": 8.0,
         },
         # ── 指定画面
         "spec": {
@@ -1731,6 +1776,17 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.blur_strength_edit, row, 1)
         row += 1
 
+        # 人物の形 (ver5 resolve3 §5.10)。輪郭は輪郭モデルが無ければ角丸で塗る
+        self.blur_shape_combo = self._make_value_combo(BLUR_SHAPE_OPTIONS)
+        self.blur_shape_combo.setToolTip(
+            "「身体の輪郭に沿う」は人物の身体だけをぼかします。解析に時間がかかります。\n"
+            "輪郭が取れない場面では、ぼかし漏れを防ぐため角の丸い四角でぼかします。")
+        self.blur_shape_combo.currentIndexChanged.connect(
+            lambda _index: self._update_blur_status(getattr(self, "_loaded_settings", {}) or {}))
+        grid.addWidget(self._make_column_label("人物の形"), row, 0)
+        grid.addWidget(self.blur_shape_combo, row, 1)
+        row += 1
+
         # 囲っていない人物をどう扱うか (§9-1)
         self.blur_policy_combo = self._make_value_combo(BLUR_POLICY_OPTIONS)
         self.blur_policy_combo.setToolTip(
@@ -2202,6 +2258,7 @@ class SettingsWindow(QWidget):
         self.blur_strength_edit.setText(str(blur_render.get("strength", 50)))
         self._set_combo_data(self.blur_policy_combo,
                              blur.get("default_policy", "blur_others"))
+        self._set_combo_data(self.blur_shape_combo, blur_render.get("shape", "silhouette"))
         self._set_combo_data(self.blur_sample_fps_combo,
                              float(blur_analysis.get("sample_fps", 5.0) or 5.0))
         self._update_blur_status(self._loaded_settings)
@@ -2462,6 +2519,7 @@ class SettingsWindow(QWidget):
         blur["default_policy"] = self.blur_policy_combo.currentData() or "blur_others"
         blur.setdefault("render", {})["mode"] = self.blur_mode_combo.currentData() or "gaussian"
         blur["render"]["strength"] = self._to_int(self.blur_strength_edit.text(), 50)
+        blur["render"]["shape"] = self.blur_shape_combo.currentData() or "silhouette"
         blur.setdefault("analysis", {})["sample_fps"] = float(
             self.blur_sample_fps_combo.currentData() or 5.0)
         return settings
@@ -2472,7 +2530,17 @@ class SettingsWindow(QWidget):
             from ..blur import models                # noqa: PLC0415 (機能 OFF なら読まない)
             from ..blur.config import config         # noqa: PLC0415
 
-            _available, reason = models.availability(config(settings))
+            cfg = config(settings)
+            _available, reason = models.availability(cfg)
+            # 人物の形が輪郭なら、輪郭モデルの状態も出す (ver5 resolve3 §5.10)。
+            # 画面で選び直した値を優先する (保存前でも状態が分かるように)
+            combo = getattr(self, "blur_shape_combo", None)
+            shape = (combo.currentData() if combo is not None else None) or cfg["render"]["shape"]
+            if shape == "silhouette":
+                from ..blur import silhouette        # noqa: PLC0415
+
+                _sil_available, sil_reason = silhouette.availability(cfg)
+                reason = f"{reason}\n{sil_reason}"
         except Exception as error:                   # noqa: BLE001 (設定画面を落とさない)
             reason = f"ぼかし機能の状態を確認できません: {error}"
         self.blur_status_label.setText(reason)

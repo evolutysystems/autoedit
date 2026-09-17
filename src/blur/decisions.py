@@ -7,18 +7,41 @@
 #
 # 指定は「明示されたものだけ」を持つ。触っていない人物は default_policy に従い、
 # 主役 (R3) は policy に関わらず常にぼかさない。
+#
+# ver5 resolve3 で次を足した (version 2)。
+#   excluded   : 削除した検出枠 (アンカー = 素材・時刻・位置で覚える / §3.5)
+#   splits     : 別の人物にした検出枠 (同上。as に新しい人物 ID)
+#   region_seq : 領域 ID の通し番号 (削除しても戻さない / §5.7)
+#   regions[].kind : "place" (場所 / カメラの動きを追う) | "object" (人物・物 / その物を追う)
+import hashlib
+import json
+import re
+
 from ..utils.logger import get_logger
 from .config import POLICY_BLUR_OTHERS, POLICY_MANUAL_ONLY
-from .geometry import point_in_polygon, polygon_bounds, rect_coverage
+from .geometry import iou, point_in_polygon, polygon_bounds, rect_coverage
 
 _logger = get_logger(__name__)
 
 # source["blur"] の書式版
-VERSION = 1
+VERSION = 2
 
 # 人物・領域に対する指定値
 BLUR = "blur"      # ぼかす
 KEEP = "keep"      # ぼかさない
+
+# 追加した枠の種類 (§3.6)
+KIND_PLACE = "place"     # 場所 (建物・看板)。カメラの動きに合わせて追う
+KIND_OBJECT = "object"   # 人物・物。囲んだ物そのものを追う
+
+# 分割でできる人物 ID の頭文字 (既存の p1, p2, … を振り直さない / §4-3)
+SPLIT_PREFIX = "s"
+
+# アンカーと検出枠を同じものとみなす重なり (§3.5)
+ANCHOR_MIN_IOU = 0.5
+
+_REGION_NUMBER_RE = re.compile(r"^r(\d+)$")
+_SPLIT_NUMBER_RE = re.compile(r"^s(\d+)$")
 
 
 # timeline.source["blur"] を読む (無ければ空の指定を返す)
@@ -37,6 +60,12 @@ def load(timeline):
         "merges": [list(pair) for pair in (section.get("merges") or []) if len(pair) >= 2],
         "regions": [dict(region) for region in (section.get("regions") or [])
                     if isinstance(region, dict)],
+        "excluded": [anchor for anchor in (_anchor(item) for item in (section.get("excluded") or []))
+                     if anchor is not None],
+        "splits": [dict(anchor, **{"as": str(item.get("as"))})
+                   for item, anchor in ((item, _anchor(item)) for item in (section.get("splits") or []))
+                   if anchor is not None and item.get("as")],
+        "region_seq": _to_int(section.get("region_seq")),
     }
 
 
@@ -55,6 +84,12 @@ def store(timeline, decisions):
             section[key] = value
     if decisions.get("merges"):
         section["merges"] = [list(pair) for pair in decisions["merges"]]
+    if decisions.get("excluded"):
+        section["excluded"] = [dict(item) for item in decisions["excluded"]]
+    if decisions.get("splits"):
+        section["splits"] = [dict(item) for item in decisions["splits"]]
+    if decisions.get("region_seq"):
+        section["region_seq"] = int(decisions["region_seq"])
 
     source["blur"] = section
     timeline.source = source
@@ -71,6 +106,9 @@ def _empty():
         "identities": {},
         "merges": [],
         "regions": [],
+        "excluded": [],
+        "splits": [],
+        "region_seq": 0,
     }
 
 
@@ -208,10 +246,12 @@ def with_identity(decisions, identity_id, mode):
     return updated
 
 
-# 領域を足した新しい decisions を返す
+# 領域を足した新しい decisions を返す。通し番号も進める (§5.7 (1))。
 def with_region(decisions, region):
     updated = _copy(decisions)
     updated["regions"].append(dict(region))
+    updated["region_seq"] = max(_to_int(updated.get("region_seq")),
+                                region_number(region.get("id")))
     return updated
 
 
@@ -229,13 +269,165 @@ def with_merge(decisions, first_id, second_id):
     return updated
 
 
-# 領域 ID を採番する (r1, r2, …)。既存と重複させない。
-def next_region_id(decisions):
-    used = {str(r.get("id")) for r in (decisions or {}).get("regions", [])}
-    index = 1
-    while f"r{index}" in used:
-        index += 1
-    return f"r{index}"
+# 領域 ID を採番する (r1, r2, …)。
+#
+# **一度使った番号は二度と使わない** (ver5 resolve3 §2.4 (a) / §5.7)。削除した領域の追従トラックは
+# 解析結果に残るため、同じ ID を振ると新しい囲みが古い位置のトラックに化ける。
+# 通し番号 (region_seq) に加え、Undo で通し番号が戻った場合に備えて
+# 指定と解析結果に残っている ID も避ける。
+def next_region_id(decisions, analysis=None):
+    highest = _to_int((decisions or {}).get("region_seq"))
+    names = [str(r.get("id") or "") for r in (decisions or {}).get("regions", [])]
+    names += [str(t.get("identity") or "") for t in (analysis or {}).get("tracks", [])
+              if str(t.get("kind", "person")) != "person"]
+    for name in names:
+        highest = max(highest, region_number(name))
+    return f"r{highest + 1}"
+
+
+# 領域 ID の番号部分 (r12 → 12)。形が違えば 0。
+def region_number(region_id):
+    match = _REGION_NUMBER_RE.match(str(region_id or ""))
+    return int(match.group(1)) if match else 0
+
+
+# 追加した枠の種類 (kind が無い v1 の領域は場所として読む)
+def region_kind(region):
+    kind = str((region or {}).get("kind") or KIND_PLACE)
+    return kind if kind in (KIND_PLACE, KIND_OBJECT) else KIND_PLACE
+
+
+# 領域の形の指紋 (§5.7 (2))。追従トラックがこの指定から作られたものかを確かめる。
+# 位置・種類・追従方法のどれかが変われば別物になり、トラックを作り直す。
+def region_shape_hash(region):
+    region = region or {}
+    payload = {
+        "kind": region_kind(region),
+        "media_id": str(region.get("media_id") or ""),
+        "anchor_sec": round(float(region.get("anchor_sec") or 0.0), 3),
+        "path": [[round(float(p[0]), 5), round(float(p[1]), 5)]
+                 for p in (region.get("path") or []) if len(p) >= 2],
+        "follow": str(region.get("follow") or ""),
+    }
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+# 領域の「ぼかす / ぼかさない」を変えた新しい decisions を返す
+def with_region_mode(decisions, region_id, mode):
+    updated = _copy(decisions)
+    for region in updated["regions"]:
+        if str(region.get("id")) == str(region_id):
+            region["mode"] = mode
+    return updated
+
+
+# 領域の追従方法を変えた新しい decisions を返す (追従できなかった枠を固定にする / §3.6)
+def with_region_follow(decisions, region_id, follow):
+    updated = _copy(decisions)
+    for region in updated["regions"]:
+        if str(region.get("id")) == str(region_id):
+            region["follow"] = follow
+    return updated
+
+
+# ------------------------------------------------------------------
+# 検出枠のアンカー (削除・分割 / ver5 resolve3 §3.5)
+# ------------------------------------------------------------------
+
+# tracklet を覚えるためのアンカーを作る。解析のたびに振り直される tracklet ID は使わず、
+# 「どの素材の、何秒に、どこにあった枠か」で覚える。サンプルの真ん中を代表にする。
+def track_anchor(track):
+    samples = (track or {}).get("samples") or []
+    if not samples:
+        return None
+    sample = samples[len(samples) // 2]
+    return {
+        "media_id": str(track.get("media_id") or ""),
+        "t": round(float(sample["t"]), 3),
+        "rect": [round(float(sample[key]), 1) for key in ("x", "y", "w", "h")],
+    }
+
+
+# アンカーがこの tracklet を指しているか。
+#   tolerance_sec: サンプル時刻のずれの許容 (解析の間隔ぶん)
+def anchor_matches(anchor, track, tolerance_sec):
+    if not anchor or str(anchor.get("media_id") or "") != str((track or {}).get("media_id") or ""):
+        return False
+    t = float(anchor["t"])
+    rect = tuple(float(v) for v in anchor["rect"])
+    for sample in (track or {}).get("samples") or []:
+        if abs(float(sample["t"]) - t) > tolerance_sec:
+            continue
+        if iou(rect, (sample["x"], sample["y"], sample["w"], sample["h"])) >= ANCHOR_MIN_IOU:
+            return True
+    return False
+
+
+# 2 つのアンカーが同じ枠を指すか (二重登録を避ける)
+def same_anchor(a, b):
+    if not a or not b or str(a.get("media_id")) != str(b.get("media_id")):
+        return False
+    if abs(float(a["t"]) - float(b["t"])) > 1e-3:
+        return False
+    return iou(tuple(a["rect"]), tuple(b["rect"])) >= 0.95
+
+
+# 検出枠を削除した新しい decisions を返す (既に削除済みなら変えない)
+def with_excluded(decisions, anchor):
+    updated = _copy(decisions)
+    if anchor and not any(same_anchor(anchor, item) for item in updated["excluded"]):
+        updated["excluded"].append(dict(anchor))
+    return updated
+
+
+# 削除した検出枠を戻した新しい decisions を返す
+def without_excluded(decisions, anchor):
+    updated = _copy(decisions)
+    updated["excluded"] = [item for item in updated["excluded"] if not same_anchor(anchor, item)]
+    return updated
+
+
+# 検出枠を別の人物にした新しい decisions を返す。新しい人物 ID (s1, s2, …) を振る。
+def with_split(decisions, anchor):
+    updated = _copy(decisions)
+    if not anchor or any(same_anchor(anchor, item) for item in updated["splits"]):
+        return updated
+    highest = 0
+    for item in updated["splits"]:
+        match = _SPLIT_NUMBER_RE.match(str(item.get("as") or ""))
+        if match:
+            highest = max(highest, int(match.group(1)))
+    updated["splits"].append(dict(anchor, **{"as": f"{SPLIT_PREFIX}{highest + 1}"}))
+    return updated
+
+
+# 分割を取り消した新しい decisions を返す
+def without_split(decisions, anchor):
+    updated = _copy(decisions)
+    updated["splits"] = [item for item in updated["splits"] if not same_anchor(anchor, item)]
+    return updated
+
+
+# アンカーの形を整える。壊れていれば None。
+def _anchor(item):
+    if not isinstance(item, dict):
+        return None
+    try:
+        rect = [float(v) for v in item.get("rect")]
+        if len(rect) != 4:
+            return None
+        return {"media_id": str(item.get("media_id") or ""), "t": float(item.get("t")),
+                "rect": rect}
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value):
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _copy(decisions):
@@ -249,4 +441,7 @@ def _copy(decisions):
         "identities": dict(base.get("identities") or {}),
         "merges": [list(pair) for pair in (base.get("merges") or [])],
         "regions": [dict(region) for region in (base.get("regions") or [])],
+        "excluded": [dict(item) for item in (base.get("excluded") or [])],
+        "splits": [dict(item) for item in (base.get("splits") or [])],
+        "region_seq": _to_int(base.get("region_seq")),
     }

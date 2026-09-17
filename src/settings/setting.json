@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -24
+        "last_cut_db": -14
     },
     "loudness": {
         "enabled": true,
@@ -461,7 +461,7 @@
         "balance_refresh_sec": 300
     },
     "blur": {
-        "enabled": false,
+        "enabled": true,
         "default_policy": "blur_others",
         "preview_marker": true,
         "model": {
@@ -489,7 +489,9 @@
             "iou_threshold": 0.3,
             "embed_threshold": 0.35,
             "merge_threshold": 0.3,
-            "max_identities": 50
+            "max_identities": 50,
+            "same_box_containment": 0.85,
+            "same_box_center_ratio": 0.5
         },
         "region": {
             "follow": "track",
@@ -504,7 +506,32 @@
             "feather_ratio": 0.006,
             "pad_sec": 0.2,
             "mask_scale": 0.25,
-            "shape": "rounded"
+            "shape": "silhouette",
+            "keep_margin_ratio": 0.0,
+            "keep_motion_margin": false
+        },
+        "silhouette": {
+            "model": "models/silhouette_encoder.onnx",
+            "decoder": "models/silhouette_decoder.onnx",
+            "format": "mobilesam",
+            "input": 1024,
+            "threshold": 0.0,
+            "every_n_samples": 4,
+            "points": 64,
+            "min_fill_ratio": 0.15,
+            "max_gap_sec": 1.0,
+            "dilate_ratio": 0.01,
+            "margin_box_ratio": 0.15,
+            "max_margin_box_ratio": 0.5,
+            "motion_lookahead_sec": 0.3,
+            "fast_motion_box_ratio": 0.15
+        },
+        "manual": {
+            "detector_score": 0.2,
+            "search_ratio": 1.0,
+            "min_iou": 0.3,
+            "fixed_span_sec": 2.0,
+            "match_psr": 8.0
         },
         "spec": {
             "hit_ratio": 0.5,

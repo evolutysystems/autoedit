@@ -22,8 +22,9 @@ from ..modules import ffmpeg_runner
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
+from . import contour, geometry, store
 from . import decisions as decisions_module
-from . import geometry, store
+from .plan import ROLE_BLUR, ROLE_KEEP, BlurPlan, sample_rect_at
 
 _logger = get_logger(__name__)
 
@@ -110,57 +111,70 @@ def build(timeline, analysis, decisions, cfg, out_path, on_progress=None):
         _logger.error("PIL が使えないためぼかしマスクを作れません")
         return None
 
-    plan = build_plan(timeline, analysis, decisions, cfg)
-    if not plan["shapes"]:
+    plan = BlurPlan(timeline, analysis, decisions, cfg)
+    if not plan.has_blur():
         _logger.info("ぼかす対象が無いためマスクを作りません")
         return None
 
     fps = int(timeline.fps or 60)
     duration = float(timeline.duration_sec())
     total_frames = max(int(round(duration * fps)), 1)
-    width = max(int(timeline.width * float(cfg["render"]["mask_scale"])) // 2 * 2, 2)
-    height = max(int(timeline.height * float(cfg["render"]["mask_scale"])) // 2 * 2, 2)
+    width, height = mask_size(timeline, cfg)
 
-    _logger.info("ぼかしマスク: %d フレーム / %dx%d / 対象 %d 件",
-                 total_frames, width, height, len(plan["shapes"]))
+    _logger.info("ぼかしマスク: %d フレーム / %dx%d / ぼかす %d 件 / 守る %d 件",
+                 total_frames, width, height,
+                 len(plan.tracks_with_role(ROLE_BLUR)), len(plan.tracks_with_role(ROLE_KEEP)))
 
-    frames = _iter_mask_frames(plan, timeline, cfg, total_frames, fps, width, height, on_progress)
+    painter = _MaskPainter(plan, timeline, cfg, width, height)
+    frames = _iter_mask_frames(painter, timeline, total_frames, fps, on_progress)
     if _PYAV_AVAILABLE:
-        return _encode_pyav(frames, out_path, fps, width, height)
-    return _encode_ffmpeg(frames, out_path, fps, width, height, cfg)
+        result = _encode_pyav(frames, out_path, fps, width, height)
+    else:
+        result = _encode_ffmpeg(frames, out_path, fps, width, height, cfg)
+    painter.log_summary()
+    return result
+
+
+# 1 フレームぶんの最終マスクだけを作る (指定画面の「仕上がり表示」用 / resolve3 §5.5.4)。
+# 書き出しと同じ計算を通すため、表示と出力が食い違わない。
+# 戻り値: グレースケールの PIL Image (mask_size の大きさ)。PIL が無ければ None。
+def frame_mask(timeline, analysis, decisions, cfg, timeline_sec):
+    if not _PIL_AVAILABLE:
+        return None
+    width, height = mask_size(timeline, cfg)
+    plan = BlurPlan(timeline, analysis, decisions, cfg)
+    painter = _MaskPainter(plan, timeline, cfg, width, height)
+    located = TimeMap.from_timeline(timeline).to_source(float(timeline_sec))
+    if located is None:
+        return painter.blank
+    return painter.paint(*located)
+
+
+# マスクの大きさ (キャンバスに mask_scale を掛け、偶数へそろえる)
+def mask_size(timeline, cfg):
+    scale = float(cfg["render"]["mask_scale"])
+    width = max(int(timeline.width * scale) // 2 * 2, 2)
+    height = max(int(timeline.height * scale) // 2 * 2, 2)
+    return width, height
 
 
 # ------------------------------------------------------------------
 # どこをぼかすかの計画
 # ------------------------------------------------------------------
 
-# ぼかす対象のトラックを集める。
+# ぼかす対象のトラックを集める (互換のために残す。判定の本体は plan.BlurPlan)。
 # 戻り値 {"shapes": [{"media_id","kind","samples","start","end"}, …]}
 def build_plan(timeline, analysis, decisions, cfg):
-    main_id = store.main_identity_id(analysis)
-    regions = {str(r.get("id")): r for r in (decisions.get("regions") or [])}
+    plan = BlurPlan(timeline, analysis, decisions, cfg)
     pad = float(cfg["render"]["pad_sec"])
-
     shapes = []
-    for track in (analysis or {}).get("tracks", []):
-        kind = str(track.get("kind", "person"))
-        if kind == "person":
-            identity = str(track.get("identity") or "")
-            if not identity:
-                continue
-            if not decisions_module.should_blur_identity(identity, decisions, cfg, main_id):
-                continue
-        else:
-            region = regions.get(str(track.get("region") or track.get("identity") or ""))
-            if region is None or not decisions_module.should_blur_region(region):
-                continue
-
-        samples = [s for s in track.get("samples", []) if _valid_sample(s)]
+    for entry in plan.tracks_with_role(ROLE_BLUR):
+        samples = [s for s in entry["track"].get("samples", []) if _valid_sample(s)]
         if not samples:
             continue
         shapes.append({
-            "media_id": str(track.get("media_id") or ""),
-            "kind": kind,
+            "media_id": str(entry["track"].get("media_id") or ""),
+            "kind": entry["kind"],
             "samples": samples,
             # 取りこぼし対策として前後へ pad_sec ぶん伸ばす (§5.4 補足)
             "start": float(samples[0]["t"]) - pad,
@@ -177,114 +191,141 @@ def _valid_sample(sample):
 
 
 # ------------------------------------------------------------------
-# 1 フレームぶんの絵
+# 1 フレームぶんの絵 (ver5 resolve3 §3.4 / §5.4.2)
 # ------------------------------------------------------------------
 
 # 出力フレームを 1 枚ずつ作って返す (グレースケールの PIL Image)
-def _iter_mask_frames(plan, timeline, cfg, total_frames, fps, width, height, on_progress):
+def _iter_mask_frames(painter, timeline, total_frames, fps, on_progress):
     timemap = TimeMap.from_timeline(timeline)
-    scale_x = width / float(timeline.width)
-    scale_y = height / float(timeline.height)
-    feather = max(float(cfg["render"]["feather_ratio"]) * width, 0.0)
-    margin_ratio = float(cfg["render"]["margin_ratio"])
-    shape_kind = str(cfg["render"]["shape"])
-    # 素材ごとの座標変換は毎フレーム作り直さない (同じ素材なら同じ変換)
-    transforms = {}
-
-    # 何も描かないフレームは同じ絵を使い回す (作り直さない)。
-    # 出力の大半は「ぼかす対象が映っていない」フレームのため、ここが効く。
-    blank = Image.new("L", (width, height), 0)
-
     for index in range(total_frames):
-        timeline_sec = index / float(fps)
-        image = None
-        draw = None
-        drawn = 0
-
-        located = timemap.to_source(timeline_sec)
-        if located is not None:
-            media_id, source_sec = located
-            transform = transforms.get(media_id)
-            if transform is None:
-                media = timeline.media_by_id(media_id)
-                transform = geometry.source_to_canvas_transform(
-                    media, timeline.width, timeline.height)
-                transforms[media_id] = transform
-
-            for shape in plan["shapes"]:
-                if shape["media_id"] and shape["media_id"] != media_id:
-                    continue
-                if not (shape["start"] <= source_sec <= shape["end"]):
-                    continue
-                rect = _rect_at(shape, source_sec)
-                if rect is None:
-                    continue
-                rect = geometry.source_rect_to_canvas(rect, transform)
-                rect = geometry.expand_rect(rect, margin_ratio, timeline.width)
-                rect = geometry.clamp_rect(rect, timeline.width, timeline.height)
-                if rect is None:
-                    continue
-                if draw is None:
-                    image = Image.new("L", (width, height), 0)
-                    draw = ImageDraw.Draw(image)
-                _fill(draw, rect, scale_x, scale_y, shape["kind"], shape_kind)
-                drawn += 1
-
-        if image is None:
-            image = blank
-        elif feather > 0.5:
-            # 境界をぼかす = alphamerge したときに自然に溶ける (§3.5)
-            image = image.filter(ImageFilter.GaussianBlur(feather))
-
+        located = timemap.to_source(index / float(fps))
+        image = painter.blank if located is None else painter.paint(*located)
         if on_progress is not None and (index % 30 == 0 or index == total_frames - 1):
             on_progress((index + 1) / float(total_frames), {})
         yield image
 
 
-# その時刻の矩形を線形補間で求める (samples は sample_fps 間隔しか持たない / §5.2.1)
+# 1 フレームのマスクを描く。
+#
+#   ぼかす層   B = ぼかす形を塗る → (輪郭で塗った分だけ) 膨張 → フェザー
+#   ぼかさない層 K = 守る形を塗る (膨張もフェザーもしない。keep_margin_ratio があれば膨張)
+#   最終マスク   M = B × (1 − K)
+#
+# フェザーは B にだけ掛け、K で削った後には掛けない。後からぼかすと、削った境界から
+# ぼかしが守る人物へ染み出すため (「ぼかさない」を優先する / resolve3 §3.4)。
+class _MaskPainter:
+
+    def __init__(self, plan, timeline, cfg, width, height):
+        self._plan = plan
+        self._timeline = timeline
+        self._width = width
+        self._height = height
+        self._scale_x = width / float(timeline.width)
+        self._scale_y = height / float(timeline.height)
+        self._feather = max(float(cfg["render"]["feather_ratio"]) * width, 0.0)
+        self._margin_ratio = float(cfg["render"]["margin_ratio"])
+        self._shape_kind = str(cfg["render"]["shape"])
+        # 膨らませる量 (マスクの px)。輪郭 = 動きの遅れの吸収 / 守る形 = keep_margin_ratio
+        self._dilate_px = max(float(cfg["silhouette"]["dilate_ratio"]) * width, 0.0)
+        self._keep_dilate_px = max(float(cfg["render"]["keep_margin_ratio"]) * width, 0.0)
+        # 何も描かないフレームは同じ絵を使い回す (作り直さない)。
+        # 出力の大半は「ぼかす対象が映っていない」フレームのため、ここが効く。
+        self.blank = Image.new("L", (width, height), 0)
+        self._counts = {"silhouette": 0, "fallback": 0}
+
+    # 素材のその時刻のマスクを返す
+    def paint(self, media_id, source_sec):
+        shapes = self._plan.shapes_at(media_id, source_sec)
+        blur_shapes = [s for s in shapes if s["role"] == ROLE_BLUR]
+        if not blur_shapes:
+            return self.blank
+
+        blur_layer = Image.new("L", (self._width, self._height), 0)
+        draw = ImageDraw.Draw(blur_layer)
+        for shape in blur_shapes:
+            if shape["silhouette"] is not None:
+                # 輪郭は人物の大きさと動きに応じた余白で膨らませる (resolve3 §3.3.3)
+                self._fill(draw, shape, expand=False,
+                           grow_px=max(self._dilate_px, shape.get("grow", 0.0) * self._scale_x))
+                self._counts["silhouette"] += 1
+            else:
+                # 矩形系は margin_ratio で広げたうえで、動いた量だけさらに広げる
+                self._fill(draw, shape, expand=True,
+                           grow_px=shape.get("motion", 0.0) * self._scale_x)
+                if shape["kind"] == "person" and self._shape_kind == "silhouette":
+                    self._counts["fallback"] += 1
+
+        if self._feather > 0.5:
+            # 境界をぼかす = alphamerge したときに自然に溶ける (§3.5)
+            blur_layer = blur_layer.filter(ImageFilter.GaussianBlur(self._feather))
+
+        keep_shapes = [s for s in shapes if s["role"] == ROLE_KEEP]
+        if not keep_shapes:
+            return blur_layer
+
+        keep_layer = Image.new("L", (self._width, self._height), 0)
+        keep_draw = ImageDraw.Draw(keep_layer)
+        for shape in keep_shapes:
+            # 守る形は keep_margin_ratio に加え、激しく動いた時刻だけ動いた量ぶん広げる (plan の grow)
+            self._fill(keep_draw, shape, expand=False,
+                       grow_px=self._keep_dilate_px + shape.get("grow", 0.0) * self._scale_x)
+        # M = B × (1 − K)
+        blurred = np.asarray(blur_layer, dtype=np.uint16)
+        keep = np.asarray(keep_layer, dtype=np.uint16)
+        result = (blurred * (255 - keep) // 255).astype(np.uint8)
+        return Image.fromarray(result, mode="L")
+
+    # 1 つの形を白く塗る。
+    #   expand  : 枠を margin_ratio ぶん広げるか (ぼかす矩形系だけ広げる。守る形は広げない)
+    #   grow_px : 形をさらに外側へ膨らませる量 (マスクの px)。
+    #             画像全体に MaxFilter を掛けると 1 枚 20ms、角を丸めた太線でも 1 枚 7ms かかる (実測) ため、
+    #             多角形は頂点を外側へずらした多角形を塗り、矩形系は枠を広げて同じ効果を出す
+    def _fill(self, draw, shape, expand, grow_px=0.0):
+        rect = shape["rect"]
+        if expand:
+            rect = geometry.expand_rect(rect, self._margin_ratio, self._timeline.width)
+        rect = geometry.clamp_rect(rect, self._timeline.width, self._timeline.height)
+        if rect is None:
+            return
+
+        relative = shape["silhouette"] if shape["silhouette"] is not None else shape["outline"]
+        if relative is not None:
+            # 輪郭は広げていない枠へ、手描きの形は (ぼかすなら) 広げた枠へ当てはめる
+            base = shape["rect"] if shape["silhouette"] is not None else rect
+            points = [(px * self._scale_x, py * self._scale_y)
+                      for px, py in contour.to_absolute(relative, base)]
+            if len(points) >= 3:
+                draw.polygon(points, fill=255)
+                if grow_px >= 0.5:
+                    draw.polygon([tuple(p) for p in contour.offset(points, grow_px)], fill=255)
+                return
+
+        x, y, width, height = rect
+        grow = grow_px if grow_px >= 0.5 else 0.0
+        box = (x * self._scale_x - grow, y * self._scale_y - grow,
+               (x + width) * self._scale_x + grow, (y + height) * self._scale_y + grow)
+        if box[2] - box[0] < 1 or box[3] - box[1] < 1:
+            return
+        if shape["kind"] != "person" or self._shape_kind == "rect":
+            draw.rectangle(box, fill=255)
+        elif self._shape_kind == "ellipse":
+            draw.ellipse(box, fill=255)
+        else:
+            # rounded / silhouette (輪郭が無い時刻) は角丸
+            radius = min(box[2] - box[0], box[3] - box[1]) * 0.2
+            draw.rounded_rectangle(box, radius=radius, fill=255)
+
+    # 輪郭で塗れた割合をログへ出す (resolve3 §5.12)
+    def log_summary(self):
+        total = self._counts["silhouette"] + self._counts["fallback"]
+        if total and self._shape_kind == "silhouette":
+            _logger.info("ぼかしマスク: 人物の輪郭 %d%% (残りは四角)",
+                         int(round(100.0 * self._counts["silhouette"] / total)))
+
+
+# その時刻の矩形を線形補間で求める (互換のために残す。本体は plan.sample_rect_at)
 def _rect_at(shape, source_sec):
-    samples = shape["samples"]
-    first = samples[0]
-    last = samples[-1]
-    # pad_sec ぶんはみ出した時間は端の矩形をそのまま使う
-    if source_sec <= first["t"]:
-        return (first["x"], first["y"], first["w"], first["h"])
-    if source_sec >= last["t"]:
-        return (last["x"], last["y"], last["w"], last["h"])
-
-    previous = first
-    for sample in samples:
-        if sample["t"] >= source_sec:
-            span = sample["t"] - previous["t"]
-            ratio = (source_sec - previous["t"]) / span if span > 1e-9 else 0.0
-            return (
-                previous["x"] + (sample["x"] - previous["x"]) * ratio,
-                previous["y"] + (sample["y"] - previous["y"]) * ratio,
-                previous["w"] + (sample["w"] - previous["w"]) * ratio,
-                previous["h"] + (sample["h"] - previous["h"]) * ratio,
-            )
-        previous = sample
-    return (last["x"], last["y"], last["w"], last["h"])
-
-
-# 1 つの対象を白く塗る。人物は角丸・領域は矩形を既定にする。
-def _fill(draw, rect, scale_x, scale_y, kind, shape_kind):
-    x, y, width, height = rect
-    left = x * scale_x
-    top = y * scale_y
-    right = (x + width) * scale_x
-    bottom = (y + height) * scale_y
-    if right - left < 1 or bottom - top < 1:
-        return
-
-    box = (left, top, right, bottom)
-    if kind != "person" or shape_kind == "rect":
-        draw.rectangle(box, fill=255)
-    elif shape_kind == "ellipse":
-        draw.ellipse(box, fill=255)
-    else:
-        radius = min(right - left, bottom - top) * 0.2
-        draw.rounded_rectangle(box, radius=radius, fill=255)
+    return sample_rect_at(shape["samples"], source_sec)
 
 
 # ------------------------------------------------------------------

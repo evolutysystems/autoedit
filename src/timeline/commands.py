@@ -1523,6 +1523,129 @@ class RemoveBlurRegion(Command):
         return True
 
 
+# 領域・手で足した枠の「ぼかす / ぼかさない」を変える (ver5 resolve3 §2.3 (b) / §5.6)
+# 領域の枠をクリックしたときに人物の指定 (SetBlurDecision) を積んでいた不具合の置き換え先。
+class SetBlurRegionMode(Command):
+
+    label = "ぼかし枠の指定の変更"
+
+    def __init__(self, region_id, mode):
+        self._region_id = str(region_id)
+        self._mode = mode
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        region = next((r for r in current["regions"] if str(r.get("id")) == self._region_id), None)
+        if region is None or str(region.get("mode", blur_decisions.BLUR)) == self._mode:
+            return False
+        blur_decisions.store(
+            timeline, blur_decisions.with_region_mode(current, self._region_id, self._mode))
+        return True
+
+
+# 領域・手で足した枠の追従方法を変える (追えなかった枠を固定にする / ver5 resolve3 §3.6)
+class SetBlurRegionFollow(Command):
+
+    label = "ぼかし枠を固定にする"
+
+    def __init__(self, region_id, follow):
+        self._region_id = str(region_id)
+        self._follow = str(follow)
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        region = next((r for r in current["regions"] if str(r.get("id")) == self._region_id), None)
+        if region is None or str(region.get("follow") or "") == self._follow:
+            return False
+        blur_decisions.store(
+            timeline, blur_decisions.with_region_follow(current, self._region_id, self._follow))
+        return True
+
+
+# 検出された人物の枠を削除する (ぼかしにも保護にも使わない / ver5 resolve3 §3.5)
+# anchors: decisions.track_anchor の一覧 (人物をまとめて消すときは複数)
+class ExcludeBlurTracks(Command):
+
+    label = "ぼかし枠の削除"
+
+    def __init__(self, anchors):
+        self._anchors = [dict(anchor) for anchor in (anchors or []) if anchor]
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        updated = current
+        for anchor in self._anchors:
+            updated = blur_decisions.with_excluded(updated, anchor)
+        if len(updated["excluded"]) == len(current["excluded"]):
+            return False
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 削除した検出枠を戻す
+class RestoreBlurTrack(Command):
+
+    label = "ぼかし枠を戻す"
+
+    def __init__(self, anchor):
+        self._anchor = dict(anchor or {})
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        updated = blur_decisions.without_excluded(current, self._anchor)
+        if len(updated["excluded"]) == len(current["excluded"]):
+            return False
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 検出枠を別の人物にする (並んだ 2 人が 1 人にまとまった場合の救済 / ver5 resolve3 §5.5.3)
+# 既存の人物 ID は振り直さず、新しい人物は s1, s2, … になる。
+class SplitBlurTrack(Command):
+
+    label = "別の人物にする"
+
+    def __init__(self, anchor):
+        self._anchor = dict(anchor or {})
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        updated = blur_decisions.with_split(current, self._anchor)
+        if len(updated["splits"]) == len(current["splits"]):
+            return False
+        blur_decisions.store(timeline, updated)
+        return True
+
+
+# 別の人物にした検出枠を元の人物へ戻す
+class UnsplitBlurTrack(Command):
+
+    label = "元の人物へ戻す"
+
+    def __init__(self, anchor):
+        self._anchor = dict(anchor or {})
+
+    def apply(self, timeline):
+        from ..blur import decisions as blur_decisions   # noqa: PLC0415
+
+        current = blur_decisions.load(timeline)
+        updated = blur_decisions.without_split(current, self._anchor)
+        if len(updated["splits"]) == len(current["splits"]):
+            return False
+        blur_decisions.store(timeline, updated)
+        return True
+
+
 # 2 人の人物を同じ人物として統合する (§5.6.6)
 # 着替え・長時間の不在で人物 ID が割れた場合の救済。
 # 統合の指定は解析結果ではなく source 側に残るため、**解析をやり直しても残る**。

@@ -16,8 +16,14 @@ MODE_GAUSSIAN = "gaussian"
 MODE_PIXELATE = "pixelate"
 _MODES = (MODE_GAUSSIAN, MODE_PIXELATE)
 
-# 人物の塗り方
-_SHAPES = ("rounded", "rect", "ellipse")
+# 人物の塗り方。silhouette は輪郭モデルで身体の形に沿わせる (ver5 resolve3 §3.1)。
+# 輪郭が取れない時刻・モデルが無い環境では rounded と同じ塗りへ落ちる (§3.3)。
+SHAPE_SILHOUETTE = "silhouette"
+SHAPE_ROUNDED = "rounded"
+_SHAPES = (SHAPE_SILHOUETTE, SHAPE_ROUNDED, "rect", "ellipse")
+
+# 輪郭モデルの前後処理の種類 (§5.3.2)
+_SILHOUETTE_FORMATS = ("mobilesam", "efficientsam", "sam2")
 
 # 領域の追従方法 (§3.4)
 FOLLOW_TRACK = "track"
@@ -50,6 +56,10 @@ _DEFAULTS = {
         "embed_threshold": 0.35,
         "merge_threshold": 0.30,
         "max_identities": 50,
+        # 同じ時刻の 2 つの枠を「1 人への重複した枠」とみなす条件 (ver5 resolve3 §5.8)。
+        # 小さい枠がこの割合以上入っていて、かつ横の中心のずれが小さい枠の幅のこの倍率以内。
+        "same_box_containment": 0.85,
+        "same_box_center_ratio": 0.5,
     },
     "region": {
         "follow": FOLLOW_TRACK,
@@ -64,7 +74,35 @@ _DEFAULTS = {
         "feather_ratio": 0.006,
         "pad_sec": 0.2,
         "mask_scale": 0.25,
-        "shape": "rounded",
+        "shape": SHAPE_SILHOUETTE,
+        # ぼかさない層を広げる量 (キャンバス幅比)。0 = 形ちょうどで削る (ver5 resolve3 §3.4)
+        "keep_margin_ratio": 0.0,
+        "keep_motion_margin": False,
+    },
+    # 身体の輪郭 (ver5 resolve3 §3.1〜§3.3)
+    "silhouette": {
+        "model": "models/silhouette_encoder.onnx",
+        "decoder": "models/silhouette_decoder.onnx",
+        "format": "mobilesam",
+        "input": 1024,
+        "threshold": 0.0,
+        "every_n_samples": 4,
+        "points": 64,
+        "min_fill_ratio": 0.15,
+        "max_gap_sec": 1.0,
+        "dilate_ratio": 0.01,
+        "margin_box_ratio": 0.15,
+        "max_margin_box_ratio": 0.5,
+        "motion_lookahead_sec": 0.3,
+        "fast_motion_box_ratio": 0.15,
+    },
+    # 手で足した人物・物の追従 (ver5 resolve3 §3.6)
+    "manual": {
+        "detector_score": 0.2,
+        "search_ratio": 1.0,
+        "min_iou": 0.3,
+        "fixed_span_sec": 2.0,
+        "match_psr": 8.0,
     },
     "spec": {
         "hit_ratio": 0.5,
@@ -84,6 +122,10 @@ def config(settings):
     region = _sub(section, "region")
     render = _sub(section, "render")
     spec = _sub(section, "spec")
+    silhouette = _sub(section, "silhouette")
+    manual = _sub(section, "manual")
+    sil_defaults = _DEFAULTS["silhouette"]
+    manual_defaults = _DEFAULTS["manual"]
 
     return {
         "enabled": bool(section.get("enabled", _DEFAULTS["enabled"])),
@@ -124,6 +166,12 @@ def config(settings):
                                       _DEFAULTS["analysis"]["merge_threshold"], 0.01, 2.0),
             "max_identities": _int(analysis.get("max_identities"),
                                    _DEFAULTS["analysis"]["max_identities"], 1, 500),
+            "same_box_containment": _float(analysis.get("same_box_containment"),
+                                           _DEFAULTS["analysis"]["same_box_containment"],
+                                           0.1, 1.0),
+            "same_box_center_ratio": _float(analysis.get("same_box_center_ratio"),
+                                            _DEFAULTS["analysis"]["same_box_center_ratio"],
+                                            0.0, 5.0),
         },
         "region": {
             "follow": _choice(region.get("follow"), _FOLLOWS,
@@ -147,6 +195,47 @@ def config(settings):
                                  _DEFAULTS["render"]["mask_scale"], 0.05, 1.0),
             "shape": _choice(render.get("shape"), _SHAPES,
                              _DEFAULTS["render"]["shape"], "blur.render.shape"),
+            "keep_margin_ratio": _float(render.get("keep_margin_ratio"),
+                                        _DEFAULTS["render"]["keep_margin_ratio"], 0.0, 0.2),
+            "keep_motion_margin": bool(render.get("keep_motion_margin",
+                                                  _DEFAULTS["render"]["keep_motion_margin"])),
+        },
+        "silhouette": {
+            "model": _text(silhouette.get("model"), sil_defaults["model"]),
+            "decoder": _text(silhouette.get("decoder"), sil_defaults["decoder"]),
+            "format": _choice(silhouette.get("format"), _SILHOUETTE_FORMATS,
+                              sil_defaults["format"], "blur.silhouette.format"),
+            "input": _multiple_of(silhouette.get("input"), 32, sil_defaults["input"], 256, 2048),
+            "threshold": _float(silhouette.get("threshold"), sil_defaults["threshold"],
+                                -20.0, 20.0),
+            "every_n_samples": _int(silhouette.get("every_n_samples"),
+                                    sil_defaults["every_n_samples"], 1, 30),
+            "points": _int(silhouette.get("points"), sil_defaults["points"], 16, 256),
+            "min_fill_ratio": _float(silhouette.get("min_fill_ratio"),
+                                     sil_defaults["min_fill_ratio"], 0.0, 1.0),
+            "max_gap_sec": _float(silhouette.get("max_gap_sec"), sil_defaults["max_gap_sec"],
+                                  0.1, 30.0),
+            "dilate_ratio": _float(silhouette.get("dilate_ratio"), sil_defaults["dilate_ratio"],
+                                   0.0, 0.1),
+            "margin_box_ratio": _float(silhouette.get("margin_box_ratio"),
+                                       sil_defaults["margin_box_ratio"], 0.0, 1.0),
+            "max_margin_box_ratio": _float(silhouette.get("max_margin_box_ratio"),
+                                           sil_defaults["max_margin_box_ratio"], 0.0, 2.0),
+            "motion_lookahead_sec": _float(silhouette.get("motion_lookahead_sec"),
+                                           sil_defaults["motion_lookahead_sec"], 0.0, 2.0),
+            "fast_motion_box_ratio": _float(silhouette.get("fast_motion_box_ratio"),
+                                            sil_defaults["fast_motion_box_ratio"], 0.0, 5.0),
+        },
+        "manual": {
+            "detector_score": _float(manual.get("detector_score"),
+                                     manual_defaults["detector_score"], 0.01, 0.99),
+            "search_ratio": _float(manual.get("search_ratio"), manual_defaults["search_ratio"],
+                                   0.1, 5.0),
+            "min_iou": _float(manual.get("min_iou"), manual_defaults["min_iou"], 0.01, 0.99),
+            "fixed_span_sec": _float(manual.get("fixed_span_sec"),
+                                     manual_defaults["fixed_span_sec"], 0.1, 60.0),
+            "match_psr": _float(manual.get("match_psr"), manual_defaults["match_psr"],
+                                1.0, 1000.0),
         },
         "spec": {
             "hit_ratio": _float(spec.get("hit_ratio"), _DEFAULTS["spec"]["hit_ratio"], 0.0, 1.0),

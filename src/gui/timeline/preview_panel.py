@@ -11,6 +11,7 @@ import subprocess
 from PySide6.QtCore import (
     QMutex,
     QMutexLocker,
+    QPointF,
     QRectF,
     QThread,
     QTimer,
@@ -19,10 +20,11 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
@@ -398,7 +400,8 @@ class PreviewPanel(QWidget):
     # ぼかす対象の位置を半透明の塗りで重ねる。
     # **実際のぼかし処理はしない。** プレビューは 1 枚ずつ取得しており、
     # ここへ画像処理を足すとスクラブが目に見えて重くなるため (§5.7)。
-    #   boxes: [{"rect": (x, y, w, h), "label": 文字列}] キャンバス座標
+    #   boxes: [{"rect": (x, y, w, h), "polygon": [(x, y), …] or None, "label": 文字列}]
+    #          キャンバス座標。polygon があれば輪郭・手描きの形で描く (ver5 resolve3 §5.9)
     def set_blur_markers(self, boxes):
         for item in getattr(self, "_blur_marker_items", []):
             self._scene.removeItem(item)
@@ -408,7 +411,11 @@ class PreviewPanel(QWidget):
             rect = entry.get("rect")
             if not rect:
                 continue
-            item = QGraphicsRectItem(QRectF(rect[0], rect[1], rect[2], rect[3]))
+            polygon = entry.get("polygon")
+            if polygon and len(polygon) >= 3:
+                item = QGraphicsPolygonItem(QPolygonF([QPointF(x, y) for x, y in polygon]))
+            else:
+                item = QGraphicsRectItem(QRectF(rect[0], rect[1], rect[2], rect[3]))
             item.setPen(QPen(QColor(232, 80, 80, 220), max(self._canvas[0] / 400.0, 2.0)))
             item.setBrush(QBrush(QColor(232, 80, 80, 60)))
             item.setZValue(9000)            # 目印は常に最前面 (出力には影響しない)

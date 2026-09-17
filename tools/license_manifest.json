@@ -139,6 +139,23 @@
       "note": [
         "同梱物: silero_vad_v6.onnx (faster-whisper に同梱されている重みをそのまま使用)。"
       ]
+    },
+    {
+      "id": "MobileSAM",
+      "name": "MobileSAM",
+      "usage": "トラッキングぼかしの人物の輪郭 (silhouette_encoder.onnx / silhouette_decoder.onnx)",
+      "url": "https://github.com/ChaoningZhang/MobileSAM",
+      "license": "Apache-2.0",
+      "text": "spdx:Apache-2.0",
+      "files": [
+        "_internal/src/models/silhouette_encoder.onnx",
+        "_internal/src/models/silhouette_decoder.onnx"
+      ],
+      "verify_on_bundle": true,
+      "note": [
+        "同梱物: 公式配布の重み (weights/mobile_sam.pt) を tools/export_silhouette.py で ONNX へ変換したもの。",
+        "MobileSAM は Segment Anything (Meta / Apache-2.0) の画像エンコーダを TinyViT へ置き換えて蒸留したモデル。"
+      ]
     }
   ]
 }

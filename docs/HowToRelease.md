@@ -307,8 +307,11 @@ Copy-Item -Recurse -Force "licenses" "src/dist/Stretheus/licenses"
 | --- | --- | --- |
 | `yolox_tiny.onnx` | 約 20MB | YOLOX 公式配布の ONNX をそのまま置く |
 | `osnet_x0_25.onnx` | 約 1MB | `python tools/export_osnet.py` で変換する |
+| `silhouette_encoder.onnx` | 約 28MB | `tools/export_silhouette.py` で MobileSAM から変換する (ver5 resolve3) |
+| `silhouette_decoder.onnx` | 約 17MB | 同上 |
 
-同梱すると**配布ペイロードが約 21MB 増える**。詳細は `src/models/README.md`。
+同梱すると**配布ペイロードが約 66MB 増える**。輪郭モデルだけ無い場合は、人物を角の丸い四角でぼかす。
+詳細は `src/models/README.md`。
 
 ### 5.3 配布フォルダのレイアウト（例）
 
