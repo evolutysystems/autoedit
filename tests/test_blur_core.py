@@ -155,6 +155,36 @@ class DecisionsTest(unittest.TestCase):
         self.assertFalse(
             blur_decisions.should_blur_identity("p2", state, self.cfg, main_id="p1"))
 
+    # blur_others なら明示指定が無くても、解析済みであればマスクが要ること (§9-1)
+    def test_needs_mask_with_blur_others_without_explicit(self):
+        state = {"identities": {}, "regions": [], "default_policy": "blur_others",
+                 "fingerprint": "fp"}
+        self.assertTrue(blur_decisions.needs_mask(state, self.cfg))
+
+    # 方針が空なら設定の既定方針 (blur_others) に従うこと
+    def test_needs_mask_falls_back_to_config_policy(self):
+        state = {"identities": {}, "regions": [], "default_policy": "", "fingerprint": "fp"}
+        self.assertTrue(blur_decisions.needs_mask(state, self.cfg))
+
+    # manual_only で明示指定が無ければマスクは要らないこと
+    def test_needs_mask_manual_only_without_explicit(self):
+        state = {"identities": {}, "regions": [], "default_policy": "manual_only",
+                 "fingerprint": "fp"}
+        self.assertFalse(blur_decisions.needs_mask(state, self.cfg))
+
+    # 解析していない Timeline (指紋なし) はマスクが要らないこと (旧プロジェクトで確認を出さない)
+    def test_needs_mask_without_analysis(self):
+        state = {"identities": {}, "regions": [], "default_policy": "blur_others",
+                 "fingerprint": ""}
+        self.assertFalse(blur_decisions.needs_mask(state, self.cfg))
+        self.assertFalse(blur_decisions.needs_mask(blur_decisions._empty(), self.cfg))
+
+    # 明示指定があれば方針に関わらずマスクが要ること
+    def test_needs_mask_with_explicit(self):
+        state = {"identities": {"p2": "blur"}, "regions": [], "default_policy": "manual_only",
+                 "fingerprint": ""}
+        self.assertTrue(blur_decisions.needs_mask(state, self.cfg))
+
     # 囲みの中心に入った人物が拾われること (§5.6.3-3)
     def test_identities_in_path_by_center(self):
         polygon = [(0, 0), (100, 0), (100, 100), (0, 100)]

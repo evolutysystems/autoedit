@@ -124,6 +124,21 @@
         "重み: Model Zoo の MSMT17 (combineall) 学習版 (Google Drive ID 1Kkx2zW89jq_NETu4u42CFZTMVD5Hwm6e)。",
         "変換手順は tools/export_osnet.py。"
       ]
+    },
+    {
+      "id": "silero-vad",
+      "name": "Silero VAD",
+      "usage": "音声認識の前に発話していない区間を除く (silero_vad_v6.onnx)",
+      "url": "https://github.com/snakers4/silero-vad",
+      "license": "MIT",
+      "text": "spdx:silero-vad-MIT",
+      "files": [
+        "_internal/faster_whisper/assets/silero_vad_v6.onnx"
+      ],
+      "verify_on_bundle": true,
+      "note": [
+        "同梱物: silero_vad_v6.onnx (faster-whisper に同梱されている重みをそのまま使用)。"
+      ]
     }
   ]
 }

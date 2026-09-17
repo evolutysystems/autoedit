@@ -364,6 +364,14 @@
   ライセンス : LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
   全文       : shiboken6\LICENSE.txt / shiboken6\LicenseRef-Qt-Commercial.txt
 
+[Silero VAD]  音声認識の前に発話していない区間を除く (silero_vad_v6.onnx)
+  配布元     : https://github.com/snakers4/silero-vad
+  ライセンス : MIT
+  全文       : silero-vad\LICENSE.txt
+  備考       : 同梱物: silero_vad_v6.onnx (faster-whisper に同梱されている重みをそのまま使用)。
+  ※ 同梱物を更新したときは、配布元の LICENSE / NOTICE を
+     そのまま上書きしてください。
+
 [soundfile]
   版         : 0.13.1
   配布元     : https://github.com/bastibe/python-soundfile

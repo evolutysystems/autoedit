@@ -74,9 +74,24 @@ def _empty():
     }
 
 
-# 指定が 1 つでもあるか (無ければマスクを作る必要すら無い)
+# 明示した指定が 1 つでもあるか
 def has_any(decisions):
     return bool((decisions or {}).get("identities") or (decisions or {}).get("regions"))
+
+
+# マスクを作る必要があるか (ぼかす対象になり得るものが 1 つでもあるか)
+#
+# 明示した指定が無くても、既定方針が blur_others なら**解析済みの人物 (主役以外) はぼかす対象**になる
+# (§9-1)。指定画面もその前提で「ぼかす」と表示するため、ここで見落とすと素で出力してしまう。
+# 解析していない Timeline (指紋が無い = 旧プロジェクトなど) は、ぼかす人物がまだ存在しないため対象外とする。
+def needs_mask(decisions, cfg):
+    decisions = decisions or {}
+    if has_any(decisions):
+        return True
+    if not decisions.get("fingerprint"):
+        return False
+    policy = decisions.get("default_policy") or cfg["default_policy"]
+    return policy == POLICY_BLUR_OTHERS
 
 
 # ------------------------------------------------------------------

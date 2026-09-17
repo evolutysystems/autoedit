@@ -38,6 +38,7 @@ a = Analysis(
         # ライセンス表記 (licenses/) は datas に入れず、リリース手順で exe 直下へコピーする (HowToRelease §5.2.1)。
         *[(path, 'src/models') for path in glob('models/*.onnx')],
     ] + collect_data_files('budoux')     # BudouX のモデルJSON等を同梱 (request11)
+      + collect_data_files('faster_whisper')  # Silero VAD モデル (assets/silero_vad_v6.onnx)。無いと VAD 無しへ落ち、幻聴対策が効かない
       + collect_data_files('twitchdl')   # twitch-dl の同梱データ (flow17 R3 / Twitch取得)
       + collect_data_files('certifi'),   # httpx(twitch-dl) の HTTPS 用ルート証明書 (cacert.pem)
     hiddenimports=[

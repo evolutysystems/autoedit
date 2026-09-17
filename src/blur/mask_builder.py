@@ -42,7 +42,7 @@ except Exception:  # noqa: BLE001
 
 
 # renderer から呼ぶ入口。設定・キャッシュ・指定を読み、必要なときだけ build へ回す。
-# 機能 OFF / 指定なし / キャッシュ不一致のいずれでも None を返す (= 従来どおりの出力)。
+# 機能 OFF / ぼかす対象なし (decisions.needs_mask) / キャッシュ不一致のいずれでも None を返す (= 従来どおりの出力)。
 def prepare(timeline, context, cfg=None):
     from .config import config, is_enabled     # noqa: PLC0415 (機能 OFF なら読まない)
 
@@ -52,8 +52,8 @@ def prepare(timeline, context, cfg=None):
 
     cfg = cfg or config(settings)
     decisions = decisions_module.load(timeline)
-    if not decisions_module.has_any(decisions):
-        _logger.debug("ぼかしの指定が無いためマスクを作りません")
+    if not decisions_module.needs_mask(decisions, cfg):
+        _logger.info("ぼかす対象の指定が無いためマスクを作りません")
         return None
 
     cache_path = _cache_path(timeline, context, decisions)

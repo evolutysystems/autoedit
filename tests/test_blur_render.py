@@ -357,6 +357,47 @@ class MaskBuildTest(unittest.TestCase):
                 mask_builder.build(timeline, analysis, state, cfg, out_path))
             self.assertFalse(os.path.exists(out_path))
 
+    # 書き出しの入口 (prepare) を、解析済み・明示指定なし・blur_others の状態で通す (§9-1)。
+    # 指定画面では主役以外が「ぼかす」と表示されるのに、明示指定が無いだけで
+    # マスクを作らず素で出力していた不具合の再発防止。
+    def _prepare_after_analysis(self, settings):
+        from src.blur import store
+        from src.pipeline.pipeline_context import PipelineContext
+
+        timeline = _build_timeline()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = os.path.join(tmp, "sample.blur.json")
+            project = os.path.join(tmp, "sample.timeline.json")
+            store.save(cache, _build_analysis())
+            commands.CommandStack().push(timeline, commands.SetBlurAnalysis(
+                cache, "fp", project_path=project,
+                default_policy=config(settings)["default_policy"]))
+            self.assertEqual(blur_decisions.load(timeline)["identities"], {})
+
+            context = PipelineContext(input_path=__file__, settings=settings, working_dir=tmp)
+            context.project_path = project
+            result = mask_builder.prepare(timeline, context)
+            exists = bool(result) and os.path.isfile(result)
+            failed = getattr(context, "blur_mask_failed", False)
+            context.cleanup()
+            return result, exists, failed
+
+    def test_prepare_blurs_others_without_explicit_decisions(self):
+        if not (mask_builder._PIL_AVAILABLE and mask_builder._PYAV_AVAILABLE):
+            self.skipTest("PIL / PyAV が使えないためマスクを作れません")
+        result, exists, failed = self._prepare_after_analysis(
+            {"blur": {"enabled": True, "default_policy": "blur_others"}})
+        self.assertIsNotNone(result, "明示指定が無いだけでマスクを作っていません")
+        self.assertTrue(exists)
+        self.assertFalse(failed)
+
+    # manual_only で明示指定が無ければ、マスクを作らず確認も出さないこと
+    def test_prepare_manual_only_without_explicit_decisions(self):
+        result, _exists, failed = self._prepare_after_analysis(
+            {"blur": {"enabled": True, "default_policy": "manual_only"}})
+        self.assertIsNone(result)
+        self.assertFalse(failed)
+
     # 縦動画のキャンバスでもマスクの大きさが縦になること (§2.5)
     def test_vertical_canvas_mask_size(self):
         timeline = _build_timeline()
