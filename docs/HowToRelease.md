@@ -299,7 +299,7 @@ Copy-Item -Recurse -Force "licenses" "src/dist/Stretheus/licenses"
 
 ### 5.2.2 トラッキングぼかしのモデル同梱（ver5 resolve2 §8-3）
 
-`src/models/*.onnx` は `main.spec` の `datas` が拾って `_internal/src/models/` へ入る。
+`src/models/*.onnx` は `main_window.spec`（と CLI 用 `main.spec`）の `datas` が拾って `_internal/src/models/` へ入る。
 **モデルが無くてもビルドは通り、アプリは通常どおり起動する**（設定画面に
 「モデルが見つかりません」と出て、ぼかし機能だけが無効になる）。
 

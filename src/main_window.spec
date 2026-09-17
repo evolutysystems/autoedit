@@ -10,6 +10,8 @@
 # CUDA ランタイム DLL (nvidia-*-cu12) の同梱は廃止した。これにより配布ペイロードを
 # 大幅に削減し、GitHub Releases の 1ファイル 2GiB 上限に収めやすくする。
 
+from glob import glob
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 a = Analysis(
@@ -29,6 +31,12 @@ a = Analysis(
         # ソースは src/ffmpeg/ に配置(git 管理外・HowToRelease §2 で入手)。binaries でなく datas で純コピーする。
         ('ffmpeg/ffmpeg.exe', 'ffmpeg'),
         ('ffmpeg/ffprobe.exe', 'ffmpeg'),
+        # 透かし素材 (ver5 resolve §8-3)。watermark_overlay が _internal/src/watermark.png を解決する。
+        ('watermark.png', 'src'),
+        # トラッキングぼかしのモデル (ver5 resolve2 §8-3)。_internal/src/models/ へ入る。
+        # models/ が空でもビルドは通り、アプリは通常どおり起動する (設定画面に「モデルが見つかりません」と出るだけ)。
+        # ライセンス表記 (licenses/) は datas に入れず、リリース手順で exe 直下へコピーする (HowToRelease §5.2.1)。
+        *[(path, 'src/models') for path in glob('models/*.onnx')],
     ] + collect_data_files('budoux')     # BudouX のモデルJSON等を同梱 (request11)
       + collect_data_files('twitchdl')   # twitch-dl の同梱データ (flow17 R3 / Twitch取得)
       + collect_data_files('certifi'),   # httpx(twitch-dl) の HTTPS 用ルート証明書 (cacert.pem)

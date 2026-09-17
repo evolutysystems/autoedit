@@ -411,6 +411,7 @@
   ライセンス : MIT
   全文       : torchreid\LICENSE.txt
   備考       : 同梱物: osnet_x0_25.onnx (osnet_x0_25 の重みを ONNX へ変換したもの)。
+               重み: Model Zoo の MSMT17 (combineall) 学習版 (Google Drive ID 1Kkx2zW89jq_NETu4u42CFZTMVD5Hwm6e)。
                変換手順は tools/export_osnet.py。
   ※ 同梱物を更新したときは、配布元の LICENSE / NOTICE を
      そのまま上書きしてください。
@@ -461,7 +462,7 @@
   配布元     : https://github.com/Megvii-BaseDetection/YOLOX
   ライセンス : Apache-2.0
   全文       : YOLOX\LICENSE.txt
-  備考       : 同梱物: yolox_tiny.onnx (公式配布の重みをそのまま使用)。
+  備考       : 同梱物: yolox_tiny.onnx (公式配布の重みをそのまま使用 / release 0.1.1rc0)。
                NOTICE ファイルが配布元にある場合は同じフォルダへ併せて置くこと。
   ※ 同梱物を更新したときは、配布元の LICENSE / NOTICE を
      そのまま上書きしてください。
