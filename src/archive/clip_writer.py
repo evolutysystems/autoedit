@@ -20,9 +20,11 @@ from ..modules import (
     silence_cutter,
     subtitle_generator,
     volume_analyzer,
+    watermark_overlay,
 )
 from ..modules.subtitle_generator import _format_ass_time, _hex_to_ass_color
 from ..pipeline.pipeline_context import PipelineContext
+from ..services import points as points_service
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline import renderer
 from ..utils.logger import get_logger
@@ -568,7 +570,7 @@ def _burn_one(prepared, items, settings, ffmpeg_cfg, fonts_dir):
 # edited: [{"index","items","theme","use"}] / prepared_by_index: index→prepared。
 # 戻り値: burned = [{"clip","body","parts"}]
 def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
-                workdir, progress_cb, card, fonts_dir):
+                workdir, progress_cb, card, fonts_dir, watermark_required=False):
     burned = []
     subtitle_cfg = settings.get("subtitle", {})
     used_edited = [e for e in edited if e.get("use", True)]
@@ -581,6 +583,9 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
             progress_cb(0.6 + (pos - 1) / total * 0.3,
                         f"クリップ {pos}/{len(used_edited)} を焼き込み中…")
         out = _burn_one(prepared, ed.get("items", []), settings, ffmpeg_cfg, fonts_dir)
+        # レガシー経路は合成が走らないため、ここが唯一の焼き込み地点になる (ver5 resolve §3.1)
+        if watermark_required:
+            out = _watermark_one(out, prepared, settings, ffmpeg_cfg)
         theme = (ed.get("theme") or "").strip()
         clip_meta = {"index": prepared["index"], "start": prepared["start"],
                      "end": prepared["end"]}
@@ -595,8 +600,23 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
 # (ver3 resolve5 §3-8 / §5.6)。返り値の形は _burn_clips と同一のため、
 # 結合・個別出力 (_build_combine_parts / _write_individual) は無改造で流せる。
 # 字幕は renderer が S1 から ASS を起こして焼くため、ここでの焼き込みは行わない。
+# 焼き込み済みの本編へ透かしを単独パスで足す (合成が走らない経路 / ver5 resolve §5.4)
+def _watermark_one(source, prepared, settings, ffmpeg_cfg):
+    profile = prepared["profile"]
+    out_path = os.path.join(os.path.dirname(source), "watermarked.mp4")
+    try:
+        total_duration = ffmpeg_runner.probe_duration(source, ffmpeg_cfg)
+    except Exception:  # noqa: BLE001 (進捗の総尺は取れなくても致命でない)
+        total_duration = 0.0
+
+    return watermark_overlay.apply(
+        source, out_path, (int(profile["width"]), int(profile["height"])),
+        watermark_overlay.config(settings), ffmpeg_cfg, total_duration=total_duration)
+
+
 def _render_clips(input_path, timeline, edited, prepared_by_index, settings, clip_settings,
-                  ffmpeg_cfg, workdir, progress_cb, card, fonts_dir):
+                  ffmpeg_cfg, workdir, progress_cb, card, fonts_dir,
+                  watermark_required=False):
     burned = []
     edited_by_index = {e.get("index"): e for e in (edited or [])}
     groups = archive_timeline.split_by_clip(timeline)
@@ -618,6 +638,8 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
         os.makedirs(clip_dir, exist_ok=True)
         context = PipelineContext(input_path=prepared["normalized_path"],
                                   settings=clip_settings, working_dir=clip_dir)
+        # 合成が走る経路のため、renderer が合成へ混ぜ込む (再エンコードは増えない)
+        context.watermark_required = watermark_required
         try:
             renderer.render(sub_timeline, context)
         except Exception:  # noqa: BLE001 (1 クリップの失敗で全体を止めない)
@@ -661,8 +683,37 @@ def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
 #   ・従来画面                     : [{index,items,theme,use}]
 #   None ならキャンセル (出力なし)。未注入(CLI/テスト)は全件そのまま自動で書き出す。
 # curve: 採点グラフ用の窓スコア列 (結果画面へ渡す)。
+# points: PointsService (GUI 実行時のみ注入。None でポイント処理なし / ver5 resolve §5.4)。
 # 戻り値: 出力ファイルパスの一覧 (結合時は [..., 結合1本]、非結合時は個別クリップ群)。
-def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None, curve=None):
+def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
+                curve=None, points=None, watermark_confirm_callback=None):
+    # 予約は 1 回の出力操作につき 1 本。出力本数が何本でも 100pt である (ver5 resolve §2.5)。
+    reservation = points_service.reserve(
+        points, points_service.JOB_ARCHIVE, points_service.OUTPUT_VIDEO)
+    # 透かしが入るなら開始前に確認する (R12)
+    if not points_service.confirmed(reservation, watermark_confirm_callback):
+        points_service.cancel(points, reservation)
+        _logger.info("透かし入りでの出力を取りやめました")
+        return []
+    try:
+        outputs = _write_clips(input_path, settings, clips, progress_cb, result_callback,
+                               curve, points_service.watermark_required(reservation))
+    except Exception:
+        # 失敗・中断では消費しない (R6)
+        points_service.cancel(points, reservation)
+        raise
+
+    if outputs:
+        # 成果物ができてから確定する (R3)
+        points_service.commit(points, reservation)
+    else:
+        # 結果画面でのキャンセル / 出力 0 件
+        points_service.cancel(points, reservation)
+    return outputs
+
+
+def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
+                 curve=None, watermark_required=False):
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
 
@@ -730,7 +781,8 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
             p.pop("keep_segments", None)
 
         return finish_clips(input_path, settings, clip_settings, timeline, edited,
-                            prepared, workdir, ffmpeg_cfg, progress_cb=progress_cb)
+                            prepared, workdir, ffmpeg_cfg, progress_cb=progress_cb,
+                            watermark_required=watermark_required)
 
 
 # レビュー後の書き出し (burn → テーマ演出 → 個別出力 → 結合) を行う (ver3 resolve9 §5.6)
@@ -738,8 +790,11 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
 # (archive/project_resume.run_from_archive_project) からも同じものを呼ぶ。
 # timeline が None なら従来画面経路 (_burn_clips) を通る。挙動は切り出し前と同一。
 # 戻り値: 出力ファイルパスの一覧
+# watermark_required: 透かしを入れる出力か (ver5 resolve §5.4)。
+#   各クリップの本編へ焼き込むため、個別出力も結合出力も透かし入りになる。
+#   イントロカードと OP/ED には入らない (本編の全長に入っていれば印として足りる)。
 def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared,
-                 workdir, ffmpeg_cfg=None, progress_cb=None):
+                 workdir, ffmpeg_cfg=None, progress_cb=None, watermark_required=False):
     ffmpeg_cfg = ffmpeg_cfg if ffmpeg_cfg is not None else settings.get("ffmpeg", {})
     archive_cfg = settings.get("archive", {})
     combine_cfg = archive_cfg.get("combine", {})
@@ -756,11 +811,13 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
     if timeline is not None:
         burned = _render_clips(
             input_path, timeline, edited, prepared_by_index, settings, clip_settings,
-            ffmpeg_cfg, workdir, progress_cb, card, fonts_dir)
+            ffmpeg_cfg, workdir, progress_cb, card, fonts_dir,
+            watermark_required=watermark_required)
     else:
         burned = _burn_clips(
             input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
-            workdir, progress_cb, card, fonts_dir)
+            workdir, progress_cb, card, fonts_dir,
+            watermark_required=watermark_required)
 
     if not burned:
         _logger.info("焼き込み済みクリップが0件")

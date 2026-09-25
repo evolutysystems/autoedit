@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -14
+        "last_cut_db": -18
     },
     "loudness": {
         "enabled": true,
@@ -139,7 +139,9 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [],
+            "recent_archive": [
+                "D:/develop/autoedit/output/vod_2881981221.archive.timeline.json"
+            ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
@@ -194,7 +196,7 @@
             "archive_graph_dock_area": "top",
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAApwAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAXUAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAF1AAAAG8A////AAAF1AAABAkAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
@@ -332,7 +334,15 @@
         "comment_margin_r": 40,
         "comment_margin_v": 320,
         "comment_icon_size_px": 100,
-        "comment_icon_gap_px": 50
+        "comment_icon_gap_px": 50,
+        "crop": {
+            "background": "blur",
+            "blur_radius": 20,
+            "blur_power": 2,
+            "max_scale": 2.0,
+            "project_suffix": "_vertical",
+            "close_gaps": true
+        }
     },
     "logging": {
         "log_dir": "logs",
@@ -459,7 +469,8 @@
     },
     "points": {
         "subscription_cache_hours": 72,
-        "balance_refresh_sec": 300
+        "balance_refresh_sec": 300,
+        "subscribe_url": ""
     },
     "blur": {
         "enabled": true,

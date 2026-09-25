@@ -351,6 +351,12 @@ Stretheus/                      ← これを zip 化して配布
 - [ ] GPU 搭載PCで CUDA 実行が**同梱ランタイム**で動作する（§3.5）。
 - [ ] CUDA 未整備／古いドライバ／非 NVIDIA のPCで、音声認識が**CPU へ自動フォールバックして完走**する（対策B・§3.5）。
 - [ ] 設定変更→保存→再起動で保持される（onedir 前提。§3.3 の制約を確認）。
+- [ ] **`setting.json` の `api.base_url` が配布先の接続先になっている**（ver5 resolve.md §9-5）。
+      開発中は dev（`https://stretheusapi-dev.azurewebsites.net`）を指している。本番 API を
+      デプロイするまでは dev のままで配る（prod は未デプロイ）。
+- [ ] 未ログインのまま出力しても、従来どおりポイントを消費せず透かしも入らない（ver5 resolve.md §4-5）。
+- [ ] ログイン後、残高インジケータ（メイン画面右上）に残高と次回リセット日が出る。
+- [ ] 残高不足のアカウントで出力すると確認ダイアログが出て、続行すると透かしが入る（R4 / R12）。
 
 ---
 
@@ -426,6 +432,7 @@ Stretheus/                      ← これを zip 化して配布
 4. 本体を zip 化し SHA-256 を取得（§7.3）。2GiB 超なら分割（`installer/README.md §1.1`）。
 5. `installer/AutoEdit.iss` の #define（バージョン／`PayloadParts`／`PayloadSHA256`）を設定し ISCC でコンパイル（`installer/README.md §2-3`）。
 6. `gh release create/upload` でインストーラー＋payload を GitHub Releases へ公開（`installer/README.md §4`）。
-7. homepage `Dev.tsx` のダウンロード URL をインストーラーへ差し替え（別リポジトリ・`installer/README.md §5`）。
-8. クリーン PC で動作確認（§6・`installer/README.md §6`）。
-9. （推奨）インストーラー・本体のコード署名（§7.2）。
+7. **`setting.json` の `api.base_url` を確認する**（§6 / ver5 resolve.md §9-5）。本番 API を立てたら prod へ戻す。
+8. homepage `Dev.tsx` のダウンロード URL をインストーラーへ差し替え（別リポジトリ・`installer/README.md §5`）。
+9. クリーン PC で動作確認（§6・`installer/README.md §6`）。
+10. （推奨）インストーラー・本体のコード署名（§7.2）。

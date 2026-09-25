@@ -5,6 +5,7 @@ import shutil
 
 from ..exceptions import InputError
 from ..utils.logger import get_logger
+from . import ffmpeg_runner, watermark_overlay
 
 _logger = get_logger(__name__)
 
@@ -43,6 +44,45 @@ def finalize(intermediate_path, output_path):
     return output_path
 
 
+# 出力直前の保険 (ver5 resolve §5.4)。
+# 合成が走らない経路 (レガシー) はここが唯一の焼き込み地点になる。
+# レンダリング経路では既に適用済みのため何もしない。
+def _ensure_watermark(context):
+    video_path = context.current_video_path()
+    if not watermark_overlay.is_required(context):
+        return video_path
+
+    ffmpeg_cfg = context.settings.get("ffmpeg", {})
+    result = watermark_overlay.ensure_applied(
+        context, video_path, _canvas_size(context, video_path, ffmpeg_cfg), ffmpeg_cfg,
+        total_duration=_duration(video_path, ffmpeg_cfg))
+    context.set_current_video_path(result)
+    return result
+
+
+# キャンバス寸法。出力プロファイルがあればそれを使い、無ければ動画から測る。
+def _canvas_size(context, video_path, ffmpeg_cfg):
+    profile = getattr(context, "output_profile", None) or {}
+    width = int(profile.get("width") or 0)
+    height = int(profile.get("height") or 0)
+    if width > 0 and height > 0:
+        return width, height
+
+    try:
+        return ffmpeg_runner.probe_dimensions(video_path, ffmpeg_cfg)[:2]
+    except Exception:  # noqa: BLE001 (測れなくても既定値で焼き込む)
+        _logger.warning("出力寸法を取得できないため 1920x1080 として透かしを配置します")
+        return 1920, 1080
+
+
+# 進捗表示用の総尺。取れなくても焼き込みは続ける。
+def _duration(video_path, ffmpeg_cfg):
+    try:
+        return ffmpeg_runner.probe_duration(video_path, ffmpeg_cfg)
+    except Exception:  # noqa: BLE001 (進捗の総尺は取れなくても致命でない)
+        return 0.0
+
+
 # 公開エントリポイント
 def run(context):
     settings = context.settings
@@ -50,7 +90,7 @@ def run(context):
     output_dir = general_cfg.get("output_directory", "")
 
     output_path = resolve_output_path(context.input_path, output_dir)
-    final = finalize(context.current_video_path(), output_path)
+    final = finalize(_ensure_watermark(context), output_path)
     context.output_path = final
     _logger.info("出力完了: %s", final)
     return final

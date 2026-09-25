@@ -28,11 +28,13 @@ if __package__ is None or __package__ == "":
     from src.gui.timeline.missing_media_dialog import MediaRelinkBridge
     from src.gui.timeline.timeline_editor_dialog import TimelineEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
+    from src.gui.points_indicator import PointsIndicator, WatermarkConfirmBridge
     from src.pipeline.pipeline_runner import (
         is_timeline_mode,
         run_from_project,
         run_pipeline,
     )
+    from src.services import config as services_config
     from src.settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -52,6 +54,7 @@ else:
         run_from_project,
         run_pipeline,
     )
+    from ..services import config as services_config
     from ..settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -66,6 +69,7 @@ else:
     from . import theme
     from .archive_tab import ArchiveTabWidget
     from .file_drop_area import FileDropArea
+    from .points_indicator import PointsIndicator, WatermarkConfirmBridge
     from .project_library_dialog import ProjectLibraryDialog
     from .project_resume_row import PROJECT_FILE_FILTER, confirm_project_kind
     from .subtitle_editor_dialog import SubtitleEditorDialog
@@ -391,7 +395,8 @@ class PipelineWorker(QThread):
 
     def __init__(self, input_path, settings, review_callback,
                  volume_callback=None, timeline_callback=None, parent=None,
-                 blur_failure_callback=None):
+                 blur_failure_callback=None, points=None,
+                 watermark_confirm_callback=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
@@ -399,6 +404,9 @@ class PipelineWorker(QThread):
         self._volume_callback = volume_callback
         self._timeline_callback = timeline_callback
         self._blur_failure_callback = blur_failure_callback
+        # ポイント (ver5 resolve §5.4)。未注入なら従来どおり消費も透かしも無い。
+        self._points = points
+        self._watermark_confirm_callback = watermark_confirm_callback
 
     # スレッド本体
     def run(self):
@@ -411,6 +419,8 @@ class PipelineWorker(QThread):
                 volume_analysis_callback=self._volume_callback,
                 timeline_review_callback=self._timeline_callback,
                 blur_failure_callback=self._blur_failure_callback,
+                points=self._points,
+                watermark_confirm_callback=self._watermark_confirm_callback,
             )
             self.finished_ok.emit(output)
         except PipelineCancelled:
@@ -436,7 +446,8 @@ class ProjectResumeWorker(QThread):
 
     def __init__(self, project_path, settings, timeline_callback,
                  relink_callback=None, restore_path=None, parent=None,
-                 blur_failure_callback=None):
+                 blur_failure_callback=None, points=None,
+                 watermark_confirm_callback=None):
         super().__init__(parent)
         self._project_path = project_path
         self._settings = settings
@@ -445,6 +456,8 @@ class ProjectResumeWorker(QThread):
         # 自動保存から復元する場合の読み込み元 (保存先は project_path のまま)
         self._restore_path = restore_path
         self._blur_failure_callback = blur_failure_callback
+        self._points = points
+        self._watermark_confirm_callback = watermark_confirm_callback
 
     def run(self):
         try:
@@ -456,6 +469,8 @@ class ProjectResumeWorker(QThread):
                 media_relink_callback=self._relink_callback,
                 restore_path=self._restore_path,
                 blur_failure_callback=self._blur_failure_callback,
+                points=self._points,
+                watermark_confirm_callback=self._watermark_confirm_callback,
             )
             self.finished_ok.emit(output)
         except PipelineCancelled:
@@ -529,9 +544,13 @@ class ClipTabWidget(QWidget):
     # 種別違いのプロジェクトが選ばれた → 親にタブを切り替えてもらう (ver3 resolve9 §3-4)
     switch_tab_requested = Signal(str, str)      # (kind, project_path)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, points=None):
         super().__init__(parent)
         self._settings = load_settings()
+        # ポイント (ver5 resolve §5.4)。親から共有の実体を受け取る。
+        self._points = points
+        # 透かし入りでの出力の確認の橋渡し参照 (R12)
+        self._watermark_bridge = None
         self._worker = None
         self._bridge = None
         # 音量解析ダイアログの橋渡し参照 (resolve7)
@@ -824,10 +843,13 @@ class ClipTabWidget(QWidget):
         self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
         # ぼかしを掛けられなかったときの確認フック (ver5 resolve2 §5.9)
         self._blur_failure_bridge = BlurFailureBridge(parent_window=self)
+        self._watermark_bridge = WatermarkConfirmBridge(parent_window=self)
         self._worker = ProjectResumeWorker(
             project_path, self._settings, self._timeline_bridge,
             relink_callback=self._relink_bridge, restore_path=restore_path,
-            parent=self, blur_failure_callback=self._blur_failure_bridge)
+            parent=self, blur_failure_callback=self._blur_failure_bridge,
+            points=self._points,
+            watermark_confirm_callback=self._watermark_bridge)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished_ok)
         self._worker.cancelled.connect(self._on_cancelled)
@@ -903,12 +925,16 @@ class ClipTabWidget(QWidget):
         # ぼかしを掛けられなかったときの確認フック (ver5 resolve2 §5.9)。
         # 注入しないと「ぼかせないまま出力」を止める手段が無くなるため常に渡す。
         self._blur_failure_bridge = BlurFailureBridge(parent_window=self)
+        # ポイント不足で透かしが入るときの確認フック (ver5 resolve §5.6 R12)
+        self._watermark_bridge = WatermarkConfirmBridge(parent_window=self)
 
         self._worker = PipelineWorker(
             input_path, self._settings, self._bridge,
             volume_callback=self._volume_bridge,
             timeline_callback=self._timeline_bridge, parent=self,
             blur_failure_callback=self._blur_failure_bridge,
+            points=self._points,
+            watermark_confirm_callback=self._watermark_bridge,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished_ok)
@@ -985,6 +1011,9 @@ class MainWindow(QWidget):
         self._settings_window = None
         # 実行中のタブ (resolve4 §5.7-4)。空でないあいだ設定ボタンを無効化する。
         self._running_tabs = set()
+        # ポイント (ver5 resolve §5.4)。プロセス全体で 1 つだけ持ち、
+        # 出力処理・残高表示・アカウントタブで共有する (§6.4 のリフレッシュ直列化)。
+        self._points = services_config.shared_points(self._settings)
         self._build_ui()
         # 初期サイズ (ver3 resolve15 §5.7)。
         # 従来は中身に合わせて開いていたが、クリップ用タブの D&D 領域を
@@ -1039,10 +1068,10 @@ class MainWindow(QWidget):
         root = QVBoxLayout(self)
         self.tabs = QTabWidget()
         # クリップ用タブ (現行機能を無改変移設)
-        self.clip_tab = ClipTabWidget()
+        self.clip_tab = ClipTabWidget(points=self._points)
         self.tabs.addTab(self.clip_tab, "クリップ用")
         # アーカイブ切り抜き用タブ (R0: 準備中)
-        self.archive_tab = ArchiveTabWidget()
+        self.archive_tab = ArchiveTabWidget(points=self._points)
         self.tabs.addTab(self.archive_tab, "アーカイブ切り抜き用")
         # 先頭 (クリップ用) タブ選択時のみペイン左上を四角にする (resolve4 M1)
         theme.bind_tab_pane_corner(self.tabs)
@@ -1055,9 +1084,14 @@ class MainWindow(QWidget):
         self.settings_button.setToolTip("設定")
         theme.mark_icon_button(self.settings_button)
         self.settings_button.clicked.connect(self._on_open_settings)
+        # 残高インジケータ (ver5 resolve §5.6 R11)。設定ボタンの左へ並べる。
+        self.points_indicator = PointsIndicator(self._points, self._settings)
+
         # コーナーへ直接置くとボタンの下辺がペインへ接するため、
         # 余白付きの入れ物で包んでから渡す (ver3 resolve15 D1)。
-        theme.install_tab_corner(self.tabs, self.settings_button)
+        theme.install_tab_corner(
+            self.tabs, [self.points_indicator, self.settings_button],
+            spacing=theme.BUTTON_ICON_PX // 2)
         self._refresh_settings_icon()
 
         # どちらかのタブが実行中なら設定ボタンを無効化する (resolve4 §5.7-4 / 回答 Q1)
@@ -1113,6 +1147,10 @@ class MainWindow(QWidget):
             self._settings_window.activateWindow()
             return
         self._settings_window = SettingsWindow()
+        # アカウントタブでログイン / ログアウトされた可能性があるため、
+        # 閉じたら残高インジケータを作り直す (ver5 resolve §5.6)
+        self._settings_window.destroyed.connect(
+            lambda *_a: self.points_indicator.reload())
         self._settings_window.show()
 
     # タブの実行状態が変わったときに設定ボタンの可否を更新する (resolve4 §5.7-4)
@@ -1123,6 +1161,8 @@ class MainWindow(QWidget):
             self._running_tabs.add(tab_key)
         else:
             self._running_tabs.discard(tab_key)
+            # 出力が終わると残高が動くため取り直す (ver5 resolve §5.6)
+            self.points_indicator.refresh(force=True)
         self.settings_button.setEnabled(not self._running_tabs)
 
     # 設定ボタンのアイコンを現在のテーマ色で描き直す (resolve3 §5.10-2)

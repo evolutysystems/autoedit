@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from ...exceptions import TimelineError
 from ...export import resolve_export
+from ...services import config as services_config
 from ...settings.settings_window import save_settings
 from ...timeline import commands, media_sidecar, project_io
 from ...timeline.model import AudioClip, SubtitleClip
@@ -39,6 +40,7 @@ from ...utils.logger import get_logger
 from ...version import __version__
 from .. import project_thumbnail, theme
 from ..color_field import ColorField
+from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from ..subtitle_editor_dialog import RESOLVE_EXPORT_BUTTON_TEXT, run_resolve_export
 from .preview_items import native_scale
 from .preview_panel import PreviewPanel
@@ -576,6 +578,62 @@ class TimelineEditorDialog(QDialog):
             menu.addAction("このクリップのぼかしを消す", self._unblur_selected_clips)
         menu.addAction("ぼかし...", self._open_blur_spec)
 
+    # ------------------------------------------------------------------
+    # 縦動画プロジェクト (ver5 resolve9 §5.9)
+    # ------------------------------------------------------------------
+
+    # 右クリックメニューへ項目を足す (timeline_view から呼ばれる)
+    def vertical_menu_actions(self, menu):
+        if not self._can_make_vertical():
+            return
+        clips = self._vertical_target_clips()
+        if not clips:
+            return
+
+        menu.addSeparator()
+        count = len(clips)
+        label = ("このクリップから縦動画プロジェクトを作成..." if count == 1
+                 else f"選んだ {count} クリップから縦動画プロジェクトを作成...")
+        menu.addAction(label, self._open_vertical_project)
+
+    # 縦動画にできる Timeline か。
+    # 既に縦のもの (§10 #10) と、アーカイブ切り抜き用 (§3.7) は対象外。
+    def _can_make_vertical(self):
+        timeline = self.controller.timeline
+        if timeline.orientation == "portrait" or timeline.height >= timeline.width:
+            return False
+        # 画面の種別と Timeline の中身の両方でクリップ用だと確かめる。
+        # アーカイブ用の画面は _project_kind() が "archive" を返す。
+        return (self._project_kind() == project_io.KIND_CLIP
+                and project_io.project_kind(timeline) == project_io.KIND_CLIP)
+
+    # 対象クリップ (ぼかしと同じ規約。選択が無ければ再生ヘッド上のもの)
+    def _vertical_target_clips(self):
+        from ...timeline import vertical_builder      # noqa: PLC0415
+
+        timeline = self.controller.timeline
+        clips = vertical_builder.target_clips(timeline, self.controller.selected_ids())
+        if clips:
+            return clips
+        clip = self.controller.clip_at_playhead()
+        if clip is None:
+            return []
+        return vertical_builder.target_clips(timeline, [clip.id])
+
+    def _open_vertical_project(self):
+        from .vertical_project_dialog import VerticalProjectDialog   # noqa: PLC0415
+
+        clips = self._vertical_target_clips()
+        if not clips:
+            self.preview.set_status("縦動画にするクリップを選んでください。")
+            return
+
+        dialog = VerticalProjectDialog(self.controller, clips, self._settings, parent=self)
+        dialog.exec()
+        if dialog.saved_path():
+            self.preview.set_status(
+                f"縦動画プロジェクトを作成しました: {os.path.basename(dialog.saved_path())}")
+
     # 指定が変わったあとの共通処理
     def _after_blur_change(self):
         self._update_history_buttons()
@@ -935,7 +993,10 @@ class TimelineEditorDialog(QDialog):
         run_resolve_export(
             self,
             lambda confirm: resolve_export.export_timeline(
-                self.controller.timeline, self._settings, overwrite_confirm=confirm),
+                self.controller.timeline, self._settings, overwrite_confirm=confirm,
+                points=services_config.current_points(),
+                watermark_confirm_callback=watermark_confirm(
+                    self, WATERMARK_MESSAGE_RESOLVE)),
         )
 
     # ------------------------------------------------------------------

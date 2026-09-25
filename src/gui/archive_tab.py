@@ -9,6 +9,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -42,6 +43,7 @@ from ..settings.settings_window import (
 from ..utils.logger import get_logger
 from . import theme
 from .archive_result_window import ArchiveResultBridge
+from .points_indicator import WatermarkConfirmBridge
 from .project_library_dialog import ProjectLibraryDialog
 from .project_resume_row import ProjectResumeRow
 from .timeline.missing_media_dialog import MediaRelinkBridge
@@ -80,6 +82,33 @@ class TwitchLoginWorker(QThread):
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("Twitch ログインに失敗")
             self.failed.emit(str(e))
+
+
+# 保存済みトークンでのログイン状態の復元をワーカースレッドで行う。
+#
+# 起動時に GUI スレッドで Helix を呼ぶと、回線が遅いときに画面が最大 20 秒止まる。
+# 自分情報と自 VOD 一覧をここでまとめて引き、結果だけを画面へ返す。
+class TwitchRestoreWorker(QThread):
+    finished_ok = Signal(object, object)   # (ユーザー情報 dict, VOD 一覧 list)
+    failed = Signal(str)
+
+    def __init__(self, auth, parent=None):
+        super().__init__(parent)
+        self._auth = auth
+
+    def run(self):
+        try:
+            me = self._auth.get_self()
+        except Exception as e:  # noqa: BLE001 (失効・回線断は未ログイン扱い)
+            self.failed.emit(str(e))
+            return
+
+        videos = []
+        try:
+            videos = self._auth.list_own_videos(first=20)
+        except Exception as e:  # noqa: BLE001 (一覧取得の失敗は致命でない)
+            _logger.warning("自VOD一覧の取得に失敗: %s", e)
+        self.finished_ok.emit(me, videos)
 
 
 # 取得(Twitch)+採点(analyze)をワーカースレッドで実行する
@@ -194,13 +223,17 @@ class ArchiveClipWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, input_path, settings, clips, result_callback=None,
-                 curve=None, parent=None):
+                 curve=None, parent=None, points=None,
+                 watermark_confirm_callback=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
         self._clips = clips
         self._result_callback = result_callback
         self._curve = curve or []
+        # ポイント (ver5 resolve §5.4)。未注入なら従来どおり消費も透かしも無い。
+        self._points = points
+        self._watermark_confirm_callback = watermark_confirm_callback
 
     def run(self):
         try:
@@ -208,7 +241,8 @@ class ArchiveClipWorker(QThread):
             outputs = clip_writer.write_clips(
                 self._input_path, self._settings, self._clips,
                 progress_cb=self._emit, result_callback=self._result_callback,
-                curve=self._curve)
+                curve=self._curve, points=self._points,
+                watermark_confirm_callback=self._watermark_confirm_callback)
             self.finished_ok.emit(outputs)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("切り抜き+焼き込みに失敗")
@@ -227,13 +261,16 @@ class ArchiveResumeWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, project_path, settings, result_callback=None,
-                 relink_callback=None, restore_path=None, parent=None):
+                 relink_callback=None, restore_path=None, parent=None, points=None,
+                 watermark_confirm_callback=None):
         super().__init__(parent)
         self._project_path = project_path
         self._settings = settings
         self._result_callback = result_callback
         self._relink_callback = relink_callback
         self._restore_path = restore_path
+        self._points = points
+        self._watermark_confirm_callback = watermark_confirm_callback
 
     def run(self):
         try:
@@ -241,7 +278,8 @@ class ArchiveResumeWorker(QThread):
                 self._project_path, self._settings, progress_cb=self._emit,
                 result_callback=self._result_callback,
                 relink_callback=self._relink_callback,
-                restore_path=self._restore_path)
+                restore_path=self._restore_path, points=self._points,
+                watermark_confirm_callback=self._watermark_confirm_callback)
             self.finished_ok.emit(outputs)
         except PipelineCancelled:
             self.cancelled.emit()
@@ -262,8 +300,12 @@ class ArchiveTabWidget(QWidget):
     # 種別違いのプロジェクトが選ばれた → 親にタブを切り替えてもらう (ver3 resolve9 §3-4)
     switch_tab_requested = Signal(str, str)      # (kind, project_path)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, points=None):
         super().__init__(parent)
+        # ポイント (ver5 resolve §5.4)。親から共有の実体を受け取る。
+        self._points = points
+        # 透かし入りでの出力の確認の橋渡し参照 (R12)
+        self._watermark_bridge = None
         # 機能無効時は _build_disabled_ui() を通るため採点開始ボタンを持たない
         self.analyze_button = None
         self._settings = load_settings()
@@ -280,6 +322,10 @@ class ArchiveTabWidget(QWidget):
         self.resume_row = None
         self._resume_worker = None
         self._relink_bridge = None
+        # 保存済みトークンからのログイン状態の復元 (GC 防止のため保持)
+        self._restore_worker = None
+        # このセッションで Twitch との疎通を確認できたか (ログインボタンの可否に使う)
+        self._session_ok = False
         if self._enabled:
             self._build_ui()
             self._init_auth()
@@ -353,6 +399,7 @@ class ArchiveTabWidget(QWidget):
         login_row = QHBoxLayout()
         self.login_button = QPushButton("Twitch ログイン")
         self.login_button.clicked.connect(self._on_login)
+        self._refresh_login_button()
         login_row.addWidget(self.login_button)
         self.login_status = QLabel("未ログイン")
         login_row.addWidget(self.login_status)
@@ -438,6 +485,14 @@ class ArchiveTabWidget(QWidget):
 
     # 設定から TwitchAuth を用意する (保存済みトークンがあればログイン状態を復元)
     def _init_auth(self):
+        self._build_auth()
+        self._restore_session()
+
+    # 設定から TwitchAuth を作り直す (復元は行わない)。
+    # ログイン直前にも呼ぶため、ここで問い合わせを始めないこと。
+    def _build_auth(self):
+        # 作り直した直後は未確認に戻す (接続先や client_id が変わっている可能性がある)
+        self._session_ok = False
         auth_cfg = config.auth_config(self._settings)
         self._auth = TwitchAuth(
             client_id=auth_cfg["client_id"],
@@ -448,13 +503,54 @@ class ArchiveTabWidget(QWidget):
             # 保存済みトークンはスコープ無しのため、再ログインで初めて有効になる。
             scopes=auth_cfg["scopes"],
         )
-        if self._auth.is_logged_in():
-            # 保存済みトークンで自分情報を引ければログイン表示にする (失敗時は未ログイン)
-            try:
-                me = self._auth.get_self()
-                self._set_logged_in(me)
-            except Exception:  # noqa: BLE001 (トークン失効等は未ログイン扱い)
-                self.login_status.setText("未ログイン")
+
+    # 保存済みトークンでログイン状態を復元する (タブを開いたときだけ)
+    def _restore_session(self):
+        if not self._auth.is_logged_in():
+            self._refresh_login_button()
+            return
+
+        # 保存済みトークンでログイン状態を復元する。
+        # 自 VOD 一覧もここで埋める。埋めないとプルダウンが「(ログイン後に…)」のままで、
+        # ログイン済みなのに毎回ログインし直すことになる。
+        if self._restore_worker is not None and self._restore_worker.isRunning():
+            return
+
+        self.login_status.setText("ログイン状態を確認中…")
+        # 確認中に押されると二重にログインしてしまうため、ここでも押せなくする
+        self._refresh_login_button(checking=True)
+        self._restore_worker = TwitchRestoreWorker(self._auth, parent=self)
+        self._restore_worker.finished_ok.connect(self._on_restored)
+        self._restore_worker.failed.connect(self._on_restore_failed)
+        # 起動直後に閉じられたとき、走ったままのスレッドを破棄すると Qt が異常終了する。
+        # 終了時に少しだけ待ち合わせる (回線断でも問い合わせは 20 秒で必ず終わる)。
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._wait_restore)
+        self._restore_worker.start()
+
+    # 復元の問い合わせが走っていれば終わるまで待つ (終了時の後始末)
+    def _wait_restore(self):
+        worker = self._restore_worker
+        if worker is not None and worker.isRunning():
+            worker.wait(3000)
+
+    # 復元できた: ログイン表示にして自 VOD 一覧を入れる
+    def _on_restored(self, me, videos):
+        self._session_ok = True
+        self._set_logged_in(me)
+        self._fill_own_vods(videos)
+        # セッションが生きているのでログインボタンは押せないままにする
+        self._refresh_login_button()
+
+    # 復元できなかった: 未ログイン表示にする。
+    # トークンが失効していれば TwitchAuth 側で破棄済み (401)。回線断なら保存されたまま残り、
+    # 次回の起動でまた試す。
+    def _on_restore_failed(self, message):
+        _logger.info("Twitch のログイン状態を復元できませんでした: %s", message)
+        self._session_ok = False
+        self.login_status.setText("未ログイン")
+        self._refresh_login_button()
 
     def _current_mode(self):
         return self.mode_combo.currentData() if hasattr(self, "mode_combo") else _MODE_LOCAL
@@ -482,6 +578,37 @@ class ArchiveTabWidget(QWidget):
             self.chat_edit.setText(path)
 
     # ---- Twitch ログイン --------------------------------------------------
+    # ログインボタンの可否をログイン状態から決め直す。
+    #
+    # セッションが生きているあいだは**押せないようにする**。押せると、ログイン済みでも
+    # 毎回押してしまい、そのたびに Twitch の許可画面が出るため。
+    # ただしストリームマーカーの権限が無い古いトークンのときは、再ログインが唯一の
+    # 直し方なので押せるままにする (ver3 resolve16 §5.6)。
+    def _refresh_login_button(self, checking=False):
+        # 機能無効時 (_build_disabled_ui) はボタン自体が無い
+        if getattr(self, "login_button", None) is None:
+            return
+
+        if checking:
+            self.login_button.setEnabled(False)
+            self.login_button.setToolTip("ログイン状態を確認しています…")
+            return
+
+        # 「このセッションで疎通を確認できた」ときだけ押せなくする。
+        # 回線断で確認できなかった場合はトークンが残っていても押せるままにする
+        # (押す以外に直す手段が無くなるため)。
+        alive = bool(self._session_ok and self._auth is not None
+                     and self._auth.is_logged_in())
+        has_marker = bool(alive and self._auth.has_scope(MARKER_SCOPE))
+        self.login_button.setEnabled(not (alive and has_marker))
+        if alive and has_marker:
+            self.login_button.setToolTip("ログイン済みです。ログインし直す必要はありません。")
+        elif alive:
+            self.login_button.setToolTip(
+                "再ログインすると、ストリームマーカーを採点に使えるようになります。")
+        else:
+            self.login_button.setToolTip("")
+
     def _on_login(self):
         self._settings = load_settings()  # 最新の設定(client_id 等)を反映
         auth_cfg = config.auth_config(self._settings)
@@ -493,8 +620,8 @@ class ArchiveTabWidget(QWidget):
                 "設定してください (Client-Secret は不要です)。\n"
                 f"リダイレクトURL には http://localhost:{auth_cfg['redirect_port']} を登録します。")
             return
-        # ログイン前に最新設定で auth を作り直す
-        self._init_auth()
+        # ログイン前に最新設定で auth を作り直す (復元は走らせない)
+        self._build_auth()
         self.login_status.setText("ブラウザで認可してください…")
         self.login_button.setEnabled(False)
         self._login_worker = TwitchLoginWorker(self._auth, parent=self)
@@ -503,12 +630,14 @@ class ArchiveTabWidget(QWidget):
         self._login_worker.start()
 
     def _on_login_ok(self, me):
-        self.login_button.setEnabled(True)
+        self._session_ok = True
         self._set_logged_in(me)
         self._populate_own_vods()
+        self._refresh_login_button()
 
     def _on_login_failed(self, message):
-        self.login_button.setEnabled(True)
+        self._session_ok = False
+        self._refresh_login_button()
         self.login_status.setText("ログイン失敗")
         QMessageBox.critical(self, "ログイン失敗", f"Twitch ログインに失敗しました。\n{message}")
 
@@ -528,6 +657,12 @@ class ArchiveTabWidget(QWidget):
             videos = self._auth.list_own_videos(first=20)
         except Exception as e:  # noqa: BLE001 (一覧取得失敗は致命でない)
             _logger.warning("自VOD一覧の取得に失敗: %s", e)
+            return
+        self._fill_own_vods(videos)
+
+    # 取得済みの一覧をプルダウンへ入れる (ログイン直後と復元時で共有する)
+    def _fill_own_vods(self, videos):
+        if not videos:
             return
         self.vod_combo.blockSignals(True)
         self.vod_combo.clear()
@@ -608,9 +743,11 @@ class ArchiveTabWidget(QWidget):
         )
 
         # 準備+一括編集+切り抜き+焼き込み+結合を開始
+        self._watermark_bridge = WatermarkConfirmBridge(parent_window=self)
         self._clip_worker = ArchiveClipWorker(
             self._pending_input, self._settings, clips,
-            result_callback=self._review_bridge, curve=curve, parent=self)
+            result_callback=self._review_bridge, curve=curve, parent=self,
+            points=self._points, watermark_confirm_callback=self._watermark_bridge)
         self._clip_worker.progress.connect(self._on_progress)
         self._clip_worker.finished_ok.connect(self._on_clip_done)
         self._clip_worker.failed.connect(self._on_failed)
@@ -714,10 +851,12 @@ class ArchiveTabWidget(QWidget):
         )
         self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
 
+        self._watermark_bridge = WatermarkConfirmBridge(parent_window=self)
         self._resume_worker = ArchiveResumeWorker(
             project_path, self._settings, result_callback=self._review_bridge,
             relink_callback=self._relink_bridge, restore_path=restore_path,
-            parent=self)
+            parent=self, points=self._points,
+            watermark_confirm_callback=self._watermark_bridge)
         self._resume_worker.progress.connect(self._on_progress)
         self._resume_worker.finished_ok.connect(self._on_clip_done)
         self._resume_worker.cancelled.connect(self._on_resume_cancelled)
@@ -747,7 +886,11 @@ class ArchiveTabWidget(QWidget):
         self.mode_combo.setEnabled(not running)
         self.url_edit.setEnabled(not running)
         self.vod_combo.setEnabled(not running)
-        self.login_button.setEnabled(not running)
+        if running:
+            self.login_button.setEnabled(False)
+        else:
+            # 実行後は一律で戻さない。ログイン中なら押せないままにする。
+            self._refresh_login_button()
         # 実行中は無音カットの可否を変更できないようにする (resolve20 §5.8)
         if self.silence_cut_check is not None:
             self.silence_cut_check.setEnabled(not running)

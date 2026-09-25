@@ -133,6 +133,103 @@ def apply(input_path, output_path, canvas_size, cfg, ffmpeg_cfg,
     return output_path
 
 
+# Resolve 書き出し用の透かしクリップの仕様を返す (ver5 resolve §5.3 / §5.5)。
+# 焼き込みではなく、タイムラインの最上位レーンへ全長の素材クリップとして載せる。
+# 位置はキャンバス px (左上原点) の**中心座標**で返し、座標系の変換は resolve_export が行う
+# (タイトルと同じ規約を 1 か所で持つため)。素材が読めなければ None。
+def resolve_clip_spec(canvas_width, canvas_height, duration_sec, cfg):
+    path = asset_path()
+    if path is None:
+        _logger.warning("透かし素材が見つからないため透かしを省略します: %s", _ASSET_NAME)
+        return None
+
+    size = _png_size(path)
+    if size is None:
+        _logger.warning("透かし素材の寸法を読めないため透かしを省略します: %s", path)
+        return None
+
+    source_width, source_height = size
+    width, margin = _geometry(canvas_width, cfg)
+    height = max(int(round(width * source_height / float(source_width))), 1)
+    canvas_width = max(int(canvas_width or 0), 2)
+    canvas_height = max(int(canvas_height or 0), 2)
+
+    if cfg["position"] in ("bottom_right", "top_right"):
+        center_x = canvas_width - margin - width / 2.0
+    else:
+        center_x = margin + width / 2.0
+    if cfg["position"] in ("bottom_right", "bottom_left"):
+        center_y = canvas_height - margin - height / 2.0
+    else:
+        center_y = margin + height / 2.0
+
+    return {
+        "path": path,
+        "name": "watermark",
+        "offset": 0.0,
+        "duration": float(duration_sec or 0.0),
+        "source_width": source_width,
+        "source_height": source_height,
+        "width": width,
+        "height": height,
+        # 素材の原寸に対する倍率 (FCPXML の adjust-transform scale)
+        "scale": width / float(source_width),
+        "center_px": (center_x, center_y),
+        "opacity": float(cfg["opacity"]),
+    }
+
+
+# spec へ透かしクリップを足して返す (ver5 resolve §5.5)。
+# 素材が読めない / 尺が 0 のときは spec をそのまま返す (書き出し自体は止めない / §4-3)。
+def add_resolve_clip(spec, settings):
+    duration = sum(float(c.get("duration") or 0.0) for c in (spec.get("clips") or []))
+    if duration <= 0:
+        return spec
+
+    overlay = resolve_clip_spec(
+        spec.get("width"), spec.get("height"), duration, config(settings))
+    if overlay is None:
+        return spec
+
+    spec.setdefault("overlays", []).append(overlay)
+    _logger.info("Resolve 出力へ透かしクリップを追加しました (全長 %.2fs)", duration)
+    return spec
+
+
+# PNG の寸法を IHDR から読む (外部ライブラリを足さないため / docs/claude.md)
+def _png_size(path):
+    try:
+        with open(path, "rb") as f:
+            header = f.read(24)
+    except OSError:
+        return None
+
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        return None
+
+    width = int.from_bytes(header[16:20], "big")
+    height = int.from_bytes(header[20:24], "big")
+    return (width, height) if width > 0 and height > 0 else None
+
+
+# 未適用のまま出力させない保険 (ver5 resolve §3.1 / §4-2)。
+# 必要かつ未適用なら単独パスで焼き込み、そのパスを返す。不要ならそのまま返す。
+def ensure_applied(context, video_path, canvas_size, ffmpeg_cfg, total_duration=0.0):
+    if not is_required(context):
+        return video_path
+
+    output_path = context.allocate_intermediate("watermark_applied.mp4")
+    result = apply(
+        video_path, output_path, canvas_size, config(context.settings), ffmpeg_cfg,
+        total_duration=total_duration,
+        on_progress=context.progress_subcallback("透かし焼き込み"),
+    )
+    # 素材が無くて焼き込めなかった場合も適用済みとする。
+    # 経路ごとに何度も同じ警告を出しても素材は現れないため (apply が警告済み)。
+    context.watermark_applied = True
+    return result
+
+
 # 透かしの幅と余白 (px) をキャンバス幅から求める。
 def _geometry(canvas_width, cfg):
     canvas_width = max(int(canvas_width or 0), 2)

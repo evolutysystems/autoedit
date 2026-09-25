@@ -27,7 +27,9 @@ from PySide6.QtWidgets import (
 
 from ..exceptions import AutoEditError
 from ..export import resolve_export
+from ..services import config as services_config
 from . import theme
+from .points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from .subtitle_preview_widget import SubtitlePreviewWidget, is_preview_enabled
 
 # 既存の ASS タイムスタンプ整形を再利用し、画面・ASS で表記を揃える (§8.3)
@@ -577,7 +579,10 @@ class SubtitleEditorDialog(QDialog):
         run_resolve_export(
             self,
             lambda confirm: resolve_export.export_clip_review(
-                self._export_context, self.result_items(), overwrite_confirm=confirm),
+                self._export_context, self.result_items(), overwrite_confirm=confirm,
+                points=services_config.current_points(),
+                watermark_confirm_callback=watermark_confirm(
+                    self, WATERMARK_MESSAGE_RESOLVE)),
         )
 
     # ダイアログ終了時 (決定/キャンセル/×) にプレビューの再生停止と一時領域掃除を行う

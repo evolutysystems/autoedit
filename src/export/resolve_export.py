@@ -8,7 +8,9 @@ import os
 
 from ..archive import config as archive_config
 from ..exceptions import AutoEditError, ExportError
-from ..modules import ffmpeg_runner, output_profile, subtitle_generator
+from ..modules import ffmpeg_runner, output_profile, subtitle_generator, watermark_overlay
+from ..services import points as points_service
+from ..timeline import project_io
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from . import fcpxml_builder, srt_writer
@@ -145,7 +147,13 @@ def _title_position(alignment, margins, width, height, title_cfg):
     else:
         y_px = height / 2.0
 
-    # 原点 (既定=画面中央・Y は上方向を正) へ移す
+    return _to_export_space(x_px, y_px, width, height, title_cfg)
+
+
+# キャンバス px (左上原点) を出力側の座標系へ移す (§5.5)
+# 既定は「画面中央が原点・Y は上方向が正・±1 に正規化」。
+# タイトルと透かしで同じ規約を使うため、変換はこの 1 か所に置く。
+def _to_export_space(x_px, y_px, width, height, title_cfg):
     if title_cfg.get("origin", "center") == "center":
         dx = x_px - width / 2.0
         dy = height / 2.0 - y_px
@@ -532,11 +540,12 @@ def _timeline_subtitle_items(timeline, segments, body_media_id):
 
 # Timeline 用 (ver3): 編集画面から呼ぶ一括エクスポート
 # 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_timeline(timeline, settings, overwrite_confirm=None):
+def export_timeline(timeline, settings, overwrite_confirm=None, points=None):
     spec = build_timeline_spec(timeline, settings)
     source_path = (timeline.source or {}).get("input_path", "")
     dest = default_output_path(settings, source_path, resolve_config(settings)["clip_prefix"])
-    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm)
+    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
+                       points=points, job_type=_job_type(timeline))
 
 
 # ------------------------------------------------------------------
@@ -638,7 +647,12 @@ def build_archive_spec(source_path, entries, settings, profile=None):
 # overwrite_confirm(path) -> bool : 既存ファイルがある場合の確認 (False で中止=None を返す)
 # 生成失敗時は部分ファイルを残さない (一時ファイルへ書いて成功時のみ rename)。
 # 戻り値: 書き出したパスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_spec(spec, dest_path, settings=None, overwrite_confirm=None):
+# spec を FCPXML として書き出す (すべての入口が通る唯一の合流点 / ver5 resolve §5.5)
+# points    : PointsService (GUI 実行時のみ注入。None でポイント処理なし)
+# job_type  : "clip" / "archive" (単価が変わるため入口で決める / 確認事項 #3)
+def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
+                points=None, job_type=points_service.JOB_CLIP,
+                watermark_confirm_callback=None):
     cfg = resolve_config(settings or {})
     if cfg["format"] != "fcpxml":
         # EDL+SRT / OTIO は未実装 (§11-5)。黙って別形式を装わず FCPXML で出力する。
@@ -656,13 +670,33 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None):
         dest_path, len(spec.get("clips", [])), len(spec.get("captions", [])),
         len(spec.get("titles", [])), spec.get("width"), spec.get("height"), spec.get("fps"),
     )
-    try:
-        content = fcpxml_builder.build_fcpxml(spec)
-    except Exception as e:  # noqa: BLE001 (想定外データは ExportError へ集約する)
-        _logger.exception("FCPXML の生成に失敗")
-        raise ExportError(f"FCPXML の生成に失敗しました: {e}") from e
 
-    _atomic_write(dest_path, content)
+    # ポイントの予約 (書き出しの開始時 / ver5 resolve §3.2)。
+    # 残高が足りなくても書き出しは止めず、最上位レーンへ透かしクリップを足す (R4 / §5.5)。
+    reservation = points_service.reserve(
+        points, job_type, points_service.OUTPUT_RESOLVE_PROJECT)
+    if not points_service.confirmed(reservation, watermark_confirm_callback):
+        points_service.cancel(points, reservation)
+        _logger.info("透かし入りでの書き出しを取りやめました: %s", dest_path)
+        return None
+    if points_service.watermark_required(reservation):
+        _add_watermark_overlay(spec, cfg, settings or {})
+
+    try:
+        try:
+            content = fcpxml_builder.build_fcpxml(spec)
+        except Exception as e:  # noqa: BLE001 (想定外データは ExportError へ集約する)
+            _logger.exception("FCPXML の生成に失敗")
+            raise ExportError(f"FCPXML の生成に失敗しました: {e}") from e
+
+        _atomic_write(dest_path, content)
+    except Exception:
+        # 書き出せなかったら消費しない (R6)
+        points_service.cancel(points, reservation)
+        raise
+
+    # 成果物ができてから確定する (R3)。SRT サイドカーは非致命のため待たない。
+    points_service.commit(points, reservation)
     written = [dest_path]
 
     # SRT サイドカー (失敗しても FCPXML は出力済みのため非致命 / §7)
@@ -675,6 +709,22 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None):
     total = sum(c["duration"] for c in spec.get("clips", []))
     _logger.info("Resolve 出力完了: %s (タイムライン尺 %.2fs)", " / ".join(written), total)
     return written
+
+
+# 透かしクリップを spec へ足し、座標をタイトルと同じ規約へ移す (ver5 resolve §5.5)。
+# Resolve 上で利用者が消せてしまうが、それは許容する (焼き込みではないため)。
+def _add_watermark_overlay(spec, cfg, settings):
+    before = len(spec.get("overlays") or [])
+    watermark_overlay.add_resolve_clip(spec, settings)
+
+    width = int(spec.get("width") or 0)
+    height = int(spec.get("height") or 0)
+    for overlay in (spec.get("overlays") or [])[before:]:
+        center = overlay.get("center_px")
+        if center is None or width <= 0 or height <= 0:
+            continue
+        overlay["position"] = _to_export_space(
+            center[0], center[1], width, height, cfg["title"])
 
 
 # 一時ファイルへ書いて成功時のみ rename する (部分ファイルを残さない / §7)
@@ -715,7 +765,15 @@ def _write_srt_sidecar(spec, dest_path, cfg):
 # クリップ用 (R1): 字幕一覧画面から呼ぶ一括エクスポート
 # export_context: {"source_path","keep_segments","settings","profile"} (SubtitleReviewBridge 由来)
 # 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_clip_review(export_context, items, overwrite_confirm=None):
+# Timeline の出自から単価の種別を決める (確認事項 #3)。
+# アーカイブ用 Timeline は source.archive を持つため、新しい項目を足さずに判別できる。
+def _job_type(timeline):
+    if project_io.project_kind(timeline) == project_io.KIND_ARCHIVE:
+        return points_service.JOB_ARCHIVE
+    return points_service.JOB_CLIP
+
+
+def export_clip_review(export_context, items, overwrite_confirm=None, points=None):
     context = export_context or {}
     settings = context.get("settings") or {}
     source_path = context.get("source_path", "")
@@ -724,14 +782,16 @@ def export_clip_review(export_context, items, overwrite_confirm=None):
         profile=context.get("profile"),
     )
     dest = default_output_path(settings, source_path, resolve_config(settings)["clip_prefix"])
-    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm)
+    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
+                       points=points, job_type=points_service.JOB_CLIP)
 
 
 # アーカイブ用 (R2): 結果画面から呼ぶ一括エクスポート
 # 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_archive_result(source_path, entries, settings, overwrite_confirm=None):
+def export_archive_result(source_path, entries, settings, overwrite_confirm=None, points=None):
     spec = build_archive_spec(source_path, entries, settings)
     if not spec["clips"]:
         raise ExportError("出力対象のクリップがありません (使用クリップを1つ以上選択してください)。")
     dest = default_output_path(settings, source_path, archive_config.clip_prefix(settings))
-    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm)
+    return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
+                       points=points, job_type=points_service.JOB_ARCHIVE)

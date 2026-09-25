@@ -21,7 +21,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -48,7 +48,7 @@ except Exception:  # noqa: BLE001
 
 from ...modules import comment_decor, ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
-from ...timeline import commands
+from ...timeline import commands, crop
 from ...timeline.audio_source import AudioChunkSource
 from ...timeline.frame_source import create_frame_source, is_pyav_available
 from ...timeline.model import SubtitleClip
@@ -455,7 +455,7 @@ class PreviewPanel(QWidget):
             return  # 差し替え済みの古い結果は捨てる
         data = self._apply_blur_preview(width, height, data)
         image = QImage(data, width, height, width * 3, QImage.Format_RGB888).copy()
-        pixmap = QPixmap.fromImage(image)
+        pixmap = self._apply_crop(QPixmap.fromImage(image))
         # 拡縮はアイテムの scale で行い、QPixmap.scaled は使わない (resolve6 §5.8)。
         # 再生中は縮小フレームが届くため、ここで拡大し直すと 1 枚あたり 4.5ms かかり
         # 縮小で浮いたぶんを食い潰す。scale なら描画時に処理され、費用はほぼゼロ。
@@ -468,6 +468,32 @@ class PreviewPanel(QWidget):
         # 縦横比を保って中央へ収める
         self._base_item.setPos((self._canvas[0] - pixmap.width() * scale) / 2.0,
                                (self._canvas[1] - pixmap.height() * scale) / 2.0)
+
+    # 縦動画プロジェクトの切り抜きをフレームへ当てる (ver5 resolve9 §5.8)。
+    #
+    # 当てないと、横のフレームが縦キャンバスの中央に小さく出るだけになり、
+    # 書き出し結果と食い違う。配置の計算は出力と同じ crop.preview_rects を通す。
+    # 背景のぼかしはここでは掛けない (1 コマごとに重くなるため / §5.6)。
+    def _apply_crop(self, pixmap):
+        timeline = self._controller.timeline
+        layout = crop.load(timeline)
+        if layout is None:
+            return pixmap
+
+        media = timeline.media_by_id(str(layout.get("media_id") or ""))
+        if not crop.is_valid(layout, media, timeline.width, timeline.height):
+            return pixmap
+
+        canvas = QPixmap(timeline.width, timeline.height)
+        canvas.fill(Qt.black)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        for rect in crop.preview_rects(layout, timeline.width, timeline.height):
+            sx, sy, sw, sh = rect["src"]
+            dx, dy, dw, dh = rect["dest"]
+            painter.drawPixmap(dx, dy, dw, dh, pixmap.copy(sx, sy, sw, sh))
+        painter.end()
+        return canvas
 
     # 停止中だけ、書き出しと同じぼかしをフレームへ当てる (ver5 resolve4 §5.8)。
     # 反映器が無い・再生中・素材が分からない場合は素通し。

@@ -647,6 +647,22 @@ DEFAULT_SETTINGS = {
         "comment_margin_v": 320,
         "comment_icon_size_px": 100,
         "comment_icon_gap_px": 50,
+        # 横動画から作る縦プロジェクトの切り抜き (ver5 resolve9 §7)。
+        # 枠そのものはダイアログで決めるため、ここには出さない値だけを置く。
+        "crop": {
+            # 「全体」で余った上下の埋め方 ("blur" = ソースをぼかして敷く / "black" = 黒)
+            "background": "blur",
+            # 背景ぼかしの強さ (boxblur の 半径:回数)
+            "blur_radius": 20,
+            "blur_power": 2,
+            # 枠をこれ以上拡大させない上限 (1.0 = 拡大させない)。
+            # 分割の下枠は 1080/911 ≒ 1.19 倍が下限のため、1.2 未満にはできない。
+            "max_scale": 2.0,
+            # 生成するプロジェクト名の接尾辞
+            "project_suffix": "_vertical",
+            # 選んだクリップ間の空白を詰めるか
+            "close_gaps": True,
+        },
     },
     "logging": {
         "log_dir": "logs",
@@ -818,6 +834,9 @@ DEFAULT_SETTINGS = {
         "subscription_cache_hours": 72,
         # 残高インジケータの更新間隔 (秒)
         "balance_refresh_sec": 300,
+        # サブスク導線 (設定画面のアカウントタブ) で開く URL。
+        # 配信者ごとに違うため既定は空にし、空のあいだはボタンを出さない。
+        "subscribe_url": "",
     },
     # トラッキングぼかし (ver5 resolve8 §7)。
     # 既定は無効。有効にしたときだけ追従・マスク生成・焼き込みが走る (R14)。
@@ -1317,6 +1336,7 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._build_vertical_tab(), "縦動画")
         tabs.addTab(self._build_archive_tab(), "アーカイブ")
         tabs.addTab(self._build_blur_tab(), "ぼかし")
+        tabs.addTab(self._build_account_tab(), "アカウント")
         # 先頭 (「一般」) タブ選択時のみペイン左上を四角にする (resolve4 S1)
         theme.bind_tab_pane_corner(tabs)
         root_layout.addWidget(tabs)
@@ -1329,6 +1349,17 @@ class SettingsWindow(QWidget):
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
         root_layout.addLayout(button_layout)
+
+    # 「アカウント」タブを構築する (ver5 resolve §5.6 R13)
+    # ログイン状態・残高・履歴・サブスク導線。ポイントの実体はメイン画面が作った
+    # 共有のものを使い、単独起動 (python src/settings/settings_window.py) では
+    # 未ログイン表示のままになる。
+    def _build_account_tab(self):
+        from ..gui.account_tab import AccountTab      # noqa: PLC0415 (循環を避けるため遅延)
+        from ..services.config import current_points  # noqa: PLC0415
+
+        self.account_tab = AccountTab(current_points(), load_settings())
+        return self.account_tab
 
     # 「一般」タブを構築する
     def _build_general_tab(self):

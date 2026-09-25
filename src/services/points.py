@@ -45,6 +45,44 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+# ---- 呼び出し側の分岐を減らす薄い関数 ------------------------------------
+# service が None (ポイント処理を通さない呼び出し = CLI / テスト) でも安全に呼べる。
+# 出力経路はこの 4 つだけを使い、None 判定を各所へ散らさない。
+
+# 出力の開始時に予約する。service が無ければ None を返す。
+def reserve(service, job_type, output_type, project_id=None):
+    if service is None:
+        return None
+    return service.reserve(job_type, output_type, project_id=project_id)
+
+
+# 成果物の完成時に確定する。
+def commit(service, reservation):
+    if service is not None and reservation is not None:
+        service.commit(reservation)
+
+
+# 失敗・中断時に解放する。
+def cancel(service, reservation):
+    if service is not None and reservation is not None:
+        service.cancel(reservation)
+
+
+# 予約の透かし要否。予約が無ければ入れない (未ログインは従来どおり / §4-5)。
+def watermark_required(reservation):
+    return bool(reservation is not None and reservation.watermark_required)
+
+
+# 透かしが入る出力になることを利用者へ確認する (R12)。
+# 確認は**予約の応答を見てから**行う。残高から先回りして出すと、サブスクや
+# 遅延確定で実際には入らない場合にも出てしまう (§5.6)。
+# フックが無い呼び出し (CLI / テスト) はそのまま続ける。
+def confirmed(reservation, confirm):
+    if not watermark_required(reservation) or confirm is None:
+        return True
+    return bool(confirm())
+
+
 # 出力操作 1 回分の予約。
 # 呼び出し側が見るのは watermark_required だけでよい。
 class Reservation:
@@ -97,6 +135,11 @@ class PointsService:
 
         self._balance = None
         self._balance_at = None
+
+    # 認証。画面のログイン状態表示とログイン / ログアウトに使う。
+    @property
+    def auth(self):
+        return self._auth
 
     # ---- 残高 -------------------------------------------------------------
     # 残高を返す。オフライン・未ログインでは None。

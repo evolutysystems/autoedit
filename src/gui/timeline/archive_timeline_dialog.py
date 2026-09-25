@@ -31,9 +31,11 @@ from ...modules import ffmpeg_runner
 from ...archive import config as archive_config
 from ...archive import timeline_builder as archive_timeline
 from ...export import resolve_export
+from ...services import config as services_config
 from ...timeline import project_io
 from ...settings.settings_window import save_settings
 from ...utils.logger import get_logger
+from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from ..score_graph_widget import ScoreGraphWidget
 from ..subtitle_editor_dialog import run_resolve_export
 from .section_add_dialog import SectionAddDialog, format_hms
@@ -597,7 +599,10 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         run_resolve_export(
             self,
             lambda confirm: resolve_export.export_archive_result(
-                self._source_path, entries, self._settings, overwrite_confirm=confirm),
+                self._source_path, entries, self._settings, overwrite_confirm=confirm,
+                points=services_config.current_points(),
+                watermark_confirm_callback=watermark_confirm(
+                    self, WATERMARK_MESSAGE_RESOLVE)),
         )
 
     # 「完了」時は映像クリップの有無だけ見る (基底は Timeline 用の文言で警告する)

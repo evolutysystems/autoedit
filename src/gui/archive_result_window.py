@@ -23,8 +23,10 @@ from PySide6.QtWidgets import (
 
 from ..export import resolve_export
 from ..modules.subtitle_generator import _format_ass_time
+from ..services import config as services_config
 from ..utils.logger import get_logger
 from . import theme
+from .points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from .score_graph_widget import ScoreGraphWidget
 from .subtitle_editor_dialog import (
     RESOLVE_EXPORT_BUTTON_TEXT,
@@ -245,7 +247,10 @@ class ArchiveResultWindow(QDialog):
         run_resolve_export(
             self,
             lambda confirm: resolve_export.export_archive_result(
-                self._source_path, entries, self._settings, overwrite_confirm=confirm),
+                self._source_path, entries, self._settings, overwrite_confirm=confirm,
+                points=services_config.current_points(),
+                watermark_confirm_callback=watermark_confirm(
+                    self, WATERMARK_MESSAGE_RESOLVE)),
         )
 
     def done(self, code):

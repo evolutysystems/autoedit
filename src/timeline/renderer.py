@@ -18,9 +18,11 @@ from ..modules import (
     ffmpeg_runner,
     silence_cutter,
     subtitle_generator,
+    watermark_overlay,
 )
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
+from . import crop
 from .builder import timeline_config
 from .media_probe import needs_normalize
 from .model import SubtitleClip
@@ -73,6 +75,15 @@ def render(timeline, context):
     # ── Step 3.5: 焼き込みもオーバーレイも走らなかった場合の最終化 (resolve3 §5.5)
     # 焼き込みを通っていれば既に mp4/AAC なので、その場合は何もしない。
     result_path = _finalize_base(timeline, context, result_path, ffmpeg_cfg)
+
+    # ── Step 3.6: 透かしが未適用のまま先へ進めない (ver5 resolve §3.1)
+    # 合成が走った経路では _composite が混ぜ込み済みのため、ここは何もしない。
+    # 最終化の**後**に置くのは、単独パスが音声をコピーで通すためである
+    # (中間形式 PCM のまま焼き込むと mp4 へ収められない)。
+    result_path = watermark_overlay.ensure_applied(
+        context, result_path, (timeline.width, timeline.height), ffmpeg_cfg,
+        total_duration=timeline.duration_sec())
+
     context.set_current_video_path(result_path)
     return result_path
 
@@ -215,7 +226,7 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
             else:
                 _extract_clip(timeline, segment["clip"], part_path,
                               cfg, ffmpeg_cfg, _part_progress, fade_sec,
-                              duration, audio_codec)
+                              duration, audio_codec, context.settings)
             part_paths.append(part_path)
             done += duration
 
@@ -261,7 +272,7 @@ def _verify_base_duration(output_path, total, segment_count, ffmpeg_cfg):
 # duration: レンダリング上の尺 (フレームタイル化した値 / None ならモデルの尺をそのまま使う)
 # audio_codec: 中間ファイル用の音声コーデック (None なら setting.json の ffmpeg.audio_codec)
 def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_sec=0.0,
-                  duration=None, audio_codec=None):
+                  duration=None, audio_codec=None, settings=None):
     media = timeline.media_by_id(clip.media_id)
     if media is None or not media.path or not os.path.exists(media.path):
         raise TimelineError(f"素材が見つかりません: {clip.media_id}")
@@ -293,7 +304,7 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
         cmd += ["-f", "lavfi", "-t", _duration_arg(duration),
                 "-i", f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}"]
 
-    video_filters = _video_filters(timeline, media, clip, fps, fade_sec, duration)
+    video_filters = _video_filters(timeline, media, clip, fps, fade_sec, duration, settings)
     audio_filters = [] if needs_silence else _audio_filters(audio_clip)
 
     if video_filters:
@@ -326,9 +337,15 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
 
 # クリップの映像フィルタを組み立てる (正規化 + フェード)
 # 正規化チェーンの内容は concat_processor.concat と同一にする (§8.2)。
-def _video_filters(timeline, media, clip, fps, fade_sec, duration=None):
+def _video_filters(timeline, media, clip, fps, fade_sec, duration=None, settings=None):
     filters = []
-    if needs_normalize(media, timeline.width, timeline.height, fps):
+    # 縦動画の切り抜き (ver5 resolve9 §5.5)。指定が無ければ None が返り、
+    # 以降は従来どおりの正規化になる = コマンドが 1 文字も変わらない (R15)。
+    crop_chain = _crop_chain(timeline, media, fps, settings)
+    if crop_chain:
+        # 切り抜きが正規化を兼ねる (キャンバス寸法・fps・画素形式まで揃えて出す)
+        filters.append(crop_chain)
+    elif needs_normalize(media, timeline.width, timeline.height, fps):
         filters.append(
             f"scale={timeline.width}:{timeline.height}:force_original_aspect_ratio=decrease")
         filters.append(
@@ -346,6 +363,25 @@ def _video_filters(timeline, media, clip, fps, fade_sec, duration=None):
         filters.append(f"fade=t=in:st=0:d={fade_sec}")
         filters.append(f"fade=t=out:st={fade_out_start:.3f}:d={fade_sec}")
     return filters
+
+
+# 縦動画の切り抜きのフィルタを返す (ver5 resolve9 §5.5)
+#
+# 指定が無い / 別の素材に対する指定 / 枠が素材の外を指している場合は None を返し、
+# 従来の正規化へ落とす。開けない・書き出せないプロジェクトを作らないため (§4-4)。
+def _crop_chain(timeline, media, fps, settings=None):
+    layout = crop.load(timeline)
+    if layout is None:
+        return None
+    if not crop.is_valid(layout, media, timeline.width, timeline.height):
+        _logger.warning("切り抜きの指定が素材と噛み合わないため、従来の正規化で出力します")
+        return None
+
+    # 背景の種類は指定に入っている (作ったときの見え方を保つ)。
+    # ぼかしの強さだけは設定から読む。
+    cfg = crop.config(settings or {})
+    cfg["background"] = str(layout.get("background") or cfg["background"])
+    return crop.filter_chain(layout, timeline.width, timeline.height, fps, cfg)
 
 
 # クリップの音声フィルタを組み立てる (ゲイン)
@@ -543,6 +579,27 @@ def _blur_chains(context, timeline, in_label, out_label, prefix="bl"):
         config(context.settings), prefix=prefix)
 
 
+# 透かしを合成チェーンの末尾へ足す (ver5 resolve §3.1 / §5.3)。
+# chains / inputs / input_args は破壊的に更新し、新しい出力ラベルを返す。
+# 不要なとき・素材が無いときは in_label をそのまま返す。
+def _watermark_chain(context, timeline, chains, inputs, input_args, in_label):
+    if not watermark_overlay.is_required(context):
+        return in_label
+
+    args, wm_chains, out_label = watermark_overlay.build_chain(
+        in_label, "[wmout]", timeline.width, timeline.height,
+        watermark_overlay.config(context.settings), len(inputs))
+    if not wm_chains:
+        # 素材が無い。保険の単独パスでも同じ結果になるため、ここでは足さない。
+        return in_label
+
+    input_args.extend(args)
+    inputs.append(args[-1])
+    chains.extend(wm_chains)
+    context.watermark_applied = True
+    return out_label
+
+
 # ass フィルタ用にパスをエスケープする (burn_subtitle と同一の 2 段階エスケープ)
 def _escape_filter_path(path):
     return str(path).replace("\\", "/").replace(":", "\\:")
@@ -654,6 +711,11 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
     if not chains:
         _logger.info("有効なオーバーレイが無いため合成をスキップします")
         return base_path
+
+    # 透かしはチェーンの**最後**へ足す (ver5 resolve §3.1)。
+    # ぼかしと逆で、字幕・アイコン・オーバーレイの**上**へ重ねる必要がある。
+    # ここで混ぜ込めば再エンコードは増えない (合成が走る経路のみ)。
+    current = _watermark_chain(context, timeline, chains, inputs, input_args, current)
 
     # 音声の合流 (複数あれば amix。1 本ならそのまま使う)
     if len(audio_labels) > 1:

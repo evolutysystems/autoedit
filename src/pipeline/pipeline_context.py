@@ -77,6 +77,13 @@ class PipelineContext:
         self.blur_mask_path = None      # マスク動画のパス (無ければ None)
         self.blur_applied = False       # 適用済みか
         self.blur_mask_failed = False   # マスクを作れなかったか (§5.9 の確認に使う)
+
+        # 透かし (ver5 resolve §5.4)。
+        # required はサーバーの予約応答をそのまま載せる (残高から推測しない / R9)。
+        # 既定はどちらも False で、ポイント機能を通らない呼び出し (CLI / テスト) では
+        # 従来と完全に同じ挙動になる。
+        self.watermark_required = False  # 透かしを入れる出力か
+        self.watermark_applied = False   # 焼き込み済みか
         # 読み込んだプロジェクトの初回作成時刻 (上書き保存で引き継ぐ / ver3 resolve7 §5.7)。
         # 新規実行では None のまま = 保存時の時刻がそのまま created_at になる。
         self.project_created_at = None

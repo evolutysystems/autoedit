@@ -12,6 +12,7 @@ import tempfile
 
 from ..exceptions import InputError, PipelineCancelled
 from ..modules import ffmpeg_runner, loudness_normalizer
+from ..services import points as points_service
 from ..timeline import media_recovery, media_sidecar, project_io
 from ..timeline.builder import timeline_config
 from ..utils.logger import get_logger
@@ -179,10 +180,38 @@ def rebuild_prepared(timeline):
 #                   callback(prepared, curve, timeline) -> {"timeline","clips"} / None
 # relink_callback : 見つからない素材を利用者へ尋ねるフック
 # restore_path    : 自動保存から復元する場合の読み込み元 (保存先は project_path のまま)
+# points          : PointsService (GUI 実行時のみ注入。None でポイント処理なし)
 # 戻り値: 出力ファイルパスの一覧
 def run_from_archive_project(project_path, settings, progress_cb=None,
                              result_callback=None, relink_callback=None,
-                             restore_path=None):
+                             restore_path=None, points=None,
+                             watermark_confirm_callback=None):
+    # 再開でも出力はできるため、通常実行と同じく 1 ジョブ 1 予約とする (ver5 resolve §3.2)
+    reservation = points_service.reserve(
+        points, points_service.JOB_ARCHIVE, points_service.OUTPUT_VIDEO)
+    # 透かしが入るなら開始前に確認する (R12)
+    if not points_service.confirmed(reservation, watermark_confirm_callback):
+        points_service.cancel(points, reservation)
+        raise PipelineCancelled("透かし入りでの出力を取りやめました")
+    try:
+        outputs = _run_from_archive_project(
+            project_path, settings, progress_cb, result_callback, relink_callback,
+            restore_path, points_service.watermark_required(reservation))
+    except Exception:
+        # 失敗・中断では消費しない (R6)
+        points_service.cancel(points, reservation)
+        raise
+
+    if outputs:
+        points_service.commit(points, reservation)
+    else:
+        points_service.cancel(points, reservation)
+    return outputs
+
+
+def _run_from_archive_project(project_path, settings, progress_cb=None,
+                              result_callback=None, relink_callback=None,
+                              restore_path=None, watermark_required=False):
     _logger.info("=" * 50)
     _logger.info("保存済みアーカイブプロジェクトから再開: %s", project_path)
 
@@ -272,7 +301,8 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
         # ④ 書き出し (通常の切り抜きと同じ経路)
         return clip_writer.finish_clips(
             timeline.source.get("input_path", ""), settings, clip_settings, timeline,
-            edited, prepared, workdir, ffmpeg_cfg=ffmpeg_cfg, progress_cb=progress_cb)
+            edited, prepared, workdir, ffmpeg_cfg=ffmpeg_cfg, progress_cb=progress_cb,
+            watermark_required=watermark_required)
 
 
 # 元 VOD の実在を確かめ、無ければ差し替えを尋ねる (§5.7 ②)

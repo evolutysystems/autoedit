@@ -13,6 +13,7 @@ from ..modules import (
     subtitle_generator,
     volume_analyzer,
 )
+from ..services import points as points_service
 from ..settings.settings_window import save_settings
 from ..timeline import builder as timeline_builder
 from ..timeline import media_recovery, project_io, renderer
@@ -27,16 +28,27 @@ _logger = get_logger(__name__)
 _DEFAULT_CUT_DB = -28
 
 
+# 出力の開始時に予約し、透かしの要否をコンテキストへ載せる (ver5 resolve §5.4)。
+# points を注入しない呼び出し (CLI / テスト) では何もせず、透かしも入らない。
+# 要否はサーバーの応答だけで決まり、残高からは推測しない (R9)。
+def _reserve(points, context):
+    reservation = points_service.reserve(
+        points, points_service.JOB_CLIP, points_service.OUTPUT_VIDEO)
+    context.watermark_required = points_service.watermark_required(reservation)
+    return reservation
+
+
 # 1クリック実行のエントリ
 # input_path                : 入力動画パス
 # settings                  : setting.json から読み込んだ辞書
 # progress_cb               : (ratio: float, label: str) -> None
 # subtitle_review_callback  : 字幕編集画面フック (GUI 実行時のみ。None でレビュー無し)
 # volume_analysis_callback  : 音量解析の閾値確認フック (GUI 実行時のみ。None でダイアログ無し)
+# points                    : PointsService (GUI 実行時のみ注入。None でポイント処理なし)
 # 戻り値                    : 出力動画パス
 def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callback=None,
                  volume_analysis_callback=None, timeline_review_callback=None,
-                 blur_failure_callback=None):
+                 blur_failure_callback=None, points=None, watermark_confirm_callback=None):
     _logger.info("=" * 50)
     _logger.info("パイプライン開始: %s", input_path)
 
@@ -53,6 +65,12 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
                                blur_failure_callback=blur_failure_callback)
     # 出力プロファイル(縦/横)を入力動画から1回だけ解決し、以降の全工程で共有する (request14)
     context.output_profile = output_profile.resolve_output_profile(input_path, settings)
+    # ポイントの予約 (出力の開始時 / ver5 resolve §3.2)
+    reservation = _reserve(points, context)
+    # 透かしが入るなら開始前に確認する (R12)。やめるなら消費せず中断する。
+    if not points_service.confirmed(reservation, watermark_confirm_callback):
+        points_service.cancel(points, reservation)
+        raise PipelineCancelled("透かし入りでの出力を取りやめました")
     try:
         if use_timeline:
             # ver3: 編集点方式 + Timeline 編集画面 + Timeline レンダリング
@@ -61,17 +79,22 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
             # 従来フロー (実カット + 字幕編集画面 + OP/ED 後段結合)
             output_path = _run_legacy(context)
         _logger.info("パイプライン正常終了: %s", output_path)
+        # 成果物ができてから確定する (R3)
+        points_service.commit(points, reservation)
         return output_path
 
     except PipelineCancelled:
         # ユーザーが字幕編集画面でキャンセルした場合 (異常終了ではない)
         _logger.info("パイプライン中断: ユーザーによるキャンセル")
+        points_service.cancel(points, reservation)
         raise
     except AutoEditError:
         _logger.exception("パイプライン中断: 既知エラー")
+        points_service.cancel(points, reservation)
         raise
     except Exception:
         _logger.exception("パイプライン中断: 想定外エラー")
+        points_service.cancel(points, reservation)
         raise
     finally:
         _cleanup(context)
@@ -87,10 +110,12 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
 # restore_path         : 読み込むファイルだけを差し替える (自動保存からの復元 / §5.9)。
 #                        保存先は project_path のままにするため、復元して「決定」しても
 #                        上書きは本体のプロジェクトファイルへ行く。
+# points               : PointsService (GUI 実行時のみ注入。None でポイント処理なし)
 # 戻り値               : 出力動画パス
 def run_from_project(project_path, settings, progress_cb=None,
                      timeline_review_callback=None, media_relink_callback=None,
-                     restore_path=None, blur_failure_callback=None):
+                     restore_path=None, blur_failure_callback=None, points=None,
+                     watermark_confirm_callback=None):
     _logger.info("=" * 50)
     _logger.info("保存済みプロジェクトから再開: %s", project_path)
 
@@ -140,6 +165,11 @@ def run_from_project(project_path, settings, progress_cb=None,
     context.project_created_at = meta.get("created_at")
     context.timeline = timeline
 
+    # 再開でも出力は 1 本できるため、通常実行と同じく予約する (ver5 resolve §3.2)
+    reservation = _reserve(points, context)
+    if not points_service.confirmed(reservation, watermark_confirm_callback):
+        points_service.cancel(points, reservation)
+        raise PipelineCancelled("透かし入りでの出力を取りやめました")
     try:
         # ① 素材の復旧 (足りなければ元動画から作り直す / 再リンクを求める)
         context.begin_step("素材の復旧")
@@ -160,16 +190,20 @@ def run_from_project(project_path, settings, progress_cb=None,
         # ④ 出力 (最終ファイル配置。既存 output_writer をそのまま使う)
         output_path = output_writer.run(context)
         _logger.info("再編集の書き出し正常終了: %s", output_path)
+        points_service.commit(points, reservation)
         return output_path
 
     except PipelineCancelled:
         _logger.info("再編集を中断: ユーザーによるキャンセル")
+        points_service.cancel(points, reservation)
         raise
     except AutoEditError:
         _logger.exception("再編集を中断: 既知エラー")
+        points_service.cancel(points, reservation)
         raise
     except Exception:
         _logger.exception("再編集を中断: 想定外エラー")
+        points_service.cancel(points, reservation)
         raise
     finally:
         _cleanup(context)

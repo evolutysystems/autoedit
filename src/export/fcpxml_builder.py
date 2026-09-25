@@ -42,6 +42,13 @@ _DEFAULT_RGBA = (1.0, 1.0, 1.0, 1.0)
 # タイトルを重ねるレーン番号 (正値 = 親クリップへ接続する connected clip)
 _TITLE_LANE = 1
 
+# 透かしはタイトルより上のレーンへ置く (ver5 resolve §5.5)
+_OVERLAY_LANE = 2
+
+# 重なり素材 (透かし) の resources id。asset と format を 2 つずつ採番する
+_OVERLAY_ASSET_ID = "r10"
+_OVERLAY_FORMAT_ID = "r11"
+
 # クランプ発生の周知ログを 1 回だけ出すためのフラグ (resolve21 §7)
 _warned_once = {"clamp": False}
 
@@ -181,6 +188,10 @@ def _total_frames(fclips):
 #                 "font": str, "font_size": int, "color": "#RRGGBB",
 #                 "bold": bool, "italic": bool, "underline": bool,
 #                 "placement": "bottom"|"top"|"left"|"right", "name": str}, ...]
+#   "overlays": [{"path": 素材の絶対パス, "name": str,
+#                 "offset": タイムライン秒, "duration": 尺秒,
+#                 "source_width": int, "source_height": int, "scale": float,
+#                 "position": (x, y), "opacity": float}, ...]  ← 透かし (ver5 resolve §5.5)
 #   "caption_role": str (例 "iTT?captionFormat=ITT.ja"),
 #   "title_effect_uid": str,
 # }
@@ -194,6 +205,8 @@ def build_fcpxml(spec):
     clips = [c for c in (spec.get("clips") or []) if float(c.get("duration", 0) or 0) > 0]
     titles = list(spec.get("titles") or [])
     captions = list(spec.get("captions") or [])
+    overlays = [o for o in (spec.get("overlays") or [])
+                if float(o.get("duration", 0) or 0) > 0 and o.get("path")]
     caption_role = str(spec.get("caption_role") or DEFAULT_CAPTION_ROLE)
     source = spec.get("source") or {}
 
@@ -234,6 +247,29 @@ def build_fcpxml(spec):
             "id": _EFFECT_ID,
             "name": _TITLE_EFFECT_NAME,
             "uid": str(spec.get("title_effect_uid") or DEFAULT_TITLE_EFFECT_UID),
+        })
+
+    # 重なり素材 (透かし) の asset / format。静止画のため duration は 0s とする。
+    for index, overlay in enumerate(overlays):
+        asset_id, format_id = _overlay_ids(index)
+        ET.SubElement(resources, "format", {
+            "id": format_id,
+            "name": f"AutoEditOverlay{index + 1}",
+            "width": str(int(overlay.get("source_width") or width)),
+            "height": str(int(overlay.get("source_height") or height)),
+        })
+        overlay_asset = ET.SubElement(resources, "asset", {
+            "id": asset_id,
+            "name": str(overlay.get("name") or "overlay"),
+            "start": "0s",
+            "duration": "0s",
+            "hasVideo": "1",
+            "videoSources": "1",
+            "format": format_id,
+        })
+        ET.SubElement(overlay_asset, "media-rep", {
+            "kind": "original-media",
+            "src": _file_uri(overlay.get("path", "")),
         })
 
     # ---- library / event / project / sequence ----
@@ -282,6 +318,16 @@ def build_fcpxml(spec):
             style_seq,
         )
 
+    # 重なり素材 (透かし)。字幕より上のレーンへ置く (ver5 resolve §5.5)
+    for index, overlay in enumerate(overlays):
+        asset_id, _format_id = _overlay_ids(index)
+        _place_text_element(
+            clip_elements, fclips, timeline_f, overlay, fps,
+            lambda parent, piece, item, _sid, ref=asset_id: _append_overlay(
+                parent, item, ref, fps, piece),
+            style_seq,
+        )
+
     ET.indent(root, space="  ")
     _compact_text_nodes(root)
     body = ET.tostring(root, encoding="unicode")
@@ -315,6 +361,37 @@ def _compact_text_nodes(root):
         text_element.text = None
         for child in text_element:
             child.tail = None
+
+
+# 重なり素材 1 件ぶんの resources id (asset, format) を返す
+def _overlay_ids(index):
+    return f"r{10 + index * 2}", f"r{11 + index * 2}"
+
+
+# video 要素 (重なり素材 = 透かし) を親クリップへ追加する (ver5 resolve §5.5)
+# 静止画のため start は 0s 固定。位置と倍率は adjust-transform、不透明度は adjust-blend で表す。
+def _append_overlay(parent, overlay, ref, fps, piece):
+    element = ET.SubElement(parent, "video", {
+        "ref": ref,
+        "lane": str(_OVERLAY_LANE),
+        "offset": frames_to_text(piece["offset_f"], fps),
+        "duration": frames_to_text(piece["dur_f"], fps),
+        "start": "0s",
+        "name": piece["name"],
+    })
+
+    scale = float(overlay.get("scale") or 1.0)
+    attrs = {"scale": f"{scale:.4f} {scale:.4f}"}
+    position = overlay.get("position")
+    if position is not None:
+        # 位置は title と同じ近似 (Resolve 取り込みで中央へ戻る場合がある / §5.5)
+        attrs["position"] = f"{float(position[0]):.4f} {float(position[1]):.4f}"
+    ET.SubElement(element, "adjust-transform", attrs)
+
+    opacity = float(overlay.get("opacity", 1.0) or 0.0)
+    if opacity < 1.0:
+        ET.SubElement(element, "adjust-blend", {"amount": f"{opacity:.3f}"})
+    return element
 
 
 # title 要素 (テキスト本文 + スタイル定義 + 位置パラメータ) を親クリップへ追加する

@@ -1,6 +1,8 @@
 # Stretheus API 接続設定の読み出しと、認証オブジェクトの生成
 # (StretheusAPI docs/request/resolve2.md §6.2)
 # ハードコードを避け、setting.json の api セクションを唯一の出どころとする。
+import threading
+
 from .points import PointsService
 from .stretheus_auth import StretheusAuth
 
@@ -28,3 +30,44 @@ def create_auth(settings, store=None):
 # 設定から PointsService を作る。認証と同じく 1 つだけ持ち回る。
 def create_points(settings, auth=None, store_dir=None):
     return PointsService(auth or create_auth(settings), settings, store_dir=store_dir)
+
+
+# ---- プロセス全体で 1 つだけ持つ実体 (GUI 用) --------------------------------
+# リフレッシュの直列化はインスタンス内のロックで行うため、画面・出力処理・
+# 残高表示がそれぞれ別の実体を持つと直列化が効かない (§6.4)。
+# CLI / テストはここを使わず、必要なら create_auth / create_points を直接呼ぶ。
+_shared = {"auth": None, "points": None}
+_shared_lock = threading.Lock()
+
+
+# 共有の StretheusAuth。最初に呼ばれたときの設定で作る。
+def shared_auth(settings):
+    with _shared_lock:
+        if _shared["auth"] is None:
+            _shared["auth"] = create_auth(settings)
+        return _shared["auth"]
+
+
+# 共有の PointsService。
+def shared_points(settings):
+    with _shared_lock:
+        if _shared["points"] is None:
+            if _shared["auth"] is None:
+                _shared["auth"] = create_auth(settings)
+            _shared["points"] = PointsService(_shared["auth"], settings)
+        return _shared["points"]
+
+
+# 既に作られている共有 PointsService を返す (無ければ None)。
+# 画面から直接書き出す経路 (Resolve 出力) で使う。GUI を立ち上げていない
+# 呼び出し (CLI / テスト) では None になり、ポイント処理を通らない。
+def current_points():
+    with _shared_lock:
+        return _shared["points"]
+
+
+# 共有の実体を捨てる (接続先を変えたとき / テストの後始末)。
+def reset_shared():
+    with _shared_lock:
+        _shared["auth"] = None
+        _shared["points"] = None

@@ -1467,12 +1467,15 @@ def bind_tab_pane_corner(tab_widget):
 # ボタンの下辺がペインへ接する。QSS では余白を作れない (QTabBar の規則はタブにしか
 # 効かない) ため、余白付きの入れ物で包んでから渡す。
 # 戻り値は入れ物。呼び出し側は包んだウィジェット自身の参照をそのまま使い続けられる。
-def install_tab_corner(tab_widget, widget, corner=Qt.TopRightCorner):
+# widget はウィジェット 1 個でも並べたい順の一覧でもよい (ver5 resolve §5.6 で 2 個になった)。
+# 入れ物を 1 段だけにしておくため、ここで横に並べる。
+def install_tab_corner(tab_widget, widget, corner=Qt.TopRightCorner, spacing=0):
     holder = QWidget(tab_widget)
     layout = QHBoxLayout(holder)
     layout.setContentsMargins(0, 0, 0, TAB_CORNER_BOTTOM_MARGIN_PX)
-    layout.setSpacing(0)
-    layout.addWidget(widget)
+    layout.setSpacing(spacing)
+    for item in (widget if isinstance(widget, (list, tuple)) else [widget]):
+        layout.addWidget(item)
     tab_widget.setCornerWidget(holder, corner)
     return holder
 
