@@ -8,6 +8,7 @@
 import os
 import subprocess
 
+import numpy as np
 from PySide6.QtCore import (
     QMutex,
     QMutexLocker,
@@ -212,6 +213,8 @@ class PreviewPanel(QWidget):
         self._overlay_items = {}
         # 直前に並べたオーバーレイの ID 列 (再生中の作り直しを省くため / resolve6 §3-9)
         self._overlay_ids = []
+        # 書き出しと同じぼかしをフレームへ当てる道具 (停止中だけ / ver5 resolve4 §5.8)
+        self._blur_preview = None
         self._build_ui()
 
         controller.timeline_changed.connect(self._on_timeline_changed)
@@ -397,9 +400,21 @@ class PreviewPanel(QWidget):
     # ぼかし対象の目印 (ver5 resolve2 §5.7)
     # ------------------------------------------------------------------
 
+    # 書き出しと同じぼかしをフレームへ当てる道具を受け取る (ver5 resolve4 §5.8)
+    #
+    # **停止中だけ**使う。1 枚あたり約 15ms かかり、60fps の再生 (1 枚 16.7ms) には
+    # 収まらないため、再生中は今までどおり赤い目印に戻す (resolve4 §2.6 / §3.4)。
+    # None を渡すと反映をやめる。
+    def set_blur_preview(self, preview):
+        self._blur_preview = preview
+        self._request_frame()
+
+    # 停止中にぼかしを反映するか
+    def blur_preview_active(self):
+        return getattr(self, "_blur_preview", None) is not None and not self.is_playing()
+
     # ぼかす対象の位置を半透明の塗りで重ねる。
-    # **実際のぼかし処理はしない。** プレビューは 1 枚ずつ取得しており、
-    # ここへ画像処理を足すとスクラブが目に見えて重くなるため (§5.7)。
+    # 再生中・ぼかし反映が使えないときの代わりの表示 (ver5 resolve4 §5.8)。
     #   boxes: [{"rect": (x, y, w, h), "polygon": [(x, y), …] or None, "label": 文字列}]
     #          キャンバス座標。polygon があれば輪郭・手描きの形で描く (ver5 resolve3 §5.9)
     def set_blur_markers(self, boxes):
@@ -438,6 +453,7 @@ class PreviewPanel(QWidget):
     def _on_frame_ready(self, job_id, width, height, data):
         if job_id != self._frame_job:
             return  # 差し替え済みの古い結果は捨てる
+        data = self._apply_blur_preview(width, height, data)
         image = QImage(data, width, height, width * 3, QImage.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(image)
         # 拡縮はアイテムの scale で行い、QPixmap.scaled は使わない (resolve6 §5.8)。
@@ -452,6 +468,18 @@ class PreviewPanel(QWidget):
         # 縦横比を保って中央へ収める
         self._base_item.setPos((self._canvas[0] - pixmap.width() * scale) / 2.0,
                                (self._canvas[1] - pixmap.height() * scale) / 2.0)
+
+    # 停止中だけ、書き出しと同じぼかしをフレームへ当てる (ver5 resolve4 §5.8)。
+    # 反映器が無い・再生中・素材が分からない場合は素通し。
+    def _apply_blur_preview(self, width, height, data):
+        preview = getattr(self, "_blur_preview", None)
+        if preview is None or self.is_playing():
+            return data
+        resolved = self._controller.source_at_playhead()
+        if resolved is None:
+            return data
+        media, source_sec = resolved
+        return preview.apply(data, width, height, media.id, source_sec)
 
     def _on_frame_failed(self, job_id):
         if job_id != self._frame_job:
@@ -990,28 +1018,47 @@ class PreviewPanel(QWidget):
         out_path = os.path.join(self._work_dir, "preview_hq.png")
         ffmpeg_cfg = self._settings.get("ffmpeg", {})
         safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
-        chain = (f"scale={self._canvas[0]}:{self._canvas[1]}:"
-                 f"force_original_aspect_ratio=decrease,"
-                 f"pad={self._canvas[0]}:{self._canvas[1]}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
-                 f"ass='{safe_ass}'")
+
+        chains = [f"[0:v]scale={self._canvas[0]}:{self._canvas[1]}:"
+                  f"force_original_aspect_ratio=decrease,"
+                  f"pad={self._canvas[0]}:{self._canvas[1]}:(ow-iw)/2:(oh-ih)/2,setsar=1[hqbase]"]
+        current = "[hqbase]"
+        extra_inputs = []
+
+        # ぼかしを**一番先に**当てる (ver5 resolve4 §5.9)。
+        # 後ろへ足すと字幕・コメントアイコン・画像までぼける (resolve2 R8)。
+        blur_chains, current = self._hq_blur_chains(media, source_sec, current)
+        chains.extend(blur_chains)
+
+        # 画像・動画オーバーレイ (ぼかしの後・字幕の前 / ver5 resolve4 §5.9)
+        overlay_chains, current, extra_inputs = self._hq_overlay_chains(current, playhead)
+        chains.extend(overlay_chains)
+
+        ass_chain = f"ass='{safe_ass}'"
         fonts_dir = resolve_fonts_dir(self._settings)
         if fonts_dir and os.path.isdir(fonts_dir):
             safe_dir = fonts_dir.replace("\\", "/").replace(":", "\\:")
-            chain = chain.replace(f"ass='{safe_ass}'",
-                                  f"ass='{safe_ass}':fontsdir='{safe_dir}'")
+            ass_chain = f"ass='{safe_ass}':fontsdir='{safe_dir}'"
+
         # コメントアイコンを重ねる (ver3 resolve11 §5.6-5)。
         # 現在フレームの 1 枚絵なので表示時間 (enable) は付けない。
         icon_chains, _count, _groups = comment_decor.build_icon_chains(
             items, self._eff_cfg, self._canvas[0], self._canvas[1],
-            in_label="[vsub]", out_label="", with_enable=False)
+            in_label="[vsub]", out_label="[hqout]", with_enable=False)
         if icon_chains:
-            chain = f"{chain}[vsub];" + ";".join(icon_chains)
+            chains.append(f"{current}{ass_chain}[vsub]")
+            chains.extend(icon_chains)
+        else:
+            chains.append(f"{current}{ass_chain}[hqout]")
+
         cmd = [
             ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg), "-y", "-hide_banner",
             "-loglevel", "error",
             "-ss", f"{source_sec:.3f}", "-i", media.path,
-            "-frames:v", "1", "-vf", chain, out_path,
         ]
+        cmd += extra_inputs
+        cmd += ["-frames:v", "1", "-filter_complex", ";".join(chains),
+                "-map", "[hqout]", out_path]
         try:
             result = subprocess.run(
                 cmd, capture_output=True, creationflags=no_window_creationflags())
@@ -1022,6 +1069,73 @@ class PreviewPanel(QWidget):
             self.set_status("高精度プレビューに失敗しました")
             return
         _HighQualityDialog(out_path, self).exec()
+
+    # 高精度プレビューへぼかしを足す (ver5 resolve4 §5.9)。
+    # 1 フレームぶんのマスクを PNG へ書き出し、書き出しと同じフィルタ
+    # (blur_overlay.build_chains) で合成する。マスクが無ければ何もしない。
+    def _hq_blur_chains(self, media, source_sec, in_label):
+        preview = getattr(self, "_blur_preview", None)
+        if preview is None:
+            return [], in_label
+        try:
+            from PIL import Image                    # noqa: PLC0415 (任意依存)
+
+            from ...blur.config import config       # noqa: PLC0415
+            from ...modules import blur_overlay      # noqa: PLC0415
+
+            mask = preview.mask(media.id, source_sec)
+            if mask is None or mask.getbbox() is None:
+                return [], in_label                  # ぼかす所が無いフレーム
+            mask_path = os.path.join(self._work_dir, "preview_hq_mask.png")
+            Image.fromarray(np.asarray(mask)).save(mask_path)
+            chains, out_label = blur_overlay.build_chains(
+                mask_path, in_label, "[hqblur]", self._canvas[0], self._canvas[1],
+                config(self._settings), prefix="hqbl")
+            return chains, out_label
+        except Exception:                            # noqa: BLE001 (表示で落とさない)
+            _logger.exception("高精度プレビューへぼかしを反映できませんでした")
+            return [], in_label
+
+    # 高精度プレビューへ画像・動画オーバーレイを足す (ver5 resolve4 §5.9)。
+    # 位置・大きさ・透明度は書き出し (renderer._video_filters) と同じ式で求める。
+    # 戻り値: (チェーン, 出力ラベル, 追加する -i 引数)
+    def _hq_overlay_chains(self, in_label, playhead):
+        chains = []
+        inputs = []
+        current = in_label
+        step = 0
+        timeline = self._controller.timeline
+        for clip in timeline.overlay_elements():
+            if isinstance(clip, SubtitleClip) or not clip.contains(playhead):
+                continue
+            media = timeline.media_by_id(clip.media_id)
+            if media is None or not os.path.exists(media.path or ""):
+                continue
+            index = 1 + step            # 入力 0 はベース映像。1 クリップにつき -i を 1 本足す
+            if media.is_image():
+                inputs += ["-i", media.path]
+            else:
+                offset = max(playhead - clip.timeline_start, 0.0)
+                inputs += ["-ss", f"{clip.source_in + offset:.3f}", "-i", media.path]
+
+            # 拡大率はキャンバス幅に対する比率 (renderer と同じ)
+            target_w = max(int(self._canvas[0] * float(clip.transform.scale or 1.0)), 2)
+            scale_chain = f"scale={target_w}:-2"
+            if float(clip.transform.opacity or 1.0) < 1.0:
+                scale_chain += (f",format=rgba,colorchannelmixer="
+                                f"aa={float(clip.transform.opacity):.3f}")
+            chains.append(f"[{index}:v]{scale_chain}[hqov{step}]")
+
+            # 正規化座標 (-1〜1・Y は上が正) を overlay の左上座標へ変換する
+            pos_x = (float(clip.transform.x or 0.0) + 1.0) * self._canvas[0] / 2.0
+            pos_y = (1.0 - float(clip.transform.y or 0.0)) * self._canvas[1] / 2.0
+            label = f"[hqv{step}]"
+            # 1 枚絵なので enable (表示時間) は付けない
+            chains.append(f"{current}[hqov{step}]overlay="
+                          f"{pos_x:.1f}-w/2:{pos_y:.1f}-h/2{label}")
+            current = label
+            step += 1
+        return chains, current, inputs
 
     # ------------------------------------------------------------------
     # 後片付け

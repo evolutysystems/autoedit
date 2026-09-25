@@ -1,0 +1,183 @@
+2026-09-21 09:46:45,720 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-21 20:11:52,596 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-21 20:12:05,118 [INFO] src.archive.project_resume: ==================================================
+2026-09-21 20:12:05,118 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-21 20:12:05,127 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-21 20:12:05,128 [INFO] src.archive.timeline_builder: clip4 の素材 m10 の区間を 1523.1–1594.2 として復元しました
+2026-09-21 20:12:05,130 [INFO] src.archive.project_resume: 素材の復元情報を 1 件補いました: m10
+2026-09-21 20:12:05,130 [INFO] src.timeline.media_recovery: 使われていない素材のため復旧しません: m7 (C:\Users\evolu\AppData\Local\Temp\archive_clips_g_e62q30\clip4\normalized.mp4)
+2026-09-21 20:12:05,459 [INFO] src.timeline.media_recovery: 使われていない素材のため復旧しません: m9 (C:\Users\evolu\AppData\Local\Temp\archive_clips_3w1it4gp\clip5\normalized.mp4)
+2026-09-21 20:12:05,615 [INFO] src.archive.project_resume: 音声サイドカーが無いため素材 m10 の正規化をやり直します
+2026-09-21 20:12:07,548 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-37.4 LUFS / TP=-17.0 dBTP / LRA=7.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.9 dB)
+2026-09-21 20:12:10,389 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_g_3xkh91\media_m10\normalized.mp4
+2026-09-21 20:12:10,396 [WARNING] src.timeline.project_io: メディアの実体が見つかりません (2 件)。該当クリップを無効化します: m7, m9
+2026-09-21 20:12:10,396 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 1 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-21 20:12:10,396 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-21 20:12:11,131 [INFO] src.blur.store: 素材か設定が変わったため、ぼかしの解析をやり直します
+2026-09-21 20:12:11,210 [INFO] src.blur.analyzer: ぼかし解析: 素材が変わったため、解析をやり直します: m1: 元動画か切り出し範囲が変わりました / m10: 解析していない素材が増えました / m8: 解析していない素材が増えました
+2026-09-21 20:12:11,928 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-21 20:12:12,101 [INFO] src.blur.models: モデルを読み込みました: yolox_tiny.onnx
+2026-09-21 20:12:12,586 [INFO] src.blur.models: モデルを読み込みました: osnet_x0_25.onnx
+2026-09-21 20:12:13,158 [INFO] src.blur.models: モデルを読み込みました: silhouette_encoder.onnx
+2026-09-21 20:12:13,379 [INFO] src.blur.models: モデルを読み込みました: silhouette_decoder.onnx
+2026-09-21 20:14:52,115 [INFO] src.gui.timeline.archive_timeline_dialog: セクション準備開始: 1 区間 / 合計 63.1s
+2026-09-21 20:15:05,229 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-32.1 LUFS / TP=-14.3 dBTP / LRA=6.6 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.0 dB)
+2026-09-21 20:15:23,902 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_g_3xkh91\clip5\normalized.mp4
+2026-09-21 20:15:38,951 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-17 (mean, 測定 1/1 区間)
+2026-09-21 20:15:38,953 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -17 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-21 20:15:39,072 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-21 20:15:44,414 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-17dB, 最小無音=0.60s, 総尺=64.1s)
+2026-09-21 20:15:51,561 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 64.1s (元 64.1s)
+2026-09-21 20:16:01,185 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-21 20:16:01,186 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-21 20:16:21,712 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-21 20:22:38,451 [INFO] src.modules.subtitle_generator: 音声認識完了 (25 セグメント)
+2026-09-21 20:22:38,702 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 25 → 25 件 (カット区間のため 0 件除外)
+2026-09-21 20:22:38,702 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 25 → 25 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-21 20:22:38,703 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 25 件)
+2026-09-21 20:22:38,704 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 1 件 / 想定尺 64.11s (素材 64.11s)
+2026-09-21 20:22:38,705 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 25 件 / 実カットなし)
+2026-09-21 20:22:39,290 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 629.853s へ 64.11s を確保 / 移動 13 件・分割 0 件・切詰 0 件
+2026-09-21 20:22:39,290 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 629.853s へ 64.11s を確保 / 移動 203 件・分割 0 件・切詰 0 件
+2026-09-21 20:22:39,291 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 629.853s へ 64.11s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-09-21 20:22:39,291 [INFO] src.timeline.commands: 貼り付けの割り込み: S2 の 629.853s へ 64.11s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-09-21 20:22:39,294 [INFO] src.archive.timeline_builder: セクション追加: clip5 を 629.85s へ挿入 (VOD 1304.9-1368.0 / 尺 64.11s)
+2026-09-21 20:22:39,294 [INFO] src.archive.timeline_builder: セクション統合: clip1 へ 1 件を畳み込み (VOD 45.0-1368.0)
+2026-09-21 20:23:40,826 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media\m10_audio.m4a (1.7 MB)
+2026-09-21 20:23:42,129 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media\m11_audio.m4a (1.5 MB)
+2026-09-21 20:23:42,130 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:23:42,130 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:23:42,151 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-21 20:23:47,313 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:23:47,313 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:23:47,342 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 20:25:09,088 [INFO] src.timeline.commands: リップル: 629.853〜630.203s (0.35s) を除去 / 削除 0 件・短縮 1 件・移動 241 件
+2026-09-21 20:29:52,298 [INFO] src.timeline.commands: リップル: 641.437〜645.629s (4.19s) を除去 / 削除 0 件・短縮 2 件・移動 235 件
+2026-09-21 20:48:01,836 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:48:01,838 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:48:01,864 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 20:48:07,100 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:48:07,100 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:48:07,124 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 20:48:15,097 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:48:15,114 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:48:15,142 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 20:54:37,562 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 20:54:37,563 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 20:54:37,581 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 21:26:36,673 [INFO] src.blur.tracker: 人物が 79 人を超えたため、短い 29 人は人物 ID を振りません (上限 50 / 枠 50 本は「人物未割り当ての枠」として残ります)
+2026-09-21 21:26:36,674 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 1590 本 → 人物 48 人 (主役 p5)
+2026-09-21 21:26:36,738 [INFO] src.blur.analyzer: ぼかし解析: 人物 ID の付かなかった枠 50 本を「人物未割り当ての枠」として残しました
+2026-09-21 21:26:41,151 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-21 21:26:41,442 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-21 21:26:41,504 [INFO] src.gui.timeline.timeline_editor_dialog: ぼかしの解析をやり直したため、人物への指定の確認を案内します
+2026-09-21 21:29:00,386 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 21:29:00,390 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 21:29:00,403 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 21:29:04,896 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-21 21:29:05,009 [INFO] src.timeline.project_io: 使われていない素材 4 件を保存対象から外しました
+2026-09-21 21:29:05,024 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-21 21:30:23,459 [INFO] src.archive.project_resume: ==================================================
+2026-09-21 21:30:23,459 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-21 21:30:23,477 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-21 21:30:24,004 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (72.30s / 期待 71.11s) → 使いません
+2026-09-21 21:30:24,004 [INFO] src.archive.project_resume: 音声サイドカーが無いため素材 m10 の正規化をやり直します
+2026-09-21 21:30:25,849 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-37.4 LUFS / TP=-17.0 dBTP / LRA=7.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.9 dB)
+2026-09-21 21:30:28,639 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_p_wf0u06\media_m10\normalized.mp4
+2026-09-21 21:30:28,929 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 2 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-21 21:30:28,929 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-21 21:30:29,504 [INFO] src.blur.store: 素材か設定が変わったため、ぼかしの解析をやり直します
+2026-09-21 21:30:29,539 [INFO] src.blur.analyzer: ぼかし解析: 素材が変わったため、解析をやり直します: m10: 元動画か切り出し範囲が変わりました / m11: 解析していない素材が増えました
+2026-09-21 21:30:29,539 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-21 21:54:54,862 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 21:57:43,373 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-21 21:58:06,388 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-21 21:59:22,304 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 21:59:35,753 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:08:44,548 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:10:09,658 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-21 22:10:28,169 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-21 22:10:32,009 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 732.103s へ 5.43s を確保 / 移動 189 件・分割 0 件・切詰 0 件
+2026-09-21 22:12:01,921 [INFO] src.timeline.commands: リップル: 738.103〜758.311s (20.21s) を除去 / 削除 6 件・短縮 1 件・移動 195 件
+2026-09-21 22:12:17,199 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:12:24,933 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:12:31,938 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:12:40,998 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-21 22:15:12,889 [INFO] src.timeline.commands: リップル: 746.077〜754.995s (8.92s) を除去 / 削除 0 件・短縮 2 件・移動 191 件
+2026-09-21 22:17:40,334 [INFO] src.timeline.commands: リップル: 756.957〜772.404s (15.45s) を除去 / 削除 2 件・短縮 0 件・移動 188 件
+2026-09-21 22:18:33,667 [INFO] src.timeline.commands: リップル: 756.957〜828.069s (71.11s) を除去 / 削除 25 件・短縮 0 件・移動 163 件
+2026-09-21 22:24:55,382 [INFO] src.gui.timeline.archive_timeline_dialog: セクション準備開始: 2 区間 / 合計 1655.9s
+2026-09-21 22:28:01,941 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-36.1 LUFS / TP=-14.3 dBTP / LRA=13.2 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.2 dB)
+2026-09-21 22:32:39,389 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_p_wf0u06\clip5\normalized.mp4
+2026-09-21 22:36:15,903 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-21 22:36:15,903 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-21 22:36:16,044 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-21 22:38:17,470 [INFO] src.modules.silence_cutter: 編集点検出: 無音 14 件 / 残す区間 15 件 (閾値=-18dB, 最小無音=0.60s, 総尺=1174.1s)
+2026-09-21 22:41:26,146 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 15 区間 → 1162.5s (元 1174.1s)
+2026-09-21 22:41:26,360 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-21 22:41:26,368 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-21 22:41:43,512 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-21 22:57:27,543 [INFO] src.blur.tracker: 人物が 80 人を超えたため、短い 30 人は人物 ID を振りません (上限 50 / 枠 52 本は「人物未割り当ての枠」として残ります)
+2026-09-21 22:57:27,547 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 1656 本 → 人物 48 人 (主役 p5)
+2026-09-21 22:57:27,748 [INFO] src.blur.analyzer: ぼかし解析: 人物 ID の付かなかった枠 52 本を「人物未割り当ての枠」として残しました
+2026-09-21 22:57:35,300 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-21 22:57:35,877 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-21 22:57:35,968 [INFO] src.gui.timeline.timeline_editor_dialog: ぼかしの解析をやり直したため、人物への指定の確認を案内します
+2026-09-21 23:26:25,023 [INFO] src.modules.subtitle_generator: 音声認識完了 (430 セグメント)
+2026-09-21 23:26:25,203 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 430 → 430 件 (カット区間のため 0 件除外)
+2026-09-21 23:26:25,204 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 430 → 430 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-21 23:26:25,204 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 430 件)
+2026-09-21 23:26:25,205 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 15 件 / 想定尺 1162.49s (素材 1174.10s)
+2026-09-21 23:26:25,205 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 430 件 / 実カットなし)
+2026-09-21 23:26:37,880 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.2 LUFS / TP=-15.4 dBTP / LRA=12.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.6 dB)
+2026-09-21 23:26:56,908 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_p_wf0u06\clip6\normalized.mp4
+2026-09-21 23:27:12,453 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-21 23:27:12,454 [INFO] src.archive.clip_writer: clip6: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-21 23:27:12,552 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-21 23:27:20,604 [INFO] src.modules.silence_cutter: 編集点検出: 無音 4 件 / 残す区間 5 件 (閾値=-18dB, 最小無音=0.60s, 総尺=484.8s)
+2026-09-21 23:27:31,920 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 5 区間 → 481.6s (元 484.8s)
+2026-09-21 23:27:31,921 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-21 23:27:31,921 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-21 23:27:39,005 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-21 23:35:53,771 [INFO] src.modules.subtitle_generator: 音声認識完了 (134 セグメント)
+2026-09-21 23:35:53,922 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 134 → 134 件 (カット区間のため 0 件除外)
+2026-09-21 23:35:53,922 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 134 → 134 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-21 23:35:53,922 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 134 件)
+2026-09-21 23:35:53,923 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 5 件 / 想定尺 481.59s (素材 484.83s)
+2026-09-21 23:35:53,923 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 134 件 / 実カットなし)
+2026-09-21 23:35:54,031 [INFO] src.timeline.commands: 貼り付けの割り込み: V1 の 763.037s へ 1162.49s を確保 / 移動 10 件・分割 0 件・切詰 0 件
+2026-09-21 23:35:54,031 [INFO] src.timeline.commands: 貼り付けの割り込み: S1 の 763.037s へ 1162.49s を確保 / 移動 144 件・分割 1 件・切詰 0 件
+2026-09-21 23:35:54,032 [INFO] src.timeline.commands: 貼り付けの割り込み: V2 の 763.037s へ 1162.49s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-09-21 23:35:54,032 [INFO] src.timeline.commands: 貼り付けの割り込み: S2 の 763.037s へ 1162.49s を確保 / 移動 0 件・分割 0 件・切詰 0 件
+2026-09-21 23:35:54,058 [INFO] src.archive.timeline_builder: clip5: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-21 23:35:54,058 [INFO] src.archive.timeline_builder: セクション追加: clip5 を 763.04s へ挿入 (VOD 2518.0-3690.0 / 尺 1162.49s)
+2026-09-21 23:35:54,148 [INFO] src.archive.timeline_builder: clip6: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-21 23:35:54,149 [INFO] src.archive.timeline_builder: セクション追加: clip6 を 2281.46s へ挿入 (VOD 4052.1-4536.0 / 尺 481.59s)
+2026-09-21 23:35:54,149 [INFO] src.archive.timeline_builder: セクション統合: clip3 へ 2 件を畳み込み (VOD 2518.0-4536.0)
+2026-09-21 23:36:58,631 [INFO] src.timeline.commands: リップル: 756.957〜763.037s (6.08s) を除去 / 削除 10 件・短縮 0 件・移動 738 件
+2026-09-21 23:38:26,356 [INFO] src.timeline.commands: リップル: 756.957〜766.027s (9.07s) を除去 / 削除 3 件・短縮 1 件・移動 734 件
+2026-09-22 00:00:44,408 [INFO] src.timeline.commands: リップル: 782.982〜797.536s (14.55s) を除去 / 削除 3 件・短縮 1 件・移動 717 件
+2026-09-22 00:00:51,301 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 1972px / 使える幅 1920px)。font_size か max_line_length を下げると解消します
+2026-09-22 00:02:47,608 [INFO] src.timeline.commands: リップル: 802.503〜803.866s (1.36s) を除去 / 削除 0 件・短縮 1 件・移動 704 件
+2026-09-22 00:05:47,360 [INFO] src.timeline.commands: リップル: 802.503〜804.401s (1.90s) を除去 / 削除 0 件・短縮 1 件・移動 702 件
+2026-09-22 00:06:36,131 [INFO] src.timeline.commands: リップル: 802.503〜826.756s (24.25s) を除去 / 削除 21 件・短縮 1 件・移動 680 件
+2026-09-22 00:12:52,323 [INFO] src.timeline.commands: リップル: 808.137〜824.740s (16.60s) を除去 / 削除 6 件・短縮 1 件・移動 672 件
+2026-09-22 00:13:38,146 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 00:19:18,090 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 00:26:36,263 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 0 件 / 縁の色 0 件
+2026-09-22 00:37:05,724 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-22 00:37:05,729 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-22 00:39:48,011 [INFO] src.timeline.commands: リップル: 901.758〜903.932s (2.17s) を除去 / 削除 0 件・短縮 3 件・移動 635 件
+2026-09-22 00:43:17,658 [INFO] src.timeline.commands: リップル: 920.411〜943.214s (22.80s) を除去 / 削除 13 件・短縮 1 件・移動 609 件
+2026-09-22 00:44:47,238 [INFO] src.timeline.commands: リップル: 925.903〜932.088s (6.18s) を除去 / 削除 0 件・短縮 1 件・移動 603 件
+2026-09-22 00:45:06,638 [INFO] src.timeline.commands: リップル: 925.903〜927.339s (1.44s) を除去 / 削除 1 件・短縮 1 件・移動 602 件
+2026-09-22 01:52:33,722 [INFO] src.timeline.commands: リップル: 1091.061〜1094.521s (3.46s) を除去 / 削除 0 件・短縮 1 件・移動 541 件
+2026-09-22 01:53:20,884 [INFO] src.timeline.commands: リップル: 1095.075〜1097.880s (2.81s) を除去 / 削除 0 件・短縮 2 件・移動 539 件
+2026-09-22 01:54:58,032 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media\m4_audio.m4a (27.2 MB)
+2026-09-22 01:54:58,233 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media\m6_audio.m4a (11.2 MB)
+2026-09-22 01:54:58,238 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 8 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-22 01:54:58,241 [INFO] src.timeline.project_io: 使われていない素材 2 件を保存対象から外しました
+2026-09-22 01:54:58,277 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-22 01:55:02,338 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 8 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-22 01:55:02,346 [INFO] src.timeline.project_io: 使われていない素材 2 件を保存対象から外しました
+2026-09-22 01:55:02,376 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json

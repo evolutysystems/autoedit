@@ -430,7 +430,7 @@ class ProjectLibraryDialog(QDialog):
             related = project_io.related_paths(
                 path, self._cfg, include_media_dir=delete_media)
             entries = [p for p in (related["media_dir"], related["autosave"],
-                                   related["project"]) if p]
+                                   related["blur_cache"], related["project"]) if p]
             if related["project"]:
                 targets.append((path, entries))
             else:

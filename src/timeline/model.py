@@ -579,6 +579,20 @@ class Timeline:
                 return media
         return None
 
+    # どれかのクリップが参照している素材の ID (ver5 resolve6 §5.5)
+    #
+    # 使用可否 (enabled) は見ない。「使わない」にしただけのクリップが指す素材も
+    # 使用中に数える (使用可否を戻したときに素材が無い、という事態を避けるため)。
+    # ここに入らない素材は、無くても Timeline が成立する = 復旧も保存も要らない。
+    def used_media_ids(self):
+        used = set()
+        for track in self.tracks:
+            for clip in track.clips:
+                media_id = getattr(clip, "media_id", None)
+                if media_id:
+                    used.add(media_id)
+        return used
+
     # 同一パスの既存メディアを返す (D&D の重複登録を避ける / §6.8)
     def media_by_path(self, path):
         import os

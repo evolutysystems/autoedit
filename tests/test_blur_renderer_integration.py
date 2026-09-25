@@ -172,44 +172,60 @@ class BlurEnabledTest(unittest.TestCase):
 
 class BlurFailureTest(unittest.TestCase):
 
-    # 「ぼかすと指定したのに素で出た」を絶対に起こさないこと (§5.9 / §4-5)。
-    # 解析結果が見つからない状態で書き出そうとしたときの振る舞いを見る。
+    # 「ぼかすと指定したのに素で出た」を絶対に起こさないこと (§5.9 / ver5 resolve8 §4-6)。
+    # 「ボカす」と指定してあるのに、マスクを作れない状態で書き出そうとする。
     def _timeline_with_decisions(self):
         from src.blur import decisions as blur_decisions
 
         timeline = _build_timeline(with_subtitle=False)
-        state = blur_decisions.with_identity(
-            blur_decisions.load(timeline), "p2", blur_decisions.BLUR)
-        state["fingerprint"] = "fp-that-does-not-match"
-        blur_decisions.store(timeline, state)
+        clip = timeline.base_clips()[0]
+        span = blur_decisions.span_for(timeline, clip)
+        spec = blur_decisions.make_area_spec(
+            "b1", blur_decisions.BLUR, str(clip.media_id), span, 1.0, (0.2, 0.2, 0.3, 0.4))
+        blur_decisions.store(
+            timeline, blur_decisions.with_spec(blur_decisions.load(timeline), spec))
         return timeline
+
+    # マスク生成を失敗させる (素材が無い環境でも確実に失敗を作るため)
+    def _breaking_mask(self):
+        from src.blur import mask_builder
+
+        original = mask_builder.build
+
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("テスト: マスクを作れない状態")
+
+        mask_builder.build = broken
+        self.addCleanup(lambda: setattr(mask_builder, "build", original))
 
     # フックが無い呼び出し (CLI / テスト) では**出力を中止する**
     def test_aborts_without_callback(self):
         from src.exceptions import TimelineError
 
         timeline = self._timeline_with_decisions()
+        self._breaking_mask()
         settings = {"ffmpeg": {}, "blur": {"enabled": True}}
         with _RendererHarness(self, settings) as harness:
             with self.assertRaises(TimelineError):
                 renderer.render(timeline, harness.context)
 
-    # 利用者が「ぼかしを入れずに出力」を選んだら続行すること
+    # 利用者が「このまま出力」を選んだら続行すること
     def test_continues_when_user_accepts(self):
         timeline = self._timeline_with_decisions()
+        self._breaking_mask()
         settings = {"ffmpeg": {}, "blur": {"enabled": True}}
         with _RendererHarness(self, settings) as harness:
             asked = []
             harness.context.blur_failure_callback = lambda reason: asked.append(reason) or True
             renderer.render(timeline, harness.context)
             self.assertTrue(asked, "確認せずに続行しています")
-            self.assertIsNone(harness.context.blur_mask_path)
 
     # 利用者が「中止」を選んだら出力しないこと
     def test_aborts_when_user_declines(self):
         from src.exceptions import TimelineError
 
         timeline = self._timeline_with_decisions()
+        self._breaking_mask()
         settings = {"ffmpeg": {}, "blur": {"enabled": True}}
         with _RendererHarness(self, settings) as harness:
             harness.context.blur_failure_callback = lambda _reason: False

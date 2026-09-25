@@ -20,7 +20,9 @@ a = Analysis(
         # ライセンス表記 (licenses/) はここには入れない。onedir では datas が
         # _internal/ 配下へ入ってしまい、利用者が開く場所にならないため、
         # リリース手順で exe 直下へコピーする (§5.10.2)。
-        *[(path, 'src/models') for path in glob('models/*.onnx')],
+        # ver5 resolve8: 人物同定 (osnet) と輪郭 (silhouette) を廃止したため、
+        # **使うモデルだけを名前で指定する** (古い .onnx が残っていても同梱しない)。
+        *[(path, 'src/models') for path in glob('models/yolox_tiny.onnx')],
     ] + collect_data_files('budoux'),          # BudouX のモデルJSON等を同梱 (request11)
     hiddenimports=collect_submodules('budoux'),  # BudouX 遅延 import 対策 (request11)
     hookspath=[],

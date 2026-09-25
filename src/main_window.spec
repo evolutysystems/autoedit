@@ -33,10 +33,13 @@ a = Analysis(
         ('ffmpeg/ffprobe.exe', 'ffmpeg'),
         # 透かし素材 (ver5 resolve §8-3)。watermark_overlay が _internal/src/watermark.png を解決する。
         ('watermark.png', 'src'),
-        # トラッキングぼかしのモデル (ver5 resolve2 §8-3)。_internal/src/models/ へ入る。
-        # models/ が空でもビルドは通り、アプリは通常どおり起動する (設定画面に「モデルが見つかりません」と出るだけ)。
+        # トラッキングぼかしのモデル (ver5 resolve8 §9.4)。_internal/src/models/ へ入る。
+        # ver5 resolve8 で人物同定 (osnet) と輪郭 (silhouette) を廃止したため、
+        # **使うモデルだけを名前で指定する** (models/ に古い .onnx が残っていても同梱しない)。
+        # models/ が空でもビルドは通り、アプリは通常どおり起動する
+        # (囲みを模様の変化だけで追うようになる / resolve8 §5.13)。
         # ライセンス表記 (licenses/) は datas に入れず、リリース手順で exe 直下へコピーする (HowToRelease §5.2.1)。
-        *[(path, 'src/models') for path in glob('models/*.onnx')],
+        *[(path, 'src/models') for path in glob('models/yolox_tiny.onnx')],
     ] + collect_data_files('budoux')     # BudouX のモデルJSON等を同梱 (request11)
       + collect_data_files('faster_whisper')  # Silero VAD モデル (assets/silero_vad_v6.onnx)。無いと VAD 無しへ落ち、幻聴対策が効かない
       + collect_data_files('twitchdl')   # twitch-dl の同梱データ (flow17 R3 / Twitch取得)

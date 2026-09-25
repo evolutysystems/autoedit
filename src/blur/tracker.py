@@ -1,395 +1,302 @@
-# 区間内トラッキングと全体クラスタリング (ver5 resolve2 §3.2)
+# 囲んだ場所の追従 (ver5 resolve8 §3.4 / §5.5)
 #
-# 処理は 2 段階に分ける。
-#   ① 区間内トラッキング (tracklet)  IoU + 埋め込み距離で、連続フレームの検出をつなぐ
-#   ② 全体クラスタリング (identity)  全 tracklet の平均埋め込みをまとめ、人物 ID を振る
+# キーフレームで区切った「区切り (segment)」を 1 つずつ追う。
 #
-# ②があるため、**離れたセクション・別ファイルにまたがっても同じ人物 ID になる** (R6)。
-# 単純な階層的クラスタリング (しきい値以下の距離を貪欲に統合) で足りるため、
-# sklearn は使わず numpy で書く (数百件程度の統合に外部ライブラリは要らない)。
-import numpy as np
+#   1. 区切りの端のキーフレームの矩形を初期位置にする
+#   2. 端から離れる向きへ、track.sample_fps の間隔で進む
+#   3. 前の位置の周りを切り出して検出器を走らせ、前の位置と一番重なる枠の**中心**へ移る
+#   4. 検出できなければ、切り出した範囲どうしの位相相関で平行移動だけ補う
+#   5. 分からない状態が hold_sec を超えたら、その区切りの追従を打ち切る (= 見失った)
+#
+# **大きさは追わない** (resolve8 §3.3)。位相相関は拡大縮小に追従せず、検出枠の大きさへ
+# 合わせると利用者が決めた大きさが勝手に変わるため、位置だけを追う。
+# 大きさはキーフレームの線形補間で決まる (plan.rect_at)。
+#
+# 検出モデルが無い環境では 4. だけで追う (枠は途切れやすくなるが機能は動く)。
+import hashlib
+import json
 
 from ..utils.logger import get_logger
-from .geometry import containment, iou
+from . import correlate, decisions as decisions_module, detector, frames, geometry, store
 
 _logger = get_logger(__name__)
 
-# 同じ時刻の 2 つの枠を「同じ人への重複した枠」とみなす条件の既定値
-# (setting.json の blur.analysis.same_box_containment / same_box_center_ratio / ver5 resolve3 §5.8)。
-#   ・小さい方の枠がこの割合以上、大きい枠に入っている (実素材の重複枠は 0.98 前後)
-#   ・横の中心のずれが、小さい方の枠の幅のこの倍率以内
-# 割合だけで判定すると、隣り合って座った 2 人 (実測 0.78 / 中心のずれ 0.60 倍) を 1 人にしてしまう。
-_SAME_BOX_CONTAINMENT = 0.85
-_SAME_BOX_CENTER_RATIO = 0.5
+# 相関を取る前に縮める上限 (切り出しが大きいときだけ縮める)
+_CORRELATE_MAX_PX = 256
+# 相関を取る範囲の余白 (枠の何倍ぶん広げるか)。検出の探索範囲 (search_ratio) より狭くする。
+# 広いと動かない背景が相関を支配し、物が動いても「ずれ 0」と出て位置が止まる (実素材で確認)
+_CORRELATE_MARGIN = 0.25
 
+# 追従の具合
+STATUS_OK = "ok"
+STATUS_LOST = "lost"
+STATUS_FAILED = "failed"
 
-# tracklet 1 本 (同じ素材の中で連続して追えた 1 人ぶん)
-class Tracklet:
-
-    def __init__(self, track_id, media_id, kind="person"):
-        self.id = track_id
-        self.media_id = media_id
-        self.kind = kind
-        self.samples = []            # [{"t","x","y","w","h","score"[,"sil"]}, …] 素材ピクセル座標
-        self.embeddings = []         # サンプルごとの特徴ベクトル
-        self.identity = None         # 全体クラスタリングで決まる人物 ID
-        self.last_sec = 0.0
-
-    @property
-    def start_sec(self):
-        return self.samples[0]["t"] if self.samples else 0.0
-
-    @property
-    def end_sec(self):
-        return self.samples[-1]["t"] if self.samples else 0.0
-
-    @property
-    def duration_sec(self):
-        return max(self.end_sec - self.start_sec, 0.0)
-
-    # 直前の矩形 (IoU の比較対象)
-    def last_box(self):
-        if not self.samples:
-            return None
-        sample = self.samples[-1]
-        return (sample["x"], sample["y"], sample["w"], sample["h"])
-
-    # 平均特徴ベクトル (L2 正規化済み)。埋め込みが無ければ None。
-    def mean_embedding(self):
-        if not self.embeddings:
-            return None
-        mean = np.mean(np.stack(self.embeddings, axis=0), axis=0)
-        norm = float(np.linalg.norm(mean))
-        return mean / norm if norm > 1e-9 else None
-
-    #   silhouette: 身体の輪郭 (枠に対する相対座標 / contour.encode 済みの文字列) or None
-    def add(self, sec, box, embedding, silhouette=None):
-        x, y, w, h = (float(v) for v in box[:4])
-        score = float(box[4]) if len(box) > 4 else 1.0
-        sample = {"t": float(sec), "x": x, "y": y, "w": w, "h": h, "score": score}
-        if silhouette:
-            sample["sil"] = silhouette
-        self.samples.append(sample)
-        if embedding is not None:
-            self.embeddings.append(np.asarray(embedding, dtype=np.float32))
-        self.last_sec = float(sec)
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "identity": self.identity,
-            "media_id": self.media_id,
-            "kind": self.kind,
-            "start_sec": round(self.start_sec, 3),
-            "end_sec": round(self.end_sec, 3),
-            "samples": [_sample_dict(s) for s in self.samples],
-        }
-
-
-# サンプルを保存用の辞書にする (輪郭があるときだけ "sil" を持たせる)
-def _sample_dict(sample):
-    result = {
-        "t": round(sample["t"], 3),
-        "x": round(sample["x"], 1), "y": round(sample["y"], 1),
-        "w": round(sample["w"], 1), "h": round(sample["h"], 1),
-        "score": round(sample["score"], 3),
-    }
-    if sample.get("sil"):
-        result["sil"] = sample["sil"]
-    return result
-
-
-# 1 素材ぶんの区間内トラッキング
-#
-# 人物 ID の採番を決定的にするため (§8-7)、tracklet は**登場順**に番号を振る。
-# 指紋が同じなら解析をやり直しても同じ ID になり、指定 (source["blur"]) が生き残る。
-class Tracker:
-
-    def __init__(self, cfg, media_id, id_prefix="t", start_index=0):
-        analysis = cfg["analysis"]
-        self._iou_threshold = float(analysis["iou_threshold"])
-        self._embed_threshold = float(analysis["embed_threshold"])
-        self._min_track_sec = float(analysis["min_track_sec"])
-        self._sample_interval = 1.0 / max(float(analysis["sample_fps"]), 0.01)
-        self._media_id = media_id
-        self._prefix = id_prefix
-        self._counter = int(start_index)
-        self._active = []
-        self._finished = []
-
-    # 1 サンプル時刻ぶんの検出を取り込む。
-    #   sec        : 素材内の時刻
-    #   boxes      : [(x, y, w, h, score), …]
-    #   embeddings : boxes と同じ並びの特徴ベクトル (無ければ None)
-    #   silhouettes: boxes と同じ並びの輪郭 (encode 済みの文字列 or None / ver5 resolve3 §5.3.3)
-    def update(self, sec, boxes, embeddings=None, silhouettes=None):
-        sec = float(sec)
-        # サンプル 2 回ぶん途切れたら別人として切る (途中で見失った扱い)
-        self._retire(sec, self._sample_interval * 2.5)
-
-        boxes = list(boxes or [])
-        vectors = list(embeddings) if embeddings is not None and len(embeddings) else []
-        shapes = list(silhouettes or [])
-        pairs = self._match(boxes, vectors)
-
-        used = set()
-        for box_index, track in pairs.items():
-            used.add(box_index)
-            vector = vectors[box_index] if box_index < len(vectors) else None
-            shape = shapes[box_index] if box_index < len(shapes) else None
-            track.add(sec, boxes[box_index], vector, shape)
-
-        # 対応が付かなかった検出は新しい tracklet にする
-        for index, box in enumerate(boxes):
-            if index in used:
-                continue
-            self._counter += 1
-            track = Tracklet(f"{self._prefix}{self._counter}", self._media_id)
-            vector = vectors[index] if index < len(vectors) else None
-            shape = shapes[index] if index < len(shapes) else None
-            track.add(sec, box, vector, shape)
-            self._active.append(track)
-
-    # 検出と追跡中 tracklet の対応を決める (貪欲マッチ)。
-    # IoU が高いものから順に確定させ、IoU が足りないものは埋め込み距離で救う。
-    # 埋め込みで救うのは「一瞬の遮蔽で枠が飛んだ」場合を同一人物として続けるため。
-    def _match(self, boxes, vectors):
-        candidates = []
-        for box_index, box in enumerate(boxes):
-            vector = vectors[box_index] if box_index < len(vectors) else None
-            for track in self._active:
-                last = track.last_box()
-                if last is None:
-                    continue
-                overlap = iou(last, box[:4])
-                if overlap >= self._iou_threshold:
-                    # 重なりが十分ある = 位置で確実に同じもの。距離が小さいほど先に確定させる
-                    candidates.append((1.0 - overlap, box_index, track))
-                    continue
-                mean = track.mean_embedding()
-                if vector is None or mean is None:
-                    continue
-                gap = float(1.0 - np.dot(mean, np.asarray(vector, dtype=np.float32)))
-                if gap <= self._embed_threshold:
-                    # 位置は離れたが見た目が一致。IoU の一致より後ろへ回す
-                    candidates.append((1.0 + gap, box_index, track))
-
-        candidates.sort(key=lambda item: item[0])
-        pairs = {}
-        taken = set()
-        for _cost, box_index, track in candidates:
-            if box_index in pairs or id(track) in taken:
-                continue
-            pairs[box_index] = track
-            taken.add(id(track))
-        return pairs
-
-    # 一定時間更新されなかった tracklet を確定させる
-    def _retire(self, sec, max_gap):
-        still_active = []
-        for track in self._active:
-            if sec - track.last_sec > max_gap:
-                self._finish(track)
-            else:
-                still_active.append(track)
-        self._active = still_active
-
-    def _finish(self, track):
-        # 短すぎる tracklet は誤検出とみなして捨てる (§7 min_track_sec)
-        if track.duration_sec + 1e-6 < self._min_track_sec:
-            return
-        self._finished.append(track)
-
-    # 追跡中 (まだ確定していない) の tracklet 一覧。見本画像の紐付けに使う。
-    def active_tracks(self):
-        return list(self._active)
-
-    # 追跡を終え、確定した tracklet の一覧を返す
-    def finish(self):
-        for track in self._active:
-            self._finish(track)
-        self._active = []
-        return list(self._finished)
-
-    # 次の Tracker へ引き継ぐ採番位置 (素材をまたいで ID を重複させない)
-    def next_index(self):
-        return self._counter
+# 向き
+DIR_FORWARD = "fwd"
+DIR_BACKWARD = "back"
 
 
 # ------------------------------------------------------------------
-# 全体クラスタリング (§3.2 ②)
+# 区切り (resolve8 §5.5.1)
 # ------------------------------------------------------------------
 
-# tracklet 群を人物 ID へまとめる。
-#   tracklets : Tracklet の列 (全素材ぶん)
-#   cfg       : config.config() の戻り値
-#   merges    : 手で統合した組 [[人物 ID, 人物 ID], …] (§5.6.6)。解析後に当て込む。
-# 戻り値: identities の一覧 (辞書)。各 tracklet の identity も書き換える。
-#
-# 見た目が近くても、同じフレームに並んで映っている tracklet は同じ群へ入れない (_appears_together)。
-# 服装の似た 2 人 (同じ場所・同じ照明) は全身 ReID の距離が縮みやすく、
-# 距離だけで統合すると 2 人とも主役扱いになり、誰もぼかされなくなるため。
-def cluster(tracklets, cfg, merges=None):
-    tracks = [t for t in tracklets if t.kind == "person"]
-    if not tracks:
+# 指定から追う区切りを作る。span とキーフレームで端が決まる。
+#   戻り値: [{"spec_id","media_id","dir","start","end","start_rect","end_rect","hash"}, …]
+def segments_for(spec, sample_fps):
+    if spec.get("kind") != decisions_module.KIND_AREA:
+        return []
+    if str(spec.get("follow") or decisions_module.FOLLOW_TRACK) != decisions_module.FOLLOW_TRACK:
+        return []                       # 動かさない指定は追わない
+    keys = decisions_module.keys_of(spec)
+    if not keys:
         return []
 
-    threshold = float(cfg["analysis"]["merge_threshold"])
-    max_identities = int(cfg["analysis"]["max_identities"])
-    same_box = (float(cfg["analysis"].get("same_box_containment", _SAME_BOX_CONTAINMENT)),
-                float(cfg["analysis"].get("same_box_center_ratio", _SAME_BOX_CENTER_RATIO)))
+    span = spec.get("span") or {}
+    start = float(span.get("start", 0.0))
+    end = float(span.get("end", 0.0))
+    minimum = 1.0 / max(float(sample_fps), 0.01)
 
-    # 登場順に並べる = 人物 ID の採番を決定的にする (§8-7)
-    tracks.sort(key=lambda t: (t.start_sec, t.id))
-
-    groups = []          # [{"vector": 平均ベクトル, "tracks": [...], "weight": 秒数}]
-    for track in tracks:
-        vector = track.mean_embedding()
-        best_index = -1
-        best_gap = threshold
-        if vector is not None:
-            for index, group in enumerate(groups):
-                if group["vector"] is None:
-                    continue
-                if _appears_together(track, group["tracks"], same_box):
-                    continue
-                gap = float(1.0 - np.dot(group["vector"], vector))
-                if gap < best_gap:
-                    best_gap = gap
-                    best_index = index
-
-        if best_index < 0:
-            groups.append({"vector": vector, "tracks": [track],
-                           "weight": max(track.duration_sec, 1e-6)})
-            continue
-
-        group = groups[best_index]
-        group["tracks"].append(track)
-        # 重み付き平均で群の代表ベクトルを更新する (長く映った tracklet を重く見る)
-        weight = max(track.duration_sec, 1e-6)
-        if vector is not None and group["vector"] is not None:
-            merged = group["vector"] * group["weight"] + vector * weight
-            norm = float(np.linalg.norm(merged))
-            group["vector"] = merged / norm if norm > 1e-9 else group["vector"]
-        group["weight"] += weight
-
-    identities = _to_identities(groups, max_identities)
-    if merges:
-        identities = apply_merges(identities, merges)
-    _assign(identities)
-
-    main = identities[0]["id"] if identities else None
-    _logger.info("人物クラスタリング: tracklet %d 本 → 人物 %d 人 (主役 %s)",
-                 len(tracks), len(identities), main or "なし")
-    return identities
+    out = []
+    if keys[0]["t"] - start > minimum:
+        # 先頭のキーから後ろ向きに、クリップの頭まで追う
+        out.append(_segment(spec, DIR_BACKWARD, start, keys[0]["t"], keys[0], None))
+    for before, after in zip(keys, keys[1:]):
+        if after["t"] - before["t"] > minimum:
+            out.append(_segment(spec, DIR_FORWARD, before["t"], after["t"], before, after))
+    if end - keys[-1]["t"] > minimum:
+        out.append(_segment(spec, DIR_FORWARD, keys[-1]["t"], end, keys[-1], None))
+    return out
 
 
-# 群を identity の辞書へ直す。映っていた合計秒数の多い順に並べ、先頭を主役にする (R3)。
-def _to_identities(groups, max_identities):
-    identities = []
-    for group in groups:
-        total = sum(t.duration_sec for t in group["tracks"])
-        identities.append({
-            "total_sec": total,
-            "vector": group["vector"],
-            "tracks": list(group["tracks"]),
-        })
-
-    # 合計秒数の降順。同点なら先に登場した方を上にする (決定的にするため / §3.3)
-    identities.sort(key=lambda e: (-e["total_sec"], _first_start(e["tracks"])))
-    if len(identities) > max_identities:
-        _logger.info("人物が %d 人を超えたため、短いものから捨てます (上限 %d)",
-                     len(identities), max_identities)
-        identities = identities[:max_identities]
-
-    for index, identity in enumerate(identities):
-        identity["id"] = f"p{index + 1}"
-        identity["main"] = index == 0      # 一番映っている人物 = 主役 (R3)
-    return identities
+# 区切り 1 つを作る。
+#   anchor : 追い始めるキーフレーム / other: 反対の端のキーフレーム (無ければ None)
+def _segment(spec, direction, start, end, anchor, other):
+    segment = {
+        "spec_id": str(spec.get("id") or ""),
+        "media_id": str(spec.get("media_id") or ""),
+        "dir": direction,
+        "start": round(float(start), 3),
+        "end": round(float(end), 3),
+        "start_rect": list(anchor["rect"]),
+        "end_rect": list(other["rect"]) if other is not None else None,
+    }
+    segment["hash"] = _segment_hash(segment)
+    return segment
 
 
-def _first_start(tracks):
-    return min((t.start_sec for t in tracks), default=0.0)
+# 区切りの指紋。**大きさ (w, h) は入れない** = 大きさだけ変えても追い直さない (§5.10.5)
+def _segment_hash(segment):
+    payload = {
+        "media": segment["media_id"],
+        "dir": segment["dir"],
+        "start": round(float(segment["start"]), 3),
+        "end": round(float(segment["end"]), 3),
+        "from": _center(segment["start_rect"]),
+        "to": _center(segment["end_rect"]) if segment["end_rect"] else None,
+    }
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
-# track と同じ素材の同じフレームに、別の位置で映っている tracklet が others にあるか。
-# 1 フレームの別々の位置に写る 2 つの検出は同一人物になり得ない。
-#
-# ただし検出器は 1 人に「全身」と「上半身」の枠を重ねて出すことがあり、
-# その 2 本は同じ時刻に映っていても同一人物である。そこで、共通する時刻の
-# **過半数で枠が離れている**ときだけ「並んで映っている」とみなす。
-# 枠の乗り換えの瞬間は重なりが一時的に下がるため、1 回だけでは決めない。
-#   same_box: (入っている割合の下限, 横の中心のずれの上限倍率) / _same_box を参照
-def _appears_together(track, others, same_box=(_SAME_BOX_CONTAINMENT, _SAME_BOX_CENTER_RATIO)):
-    samples = _samples_by_time(track)
-    for other in others:
-        if other.media_id != track.media_id:
-            continue
-        other_samples = _samples_by_time(other)
-        shared = samples.keys() & other_samples.keys()
-        if not shared:
-            continue
-        apart = sum(1 for t in shared
-                    if not _same_box(_rect(samples[t]), _rect(other_samples[t]), same_box))
-        if apart * 2 > len(shared):
-            return True
-    return False
+def _center(rect):
+    x, y, width, height = (float(v) for v in rect)
+    return [round(x + width / 2.0, 4), round(y + height / 2.0, 4)]
 
 
-# 同じ時刻の 2 つの枠が、1 人への重複した枠 (全身と上半身など) か。
-# 小さい枠がほぼ丸ごと大きい枠に入り、しかも横方向の中心がそろっているときだけ真。
-def _same_box(a, b, same_box):
-    min_containment, max_center_ratio = same_box
-    if containment(a, b) < min_containment:
-        return False
-    smaller_width = min(float(a[2]), float(b[2]))
-    center_gap = abs((a[0] + a[2] / 2.0) - (b[0] + b[2] / 2.0))
-    return center_gap <= max_center_ratio * max(smaller_width, 1e-6)
+# ------------------------------------------------------------------
+# まとめて走らせる入口 (resolve8 §5.5.3)
+# ------------------------------------------------------------------
+
+# 指紋の合わない区切りだけを追い直し、キャッシュへ書く。
+# 戻り値: 追い直した区切りの数
+def ensure_tracks(timeline, settings, tracks, decisions, cfg, on_progress=None, cancel=None):
+    wanted = []
+    for spec in (decisions or {}).get("specs", []):
+        wanted.extend(segments_for(spec, cfg["track"]["sample_fps"]))
+    store.drop_unused(tracks, decisions, wanted)
+
+    missing = store.missing_segments(tracks, wanted)
+    if not missing:
+        _report(on_progress, 1.0)
+        return 0
+
+    total = len(missing)
+    for index, segment in enumerate(missing):
+        if cancel is not None and cancel():
+            break
+        result = track_segment(
+            timeline, settings, segment, cfg,
+            on_progress=lambda ratio, base=index: _report(on_progress, (base + ratio) / total),
+            cancel=cancel)
+        store.put_segment(tracks, segment, result)
+    _report(on_progress, 1.0)
+    _logger.info("ぼかしの追従: %d 区切りを追いました", total)
+    return total
 
 
-# サンプル時刻は素材ごとに同じ刻みで取るため、ミリ秒へ丸めて突き合わせる
-def _samples_by_time(track):
-    return {round(float(sample["t"]), 3): sample for sample in track.samples}
+# 区切り 1 つを追う。戻り値: キャッシュへ入れる辞書
+def track_segment(timeline, settings, segment, cfg, on_progress=None, cancel=None):
+    media = timeline.media_by_id(segment["media_id"])
+    empty = {"hash": segment["hash"], "dir": segment["dir"],
+             "start": segment["start"], "end": segment["end"],
+             "status": STATUS_FAILED, "lost_sec": None, "samples": []}
+    if media is None:
+        _logger.warning("ぼかしの追従: 素材が見つかりません: %s", segment["media_id"])
+        return empty
+
+    transform = geometry.source_to_canvas_transform(media, timeline.width, timeline.height)
+    canvas = (timeline.width, timeline.height)
+    rect = geometry.normalized_rect_to_source(segment["start_rect"], transform, *canvas)
+    if rect[2] < 2 or rect[3] < 2:
+        return empty
+
+    sample_fps = float(cfg["track"]["sample_fps"])
+    anchor_sec = float(segment["start"] if segment["dir"] == DIR_FORWARD else segment["end"])
+    anchor_image = frames.first_frame(media, anchor_sec, settings)
+    if anchor_image is None:
+        _logger.warning("ぼかしの追従: 基準のフレームを取得できません (%.2f 秒)", anchor_sec)
+        return empty
+
+    if segment["dir"] == DIR_FORWARD:
+        stream = frames.forward(media, anchor_sec, float(segment["end"]), sample_fps, settings)
+        length = max(float(segment["end"]) - anchor_sec, 1e-6)
+    else:
+        stream = frames.backward(media, float(segment["start"]), anchor_sec, sample_fps,
+                                 settings, cancel)
+        length = max(anchor_sec - float(segment["start"]), 1e-6)
+
+    # 進捗は「基準の時刻からどれだけ離れたか」で出す
+    def on_step(sec):
+        _report(on_progress, abs(float(sec) - anchor_sec) / length)
+
+    follower = _Follower(cfg)
+    samples, lost_sec = follower.follow(stream, rect, cancel, on_step, anchor_image)
+    _report(on_progress, 1.0)
+
+    if not samples:
+        # 1 点も追えなかった = 追従できていない。キーフレームだけで位置が決まる。
+        return dict(empty, status=STATUS_FAILED)
+
+    ordered = sorted(samples, key=lambda s: s["t"])
+    return {
+        "hash": segment["hash"], "dir": segment["dir"],
+        "start": segment["start"], "end": segment["end"],
+        "status": STATUS_LOST if lost_sec is not None else STATUS_OK,
+        "lost_sec": round(float(lost_sec), 3) if lost_sec is not None else None,
+        "samples": [_to_sample(sample, transform, canvas) for sample in ordered],
+    }
 
 
-def _rect(sample):
-    return (sample["x"], sample["y"], sample["w"], sample["h"])
+# 素材ピクセルのサンプルを、保存する形 (正規化キャンバス座標の中心) へ直す
+def _to_sample(sample, transform, canvas):
+    rect = geometry.source_rect_to_normalized(
+        (sample["x"], sample["y"], sample["w"], sample["h"]), transform, *canvas)
+    return {"t": round(float(sample["t"]), 3),
+            "cx": round(rect[0] + rect[2] / 2.0, 4),
+            "cy": round(rect[1] + rect[3] / 2.0, 4),
+            "score": round(float(sample.get("score", 1.0)), 3)}
 
 
-# 手で統合した組 (§5.6.6) を当て込む。統合後は合計秒数で並べ直す。
-def apply_merges(identities, merges):
-    by_id = {identity["id"]: identity for identity in identities}
-    alias = {}
+# ------------------------------------------------------------------
+# 追従の本体
+# ------------------------------------------------------------------
 
-    def _root(name):
-        while alias.get(name) and alias[name] != name:
-            name = alias[name]
-        return name
+class _Follower:
 
-    for pair in merges or []:
-        if len(pair) < 2:
-            continue
-        first = _root(str(pair[0]))
-        for other in pair[1:]:
-            second = _root(str(other))
-            if first == second or first not in by_id or second not in by_id:
+    def __init__(self, cfg):
+        # 手で囲む対象は検出器が拾いにくいものが多いため、model.detector_score は
+        # 低め (既定 0.2) にしてある (config._DEFAULTS)
+        self._cfg = cfg
+        self._search_ratio = float(cfg["track"]["search_ratio"])
+        self._min_iou = float(cfg["track"]["min_iou"])
+        # 小さな範囲の相関は人物の動きで PSR が下がりやすいため、低い合格ラインを使う
+        self._match_psr = float(cfg["track"]["match_psr"])
+        self._hold_sec = float(cfg["track"]["hold_sec"])
+
+    # frames の順に追う。frames は (時刻, 画像) の反復子 (基準から離れる向き)。
+    # 戻り値 (サンプル列, 見失った時刻 or None)
+    def follow(self, stream, rect, cancel, on_step, anchor_image=None):
+        samples = []
+        previous_image = anchor_image
+        current = tuple(rect)
+        lost_since = None
+        for sec, image in stream:
+            if cancel is not None and cancel():
+                break
+            on_step(sec)
+            found = self._step(image, previous_image, current)
+            if found is None:
+                lost_since = sec if lost_since is None else lost_since
+                if abs(sec - lost_since) > self._hold_sec:
+                    return samples, lost_since
                 continue
-            target = by_id[first]
-            source = by_id[second]
-            target["tracks"].extend(source["tracks"])
-            target["total_sec"] += source["total_sec"]
-            alias[second] = first
-            by_id.pop(second, None)
+            lost_since = None
+            current = found
+            previous_image = image
+            samples.append({"t": float(sec), "x": current[0], "y": current[1],
+                            "w": current[2], "h": current[3], "score": 1.0})
+        return samples, lost_since
 
-    merged = list(by_id.values())
-    merged.sort(key=lambda e: (-e["total_sec"], _first_start(e["tracks"])))
-    for index, identity in enumerate(merged):
-        identity["main"] = index == 0
-    return merged
+    # 1 枚ぶん進める。戻り値: 新しい矩形 (大きさは変えない) / 分からなければ None
+    def _step(self, image, previous_image, rect):
+        found = self._best_detection(image, rect, self._min_iou)
+        if found is not None:
+            # 検出枠の中心へ移し、大きさは囲みのまま保つ (resolve8 §3.3)
+            cx = found[0] + found[2] / 2.0
+            cy = found[1] + found[3] / 2.0
+            return (cx - rect[2] / 2.0, cy - rect[3] / 2.0, rect[2], rect[3])
+        if previous_image is None:
+            return None
+        return self._correlate(previous_image, image, rect)
+
+    # 前の位置の周りを切り出して検出し、前の位置と一番重なる枠を返す (無ければ None)
+    def _best_detection(self, image, rect, min_iou):
+        window = _search_window(image, rect, self._search_ratio)
+        if window is None:
+            return None
+        left, top, right, bottom = window
+        boxes = detector.detect(image[top:bottom, left:right], self._cfg)
+        best = None
+        best_iou = min_iou
+        for x, y, w, h, _score in boxes:
+            candidate = (x + left, y + top, w, h)
+            overlap = geometry.iou(candidate, rect)
+            if overlap >= best_iou:
+                best = candidate
+                best_iou = overlap
+        return best
+
+    # 同じ切り出し範囲の前後 2 枚で位相相関を取り、平行移動を当てる (無ければ None)
+    def _correlate(self, previous_image, image, rect):
+        window = _search_window(image, rect, _CORRELATE_MARGIN)
+        if window is None or previous_image.shape != image.shape:
+            return None
+        left, top, right, bottom = window
+        scale = min(1.0, _CORRELATE_MAX_PX / float(max(right - left, bottom - top, 1)))
+        reference = correlate.shrink(
+            correlate.to_gray(previous_image[top:bottom, left:right]), scale)
+        target = correlate.shrink(correlate.to_gray(image[top:bottom, left:right]), scale)
+        dx, dy, _peak, psr = correlate.phase_correlate(reference, target)
+        if psr < self._match_psr:
+            return None
+        x, y, width, height = rect
+        return (x - dx / scale, y - dy / scale, width, height)
 
 
-# 各 tracklet へ人物 ID を書き戻す
-def _assign(identities):
-    for identity in identities:
-        for track in identity["tracks"]:
-            track.identity = identity["id"]
+# 前の位置を ratio 倍ぶん広げた切り出し範囲 (left, top, right, bottom)。小さすぎれば None。
+def _search_window(image, rect, ratio):
+    height, width = image.shape[:2]
+    x, y, w, h = (float(v) for v in rect)
+    left = int(max(x - w * ratio, 0))
+    top = int(max(y - h * ratio, 0))
+    right = int(min(x + w * (1.0 + ratio), width))
+    bottom = int(min(y + h * (1.0 + ratio), height))
+    if right - left < 16 or bottom - top < 16:
+        return None
+    return left, top, right, bottom
+
+
+def _report(on_progress, ratio):
+    if on_progress is not None:
+        on_progress(min(max(float(ratio), 0.0), 1.0))

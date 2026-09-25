@@ -48,10 +48,21 @@ def recover(timeline, project_path, settings, context=None, relink_callback=None
     # 利用者が差し替え先に選んだフォルダ。素材をまとめて別フォルダへ移した場合、
     # 2 件目以降は同じフォルダに同じ名前で見つかるため聞き直さない。
     known_dirs = []
+    # どのクリップからも参照されていない素材は、無くても Timeline は成立する。
+    # 尋ねても利用者にできることが無いため、差し替えを求めない (ver5 resolve6 §3.3)。
+    used = timeline.used_media_ids()
 
     for media in timeline.media_pool:
         # ① そのまま在る
         if media.path and os.path.exists(media.path):
+            continue
+
+        # ①' 誰も使っていない素材 (セクション追加や削除で残った残骸) は飛ばす。
+        # 「使わない」にしただけのクリップが参照している素材は使用中に数えるため、
+        # 使用可否を戻したときに素材が無い、という事態にはならない。
+        if media.id not in used:
+            _logger.info("使われていない素材のため復旧しません: %s (%s)",
+                         media.id, media.path)
             continue
 
         # ② プロジェクトファイルからの相対パス

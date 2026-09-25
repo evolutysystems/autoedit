@@ -1,0 +1,102 @@
+2026-09-17 16:31:25,767 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-17 16:31:36,310 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-17 16:31:36,310 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.mp4
+2026-09-17 16:31:36,405 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-09-17 16:31:36,657 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-15.2 LUFS / TP=-0.5 dBTP / LRA=1.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-09-17 16:31:36,872 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_bb8e89us\loudness_normalized.mp4
+2026-09-17 16:31:37,482 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-14 (mean, 測定 1/1 区間)
+2026-09-17 16:31:39,122 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -14 dB
+2026-09-17 16:31:39,432 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-14dB, 最小無音=0.60s, 総尺=5.6s)
+2026-09-17 16:31:39,666 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 5.6s (元 5.6s)
+2026-09-17 16:31:42,247 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-17 16:31:42,247 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-17 16:31:49,180 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-17 16:32:04,309 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-17 16:32:04,418 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-17 16:32:04,418 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-17 16:32:04,418 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-17 16:32:04,529 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-09-17 16:32:04,529 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-09-17 16:32:04,529 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 7.1s / 60fps 1920x1080
+2026-09-17 16:32:04,529 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.json
+2026-09-17 16:32:04,529 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-17 16:32:11,927 [INFO] src.pipeline.pipeline_runner: パイプライン中断: ユーザーによるキャンセル
+2026-09-17 16:32:23,174 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-17 16:32:23,174 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.mp4
+2026-09-17 16:32:23,239 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-09-17 16:32:23,476 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-15.2 LUFS / TP=-0.5 dBTP / LRA=1.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-09-17 16:32:23,654 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_bwwd4a5b\loudness_normalized.mp4
+2026-09-17 16:32:24,248 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-14 (mean, 測定 1/1 区間)
+2026-09-17 16:32:25,982 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -14 dB
+2026-09-17 16:32:26,308 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-14dB, 最小無音=0.60s, 総尺=5.6s)
+2026-09-17 16:32:26,566 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 5.6s (元 5.6s)
+2026-09-17 16:32:26,566 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-17 16:32:26,566 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-17 16:32:32,389 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-17 16:32:49,179 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-17 16:32:49,311 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-17 16:32:49,311 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-17 16:32:49,311 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-17 16:32:49,425 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-09-17 16:32:49,425 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-09-17 16:32:49,425 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 7.1s / 60fps 1920x1080
+2026-09-17 16:32:49,428 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.json
+2026-09-17 16:32:49,430 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-17 16:32:50,051 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-17 16:32:50,216 [INFO] src.blur.models: モデルを読み込みました: yolox_tiny.onnx
+2026-09-17 16:32:50,691 [INFO] src.blur.models: モデルを読み込みました: osnet_x0_25.onnx
+2026-09-17 16:32:51,387 [INFO] src.blur.models: モデルを読み込みました: silhouette_encoder.onnx
+2026-09-17 16:32:51,647 [INFO] src.blur.models: モデルを読み込みました: silhouette_decoder.onnx
+2026-09-17 16:33:18,226 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 5 本 → 人物 5 人 (主役 p1)
+2026-09-17 16:33:18,232 [INFO] src.blur.store: ぼかしの解析結果を保存しました: 20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.blur.json
+2026-09-17 16:33:42,230 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 1 クリップ / オーバーレイ 0 件 / 字幕 4 件（使用 4 件）/ ギャップ 0 件
+2026-09-17 16:33:42,238 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.json
+2026-09-17 16:33:42,238 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 5.6s
+2026-09-17 16:33:42,245 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (1920x1080 30fps → 1920x1080 60fps)
+2026-09-17 16:33:50,611 [WARNING] src.timeline.renderer: ベース映像の尺: モデル 5.600s / 実測 5.567s (差 -0.033s / 1 部品)
+2026-09-17 16:33:50,692 [INFO] src.blur.mask_builder: ぼかしマスク: 336 フレーム / 480x270 / ぼかす 4 件 / 守る 1 件
+2026-09-17 16:33:52,873 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (2.0 MB)
+2026-09-17 16:33:52,876 [INFO] src.blur.mask_builder: ぼかしマスク: 人物の輪郭 100% (残りは四角)
+2026-09-17 16:33:52,878 [INFO] src.timeline.renderer: 字幕焼き込み: 4 件
+2026-09-17 16:34:00,872 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source_edited.mp4
+2026-09-17 16:34:00,872 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source_edited.mp4
+2026-09-17 16:48:53,637 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-17 16:48:58,948 [INFO] src.pipeline.pipeline_runner: ==================================================
+2026-09-17 16:48:58,948 [INFO] src.pipeline.pipeline_runner: パイプライン開始: C:/Users/evolu/Downloads/20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.mp4
+2026-09-17 16:48:59,006 [INFO] src.modules.output_profile: 横動画と判定 (入力=1920x1080)
+2026-09-17 16:48:59,259 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-15.2 LUFS / TP=-0.5 dBTP / LRA=1.3 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.5 dB)
+2026-09-17 16:48:59,474 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\autoedit_i_a5erxv\loudness_normalized.mp4
+2026-09-17 16:49:00,073 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-14 (mean, 測定 1/1 区間)
+2026-09-17 16:49:01,615 [INFO] src.pipeline.pipeline_runner: カット閾値を更新し保存: -14 dB
+2026-09-17 16:49:01,943 [INFO] src.modules.silence_cutter: 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-14dB, 最小無音=0.60s, 総尺=5.6s)
+2026-09-17 16:49:02,185 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 1 区間 → 5.6s (元 5.6s)
+2026-09-17 16:49:04,731 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-17 16:49:04,731 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-17 16:49:11,227 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-17 16:49:26,902 [INFO] src.modules.subtitle_generator: 音声認識完了 (4 セグメント)
+2026-09-17 16:49:26,998 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 4 → 4 件 (カット区間のため 0 件除外)
+2026-09-17 16:49:26,998 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 4 → 4 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-17 16:49:26,998 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 4 件)
+2026-09-17 16:49:27,104 [INFO] src.timeline.builder: オープニング配置スキップ (フラグ無効)
+2026-09-17 16:49:27,104 [INFO] src.timeline.builder: エンディング配置スキップ (フラグ無効)
+2026-09-17 16:49:27,104 [INFO] src.timeline.builder: Timeline 構築: V1 1 クリップ (OP=無 / ED=無) / S1 4 字幕 / S2(コメント) 0 字幕 / 全長 7.1s / 60fps 1920x1080
+2026-09-17 16:49:27,106 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.json
+2026-09-17 16:49:27,108 [INFO] src.timeline.audio_source: プレビュー音声に認識用音声を再利用します (未編集)
+2026-09-17 16:49:27,938 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-17 16:49:28,082 [INFO] src.blur.models: モデルを読み込みました: yolox_tiny.onnx
+2026-09-17 16:49:28,161 [INFO] src.blur.models: モデルを読み込みました: osnet_x0_25.onnx
+2026-09-17 16:49:29,098 [INFO] src.blur.models: モデルを読み込みました: silhouette_encoder.onnx
+2026-09-17 16:49:29,272 [INFO] src.blur.models: モデルを読み込みました: silhouette_decoder.onnx
+2026-09-17 16:49:53,039 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 5 本 → 人物 5 人 (主役 p1)
+2026-09-17 16:49:53,285 [INFO] src.blur.store: ぼかしの解析結果を保存しました: 20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.blur.json
+2026-09-17 16:50:16,366 [INFO] src.gui.timeline.timeline_editor_dialog: Timeline 編集確定: V 1 クリップ / オーバーレイ 0 件 / 字幕 4 件（使用 4 件）/ ギャップ 0 件
+2026-09-17 16:50:16,390 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source.timeline.json
+2026-09-17 16:50:16,392 [INFO] src.timeline.renderer: ベース映像構築: 1 クリップ / ギャップ 0 件 / 合計 5.6s
+2026-09-17 16:50:16,392 [INFO] src.timeline.renderer: 素材を正規化: loudness_normalized.mp4 (1920x1080 30fps → 1920x1080 60fps)
+2026-09-17 16:50:23,587 [WARNING] src.timeline.renderer: ベース映像の尺: モデル 5.600s / 実測 5.567s (差 -0.033s / 1 部品)
+2026-09-17 16:50:23,645 [INFO] src.blur.mask_builder: ぼかしマスク: 426 フレーム / 480x270 / ぼかす 4 件 / 守る 1 件
+2026-09-17 16:50:24,882 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (1.0 MB)
+2026-09-17 16:50:24,882 [INFO] src.blur.mask_builder: ぼかしマスク: 人物の輪郭 76% (残りは四角)
+2026-09-17 16:50:24,882 [INFO] src.timeline.renderer: 字幕焼き込み: 4 件
+2026-09-17 16:50:33,069 [INFO] src.modules.output_writer: 出力完了: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source_edited.mp4
+2026-09-17 16:50:33,069 [INFO] src.pipeline.pipeline_runner: パイプライン正常終了: D:/develop/autoedit/output\20260620_AmorphousRelentlessSageAMPEnergy-r2Ir3KLqD4-qoAla_source_edited.mp4

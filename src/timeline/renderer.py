@@ -88,7 +88,9 @@ def _prepare_blur_mask(timeline, context, settings):
 
     context.blur_mask_failed = False
     mask_path = mask_builder.prepare(timeline, context)
-    if mask_path is None and getattr(context, "blur_mask_failed", False):
+    # マスクを作れた場合でも、指定の一部が効かないなら確認する (ver5 resolve8 §5.8)。
+    # 「ボカす」と言われた場所の位置がまったく決まらないときがこれに当たる。
+    if getattr(context, "blur_mask_failed", False):
         _confirm_blur_failure(context)
     return mask_path
 
@@ -99,13 +101,13 @@ def _prepare_blur_mask(timeline, context, settings):
 # 黙って続行することだけは絶対にしない。GUI ではフックで利用者に選ばせ、
 # フックが無い呼び出し (CLI / テスト) では出力を中止する。
 def _confirm_blur_failure(context):
-    reason = ("ぼかしの解析結果が見つからないため、ぼかしを掛けられません。\n"
+    reason = ("ぼかしを掛けられませんでした (マスクを作れませんでした)。\n"
               "ぼかしを入れずに出力しますか？")
     callback = getattr(context, "blur_failure_callback", None)
     if callback is None:
         raise TimelineError(
             "ぼかしを掛けられないため出力を中止しました。"
-            "Timeline 画面を開き直して、ぼかしの解析をやり直してください。")
+            "「ぼかし...」を開き、指定を確かめてください。")
 
     if not callback(reason):
         raise TimelineError("ぼかしを掛けられないため、利用者の指示で出力を中止しました。")

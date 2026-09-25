@@ -1,20 +1,20 @@
-# 「何をぼかす / 守る / 使わないか」の判定 (src/blur/plan.py) とマスクの 2 層合成の単体テスト
+# キーフレーム + 追従の合成 (src/blur/plan.py) の単体テスト
 # 実行: python -m unittest discover -s tests
-# 重点 (docs/request/ver5/resolve3.md §3.4 / §3.5 / §5.4 / §8.1):
-#   ・役割の表 (主役・明示・manual_only・削除した枠・分けた人物・指定に無い領域) のとおりになること
-#   ・削除した領域の古い追従トラックが、画面にも出力にも出ないこと (resolve3 §2.3 (a))
-#   ・「ぼかす」と「ぼかさない」が重なった部分はぼけないこと。フェザーが守る側へ染みないこと
+# 重点 (docs/request/ver5/resolve8.md §5.4 / §8.1 B):
+#   ・**キーフレームの時刻ではキーの矩形になること** (人の指示が追従より強い / §4-7)
+#   ・追従の誤差が区切り全体へ配られ、次のキーフレームで飛ばないこと
+#   ・大きさはキーフレームの線形補間で決まること (追従は位置だけを追う / §3.3)
+#   ・span の外では 1 フレームも効かないこと (R11)
+#   ・見失った先は「ボカす = 保持 / ボカさない = 打ち切り」になること (§4-8)
 import os
 import unittest
 
-import numpy as np
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from src.blur import contour, mask_builder
 from src.blur import decisions as blur_decisions
+from src.blur import tracker
 from src.blur.config import config
-from src.blur.plan import ROLE_BLUR, ROLE_KEEP, BlurPlan
+from src.blur.plan import STATUS_FAILED, STATUS_LOST, BlurPlan
 from src.timeline.model import (
     ORIGIN_SILENCE_CUT,
     TRACK_AUDIO,
@@ -28,294 +28,233 @@ from src.timeline.model import (
 )
 
 
-def _build_timeline():
-    media = [MediaRef("m1", "video", __file__, 100.0, 1920, 1080, 60, True)]
+# ベースクリップ 1 本 (0〜5 秒)。素材の時刻もそのまま 0〜5 秒。
+def _build_timeline(width=1920, height=1080, media_size=(1920, 1080)):
+    media = [MediaRef("m1", "video", __file__, 100.0, media_size[0], media_size[1], 60, True)]
     video = Track("V1", TRACK_VIDEO, 1, name="Video 1", is_base=True, clips=[
-        Clip("c1", "m1", 0.0, 10.0, 0.0, 10.0, origin={"type": ORIGIN_SILENCE_CUT}),
+        Clip("c1", "m1", 0.0, 5.0, 0.0, 5.0, origin={"type": ORIGIN_SILENCE_CUT}),
     ])
     audio = Track("A1", TRACK_AUDIO, 1, name="Audio 1", link_track="V1",
                   clips=[AudioClip("a1", "c1")])
     subtitle = Track("S1", TRACK_SUBTITLE, 1, name="Subtitle 1")
-    return Timeline(fps=60, width=1920, height=1080,
+    return Timeline(fps=60, width=width, height=height,
                     source={"media_id": "m1", "input_path": __file__},
                     media_pool=media, tracks=[video, audio, subtitle])
 
 
-def _samples(x, y, w, h, start=0.0, end=8.0, step=0.2):
-    count = int(round((end - start) / step)) + 1
-    return [{"t": round(start + i * step, 3), "x": x, "y": y, "w": w, "h": h, "score": 0.9}
-            for i in range(count)]
+# 追従結果の入れ物を 1 区切りぶん作る
+def _tracks(spec, segment, samples, status="ok", lost_sec=None):
+    return {"schema": 5, "tracks": {str(spec["id"]): {"media_id": str(spec["media_id"]),
+            "segments": [{"hash": segment["hash"], "dir": segment["dir"],
+                          "start": segment["start"], "end": segment["end"],
+                          "status": status, "lost_sec": lost_sec, "samples": samples}]}}}
 
 
-# 解析結果: 主役 p1 (8 秒) / p2 (4 秒) / 領域 r1 の古い追従 (指定には無い)
-def _build_analysis():
-    return {
-        "schema": 2, "fingerprint": "fp", "sample_fps": 5.0,
-        "identities": [
-            {"id": "p1", "total_sec": 8.0, "main": True, "tracks": ["t1"]},
-            {"id": "p2", "total_sec": 4.0, "main": False, "tracks": ["t2"]},
-        ],
-        "tracks": [
-            {"id": "t1", "identity": "p1", "media_id": "m1", "kind": "person",
-             "samples": _samples(200, 100, 400, 800)},
-            {"id": "t2", "identity": "p2", "media_id": "m1", "kind": "person",
-             "samples": _samples(500, 100, 400, 800, 2.0, 6.0)},
-            {"id": "r1_m1_0", "identity": "r1", "media_id": "m1", "kind": "region",
-             "shape_hash": "old", "samples": _samples(1500, 100, 200, 200)},
-        ],
-    }
+def _center(rect):
+    return (round(rect[0] + rect[2] / 2.0, 4), round(rect[1] + rect[3] / 2.0, 4))
 
 
-class RoleTest(unittest.TestCase):
+class RectAtTest(unittest.TestCase):
 
     def setUp(self):
         self.timeline = _build_timeline()
-        self.analysis = _build_analysis()
-        self.cfg = config({"blur": {"enabled": True, "render": {"shape": "rounded"}}})
+        self.cfg = config({"blur": {"enabled": True}})
+        self.clip = self.timeline.base_clips()[0]
+        self.span = blur_decisions.span_for(self.timeline, self.clip)
+        # キー 2 点: 1.0 秒 (中心 0.35) → 3.0 秒 (中心 0.55)
+        decisions = blur_decisions.with_spec(
+            blur_decisions._empty(),                  # noqa: SLF001 (テストのため内部を使う)
+            blur_decisions.make_area_spec("b1", blur_decisions.BLUR, "m1", self.span,
+                                          1.0, (0.3, 0.2, 0.1, 0.3)))
+        self.decisions = blur_decisions.with_key(decisions, "b1", 3.0, (0.5, 0.2, 0.1, 0.3))
+        self.spec = self.decisions["specs"][0]
+        segments = tracker.segments_for(self.spec, self.cfg["track"]["sample_fps"])
+        self.middle = next(s for s in segments
+                           if s["dir"] == "fwd" and abs(s["start"] - 1.0) < 1e-6)
+        self.head = next(s for s in segments if s["dir"] == "back")
 
-    def _plan(self, state=None):
-        return BlurPlan(self.timeline, self.analysis, state or blur_decisions._empty(), self.cfg)
+    # 追従サンプル (1.0〜3.0 秒 / 終端で error ぶんずれる)
+    def _samples(self, error=0.0, upto=3.0):
+        samples = []
+        steps = int(round((upto - 1.0) / 0.1))
+        for index in range(steps + 1):
+            t = round(1.0 + index * 0.1, 3)
+            ratio = index / max(steps, 1)
+            samples.append({"t": t, "cx": 0.35 + (0.20 - error) * ratio, "cy": 0.35,
+                            "score": 1.0})
+        return samples
 
-    def _role(self, plan, track_id):
-        return plan.entry_of(track_id)["role"]
+    def _plan(self, tracks=None, decisions=None):
+        return BlurPlan(self.timeline, tracks, decisions or self.decisions, self.cfg)
 
-    # blur_others: 主役は守り、それ以外はぼかす
-    def test_blur_others(self):
+    # B1: キーフレームの時刻は、追従があってもキーの矩形になること
+    def test_key_time_uses_the_key(self):
+        plan = self._plan(_tracks(self.spec, self.middle, self._samples(error=0.02)))
+        self.assertEqual(_center(plan.rect_at(self.spec, 1.0)), (0.35, 0.35))
+        self.assertEqual(_center(plan.rect_at(self.spec, 3.0)), (0.55, 0.35))
+
+    # B2: 追従が無くてもキーフレームの時刻はキーの矩形になること
+    def test_key_time_without_tracking(self):
         plan = self._plan()
-        self.assertEqual(plan.main_id, "p1")
-        self.assertEqual(self._role(plan, "t1"), ROLE_KEEP)
-        self.assertEqual(self._role(plan, "t2"), ROLE_BLUR)
+        self.assertEqual(_center(plan.rect_at(self.spec, 1.0)), (0.35, 0.35))
+        self.assertEqual(_center(plan.rect_at(self.spec, 3.0)), (0.55, 0.35))
 
-    # manual_only で未指定の人物は「対象外」(守る対象でもない / §3.4)
-    def test_manual_only_unmarked_is_unused(self):
-        state = blur_decisions._empty()
-        state["default_policy"] = "manual_only"
-        plan = self._plan(state)
-        self.assertIsNone(self._role(plan, "t2"))
-        # 主役は manual_only でも暗黙に守る
-        self.assertEqual(self._role(plan, "t1"), ROLE_KEEP)
-
-    # 明示指定が最優先
-    def test_explicit(self):
-        state = blur_decisions.with_identity(blur_decisions._empty(), "p1", blur_decisions.BLUR)
-        state = blur_decisions.with_identity(state, "p2", blur_decisions.KEEP)
-        plan = self._plan(state)
-        self.assertEqual(self._role(plan, "t1"), ROLE_BLUR)
-        self.assertEqual(self._role(plan, "t2"), ROLE_KEEP)
-
-    # 削除した枠は使わず、主役の数え方からも外れる (主役が入れ替わる)
-    def test_excluded_track(self):
-        anchor = blur_decisions.track_anchor(self.analysis["tracks"][0])
-        state = blur_decisions.with_excluded(blur_decisions._empty(), anchor)
-        plan = self._plan(state)
-        self.assertIsNone(self._role(plan, "t1"))
-        self.assertTrue(plan.entry_of("t1")["excluded"])
-        self.assertEqual(plan.main_id, "p2")
-        self.assertEqual(len(plan.excluded_entries()), 1)
-
-    # アンカーは解析し直して tracklet ID が変わっても当たる
-    def test_anchor_survives_renumbering(self):
-        anchor = blur_decisions.track_anchor(self.analysis["tracks"][1])
-        self.analysis["tracks"][1]["id"] = "t99"
-        state = blur_decisions.with_excluded(blur_decisions._empty(), anchor)
-        self.assertTrue(self._plan(state).entry_of("t99")["excluded"])
-
-    # 別の人物にした枠は新しい人物 ID (s1) になり、既存の人物 ID は変わらない
-    def test_split_track(self):
-        anchor = blur_decisions.track_anchor(self.analysis["tracks"][1])
-        state = blur_decisions.with_split(blur_decisions._empty(), anchor)
-        plan = self._plan(state)
-        self.assertEqual(plan.identity_of("t2"), "s1")
-        self.assertEqual([i["id"] for i in plan.identities], ["p1", "p2", "s1"])
-        self.assertEqual(self._role(plan, "t2"), ROLE_BLUR)
-        # 分けた人物へ指定できる
-        state = blur_decisions.with_identity(state, "s1", blur_decisions.KEEP)
-        self.assertEqual(self._role(self._plan(state), "t2"), ROLE_KEEP)
-
-    # 指定に無い領域の古いトラックは、画面にも出力にも出ない (§2.3 (a))
-    def test_orphan_region_is_hidden(self):
+    # B3: 追従が無ければ間は線形補間になること
+    def test_linear_without_tracking(self):
         plan = self._plan()
-        shapes = plan.shapes_at("m1", 4.0, include_unused=True)
-        self.assertNotIn("r1_m1_0", [s["key"] for s in shapes])
+        self.assertEqual(_center(plan.rect_at(self.spec, 2.0)), (0.45, 0.35))
 
-    # 指定と形の指紋が違う古いトラックは使わない (§5.7 (2))
-    def test_stale_region_track_is_ignored(self):
-        region = {"id": "r1", "kind": "place", "mode": "blur", "media_id": "m1",
-                  "anchor_sec": 1.0, "path": [[0.8, 0.1], [0.9, 0.1], [0.9, 0.2]]}
-        state = blur_decisions.with_region(blur_decisions._empty(), region)
-        plan = self._plan(state)
-        self.assertIsNone(plan.entry_of("r1_m1_0")["role"])
-        self.assertEqual([r["id"] for r in plan.untracked_regions()], ["r1"])
+    # B4: 追従の誤差は区切り全体へ配られ、次のキーで飛ばないこと
+    def test_error_is_spread(self):
+        plan = self._plan(_tracks(self.spec, self.middle, self._samples(error=0.02)))
+        # 追従だけなら 2.0 秒で 0.44。誤差 0.02 の半分を足して 0.45 になる
+        self.assertEqual(_center(plan.rect_at(self.spec, 2.0)), (0.45, 0.35))
+        # 直前のコマでもキーの位置へ十分近い (飛ばない)
+        self.assertAlmostEqual(_center(plan.rect_at(self.spec, 2.98))[0], 0.55, places=2)
 
-        # 指紋が合えば使う。ぼかさない領域は守る形になる
-        self.analysis["tracks"][2]["shape_hash"] = blur_decisions.region_shape_hash(region)
-        state = blur_decisions.with_region_mode(state, "r1", blur_decisions.KEEP)
-        self.analysis["tracks"][2]["shape_hash"] = blur_decisions.region_shape_hash(
-            state["regions"][0])
-        self.assertEqual(self._plan(state).entry_of("r1_m1_0")["role"], ROLE_KEEP)
+    # B5: 大きさはキーの線形補間。位置は追従に従うこと
+    def test_size_is_interpolated(self):
+        decisions = blur_decisions.with_key(self.decisions, "b1", 3.0, (0.5, 0.2, 0.2, 0.3))
+        spec = decisions["specs"][0]
+        plan = self._plan(_tracks(spec, self.middle, self._samples()), decisions)
+        self.assertAlmostEqual(plan.rect_at(spec, 2.0)[2], 0.15, places=4)
+        self.assertAlmostEqual(plan.rect_at(spec, 1.0)[2], 0.1, places=4)
+        self.assertAlmostEqual(plan.rect_at(spec, 3.0)[2], 0.2, places=4)
 
-    # 追従できなかった印 (サンプルが空) は「追従できていない」と分かる
-    def test_untracked_marker(self):
-        region = {"id": "r2", "kind": "object", "mode": "blur", "media_id": "m1",
-                  "anchor_sec": 1.0, "path": [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]]}
-        state = blur_decisions.with_region(blur_decisions._empty(), region)
-        self.analysis["tracks"].append({
-            "id": "r2_none", "identity": "r2", "kind": "manual", "media_id": "m1",
-            "shape_hash": blur_decisions.region_shape_hash(region), "samples": []})
-        plan = self._plan(state)
-        self.assertIn("r2", [r["id"] for r in plan.untracked_regions()])
-        self.assertNotIn("r2", [s["identity"] for s in plan.shapes_at("m1", 1.0)])
-
-    # 前後へ伸ばすのはぼかす形だけ (守る形は伸ばさない)
-    def test_pad_only_for_blur(self):
+    # B6: span の外では位置を返さないこと
+    def test_outside_the_span(self):
         plan = self._plan()
-        pad = self.cfg["render"]["pad_sec"]
-        roles = {s["identity"]: s["role"] for s in plan.shapes_at("m1", 6.0 + pad / 2)}
-        self.assertEqual(roles.get("p2"), ROLE_BLUR)
-        roles = {s["identity"] for s in plan.shapes_at("m1", 8.0 + pad / 2)}
-        self.assertNotIn("p1", roles)
+        self.assertIsNone(plan.rect_at(self.spec, 5.5))
+        self.assertIsNone(plan.rect_at(self.spec, -0.5))
+
+    # B7: 見失った先 / ボカす = 最後に追えた位置を保持すること
+    def test_lost_blur_holds(self):
+        # 末尾の区切り (3.0〜5.0 秒) で 4.0 秒に見失う
+        tail = next(s for s in tracker.segments_for(self.spec, 10.0)
+                    if s["dir"] == "fwd" and abs(s["start"] - 3.0) < 1e-6)
+        samples = [{"t": 3.0 + i * 0.1, "cx": 0.55 + i * 0.01, "cy": 0.35, "score": 1.0}
+                   for i in range(11)]
+        plan = self._plan(_tracks(self.spec, tail, samples, status="lost", lost_sec=4.0))
+        held = plan.rect_at(self.spec, 4.8)
+        self.assertIsNotNone(held)
+        self.assertEqual(_center(held)[0], round(samples[-1]["cx"], 4))
+
+    # B8: 見失った先 / ボカさない = 穴を閉じること (位置を返さない)
+    def test_lost_keep_disappears(self):
+        decisions = blur_decisions.with_spec_mode(self.decisions, "b1", blur_decisions.KEEP)
+        spec = decisions["specs"][0]
+        tail = next(s for s in tracker.segments_for(spec, 10.0)
+                    if s["dir"] == "fwd" and abs(s["start"] - 3.0) < 1e-6)
+        samples = [{"t": 3.0 + i * 0.1, "cx": 0.55, "cy": 0.35, "score": 1.0} for i in range(11)]
+        plan = self._plan(_tracks(spec, tail, samples, status="lost", lost_sec=4.0), decisions)
+        self.assertIsNone(plan.rect_at(spec, 4.8))
+
+    # B9: 見失っても次のキーフレームがあれば、そこへ向かって結ぶこと
+    def test_lost_walks_to_the_next_key(self):
+        # 2.0 秒 (中心 0.45) までしか追えなかった場合
+        samples = [{"t": round(1.0 + i * 0.1, 3), "cx": 0.35 + 0.10 * (i / 10.0),
+                    "cy": 0.35, "score": 1.0} for i in range(11)]
+        plan = self._plan(_tracks(self.spec, self.middle, samples,
+                                  status="lost", lost_sec=2.0))
+        # 2.0 秒の位置 (0.45) と 3.0 秒のキー (0.55) の中間
+        self.assertAlmostEqual(_center(plan.rect_at(self.spec, 2.5))[0], 0.50, places=2)
+
+    # B10: 「動かさない」なら追従結果を使わないこと
+    def test_fixed_ignores_tracking(self):
+        decisions = blur_decisions.with_spec_follow(self.decisions, "b1",
+                                                    blur_decisions.FOLLOW_FIXED)
+        spec = decisions["specs"][0]
+        samples = [{"t": round(1.0 + i * 0.1, 3), "cx": 0.35, "cy": 0.80, "score": 1.0}
+                   for i in range(21)]
+        plan = self._plan(_tracks(spec, self.middle, samples), decisions)
+        # 追従を使っていたら中心の y が 0.80 になる
+        self.assertEqual(_center(plan.rect_at(spec, 2.0)), (0.45, 0.35))
+
+    # 先頭の区切り (後ろ向き) は追従の位置をそのまま使うこと
+    def test_backward_segment(self):
+        samples = [{"t": round(i * 0.1, 3), "cx": 0.20 + i * 0.015, "cy": 0.35, "score": 1.0}
+                   for i in range(11)]
+        plan = self._plan(_tracks(self.spec, self.head, samples))
+        self.assertEqual(_center(plan.rect_at(self.spec, 0.5))[0], round(samples[5]["cx"], 4))
 
 
-class SilhouetteSelectionTest(unittest.TestCase):
+class LayersTest(unittest.TestCase):
 
     def setUp(self):
         self.timeline = _build_timeline()
-        self.cfg = config({"blur": {"enabled": True, "render": {"shape": "silhouette"}}})
-        square = contour.encode(contour.normalize(
-            [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)], 64))
-        samples = _samples(500, 100, 400, 800, 0.0, 4.0)
-        samples[0]["sil"] = square          # 0.0 秒にだけ輪郭がある
-        self.analysis = {"schema": 2, "sample_fps": 5.0,
-                         "identities": [{"id": "p1", "total_sec": 4.0, "main": True}],
-                         "tracks": [{"id": "t1", "identity": "p1", "media_id": "m1",
-                                     "kind": "person", "samples": samples}]}
+        self.cfg = config({"blur": {"enabled": True}})
+        self.clip = self.timeline.base_clips()[0]
+        span = blur_decisions.span_for(self.timeline, self.clip)
+        decisions = blur_decisions.with_spec(
+            blur_decisions._empty(),                  # noqa: SLF001
+            blur_decisions.make_frame_spec("b1", "m1", span), to_bottom=True)
+        decisions = blur_decisions.with_spec(decisions, blur_decisions.make_area_spec(
+            "b2", blur_decisions.KEEP, "m1", span, 1.0, (0.3, 0.2, 0.1, 0.3)))
+        decisions = blur_decisions.with_spec(decisions, blur_decisions.make_area_spec(
+            "b3", blur_decisions.BLUR, "m1", span, 1.0, (0.32, 0.22, 0.03, 0.05)))
+        self.decisions = decisions
+        self.plan = BlurPlan(self.timeline, None, decisions, self.cfg)
 
-    def _silhouette(self, sec):
-        plan = BlurPlan(self.timeline, self.analysis, blur_decisions._empty(), self.cfg)
-        return plan.shapes_at("m1", sec)[0]["silhouette"]
+    # B11: 重ね順のまま返ること
+    def test_layer_order(self):
+        layers = self.plan.layers_at("m1", 1.0)
+        self.assertEqual([layer["spec"]["id"] for layer in layers], ["b1", "b2", "b3"])
+        self.assertEqual([layer["mode"] for layer in layers], ["blur", "keep", "blur"])
 
-    # 輪郭のある時刻の近くでは輪郭を使い、max_gap_sec を超えたら矩形へ落とす
-    def test_gap_falls_back_to_rect(self):
-        self.assertIsNotNone(self._silhouette(0.5))
-        self.assertIsNone(self._silhouette(self.cfg["silhouette"]["max_gap_sec"] + 0.5))
+    # span の外では 1 件も返らないこと
+    def test_outside_the_span(self):
+        self.assertEqual(self.plan.layers_at("m1", 6.0), [])
+        self.assertEqual(self.plan.layers_at("m2", 1.0), [])
 
-    # 小さすぎる輪郭 (取り損ね) は使わない
-    def test_small_silhouette_is_ignored(self):
-        tiny = contour.encode(contour.normalize(
-            [(0.45, 0.45), (0.55, 0.45), (0.55, 0.55), (0.45, 0.55)], 64))
-        self.analysis["tracks"][0]["samples"][0]["sil"] = tiny
-        self.assertIsNone(self._silhouette(0.0))
+    # 画面全体の形はキャンバス全体になること
+    def test_frame_shape(self):
+        shape = self.plan.layers_at("m1", 1.0)[0]["shape"]
+        self.assertEqual(shape["kind"], blur_decisions.KIND_FRAME)
+        self.assertEqual(shape["rect"], (0.0, 0.0, 1920.0, 1080.0))
 
+    # 既定の呼び名と説明
+    def test_labels(self):
+        specs = self.decisions["specs"]
+        self.assertEqual(self.plan.label_of(specs[0]), "画面全体をぼかす")
+        self.assertEqual(self.plan.label_of(specs[1]), "ボカさない 1")
+        self.assertEqual(self.plan.label_of(specs[2]), "ボカす 2")
+        self.assertIn("キー 1 点", self.plan.describe(specs[1]))
 
-class MotionMarginTest(unittest.TestCase):
+    # マスクの要否
+    def test_has_blur(self):
+        self.assertTrue(self.plan.has_blur())
+        keep_only = blur_decisions.without_spec(
+            blur_decisions.without_spec(self.decisions, "b1"), "b3")
+        self.assertFalse(BlurPlan(self.timeline, None, keep_only, self.cfg).has_blur())
 
-    # 1 秒で横へ move_px 動く人物 (0〜4 秒 / 0.2 秒ごと) と、動かない主役
-    def _analysis(self, move_px, with_silhouette=True):
-        square = contour.encode(contour.normalize(
-            [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)], 64))
-        moving = [{"t": round(i * 0.2, 3), "x": 500 + move_px * i * 0.2, "y": 100,
-                   "w": 300, "h": 800, "score": 0.9} for i in range(21)]
-        still = _samples(1400, 100, 300, 800, 0.0, 4.0)
-        for sample in moving + still:
-            if with_silhouette:
-                sample["sil"] = square
-        return {"schema": 2, "sample_fps": 5.0,
-                "identities": [{"id": "p1", "total_sec": 4.0, "main": True},
-                               {"id": "p2", "total_sec": 3.9, "main": False}],
-                "tracks": [{"id": "t1", "identity": "p1", "media_id": "m1", "kind": "person",
-                            "samples": still},
-                           {"id": "t2", "identity": "p2", "media_id": "m1", "kind": "person",
-                            "samples": moving}]}
-
-    def _shapes(self, analysis, **blur_cfg):
-        cfg = config({"blur": dict({"enabled": True}, **blur_cfg)})
-        plan = BlurPlan(_build_timeline(), analysis, blur_decisions._empty(), cfg)
-        return {s["identity"]: s for s in plan.shapes_at("m1", 2.0)}
-
-    # 動かない人物にも、人物の幅に比例した余白が付く
-    def test_static_margin_scales_with_person(self):
-        shapes = self._shapes(self._analysis(0))
-        self.assertAlmostEqual(shapes["p2"]["motion"], 0.0)
-        # 人物の幅 300 x 0.15 = 45 (画面幅 1920 x 0.01 = 19.2 より大きい)
-        self.assertAlmostEqual(shapes["p2"]["grow"], 45.0)
-
-    # 激しく動くほど余白が広がり、上限 (枠の長い辺 x 0.5) で止まる
-    def test_margin_grows_with_motion(self):
-        slow = self._shapes(self._analysis(100))["p2"]
-        fast = self._shapes(self._analysis(400))["p2"]
-        self.assertGreater(slow["grow"], 45.0)
-        self.assertGreater(fast["grow"], slow["grow"])
-        huge = self._shapes(self._analysis(5000))["p2"]
-        self.assertLessEqual(huge["grow"], 800 * 0.5 + 1e-6)
-
-    # 動いた量が人物の幅の fast_motion_box_ratio を超えたら、輪郭をやめて四角でぼかす
-    def test_fast_motion_falls_back_to_rect(self):
-        # 0.3 秒で 100 * 0.3 = 30px < 300 * 0.15 = 45px → 輪郭のまま
-        self.assertIsNotNone(self._shapes(self._analysis(100))["p2"]["silhouette"])
-        # 0.3 秒で 400 * 0.3 = 120px > 45px → 四角
-        self.assertIsNone(self._shapes(self._analysis(400))["p2"]["silhouette"])
-        # 0 にすれば切り替えない
-        shapes = self._shapes(self._analysis(400), silhouette={"fast_motion_box_ratio": 0.0})
-        self.assertIsNotNone(shapes["p2"]["silhouette"])
-
-    # 守る人物には、既定では余白を付けない (keep_motion_margin で動いた量ぶんだけ付けられる)
-    def test_keep_margin_is_opt_in(self):
-        analysis = self._analysis(0)
-        # 主役 (守る) を動かす
-        for index, sample in enumerate(analysis["tracks"][0]["samples"]):
-            sample["x"] = 1400 - 300 * index * 0.2
-        self.assertEqual(self._shapes(analysis)["p1"]["grow"], 0.0)
-        shapes = self._shapes(analysis, render={"keep_motion_margin": True})
-        self.assertGreater(shapes["p1"]["grow"], 0.0)
-
-    # 余白はマスクにも効く: 動いている人物ほど白い面積が広い
-    def test_mask_area_grows_with_motion(self):
-        cfg = config({"blur": {"enabled": True,
-                               "silhouette": {"fast_motion_box_ratio": 0.0}}})
-        timeline = _build_timeline()
-        areas = []
-        for move in (0, 100):
-            mask = mask_builder.frame_mask(timeline, self._analysis(move),
-                                           blur_decisions._empty(), cfg, 2.0)
-            if mask is None:
-                self.skipTest("PIL が使えないためマスクを作れません")
-            areas.append(int((np.asarray(mask) > 128).sum()))
-        self.assertGreater(areas[1], areas[0])
+    # 追従の具合を伝えること
+    def test_status(self):
+        spec = self.decisions["specs"][1]
+        segment = tracker.segments_for(spec, 10.0)[0]
+        lost = _tracks(spec, segment, [{"t": 0.5, "cx": 0.35, "cy": 0.35, "score": 1.0}],
+                       status="lost", lost_sec=0.5)
+        self.assertEqual(BlurPlan(self.timeline, lost, self.decisions, self.cfg)
+                         .status_of(spec)["status"], STATUS_LOST)
+        failed = _tracks(spec, segment, [], status="failed")
+        self.assertEqual(BlurPlan(self.timeline, failed, self.decisions, self.cfg)
+                         .status_of(spec)["status"], STATUS_FAILED)
+        self.assertIsNone(self.plan.status_of(self.decisions["specs"][0])["status"])
 
 
-class KeepPriorityMaskTest(unittest.TestCase):
+class LetterboxTest(unittest.TestCase):
+    """B12: レターボックスのある素材でも正規化座標 → キャンバス px が合うこと"""
 
-    # ぼかす枠 (p2) と守る枠 (主役 p1) が重なった部分はぼけない (Q2)
-    def test_overlap_is_not_blurred(self):
-        timeline = _build_timeline()
-        analysis = _build_analysis()
-        cfg = config({"blur": {"enabled": True, "render": {"shape": "rect", "margin_ratio": 0.0}}})
-        mask = mask_builder.frame_mask(timeline, analysis, blur_decisions._empty(), cfg, 4.0)
-        if mask is None:
-            self.skipTest("PIL が使えないためマスクを作れません")
-        pixels = np.asarray(mask)
-        width, height = mask_builder.mask_size(timeline, cfg)
-        scale = width / 1920.0
-        row = int(500 * scale)
-        # p1 は x=200〜600 / p2 は x=500〜900。重なり (500〜600) は守る = 0
-        self.assertEqual(int(pixels[row, int(550 * scale)]), 0)
-        # p2 だけの部分 (700〜900) はぼかす
-        self.assertGreater(int(pixels[row, int(800 * scale)]), 200)
-        # 守る形の境界のすぐ内側へ、フェザーが染みていない
-        self.assertEqual(int(pixels[row, int(598 * scale)]), 0)
-
-    # 守る形が無いフレームは、従来どおりぼかす層だけになる
-    def test_no_keep_same_as_blur_layer(self):
-        timeline = _build_timeline()
-        analysis = _build_analysis()
-        state = blur_decisions.with_identity(blur_decisions._empty(), "p1", blur_decisions.BLUR)
-        cfg = config({"blur": {"enabled": True, "render": {"shape": "rect"}}})
-        mask = mask_builder.frame_mask(timeline, analysis, state, cfg, 4.0)
-        if mask is None:
-            self.skipTest("PIL が使えないためマスクを作れません")
-        pixels = np.asarray(mask)
-        scale = pixels.shape[1] / 1920.0
-        self.assertGreater(int(pixels[int(500 * scale), int(550 * scale)]), 200)
+    def test_portrait_canvas(self):
+        timeline = _build_timeline(width=1080, height=1920, media_size=(1920, 1080))
+        cfg = config({"blur": {"enabled": True}})
+        span = blur_decisions.span_for(timeline, timeline.base_clips()[0])
+        decisions = blur_decisions.with_spec(
+            blur_decisions._empty(),                  # noqa: SLF001
+            blur_decisions.make_area_spec("b1", blur_decisions.BLUR, "m1", span,
+                                          1.0, (0.25, 0.4, 0.5, 0.2)))
+        plan = BlurPlan(timeline, None, decisions, cfg)
+        rect = plan.canvas_rect_at(decisions["specs"][0], 1.0)
+        self.assertEqual([round(v) for v in rect], [270, 768, 540, 384])
 
 
 if __name__ == "__main__":

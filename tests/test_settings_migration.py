@@ -235,7 +235,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-# トラッキングぼかしの設定 (ver5 resolve2 §7 / §5.8)
+# トラッキングぼかしの設定 (ver5 resolve8 §7)
 class BlurSettingsTest(unittest.TestCase):
 
     # 旧 setting.json (blur セクションが無い) でも起動時に補われること。
@@ -249,7 +249,7 @@ class BlurSettingsTest(unittest.TestCase):
         self.assertFalse(merged["blur"]["enabled"])        # 既定は無効 (R9)
         self.assertEqual(merged["blur"]["model"]["detector_input"], 416)
 
-    # 入れ子 (model / analysis / render …) の欠落キーも補われること
+    # 入れ子 (model / track / render / editor) の欠落キーも補われること
     def test_blur_nested_keys_are_filled(self):
         data = copy.deepcopy(sw.DEFAULT_SETTINGS)
         data["blur"] = {"enabled": True, "render": {"strength": 80}}
@@ -276,5 +276,6 @@ class BlurSettingsTest(unittest.TestCase):
         # 画面に出していない値はそのまま残る
         self.assertEqual(collected["blur"]["model"]["detector"], "models/yolox_tiny.onnx")
         self.assertEqual(collected["blur"]["render"]["mask_scale"], 0.25)
-        self.assertIn("sample_fps", collected["blur"]["analysis"])
+        self.assertIn("sample_fps", collected["blur"]["track"])
+        self.assertEqual(collected["blur"]["editor"]["frame_cache"], 32)
         del app

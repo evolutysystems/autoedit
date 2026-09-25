@@ -297,21 +297,19 @@ Copy-Item -Recurse -Force "licenses" "src/dist/Stretheus/licenses"
 > 全文とソース入手先を `licenses/FFmpeg/` に入れている。LGPL ビルドへ替える場合は
 > `tools/license_manifest.json` の該当項目も直すこと。
 
-### 5.2.2 トラッキングぼかしのモデル同梱（ver5 resolve2 §8-3）
+### 5.2.2 トラッキングぼかしのモデル同梱（ver5 resolve8 §9.4）
 
-`src/models/*.onnx` は `main_window.spec`（と CLI 用 `main.spec`）の `datas` が拾って `_internal/src/models/` へ入る。
-**モデルが無くてもビルドは通り、アプリは通常どおり起動する**（設定画面に
-「モデルが見つかりません」と出て、ぼかし機能だけが無効になる）。
+`main_window.spec`（と CLI 用 `main.spec`）の `datas` が **`src/models/yolox_tiny.onnx` だけ**を拾って
+`_internal/src/models/` へ入れる。ver5 resolve8 で人物同定（OSNet）と身体の輪郭（MobileSAM）を
+廃止したため、`src/models/` に古い `.onnx` が残っていても同梱されない（残っていれば削除してよい）。
 
 | ファイル | 大きさの目安 | 入手 |
 | --- | --- | --- |
 | `yolox_tiny.onnx` | 約 20MB | YOLOX 公式配布の ONNX をそのまま置く |
-| `osnet_x0_25.onnx` | 約 1MB | `python tools/export_osnet.py` で変換する |
-| `silhouette_encoder.onnx` | 約 28MB | `tools/export_silhouette.py` で MobileSAM から変換する (ver5 resolve3) |
-| `silhouette_decoder.onnx` | 約 17MB | 同上 |
 
-同梱すると**配布ペイロードが約 66MB 増える**。輪郭モデルだけ無い場合は、人物を角の丸い四角でぼかす。
-詳細は `src/models/README.md`。
+**モデルが無くてもビルドは通り、アプリは通常どおり起動する。**
+ぼかし機能も使える（囲んだ場所を模様の変化だけで追うようになり、追従が途切れやすくなるだけ /
+ver5 resolve8 §5.13）。詳細は `src/models/README.md`。
 
 ### 5.3 配布フォルダのレイアウト（例）
 

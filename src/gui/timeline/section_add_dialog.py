@@ -52,7 +52,9 @@ class SectionAddDialog(QDialog):
     # vod_duration : 元動画の全長 (秒)。0/None なら上限チェックをしない
     # default_start: 開始の初期値 (秒)
     # cfg          : archive.config.section_add_config の戻り値
-    # preview_cb   : callable(開始, 終了) -> 案内文字列。統合の予告に使う
+    # preview_cb   : callable(開始, 終了) -> 案内文字列、または (案内文字列, 追加できるか)。
+    #                統合の予告と、「使われていて追加できない」の通知に使う
+    #                (ver5 resolve6 §5.8)
     def __init__(self, vod_duration, default_start, cfg, preview_cb=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("セクションの追加")
@@ -111,6 +113,12 @@ class SectionAddDialog(QDialog):
         if ok:
             self._start, self._end = start, end
             extra = self._preview_cb(start, end) if self._preview_cb else ""
+            # 予告側が「この区間は追加できない」と言えるようにする (ver5 resolve6 §5.8)。
+            # 使用中・刻まれすぎの区間で「追加」を押せてしまうと、押した先で
+            # 同じことをダイアログで言い直すことになる。
+            if isinstance(extra, tuple):
+                extra, addable = extra
+                ok = ok and bool(addable)
             if extra:
                 message = f"{message}\n{extra}"
         self.info_label.setText(message)

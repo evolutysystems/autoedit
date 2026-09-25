@@ -848,7 +848,24 @@ class TimelineView(QWidget):
         used = clip.use if isinstance(clip, SubtitleClip) else clip.enabled
         menu.addAction("使用しない" if used else "使用する",
                        lambda: self._controller.set_clip_enabled(clip.id, not used))
+        # クリップ単位のぼかし (ver5 resolve7 §5.9)。機能 OFF なら何も足さない。
+        self._add_blur_actions(menu, clip, track)
         menu.exec(event.globalPos())
+
+    # 編集画面が持つぼかしの項目をメニューへ足す。
+    # ベース (V1) のクリップだけが対象 (ぼかしは出力の下地に掛けるため)。
+    def _add_blur_actions(self, menu, clip, track):
+        base = self._controller.timeline.base_video_track()
+        if base is None or track.id != base.id:
+            return
+        owner = self.window()
+        adder = getattr(owner, "blur_menu_actions", None)
+        if adder is None:
+            return
+        try:
+            adder(menu)
+        except Exception:                       # noqa: BLE001 (メニューの失敗で画面を落とさない)
+            _logger.debug("ぼかしのメニューを作れませんでした", exc_info=True)
 
     # 右クリックした位置へ新しい字幕クリップを足す
     # 開始位置は編集点へ吸着させる (クリップ移動と同じ規約)。

@@ -148,10 +148,17 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
 
     # keep_media / keep_audio の対象は V1 が参照する全クリップ素材
     def _media_to_copy(self):
+        # 素材 1 本ごとの控えを回る (ver5 resolve6 §5.3)。
+        # セクションの控え (clips) は統合で 1 件へ畳まれるため、そこから集めると
+        # 畳まれた側の素材のサイドカーが保存されず、開き直したときに
+        # 正規化のやり直し・復元失敗になっていた (ver5 resolve6 §2.2 (1))。
         timeline = self.controller.timeline
         media_list = []
         seen = set()
-        for entry in (archive_timeline.archive_section(timeline).get("clips") or []):
+        rows = archive_timeline.archive_media(timeline)
+        if not rows:
+            rows = archive_timeline.archive_section(timeline).get("clips") or []
+        for entry in rows:
             media_id = str(entry.get("media_id", "") or "")
             if not media_id or media_id in seen:
                 continue
@@ -352,19 +359,42 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         row = self._entry(self._current)
         return row["start"] if row else 0.0
 
-    # 追加ダイアログに出す統合の予告 (破壊的に見える挙動を押す前に知らせる)
-    def _preview_add(self, start, end):
-        plan = archive_timeline.plan_section_add(
+    # 追加の計画を立てる (設定を必ず通すため 1 か所にまとめる / ver5 resolve6 §5.6)
+    def _plan_add(self, start, end):
+        return archive_timeline.plan_section_add(
             self.controller.timeline, start, end,
-            merge_on_overlap=self._section_cfg["merge_on_overlap"])
+            merge_on_overlap=self._section_cfg["merge_on_overlap"],
+            occupied_by=self._section_cfg["occupied_by"],
+            gap_merge_sec=self._section_cfg["used_gap_merge_sec"],
+            max_ranges=self._section_cfg["max_ranges"],
+            min_range_sec=self._section_cfg["min_length_sec"])
+
+    # 追加ダイアログに出す案内 (ver5 resolve6 §5.8)
+    # 破壊的に見える統合の予告に加え、「なぜ追加できないのか」「何を用意するのか」を出す。
+    def _preview_add(self, start, end):
+        plan = self._plan_add(start, end)
         if plan is None:
-            return "この区間は既存セクションに含まれているため追加されません"
-        if not plan["merge_indexes"]:
-            return ""
-        names = "・".join(f"clip{i}" for i in plan["merge_indexes"])
-        span = plan["span"]
-        return (f"{names} と統合され、1 つのセクション "
-                f"{_fmt(span[0])}→{_fmt(span[1])} になります")
+            return ("この区間はすべて Timeline で使われています。"
+                    "使われていない時間を指定してください。", False)
+        if plan.get("too_many"):
+            return (f"用意する区間が {plan['too_many']} 個に分かれます"
+                    f"（上限 {self._section_cfg['max_ranges']} 個）。"
+                    "もっと狭い範囲を指定してください。", False)
+
+        lines = []
+        covered = float(plan.get("covered_sec") or 0.0)
+        ranges = plan.get("ranges") or []
+        if covered > 0.5 or len(ranges) > 1:
+            total = sum(e - s for s, e in ranges)
+            head = (f"うち {_fmt(covered)} は既に使われているため、"
+                    if covered > 0.5 else "")
+            lines.append(f"{head}{len(ranges)} 個の区間（合計 {_fmt(total)}）を用意します")
+        if plan["merge_indexes"]:
+            names = "・".join(f"clip{i}" for i in plan["merge_indexes"])
+            span = plan["span"]
+            lines.append(f"{names} と統合され、1 つのセクション "
+                         f"{_fmt(span[0])}→{_fmt(span[1])} になります")
+        return "\n".join(lines), True
 
     # 「セクション追加...」
     def _on_add_section(self):
@@ -377,13 +407,19 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             return
         start, end = dialog.selected_range()
 
-        plan = archive_timeline.plan_section_add(
-            self.controller.timeline, start, end,
-            merge_on_overlap=self._section_cfg["merge_on_overlap"])
+        plan = self._plan_add(start, end)
         if plan is None:
             QMessageBox.information(
                 self, "セクションの追加",
-                "指定した区間は既にセクションに含まれているため、追加するものがありません。")
+                "指定した区間は、すべて Timeline で使われています。\n"
+                "まだ使っていない時間を指定してください。")
+            return
+        if plan.get("too_many"):
+            QMessageBox.information(
+                self, "セクションの追加",
+                f"用意する区間が {plan['too_many']} 個に分かれます"
+                f"（上限 {self._section_cfg['max_ranges']} 個）。\n"
+                "指定する範囲を狭くしてください。")
             return
 
         # 差分ごとに番号を振る (統合時は後で代表番号へ揃える / §3-4 ④)。

@@ -80,6 +80,8 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
 
     cursor = 0.0
     clip_meta = []
+    # 素材 1 本ごとの復元情報 (ver5 resolve6 §5.2)。統合で畳まれない控え。
+    media_meta = []
     for entry in prepared or []:
         media = media_probe.probe(
             entry["normalized_path"], timeline.next_id("m"), clip_settings, cfg["media"])
@@ -133,6 +135,12 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
             "marker": bool(entry.get("marker")),
             "marker_labels": [str(label) for label in (entry.get("marker_labels") or [])],
         })
+        media_meta.append({
+            "media_id": media.id,
+            "vod_start": float(entry.get("start", 0.0)),
+            "vod_end": float(entry.get("end", 0.0)),
+            "media_role": str(entry.get("media_role", "normalized") or "normalized"),
+        })
 
     # 採点グラフとの対応付け (VOD 時間) を残す。編集で失われないよう Timeline 側に持たせる。
     timeline.source = {
@@ -141,6 +149,8 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
         "archive": {
             "vod_path": source_path,
             "clips": clip_meta,
+            # 素材の作り直し方 (ver5 resolve6 §3.1)。clips と違い統合で畳まれない。
+            "media": media_meta,
             # 採点グラフを再現するための窓スコア列 (ver3 resolve9 §3-2)
             "curve": _trim_curve(curve),
         },
@@ -416,6 +426,225 @@ def clip_entry(timeline, clip_index):
     return None
 
 
+# ------------------------------------------------------------------
+# 素材の復元情報 (ver5 resolve6 §3.1 / §5.2)
+# ------------------------------------------------------------------
+#
+# source.archive.clips は「セクションの見せ方」の控えで、統合すると 1 件へ畳まれる。
+# ところが統合されたセクションには**素材が 2 本以上ぶら下がる**ため、
+# 畳んだ時点で片方の素材は「どの VOD 区間から作ったか」を失い、
+# 開き直したときに復元できなくなっていた (ver5 resolve6 §2.2 の不具合)。
+#
+# そこで「作り直し方」は素材 1 本ごとに source.archive.media へ持ち、
+# **統合では一切畳まない**。見せ方 (clips) と作り方 (media) を分ける。
+
+
+# source.archive.media を読む (無ければ空の一覧)
+def archive_media(timeline):
+    rows = archive_section(timeline).get("media")
+    return [row for row in (rows or []) if isinstance(row, dict)]
+
+
+# 素材 1 本の復元情報を引く (無ければ None)。
+# 新しい控え (media) を先に見て、無ければ旧来の控え (clips) へ落ちる。
+# これで ver5 resolve6 より前に保存したプロジェクトもそのまま復元できる。
+def archive_media_entry(timeline, media_id):
+    key = str(media_id or "")
+    if not key:
+        return None
+    for row in archive_media(timeline):
+        if str(row.get("media_id") or "") == key:
+            return row
+    for entry in (archive_section(timeline).get("clips") or []):
+        if isinstance(entry, dict) and str(entry.get("media_id") or "") == key:
+            return {"media_id": key,
+                    "vod_start": float(entry.get("vod_start", 0.0)),
+                    "vod_end": float(entry.get("vod_end", 0.0)),
+                    "media_role": str(entry.get("media_role", "normalized")
+                                      or "normalized")}
+    return None
+
+
+# 素材の復元情報を書き込む (同じ media_id があれば置き換える)。
+# source.archive が無い Timeline では何もしない (アーカイブ用でない)。
+def put_archive_media(timeline, media_id, vod_start, vod_end, media_role="normalized"):
+    archive = archive_section(timeline)
+    if not archive:
+        return None
+    rows = archive.setdefault("media", [])
+    key = str(media_id or "")
+    row = {"media_id": key,
+           "vod_start": float(vod_start), "vod_end": float(vod_end),
+           "media_role": str(media_role or "normalized")}
+    for index, existing in enumerate(rows):
+        if isinstance(existing, dict) and str(existing.get("media_id") or "") == key:
+            rows[index] = row
+            return row
+    rows.append(row)
+    return row
+
+
+# その素材が Timeline 上で実際に使っている VOD 区間 (ver5 resolve6 §3.4)
+#   素材内の秒 + 素材の vod_start = VOD の秒
+#   (cut_region は -c copy のため素材の先頭 = 切り出し開始位置と一致する)
+# 復元情報が無い素材 (D&D で足した画像など) は空を返す。
+def media_vod_ranges(timeline, media_id, include_disabled=True):
+    entry = archive_media_entry(timeline, media_id)
+    track = timeline.base_video_track()
+    if entry is None or track is None:
+        return []
+    offset = float(entry.get("vod_start", 0.0))
+    return sorted((offset + float(clip.source_in), offset + float(clip.source_out))
+                  for clip in track.clips
+                  if str(clip.media_id) == str(media_id)
+                  and (include_disabled or clip.enabled))
+
+
+# セクションが Timeline で実際に使っている VOD 区間 (ver5 resolve6 §3.4 / §5.6)
+#
+# セクションが「宣言している区間」(vod_start〜vod_end) は作成時のもので、
+# 無音カットや利用者の削除・トリムでは更新されない。そのため宣言区間で
+# 「使用中」を判定すると、もう Timeline に無い区間まで塞いでしまう
+# (ver5 resolve6 §2.4 の不具合)。ここは**今そこにあるクリップ**だけを見る。
+#
+#   gap_merge_sec   : 隙間がこの秒数以内なら 1 つの区間として繋ぐ。
+#                     無音カットが空ける細かい穴で区間が刻まれすぎるのを防ぐ。
+#   include_disabled: 「使わない」にしたクリップも使用中に数えるか。
+#                     既定 True = 使用可否を戻したときに素材が無い事態を避ける。
+# 戻り値: [(開始, 終了), …] 昇順・重なりなし
+def used_vod_ranges(timeline, clip_index, gap_merge_sec=0.0, include_disabled=True):
+    track = timeline.base_video_track()
+    if track is None:
+        return []
+    # 素材ごとの vod_start は 1 回だけ引く (統合後は 1 セクションに複数素材がある)
+    offsets = {}
+    ranges = []
+    for clip in track.clips:
+        if clip.origin.get(ORIGIN_ARCHIVE_INDEX) != clip_index:
+            continue
+        if not include_disabled and not clip.enabled:
+            continue
+        media_id = str(clip.media_id)
+        if media_id not in offsets:
+            entry = archive_media_entry(timeline, media_id)
+            offsets[media_id] = (None if entry is None
+                                 else float(entry.get("vod_start", 0.0)))
+        offset = offsets[media_id]
+        if offset is None:
+            continue            # 復元情報が無い素材は VOD 位置が分からない
+        ranges.append((offset + float(clip.source_in), offset + float(clip.source_out)))
+    return merge_ranges(ranges, gap_merge_sec)
+
+
+# 控えの無い素材を、セクションの「穴」と尺で突き合わせて復元する
+# (ver5 resolve6 §3.2 / §5.4)
+#
+# ver5 resolve6 より前は、統合のときに畳まれた素材の復元情報が失われていた。
+# その素材が埋めていた VOD 区間は「セクションの宣言区間のうち、控えを持つ素材が
+# 埋めていない所」である。穴が 1 つに決まり、尺が合うときだけ採用する。
+# 決まらなければ何もしない (黙って違う区間を切り出すより、尋ねた方が安全)。
+#
+# cut_region は -ss + -c copy のため、切り出しはキーフレームへ吸着して
+# 要求より少し前から・少し長くなる。許容は絶対値と比率の大きい方を採る。
+#
+# 戻り値: 復元できた media_id の一覧
+def repair_archive_media(timeline, tolerance_sec=5.0, tolerance_ratio=0.1):
+    track = timeline.base_video_track()
+    if track is None or not archive_section(timeline):
+        return []
+
+    # まず、セクションの控えからそのまま引ける素材を素材単位の控えへ写す。
+    # 写しておかないと、次に統合したときにその素材まで控えを失う
+    # (畳まれた側の clips の行が消えるため)。
+    known_rows = {str(r.get("media_id") or "") for r in archive_media(timeline)}
+    for entry in (archive_section(timeline).get("clips") or []):
+        if not isinstance(entry, dict):
+            continue
+        media_id = str(entry.get("media_id") or "")
+        if not media_id or media_id in known_rows:
+            continue
+        start = float(entry.get("vod_start", 0.0))
+        end = float(entry.get("vod_end", 0.0))
+        # 統合の代表になったセクションは、宣言区間が和集合まで広がっている。
+        # その素材自体が覆うのは切り出したぶんだけなので、尺が分かるなら
+        # そちらを使う (広いまま覚えると、切り直しで余計な長さを切ることになる)。
+        duration = float(getattr(timeline.media_by_id(media_id), "duration_sec", 0.0) or 0.0)
+        if 0 < duration < end - start:
+            end = start + duration
+        put_archive_media(timeline, media_id, start, end,
+                          str(entry.get("media_role", "normalized") or "normalized"))
+        known_rows.add(media_id)
+
+    repaired = []
+    for entry in (archive_section(timeline).get("clips") or []):
+        if not isinstance(entry, dict) or entry.get("index") is None:
+            continue
+        index = entry.get("index")
+        span_start = float(entry.get("vod_start", 0.0))
+        span_end = float(entry.get("vod_end", 0.0))
+        if span_end - span_start <= _MIN_SEGMENT_SEC:
+            continue
+
+        clips = [c for c in track.clips if c.origin.get(ORIGIN_ARCHIVE_INDEX) == index]
+        known = {}          # 控えのある素材 → 覆う VOD 区間
+        unknown = []        # 控えの無い素材
+        for media_id in {str(c.media_id) for c in clips}:
+            if archive_media_entry(timeline, media_id) is not None:
+                known[media_id] = media_vod_ranges(timeline, media_id)
+            elif timeline.media_by_id(media_id) is not None:
+                unknown.append(media_id)
+        if not unknown:
+            continue
+
+        covered = merge_ranges([r for rs in known.values() for r in rs])
+        holes = _subtract_covered(span_start, span_end, covered)
+        for media_id in sorted(unknown):
+            length = _media_span_sec(timeline, media_id, clips)
+            if length <= 0:
+                continue
+            tolerance = max(float(tolerance_sec), length * float(tolerance_ratio))
+            fits = [hole for hole in holes
+                    if abs((hole[1] - hole[0]) - length) <= tolerance]
+            if len(fits) != 1:
+                _logger.info(
+                    "clip%s の素材 %s は区間を特定できませんでした "
+                    "(尺 %.1fs / 候補の穴 %d 件)。差し替えを尋ねます",
+                    index, media_id, length, len(fits))
+                continue
+            hole = fits[0]
+            put_archive_media(timeline, media_id, hole[0], hole[0] + length,
+                              str(entry.get("media_role", "normalized") or "normalized"))
+            holes = [h for h in holes if h is not hole]
+            repaired.append(media_id)
+            _logger.info("clip%s の素材 %s の区間を %.1f–%.1f として復元しました",
+                         index, media_id, hole[0], hole[0] + length)
+    return repaired
+
+
+# 素材の尺 (復元に使う長さ)。素材の尺が分かればそれを、
+# 分からなければクリップが指す範囲の最大値を使う。
+def _media_span_sec(timeline, media_id, clips):
+    media = timeline.media_by_id(media_id)
+    duration = float(getattr(media, "duration_sec", 0.0) or 0.0)
+    if duration > 0:
+        return duration
+    spans = [float(c.source_out) for c in clips if str(c.media_id) == str(media_id)]
+    return max(spans) if spans else 0.0
+
+
+# 区間の一覧を昇順にまとめる。隙間が gap 以内なら 1 つへ繋ぐ。
+def merge_ranges(ranges, gap=0.0):
+    merged = []
+    for start, end in sorted((float(s), float(e)) for s, e in ranges or []):
+        if end - start <= 0:
+            continue
+        if merged and start <= merged[-1][1] + float(gap):
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(s, e) for s, e in merged]
+
+
 # クリップのテーマ (未設定は空文字)
 def clip_theme(timeline, clip_index):
     entry = clip_entry(timeline, clip_index)
@@ -470,6 +699,10 @@ def clip_range(timeline, clip_index):
 # セクションの重なり判定の許容誤差
 _SECTION_EPS = 1e-6
 
+# 「使用中」の判定方法 (ver5 resolve6 §3.4)
+OCCUPIED_USED = "used"          # Timeline に実際に載っている区間だけ (既定)
+OCCUPIED_DECLARED = "declared"  # セクションが宣言した区間 (従来の挙動)
+
 
 # source.archive.clips のうち Timeline 上に実体があるものを vod_start 昇順で返す。
 # 実体が無い (= 全クリップを消された) セクションは並びの基準にしない。
@@ -516,12 +749,22 @@ def _subtract_covered(start, end, covered):
 # 重なり判定は scoring._merge_time_sections と同じ規約にする (接触も統合)。
 # 規約を 2 つ持つと、採点で統合された結果と手動追加の結果が食い違うため。
 #
+# 「使用中」の判定は 2 通り選べる (ver5 resolve6 §3.4)。
+#   occupied_by="used"     : **Timeline に実際に載っている区間**だけを使用中とみなす (既定)
+#   occupied_by="declared" : セクションが宣言した区間を使用中とみなす (従来の挙動)
+# 宣言区間は作成時のもので、無音カットや利用者の削除では更新されない。
+# 既定を "used" にしないと、もう Timeline に無い区間まで塞いでしまう (§2.4 の不具合)。
+#
 # 戻り値 (追加するものが無ければ None):
 #   {"ranges"       : [(開始, 終了)]  これから用意する VOD 区間 (昇順・既存と重ならない)
 #    "merge_indexes": [番号]          統合される既存セクション (昇順 / 単独追加なら空)
 #    "target_index" : 番号 or None    統合先 (= merge_indexes[0] / 単独追加なら None)
-#    "span"         : (開始, 終了)    追加後のセクションの VOD 区間 (統合時は和集合)}
-def plan_section_add(timeline, start_sec, end_sec, merge_on_overlap=True):
+#    "span"         : (開始, 終了)    追加後のセクションの VOD 区間 (統合時は和集合)
+#    "covered_sec"  : 秒              指定区間のうち既に使われていた長さ (案内用)
+#    "too_many"     : 件数 or 0       刻まれすぎて断る場合の区間数 (§3.4)}
+def plan_section_add(timeline, start_sec, end_sec, merge_on_overlap=True,
+                     occupied_by=OCCUPIED_USED, gap_merge_sec=0.0, max_ranges=0,
+                     min_range_sec=0.0):
     start = float(start_sec)
     end = float(end_sec)
     if end - start <= _MIN_SEGMENT_SEC:
@@ -538,20 +781,41 @@ def plan_section_add(timeline, start_sec, end_sec, merge_on_overlap=True):
 
     if not touched:
         return {"ranges": [(start, end)], "merge_indexes": [],
-                "target_index": None, "span": (start, end)}
+                "target_index": None, "span": (start, end),
+                "covered_sec": 0.0, "too_many": 0}
 
     span_start = min(start, min(float(e.get("vod_start", 0.0)) for e in touched))
     span_end = max(end, max(float(e.get("vod_end", 0.0)) for e in touched))
-    covered = [(float(e.get("vod_start", 0.0)), float(e.get("vod_end", 0.0)))
-               for e in touched]
-    ranges = _subtract_covered(span_start, span_end, covered)
+    if str(occupied_by) == OCCUPIED_USED:
+        # 実際に Timeline に載っている区間だけを使用中とみなす (§3.4)
+        covered = merge_ranges(
+            [r for e in touched
+             for r in used_vod_ranges(timeline, e.get("index"), gap_merge_sec)])
+    else:
+        covered = [(float(e.get("vod_start", 0.0)), float(e.get("vod_end", 0.0)))
+                   for e in touched]
+
+    # 差し引く先は**利用者が指定した区間**。統合後の span から引くと、
+    # 指定していない区間まで勝手に用意してしまう (従来方式では結果は変わらない)。
+    ranges = _subtract_covered(start, end, covered)
+    # 切れ端は用意しない。使用中の区間と境目が 0.03 秒ずれただけで、
+    # 切り出し→正規化→文字起こしを 1 回走らせることになるため (ver5 resolve6 §5.6)。
+    if min_range_sec > 0:
+        ranges = [(s, e) for s, e in ranges if e - s >= float(min_range_sec)]
     if not ranges:
-        return None                      # 既存セクションに完全に含まれている
+        return None                      # 指定区間はすべて使用中
+    if max_ranges and len(ranges) > int(max_ranges):
+        # 黙って何十回も準備を始めない。画面が理由を出して断る (§3.4)
+        return {"ranges": [], "merge_indexes": [e.get("index") for e in touched],
+                "target_index": touched[0].get("index"), "span": (span_start, span_end),
+                "covered_sec": 0.0, "too_many": len(ranges)}
     return {
         "ranges": ranges,
         "merge_indexes": [e.get("index") for e in touched],
         "target_index": touched[0].get("index"),
         "span": (span_start, span_end),
+        "covered_sec": max((end - start) - sum(e - s for s, e in ranges), 0.0),
+        "too_many": 0,
     }
 
 
@@ -691,6 +955,13 @@ class AddArchiveSection(commands.Command):
         append_subtitles(timeline, subtitle, entry.get("items"), at, cursor - at,
                          segments, media.id, entry["index"])
 
+        # 素材の復元情報を先に残す。これが無いと、統合でセクションの控えが
+        # 畳まれたときに「どの VOD 区間から作った素材か」が失われ、
+        # 開き直したときに復元できなくなる (ver5 resolve6 §2.2)
+        put_archive_media(timeline, media.id,
+                          float(entry.get("start", 0.0)), float(entry.get("end", 0.0)),
+                          str(entry.get("media_role", "normalized") or "normalized"))
+
         meta.append({
             "index": entry["index"],
             "vod_start": float(entry.get("start", 0.0)),
@@ -707,13 +978,42 @@ class AddArchiveSection(commands.Command):
             entry["index"], at, entry.get("start", 0.0), entry.get("end", 0.0), duration)
         return True
 
-    # 元動画の時系列に合う Timeline 上の挿入位置を返す (resolve13 §3-2)
-    #   ・自分より後ろから始まる最初の既存セクションの手前へ入れる
-    #     (どのセクションよりも先頭なら、先頭セクションの位置 = Timeline の先頭)
-    #   ・見つからなければ末尾へ足す
+    # 元動画の時系列に合う Timeline 上の挿入位置を返す
+    # (resolve13 §3-2 / ver5 resolve6 §3.5)
+    #
+    # **クリップ 1 本ずつの VOD 位置**を見て、自分より後ろから始まる最初のクリップの
+    # 手前へ入れる。セクション単位でしか見ないと、セクションの「内側」の穴を足したとき
+    # (ver5 resolve6 §3.4 で足せるようになった) に、そのセクションの残りの後ろへ
+    # 回ってしまい、元動画と逆順になる。
+    #
+    # クリップの VOD 位置は素材単位の控え (archive.media) から求める。
+    # 控えの無い素材 (D&D で足した画像など) は並びの基準にしない。
     # source.archive.clips の timeline_start は編集で古くなるため使わない (§2.10)。
-    # 実位置は clip_range() で取り直す。
     def _insert_position(self, timeline, range_end, anchors):
+        track = timeline.base_video_track()
+        if track is not None:
+            offsets = {}
+            best = None
+            for clip in track.clips:
+                if clip.origin.get(ORIGIN_ARCHIVE_INDEX) is None:
+                    continue
+                media_id = str(clip.media_id)
+                if media_id not in offsets:
+                    entry = archive_media_entry(timeline, media_id)
+                    offsets[media_id] = (None if entry is None
+                                         else float(entry.get("vod_start", 0.0)))
+                offset = offsets[media_id]
+                if offset is None:
+                    continue
+                if offset + float(clip.source_in) >= range_end - _SECTION_EPS:
+                    if best is None or clip.timeline_start < best:
+                        best = float(clip.timeline_start)
+            if best is not None:
+                return best
+            if offsets and any(v is not None for v in offsets.values()):
+                return timeline.duration_sec()
+
+        # 素材単位の控えが無い旧プロジェクト向けのフォールバック (セクション単位)
         for entry in anchors:
             if float(entry.get("vod_start", 0.0)) >= range_end - _SECTION_EPS:
                 span = clip_range(timeline, entry.get("index"))

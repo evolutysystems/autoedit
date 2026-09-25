@@ -1,0 +1,372 @@
+2026-09-22 09:06:44,934 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-22 09:09:33,108 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-09-22 09:09:36,560 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-09-22 09:11:25,024 [INFO] src.archive.project_resume: ==================================================
+2026-09-22 09:11:25,024 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-22 09:11:25,036 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-22 09:11:28,202 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 4 件 / 再正規化 0 件 / 切り出しのまま 0 件
+2026-09-22 09:11:29,167 [INFO] src.blur.store: 素材か設定が変わったため、ぼかしの解析をやり直します
+2026-09-22 09:11:29,217 [INFO] src.blur.analyzer: ぼかし解析: 素材が変わったため、解析をやり直します: m10: 素材が見つかりません / m11: 元動画か切り出し範囲が変わりました / m2: 素材が見つかりません / m3: 元動画か切り出し範囲が変わりました / m4: 解析していない素材が増えました / m6: 解析していない素材が増えました
+2026-09-22 09:11:32,733 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-22 09:11:32,865 [INFO] src.blur.models: モデルを読み込みました: yolox_tiny.onnx
+2026-09-22 09:11:33,019 [INFO] src.blur.models: モデルを読み込みました: osnet_x0_25.onnx
+2026-09-22 09:11:33,854 [INFO] src.blur.models: モデルを読み込みました: silhouette_encoder.onnx
+2026-09-22 09:11:34,073 [INFO] src.blur.models: モデルを読み込みました: silhouette_decoder.onnx
+2026-09-22 09:15:38,175 [INFO] src.timeline.commands: リップル: 1098.214〜1107.078s (8.86s) を除去 / 削除 5 件・短縮 1 件・移動 530 件
+2026-09-22 09:15:52,015 [INFO] src.timeline.commands: リップル: 1098.214〜1127.463s (29.25s) を除去 / 削除 9 件・短縮 1 件・移動 520 件
+2026-09-22 09:16:27,971 [INFO] src.timeline.commands: リップル: 1100.856〜1104.235s (3.38s) を除去 / 削除 0 件・短縮 2 件・移動 519 件
+2026-09-22 09:16:43,416 [INFO] src.timeline.commands: リップル: 1102.995〜1111.556s (8.56s) を除去 / 削除 3 件・短縮 2 件・移動 515 件
+2026-09-22 09:16:58,999 [INFO] src.timeline.commands: リップル: 1105.014〜1107.275s (2.26s) を除去 / 削除 0 件・短縮 2 件・移動 514 件
+2026-09-22 09:33:42,451 [INFO] src.timeline.commands: リップル: 1105.014〜1105.348s (0.33s) を除去 / 削除 0 件・短縮 2 件・移動 513 件
+2026-09-22 09:41:01,353 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:02:12,703 [INFO] src.timeline.commands: リップル: 1136.001〜1143.477s (7.48s) を除去 / 削除 0 件・短縮 1 件・移動 497 件
+2026-09-22 10:02:31,136 [INFO] src.timeline.commands: リップル: 1136.477〜1143.397s (6.92s) を除去 / 削除 0 件・短縮 1 件・移動 497 件
+2026-09-22 10:09:54,609 [INFO] src.timeline.commands: リップル: 1146.545〜1153.844s (7.30s) を除去 / 削除 0 件・短縮 1 件・移動 490 件
+2026-09-22 10:11:02,093 [INFO] src.timeline.commands: リップル: 1148.132〜1193.932s (45.80s) を除去 / 削除 7 件・短縮 2 件・移動 482 件
+2026-09-22 10:37:02,146 [INFO] src.timeline.commands: リップル: 1198.809〜1215.529s (16.72s) を除去 / 削除 8 件・短縮 0 件・移動 458 件
+2026-09-22 10:37:06,794 [INFO] src.timeline.commands: リップル: 1198.809〜1238.401s (39.59s) を除去 / 削除 16 件・短縮 0 件・移動 442 件
+2026-09-22 10:38:48,547 [INFO] src.timeline.commands: リップル: 1248.278〜1589.164s (340.89s) を除去 / 削除 98 件・短縮 3 件・移動 311 件
+2026-09-22 10:39:09,834 [INFO] src.timeline.commands: リップル: 1198.809〜1248.278s (49.47s) を除去 / 削除 32 件・短縮 0 件・移動 312 件
+2026-09-22 10:40:03,734 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 10:41:34,436 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:41:49,300 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:41:55,840 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:51:15,786 [INFO] src.timeline.commands: リップル: 1253.510〜1255.973s (2.46s) を除去 / 削除 2 件・短縮 1 件・移動 291 件
+2026-09-22 10:53:15,328 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 10:53:55,142 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:54:01,836 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:54:09,100 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 10:55:52,029 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-22 10:55:52,030 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-22 10:56:01,607 [INFO] src.timeline.commands: リップル: 1270.741〜1280.177s (9.44s) を除去 / 削除 0 件・短縮 1 件・移動 276 件
+2026-09-22 10:58:12,854 [WARNING] src.modules.comment_decor: コメント背景がキャンバスに収まらないため詰めました (推定幅 2276px / 使える幅 1920px)。font_size か max_line_length を下げると解消します
+2026-09-22 11:00:41,860 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-22 11:00:41,898 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-22 11:03:48,849 [INFO] src.timeline.commands: リップル: 1300.894〜1361.396s (60.50s) を除去 / 削除 25 件・短縮 0 件・移動 237 件
+2026-09-22 11:04:27,502 [INFO] src.timeline.commands: リップル: 1300.894〜1319.240s (18.35s) を除去 / 削除 9 件・短縮 1 件・移動 227 件
+2026-09-22 11:16:50,445 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:16:59,238 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:16:59,434 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:18:01,833 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:20:17,069 [INFO] src.timeline.commands: リップル: 1321.231〜1340.433s (19.20s) を除去 / 削除 9 件・短縮 0 件・移動 210 件
+2026-09-22 11:20:18,879 [INFO] src.timeline.commands: リップル: 1321.231〜1322.974s (1.74s) を除去 / 削除 2 件・短縮 0 件・移動 208 件
+2026-09-22 11:20:19,423 [INFO] src.timeline.commands: リップル: 1321.231〜1335.650s (14.42s) を除去 / 削除 6 件・短縮 0 件・移動 202 件
+2026-09-22 11:20:21,652 [INFO] src.timeline.commands: リップル: 1321.231〜1333.638s (12.41s) を除去 / 削除 5 件・短縮 0 件・移動 197 件
+2026-09-22 11:20:25,179 [INFO] src.timeline.commands: リップル: 1321.231〜1354.941s (33.71s) を除去 / 削除 13 件・短縮 0 件・移動 184 件
+2026-09-22 11:20:27,500 [INFO] src.timeline.commands: リップル: 1321.231〜1327.996s (6.77s) を除去 / 削除 5 件・短縮 0 件・移動 179 件
+2026-09-22 11:20:49,519 [INFO] src.timeline.commands: リップル: 1321.231〜1376.583s (55.35s) を除去 / 削除 19 件・短縮 0 件・移動 160 件
+2026-09-22 11:20:50,484 [INFO] src.timeline.commands: リップル: 1321.231〜1374.581s (53.35s) を除去 / 削除 20 件・短縮 0 件・移動 140 件
+2026-09-22 11:21:01,567 [INFO] src.timeline.commands: リップル: 1321.740〜1325.119s (3.38s) を除去 / 削除 1 件・短縮 0 件・移動 138 件
+2026-09-22 11:21:08,278 [INFO] src.timeline.commands: リップル: 1321.231〜1324.189s (2.96s) を除去 / 削除 2 件・短縮 0 件・移動 137 件
+2026-09-22 11:21:49,592 [INFO] src.timeline.commands: リップル: 1321.231〜1322.719s (1.49s) を除去 / 削除 1 件・短縮 1 件・移動 135 件
+2026-09-22 11:21:50,290 [INFO] src.timeline.commands: リップル: 1321.231〜1326.704s (5.47s) を除去 / 削除 2 件・短縮 0 件・移動 134 件
+2026-09-22 11:22:03,543 [INFO] src.timeline.commands: リップル: 1321.232〜1370.848s (49.62s) を除去 / 削除 9 件・短縮 1 件・移動 124 件
+2026-09-22 11:25:11,571 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:26:37,537 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:28:30,067 [INFO] src.timeline.commands: リップル: 1354.992〜1378.755s (23.76s) を除去 / 削除 1 件・短縮 3 件・移動 110 件
+2026-09-22 11:29:51,114 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:30:47,315 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:30:52,750 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:31:00,175 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:31:07,089 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:32:03,583 [INFO] src.timeline.commands: リップル: 1360.145〜1394.762s (34.62s) を除去 / 削除 3 件・短縮 1 件・移動 106 件
+2026-09-22 11:32:19,390 [INFO] src.timeline.commands: リップル: 1360.145〜1392.851s (32.71s) を除去 / 削除 3 件・短縮 1 件・移動 106 件
+2026-09-22 11:34:36,899 [INFO] src.timeline.commands: リップル: 1367.248〜1499.438s (132.19s) を除去 / 削除 33 件・短縮 1 件・移動 71 件
+2026-09-22 11:36:16,620 [INFO] src.timeline.commands: リップル: 1367.248〜1444.558s (77.31s) を除去 / 削除 22 件・短縮 0 件・移動 85 件
+2026-09-22 11:38:25,610 [INFO] src.timeline.commands: リップル: 1428.473〜1438.733s (10.26s) を除去 / 削除 2 件・短縮 1 件・移動 67 件
+2026-09-22 11:38:59,831 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:40:00,112 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:41:27,270 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:41:43,733 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:44:08,042 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:45:05,893 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 11:48:02,095 [INFO] src.timeline.commands: リップル: 1445.389〜1596.374s (150.98s) を除去 / 削除 64 件・短縮 0 件・移動 0 件
+2026-09-22 11:49:26,584 [INFO] src.gui.timeline.archive_timeline_dialog: セクション準備開始: 1 区間 / 合計 90.0s
+2026-09-22 11:49:44,596 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.8 LUFS / TP=-15.8 dBTP / LRA=10.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.8 dB)
+2026-09-22 11:50:07,518 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips__h3uugmk\clip5\normalized.mp4
+2026-09-22 11:50:26,966 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-22 11:50:26,967 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-22 11:50:27,084 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-22 11:50:35,974 [INFO] src.modules.silence_cutter: 編集点検出: 無音 1 件 / 残す区間 2 件 (閾値=-18dB, 最小無音=0.60s, 総尺=90.8s)
+2026-09-22 11:50:47,954 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 2 区間 → 90.1s (元 90.8s)
+2026-09-22 11:51:56,617 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-22 11:51:56,617 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-22 11:52:14,444 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-22 11:56:15,591 [INFO] src.timeline.commands: リップル: 62.056〜62.800s (0.74s) を除去 / 削除 0 件・短縮 1 件・移動 441 件
+2026-09-22 11:56:55,600 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 11:58:02,057 [INFO] src.modules.subtitle_generator: 音声認識完了 (29 セグメント)
+2026-09-22 11:58:02,422 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 29 → 29 件 (カット区間のため 0 件除外)
+2026-09-22 11:58:02,423 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 29 → 29 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-22 11:58:02,430 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 29 件)
+2026-09-22 11:58:02,430 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 2 件 / 想定尺 90.12s (素材 90.83s)
+2026-09-22 11:58:02,435 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 29 件 / 実カットなし)
+2026-09-22 11:58:03,209 [INFO] src.archive.timeline_builder: セクション追加: clip5 を 1444.64s へ挿入 (VOD 6660.0-6750.0 / 尺 90.12s)
+2026-09-22 11:58:30,523 [INFO] src.timeline.commands: リップル: 89.506〜93.029s (3.52s) を除去 / 削除 0 件・短縮 1 件・移動 468 件
+2026-09-22 11:59:05,182 [INFO] src.timeline.commands: リップル: 94.884〜101.924s (7.04s) を除去 / 削除 0 件・短縮 1 件・移動 468 件
+2026-09-22 12:00:32,101 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:04:14,084 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:04:17,240 [INFO] src.blur.tracker: 人物が 109 人を超えたため、短い 59 人は人物 ID を振りません (上限 50 / 枠 188 本は「人物未割り当ての枠」として残ります)
+2026-09-22 12:04:17,244 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 2802 本 → 人物 48 人 (主役 p5)
+2026-09-22 12:04:17,360 [INFO] src.blur.analyzer: ぼかし解析: 人物 ID の付かなかった枠 188 本を「人物未割り当ての枠」として残しました
+2026-09-22 12:04:22,280 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:04:22,818 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:04:22,901 [INFO] src.gui.timeline.timeline_editor_dialog: ぼかしの解析をやり直したため、人物への指定の確認を案内します
+2026-09-22 12:05:29,678 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:07:55,923 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 12:08:51,424 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:08:55,933 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:11:40,802 [INFO] src.timeline.clipboard: Timeline のノードをコピーしました: 1 件
+2026-09-22 12:12:36,386 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:13:10,324 [INFO] src.timeline.commands: リップル: 506.524〜510.083s (3.56s) を除去 / 削除 2 件・短縮 0 件・移動 361 件
+2026-09-22 12:16:22,875 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 1 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 12:20:01,559 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:20:01,985 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:20:08,972 [INFO] src.blur.manual_tracker: 枠を追いかけられませんでした (268.1 秒地点 / 区間 27.4 秒)
+2026-09-22 12:20:08,987 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 0 件のトラックを追加しました
+2026-09-22 12:20:09,420 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:20:22,169 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:20:22,577 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:21:29,757 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:21:30,197 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:23:28,154 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:23:28,584 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:25:38,515 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:25:38,944 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:25:54,990 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:25:55,414 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:11,420 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:14,907 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:23,143 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:25,481 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:31,487 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:36,763 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:40,788 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:46,351 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:50,913 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:55,777 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:26:57,958 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:04,425 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:06,695 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:08,960 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:11,127 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:13,335 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:16,678 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:22,699 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:28,589 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:37,438 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:27:54,012 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:28:01,852 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:28:28,993 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:28:34,822 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:29:00,572 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:30:20,037 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:30:20,474 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:30:43,172 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 12:30:43,602 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 12:31:46,920 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:30:45,191 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:31:20,846 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:31:24,228 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:31:29,054 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:31:56,426 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 13:31:56,842 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:32:19,228 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 13:32:19,655 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:32:26,679 [INFO] src.blur.manual_tracker: 枠を追いかけられませんでした (313.1 秒地点 / 区間 17.1 秒)
+2026-09-22 13:32:26,679 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 0 件のトラックを追加しました
+2026-09-22 13:32:27,039 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:32:37,498 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:32:39,889 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:32:45,110 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:33:46,409 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 13:33:46,809 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:02,903 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:10,559 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:14,347 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:25,000 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:34,916 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:43,164 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:46,159 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:49,585 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:34:58,970 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:35:08,964 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:35:23,742 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:35:41,392 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:35:58,996 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:36:06,353 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:36:19,814 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:36:28,096 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:37:20,132 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:37:33,487 [INFO] src.blur.manual_tracker: 手で足した枠の追従: 1 件のトラックを追加しました
+2026-09-22 13:37:33,892 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:37:50,300 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:37:57,377 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:38:02,404 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:38:21,102 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:38:48,370 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:39:08,376 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:39:19,064 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:39:35,865 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:39:40,342 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:39:53,033 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:04,751 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:10,111 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:17,220 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:23,784 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:30,439 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:33,886 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:36,137 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:43,680 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:40:51,788 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:41:12,970 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:41:34,931 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:41:57,617 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:42:01,139 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:42:04,050 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:42:06,031 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:02,111 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:13,317 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:33,681 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:44,548 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:48,430 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:43:58,982 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:44:03,198 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:44:07,639 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:44:10,190 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:44:18,781 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:11,164 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:19,961 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:23,408 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:25,827 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:41,502 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:48,954 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:46:59,043 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:47:04,733 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:47:08,346 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:47:19,977 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:47:41,598 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:48:09,099 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:48:40,472 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:49:04,065 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:49:46,794 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:50:30,161 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:50:43,977 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:50:48,748 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:50:51,272 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:51:09,875 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:51:27,523 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:51:31,047 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:51:33,380 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-22 13:51:55,555 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-22 13:51:55,555 [INFO] src.timeline.renderer: ベース映像構築: 33 クリップ / ギャップ 0 件 / 合計 674.5s
+2026-09-22 13:51:55,555 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 29.6fps → 1920x1080 60fps)
+2026-09-22 14:03:56,104 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 14:05:08,825 [INFO] src.timeline.renderer: ベース映像の尺: モデル 674.550s / 実測 674.550s (差 +0.000s / 33 部品)
+2026-09-22 14:05:09,588 [INFO] src.blur.mask_builder: ぼかしマスク: 40473 フレーム / 480x270 / ぼかす 1814 件 / 守る 792 件
+2026-09-22 14:06:38,125 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (38.8 MB)
+2026-09-22 14:06:38,125 [INFO] src.blur.mask_builder: ぼかしマスク: 人物の輪郭 17% (残りは四角)
+2026-09-22 14:06:38,146 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-22 14:06:38,147 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 6 件 / サイズ 7 件 / 文字色 87 件 / 縁の色 0 件
+2026-09-22 14:06:38,148 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-22 14:06:38,148 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 14:06:38,150 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 3 件 / 文字色 10 件 / 縁の色 0 件
+2026-09-22 14:06:38,150 [INFO] src.timeline.renderer: オーバーレイ合成: 36 層 (追加入力 13 件)
+2026-09-22 14:55:31,260 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-09-22 14:55:34,322 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=COMING SOON...)
+2026-09-22 14:55:34,322 [INFO] src.timeline.renderer: ベース映像構築: 3 クリップ / ギャップ 0 件 / 合計 67.5s
+2026-09-22 14:55:34,322 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 14:57:04,546 [INFO] src.timeline.renderer: ベース映像の尺: モデル 67.533s / 実測 67.533s (差 +0.000s / 3 部品)
+2026-09-22 14:57:04,879 [INFO] src.blur.mask_builder: ぼかしマスク: 4052 フレーム / 480x270 / ぼかす 1814 件 / 守る 792 件
+2026-09-22 14:57:19,593 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (5.7 MB)
+2026-09-22 14:57:19,596 [INFO] src.blur.mask_builder: ぼかしマスク: 人物の輪郭 4% (残りは四角)
+2026-09-22 14:57:19,602 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 10 件 / 縁の色 0 件
+2026-09-22 14:57:19,602 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-22 14:57:19,608 [INFO] src.timeline.renderer: オーバーレイ合成: 9 層 (追加入力 1 件)
+2026-09-22 15:00:34,436 [INFO] src.archive.clip_writer: clip4: 左上テーマタグを焼き込み
+2026-09-22 15:00:37,760 [INFO] src.archive.clip_writer: clip4: イントロカード生成 (3.00s, テーマ=ZETA ブースへ)
+2026-09-22 15:00:37,761 [INFO] src.timeline.renderer: ベース映像構築: 35 クリップ / ギャップ 0 件 / 合計 688.4s
+2026-09-22 15:00:37,761 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 15:10:42,410 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 15:12:12,235 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 15:14:47,935 [INFO] src.timeline.renderer: ベース映像の尺: モデル 688.433s / 実測 688.434s (差 +0.000s / 35 部品)
+2026-09-22 15:14:48,466 [INFO] src.blur.mask_builder: ぼかしマスク: 41306 フレーム / 480x270 / ぼかす 1814 件 / 守る 792 件
+2026-09-22 15:17:23,868 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (55.1 MB)
+2026-09-22 15:17:23,872 [INFO] src.blur.mask_builder: ぼかしマスク: 人物の輪郭 29% (残りは四角)
+2026-09-22 15:17:23,888 [INFO] src.modules.subtitle_generator: コメント背景: 9 件
+2026-09-22 15:17:23,888 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 5 件 / サイズ 6 件 / 文字色 44 件 / 縁の色 0 件
+2026-09-22 15:17:23,889 [INFO] src.modules.comment_decor: コメントアイコン: 9 件 / 位置 1 種類
+2026-09-22 15:17:23,890 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 8 件 / 縁の色 0 件
+2026-09-22 15:17:23,890 [INFO] src.timeline.renderer: オーバーレイ合成: 25 層 (追加入力 8 件)
+2026-09-22 15:55:22,411 [INFO] src.timeline.renderer: ベース映像構築: 2 クリップ / ギャップ 0 件 / 合計 90.1s
+2026-09-22 15:55:22,422 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 30fps → 1920x1080 60fps)
+2026-09-22 15:57:14,983 [INFO] src.timeline.renderer: ベース映像の尺: モデル 90.117s / 実測 90.117s (差 +0.000s / 2 部品)
+2026-09-22 15:57:15,328 [INFO] src.blur.mask_builder: ぼかしマスク: 5407 フレーム / 480x270 / ぼかす 1814 件 / 守る 792 件
+2026-09-22 15:57:18,999 [INFO] src.blur.mask_builder: ぼかしマスクを書き出しました: blur_mask.mkv (0.7 MB)
+2026-09-22 15:57:19,015 [INFO] src.timeline.renderer: 字幕焼き込み: 29 件
+2026-09-22 16:28:14,656 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_vod_2877176496_combined.mp4 (使用4)
+2026-09-23 11:21:27,446 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-09-23 11:21:30,110 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-09-23 11:21:38,233 [INFO] src.archive.project_resume: ==================================================
+2026-09-23 11:21:38,234 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 11:21:38,246 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 11:21:41,814 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (181.10s / 期待 90.83s) → 使いません
+2026-09-23 11:21:41,815 [INFO] src.archive.project_resume: 音声サイドカーが無いため素材 m2 の正規化をやり直します
+2026-09-23 11:21:44,301 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.8 LUFS / TP=-15.8 dBTP / LRA=10.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.8 dB)
+2026-09-23 11:21:48,048 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_p5b7y57q\media_m2\normalized.mp4
+2026-09-23 11:21:48,048 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 4 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-23 11:21:48,048 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-23 11:21:48,703 [INFO] src.blur.store: 素材か設定が変わったため、ぼかしの解析をやり直します
+2026-09-23 11:21:48,785 [INFO] src.blur.analyzer: ぼかし解析: 素材が変わったため、解析をやり直します: m11: 元動画か切り出し範囲が変わりました / m4: 元動画か切り出し範囲が変わりました / m6: 元動画か切り出し範囲が変わりました / m2: 解析していない素材が増えました
+2026-09-23 11:21:48,797 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-23 11:21:54,212 [INFO] src.blur.analyzer: ぼかし解析: 中断しました
+2026-09-23 11:22:38,610 [INFO] src.archive.project_resume: ==================================================
+2026-09-23 11:22:38,610 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 11:22:38,628 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 11:22:41,024 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (181.10s / 期待 90.83s) → 使いません
+2026-09-23 11:22:41,024 [INFO] src.archive.project_resume: 音声サイドカーが無いため素材 m2 の正規化をやり直します
+2026-09-23 11:22:43,126 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.8 LUFS / TP=-15.8 dBTP / LRA=10.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.8 dB)
+2026-09-23 11:22:46,064 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_kgfd0xiq\media_m2\normalized.mp4
+2026-09-23 11:22:46,064 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 4 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-23 11:22:46,064 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-23 11:22:46,598 [INFO] src.blur.store: 素材か設定が変わったため、ぼかしの解析をやり直します
+2026-09-23 11:22:46,679 [INFO] src.blur.analyzer: ぼかし解析: 素材が変わったため、解析をやり直します: m11: 元動画か切り出し範囲が変わりました / m4: 元動画か切り出し範囲が変わりました / m6: 元動画か切り出し範囲が変わりました / m2: 解析していない素材が増えました
+2026-09-23 11:22:46,689 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-23 12:15:27,004 [INFO] src.blur.analyzer: ぼかし解析: 中断しました
+2026-09-23 12:15:38,429 [INFO] src.archive.project_resume: ==================================================
+2026-09-23 12:15:38,429 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 12:15:38,441 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 12:15:40,888 [WARNING] src.timeline.media_sidecar: 音声サイドカーの尺が保存値と合いません (181.10s / 期待 90.83s) → 使いません
+2026-09-23 12:15:40,888 [INFO] src.archive.project_resume: 音声サイドカーが無いため素材 m2 の正規化をやり直します
+2026-09-23 12:15:42,922 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-39.8 LUFS / TP=-15.8 dBTP / LRA=10.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.8 dB)
+2026-09-23 12:15:46,186 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_nze1edui\media_m2\normalized.mp4
+2026-09-23 12:15:46,186 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 4 件 / 再正規化 1 件 / 切り出しのまま 0 件
+2026-09-23 12:15:46,186 [INFO] src.archive.project_resume: 音声サイドカーが無いクリップがありました。次に保存すると作られ、以後は復元が速くなります。
+2026-09-23 12:16:01,330 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-23 12:16:01,334 [INFO] src.timeline.renderer: ベース映像構築: 33 クリップ / ギャップ 0 件 / 合計 674.5s
+2026-09-23 12:30:17,515 [INFO] src.timeline.renderer: ベース映像の尺: モデル 674.533s / 実測 674.534s (差 +0.000s / 33 部品)
+2026-09-23 12:30:17,634 [INFO] src.modules.subtitle_generator: コメント背景: 1 件
+2026-09-23 12:30:17,634 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 6 件 / サイズ 7 件 / 文字色 87 件 / 縁の色 0 件
+2026-09-23 12:30:17,636 [INFO] src.modules.comment_decor: コメントアイコン: 1 件 / 位置 1 種類
+2026-09-23 12:30:17,637 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-23 12:30:17,638 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 1 件 / サイズ 3 件 / 文字色 10 件 / 縁の色 0 件
+2026-09-23 12:30:17,639 [INFO] src.timeline.renderer: オーバーレイ合成: 31 層 (追加入力 13 件)
+2026-09-23 13:14:32,259 [INFO] src.archive.clip_writer: clip1: 左上テーマタグを焼き込み
+2026-09-23 13:14:34,790 [INFO] src.archive.clip_writer: clip1: イントロカード生成 (3.00s, テーマ=COMING SOON...)
+2026-09-23 13:14:34,794 [INFO] src.timeline.renderer: ベース映像構築: 3 クリップ / ギャップ 0 件 / 合計 67.5s
+2026-09-23 13:16:02,667 [INFO] src.timeline.renderer: ベース映像の尺: モデル 67.533s / 実測 67.533s (差 +0.000s / 3 部品)
+2026-09-23 13:16:02,685 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 10 件 / 縁の色 0 件
+2026-09-23 13:16:02,685 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 1 件 / 縁の色 0 件
+2026-09-23 13:16:02,685 [INFO] src.timeline.renderer: オーバーレイ合成: 4 層 (追加入力 1 件)
+2026-09-23 13:19:02,819 [INFO] src.archive.clip_writer: clip4: 左上テーマタグを焼き込み
+2026-09-23 13:19:06,079 [INFO] src.archive.clip_writer: clip4: イントロカード生成 (3.00s, テーマ=ZETA ブースへ)
+2026-09-23 13:19:06,081 [INFO] src.timeline.renderer: ベース映像構築: 35 クリップ / ギャップ 0 件 / 合計 688.5s
+2026-09-23 13:32:57,601 [INFO] src.timeline.renderer: ベース映像の尺: モデル 688.467s / 実測 688.467s (差 +0.000s / 35 部品)
+2026-09-23 13:32:57,696 [INFO] src.modules.subtitle_generator: コメント背景: 9 件
+2026-09-23 13:32:57,696 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 5 件 / サイズ 6 件 / 文字色 44 件 / 縁の色 0 件
+2026-09-23 13:32:57,696 [INFO] src.modules.comment_decor: コメントアイコン: 9 件 / 位置 1 種類
+2026-09-23 13:32:57,696 [INFO] src.modules.subtitle_generator: テロップ個別指定 フォント 0 件 / サイズ 0 件 / 文字色 8 件 / 縁の色 0 件
+2026-09-23 13:32:57,696 [INFO] src.timeline.renderer: オーバーレイ合成: 20 層 (追加入力 8 件)
+2026-09-23 14:02:06,289 [INFO] src.timeline.renderer: ベース映像構築: 2 クリップ / ギャップ 0 件 / 合計 90.1s
+2026-09-23 14:03:57,633 [INFO] src.timeline.renderer: ベース映像の尺: モデル 90.117s / 実測 90.117s (差 +0.000s / 2 部品)
+2026-09-23 14:03:57,651 [INFO] src.timeline.renderer: 字幕焼き込み: 29 件
+2026-09-23 14:35:19,714 [INFO] src.archive.clip_writer: 結合出力: D:/develop/autoedit/output\archive_vod_2877176496_combined.mp4 (使用4)

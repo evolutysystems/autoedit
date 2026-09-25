@@ -258,6 +258,8 @@ def timeline_config(settings):
             "keep_audio": bool(project.get("keep_audio", True)),
             "sidecar_tolerance_sec": _positive_float(
                 project.get("sidecar_tolerance_sec"), 0.5),
+            # 保存時にぼかしの解析結果をプロジェクトの隣へ残す (ver5 resolve4 §5.12.3)
+            "keep_blur_cache": bool(project.get("keep_blur_cache", True)),
             # 削除・リネーム (ver3 resolve9 §3-6 / §3-7 / §3-10)
             "delete_button": bool(project.get("delete_button", True)),
             "delete_to_trash": bool(project.get("delete_to_trash", True)),

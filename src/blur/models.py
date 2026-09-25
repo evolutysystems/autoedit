@@ -1,4 +1,4 @@
-# モデルファイルの解決と ONNX セッションの生成 (ver5 resolve2 §3.7 / §8-6)
+# モデルファイルの解決と ONNX セッションの生成 (ver5 resolve8 §5.13)
 #
 # onnxruntime は既に配布物へ入っているが、**遅延 import** する。
 # 機能が無効な利用者の起動時間を 1ms も増やさないため (§4-1)。
@@ -41,19 +41,18 @@ def resolve_path(configured):
     return full if os.path.isfile(full) else None
 
 
-# モデルが使えるか調べる。戻り値 (使えるか, 理由の文字列)。
-# 理由は設定画面とツールチップへそのまま出す (§5.6.1 / §5.8)。
+# 検出モデルが使えるか調べる。戻り値 (使えるか, 理由の文字列)。
+# 理由は設定画面と指定画面へそのまま出す。
+#
+# ver5 resolve8 では検出モデルは**囲みを追う助け**でしかない。
+# 無くても位相相関だけで追えるため、機能そのものは止めない (§5.13)。
 def availability(cfg):
     model_cfg = cfg["model"]
-    missing = []
     if resolve_path(model_cfg["detector"]) is None:
-        missing.append(f"人物検出モデル ({model_cfg['detector']})")
-    if resolve_path(model_cfg["reid"]) is None:
-        missing.append(f"人物同定モデル ({model_cfg['reid']})")
-    if missing:
-        return False, "モデルが見つかりません: " + " / ".join(missing)
+        return False, (f"人物検出モデルが見つかりません ({model_cfg['detector']})。"
+                       "模様の変化だけで囲みを追います")
     if not is_runtime_available():
-        return False, "onnxruntime が利用できないため、ぼかしの解析は行えません"
+        return False, "onnxruntime が利用できないため、模様の変化だけで囲みを追います"
     return True, "モデル: 準備完了"
 
 

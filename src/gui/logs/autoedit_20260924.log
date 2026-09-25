@@ -1,0 +1,137 @@
+2026-09-24 01:05:54,260 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-24 01:06:01,715 [INFO] src.archive.twitch_auth: Twitch 認証ページを開きます (ポート3737)
+2026-09-24 01:06:04,524 [INFO] src.archive.twitch_auth: Twitch ログイン成功
+2026-09-24 01:13:35,434 [INFO] src.gui.archive_tab: 無音カット: ON (アーカイブタブの選択)
+2026-09-24 01:13:38,770 [INFO] src.archive.twitch_source: 利用できる画質: 540p, 480p, 360p, 160p, Audio Only
+2026-09-24 01:13:38,772 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE download …
+2026-09-24 01:14:44,917 [INFO] src.archive.twitch_source: VOD 取得完了: D:\develop\autoedit\src\settings\archive_work\vod_2881981221.mp4 (画質 source)
+2026-09-24 01:14:44,921 [INFO] src.archive.twitch_source: twitch-dl 実行: C:\Users\evolu\AppData\Local\Programs\Python\Python312\Scripts\twitch-dl.EXE chat …
+2026-09-24 01:14:47,052 [WARNING] src.gui.archive_tab: コメント取得に失敗 (コメント無しで継続): twitch-dl の実行に失敗しました (code 1)。
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\evolu\AppData\Local\Programs\Python\Python312\Lib\site-packages\twitchdl\chat\utils.py", line 87, in _generate_paged_comments
+    cursor = video["comments"]["edges"][-1]["cursor"]
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^
+IndexError: list index out of range
+2026-09-24 01:14:47,539 [INFO] src.gui.archive_tab: ストリームマーカー取得: 0件
+2026-09-24 01:14:47,550 [INFO] src.archive.pipeline: アーカイブ採点開始: D:\develop\autoedit\src\settings\archive_work\vod_2881981221.mp4 (窓180s/スライド45s, コメント0件)
+2026-09-24 01:16:20,338 [INFO] src.archive.pipeline: 採点完了: 窓75件 → 6セクション (うちマーカー由来 0)
+2026-09-24 01:16:20,341 [INFO] src.archive.pipeline:   clip1: 0.0-360.0 点=51.2 (感情93.0/コメント0.0)
+2026-09-24 01:16:20,342 [INFO] src.archive.pipeline:   clip2: 405.0-585.0 点=38.3 (感情69.7/コメント0.0)
+2026-09-24 01:16:20,342 [INFO] src.archive.pipeline:   clip3: 1755.0-1935.0 点=44.7 (感情81.3/コメント0.0)
+2026-09-24 01:16:20,342 [INFO] src.archive.pipeline:   clip4: 2070.0-2250.0 点=55.0 (感情100.0/コメント0.0)
+2026-09-24 01:16:20,342 [INFO] src.archive.pipeline:   clip5: 2430.0-3150.0 点=51.1 (感情92.9/コメント0.0)
+2026-09-24 01:16:20,342 [INFO] src.archive.pipeline:   clip6: 3285.0-3465.0 点=54.2 (感情98.5/コメント0.0)
+2026-09-24 01:16:29,750 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-36.6 LUFS / TP=-14.2 dBTP / LRA=12.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.6 dB)
+2026-09-24 01:16:43,947 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip1\normalized.mp4
+2026-09-24 01:16:53,548 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-24 01:16:53,548 [INFO] src.archive.clip_writer: clip1: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 01:16:53,642 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 01:16:58,407 [INFO] src.modules.silence_cutter: 編集点検出: 無音 9 件 / 残す区間 10 件 (閾値=-18dB, 最小無音=0.60s, 総尺=360.1s)
+2026-09-24 01:17:07,017 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 10 区間 → 351.6s (元 360.1s)
+2026-09-24 01:17:39,130 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 01:17:39,131 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 01:17:45,667 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 01:31:39,492 [INFO] src.modules.subtitle_generator: 音声認識完了 (121 セグメント)
+2026-09-24 01:31:39,619 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 121 → 121 件 (カット区間のため 0 件除外)
+2026-09-24 01:31:39,620 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 121 → 121 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 01:31:39,620 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 121 件)
+2026-09-24 01:31:39,620 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 10 件 / 想定尺 351.62s (素材 360.07s)
+2026-09-24 01:31:39,621 [INFO] src.archive.clip_writer: clip1 prepare 完了 (字幕 121 件 / 実カットなし)
+2026-09-24 01:31:44,515 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-36.6 LUFS / TP=-15.5 dBTP / LRA=15.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.2 dB)
+2026-09-24 01:31:52,020 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip2\normalized.mp4
+2026-09-24 01:31:56,739 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-24 01:31:56,739 [INFO] src.archive.clip_writer: clip2: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 01:31:56,845 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 01:31:59,376 [INFO] src.modules.silence_cutter: 編集点検出: 無音 5 件 / 残す区間 6 件 (閾値=-18dB, 最小無音=0.60s, 総尺=180.9s)
+2026-09-24 01:32:03,520 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 6 区間 → 175.7s (元 180.9s)
+2026-09-24 01:32:03,521 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 01:32:03,521 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 01:32:09,963 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 01:37:34,096 [INFO] src.modules.subtitle_generator: 音声認識完了 (59 セグメント)
+2026-09-24 01:37:34,208 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 59 → 59 件 (カット区間のため 0 件除外)
+2026-09-24 01:37:34,209 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 59 → 59 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 01:37:34,209 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 59 件)
+2026-09-24 01:37:34,210 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 6 件 / 想定尺 175.73s (素材 180.91s)
+2026-09-24 01:37:34,210 [INFO] src.archive.clip_writer: clip2 prepare 完了 (字幕 59 件 / 実カットなし)
+2026-09-24 01:37:39,001 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-37.8 LUFS / TP=-14.8 dBTP / LRA=11.4 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 2.3 dB)
+2026-09-24 01:37:46,467 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip3\normalized.mp4
+2026-09-24 01:37:51,444 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-24 01:37:51,445 [INFO] src.archive.clip_writer: clip3: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 01:37:51,547 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 01:37:54,220 [INFO] src.modules.silence_cutter: 編集点検出: 無音 7 件 / 残す区間 8 件 (閾値=-18dB, 最小無音=0.60s, 総尺=180.9s)
+2026-09-24 01:37:58,671 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 8 区間 → 175.5s (元 180.9s)
+2026-09-24 01:37:58,671 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 01:37:58,671 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 01:38:05,238 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 01:42:08,671 [INFO] src.modules.subtitle_generator: 音声認識完了 (76 セグメント)
+2026-09-24 01:42:08,818 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 76 → 76 件 (カット区間のため 0 件除外)
+2026-09-24 01:42:08,819 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 76 → 76 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 01:42:08,819 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 76 件)
+2026-09-24 01:42:08,819 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 8 件 / 想定尺 175.46s (素材 180.92s)
+2026-09-24 01:42:08,820 [INFO] src.archive.clip_writer: clip3 prepare 完了 (字幕 76 件 / 実カットなし)
+2026-09-24 01:42:13,336 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-36.1 LUFS / TP=-14.7 dBTP / LRA=10.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.5 dB)
+2026-09-24 01:42:20,374 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip4\normalized.mp4
+2026-09-24 01:42:25,249 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-17 (mean, 測定 1/1 区間)
+2026-09-24 01:42:25,250 [INFO] src.archive.clip_writer: clip4: 音量解析によりカット閾値 -17 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 01:42:25,344 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 01:42:27,930 [INFO] src.modules.silence_cutter: 編集点検出: 無音 3 件 / 残す区間 4 件 (閾値=-17dB, 最小無音=0.60s, 総尺=181.9s)
+2026-09-24 01:42:32,183 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 4 区間 → 178.9s (元 181.9s)
+2026-09-24 01:42:32,184 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 01:42:32,184 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 01:42:38,602 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 01:46:58,773 [INFO] src.modules.subtitle_generator: 音声認識完了 (38 セグメント)
+2026-09-24 01:46:58,896 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 38 → 38 件 (カット区間のため 0 件除外)
+2026-09-24 01:46:58,897 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 38 → 38 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 01:46:58,897 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 38 件)
+2026-09-24 01:46:58,897 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 4 件 / 想定尺 178.92s (素材 181.91s)
+2026-09-24 01:46:58,898 [INFO] src.archive.clip_writer: clip4 prepare 完了 (字幕 38 件 / 実カットなし)
+2026-09-24 01:47:16,210 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-36.9 LUFS / TP=-14.2 dBTP / LRA=13.0 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 1.8 dB)
+2026-09-24 01:47:47,509 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip5\normalized.mp4
+2026-09-24 01:48:12,865 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-24 01:48:12,865 [INFO] src.archive.clip_writer: clip5: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 01:48:12,998 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 01:48:25,525 [INFO] src.modules.silence_cutter: 編集点検出: 無音 4 件 / 残す区間 5 件 (閾値=-18dB, 最小無音=0.60s, 総尺=721.9s)
+2026-09-24 01:48:45,956 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 5 区間 → 718.0s (元 721.9s)
+2026-09-24 01:48:45,957 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 01:48:45,957 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 01:48:54,656 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 02:13:21,924 [INFO] src.modules.subtitle_generator: 音声認識完了 (282 セグメント)
+2026-09-24 02:13:22,099 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 282 → 282 件 (カット区間のため 0 件除外)
+2026-09-24 02:13:22,100 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 282 → 282 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 02:13:22,101 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 282 件)
+2026-09-24 02:13:22,102 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 5 件 / 想定尺 718.00s (素材 721.91s)
+2026-09-24 02:13:22,102 [INFO] src.archive.clip_writer: clip5 prepare 完了 (字幕 282 件 / 実カットなし)
+2026-09-24 02:13:28,070 [INFO] src.modules.loudness_normalizer: 入力ラウドネス: I=-35.7 LUFS / TP=-15.0 dBTP / LRA=7.7 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.8 dB)
+2026-09-24 02:13:36,053 [INFO] src.modules.loudness_normalizer: ラウドネス正規化 完了: C:\Users\evolu\AppData\Local\Temp\archive_clips_3ya4aari\clip6\normalized.mp4
+2026-09-24 02:13:41,643 [INFO] src.modules.volume_analyzer: 発話区間の最低dB=-18 (mean, 測定 1/1 区間)
+2026-09-24 02:13:41,643 [INFO] src.archive.clip_writer: clip6: 音量解析によりカット閾値 -18 dB を採用 (測定 1/1 区間・ダイアログ無し)
+2026-09-24 02:13:41,760 [INFO] src.modules.output_profile: 横動画と判定 (入力=960x540)
+2026-09-24 02:13:44,762 [INFO] src.modules.silence_cutter: 編集点検出: 無音 15 件 / 残す区間 16 件 (閾値=-18dB, 最小無音=0.60s, 総尺=180.9s)
+2026-09-24 02:13:49,841 [INFO] src.modules.silence_cutter: 認識用音声を抽出: 16 区間 → 148.4s (元 180.9s)
+2026-09-24 02:13:49,842 [INFO] src.modules.subtitle_generator: 音声認識開始 (model=large-v3, device=cpu, compute_type=int8, 設定=cpu)
+2026-09-24 02:13:49,842 [INFO] src.modules.subtitle_generator: 音声認識実行 (device=cpu, compute_type=int8)
+2026-09-24 02:13:57,092 [INFO] src.modules.subtitle_generator: VAD フィルタ有効 (min_silence=500ms, speech_pad=100ms, condition_on_previous_text=False)
+2026-09-24 02:18:26,456 [INFO] src.modules.subtitle_generator: 音声認識完了 (60 セグメント)
+2026-09-24 02:18:26,614 [INFO] src.modules.subtitle_generator: 字幕時刻を Timeline の軸へ写像: 60 → 60 件 (カット区間のため 0 件除外)
+2026-09-24 02:18:26,615 [INFO] src.modules.subtitle_generator: テロップ表示タイミング整形: 60 → 60 区間 (max_hold=2.0s, min_dur=0.5s)
+2026-09-24 02:18:26,615 [INFO] src.modules.subtitle_generator: 音声認識完了 (Timeline 用 60 件)
+2026-09-24 02:18:26,616 [INFO] src.archive.clip_writer: 編集点準備: 残す区間 16 件 / 想定尺 148.40s (素材 180.91s)
+2026-09-24 02:18:26,616 [INFO] src.archive.clip_writer: clip6 prepare 完了 (字幕 60 件 / 実カットなし)
+2026-09-24 02:18:26,706 [INFO] src.archive.timeline_builder: clip1: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:26,795 [INFO] src.archive.timeline_builder: clip2: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:26,882 [INFO] src.archive.timeline_builder: clip3: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:26,962 [INFO] src.archive.timeline_builder: clip4: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:27,062 [INFO] src.archive.timeline_builder: clip5: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:27,153 [INFO] src.archive.timeline_builder: clip6: クリップ終端で打ち切った字幕 1 件 / 載せなかった字幕 0 件
+2026-09-24 02:18:27,153 [INFO] src.archive.timeline_builder: アーカイブ Timeline 構築: 6 クリップ / V1 49 本 / S1 636 件 / 全長 1748.1s
+2026-09-24 07:59:56,127 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m1_audio.m4a (8.4 MB)
+2026-09-24 07:59:56,222 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m2_audio.m4a (4.2 MB)
+2026-09-24 07:59:56,312 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m3_audio.m4a (4.2 MB)
+2026-09-24 07:59:56,407 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m4_audio.m4a (4.2 MB)
+2026-09-24 07:59:56,611 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m5_audio.m4a (16.7 MB)
+2026-09-24 07:59:56,708 [INFO] src.timeline.media_sidecar: 音声サイドカーを保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media\m6_audio.m4a (3.7 MB)
+2026-09-24 07:59:56,708 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media
+2026-09-24 07:59:56,726 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2881981221.archive.timeline.json
+2026-09-24 07:59:57,934 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 6 件保存しました: D:\develop\autoedit\output\vod_2881981221.archive.media
+2026-09-24 07:59:57,946 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2881981221.archive.timeline.json
+2026-09-24 08:00:10,107 [INFO] src.archive.clip_writer: 結果画面でキャンセル → 出力なし

@@ -23,7 +23,9 @@ from src.timeline.model import (
 _SETTINGS = {"timeline": {}}
 
 
-# 本編素材 1 件 + 追加素材 1 件の Timeline を組む
+# 本編素材 1 件 + 追加素材 1 件の Timeline を組む。
+# 追加素材は V2 のクリップとして載せる (どのクリップからも使われていない素材は
+# 復旧の対象外になったため / ver5 resolve6 §3.3)。
 def _build(media_path, extra_path, input_path, media_role=None, path_rel=""):
     body = MediaRef("m1", "video", media_path, 100.0, 1920, 1080, 60, True)
     extra = MediaRef("m2", "image", extra_path, None, 640, 360, 0, False,
@@ -31,11 +33,15 @@ def _build(media_path, extra_path, input_path, media_role=None, path_rel=""):
     video = Track("V1", TRACK_VIDEO, 1, name="Video 1", is_base=True, clips=[
         Clip("c1", "m1", 0.0, 10.0, 0.0, 10.0, origin={"type": ORIGIN_SILENCE_CUT}),
     ])
+    overlay = Track("V2", TRACK_VIDEO, 2, name="Video 2", clips=[
+        Clip("c2", "m2", 0.0, 3.0, 0.0, 3.0),
+    ])
     source = {"input_path": input_path, "media_path": media_path, "media_id": "m1",
               "duration_sec": 100.0}
     if media_role:
         source["media_role"] = media_role
-    return Timeline(fps=60, source=source, media_pool=[body, extra], tracks=[video])
+    return Timeline(fps=60, source=source, media_pool=[body, extra],
+                    tracks=[video, overlay])
 
 
 class MediaRecoveryTest(unittest.TestCase):
@@ -165,6 +171,7 @@ class MediaRecoveryTest(unittest.TestCase):
         timeline.media_pool.append(
             MediaRef("m3", "image", os.path.join(self._dir, "gone", "logo2.png"),
                      None, 640, 360, 0, False))
+        timeline.track_by_id("V2").clips.append(Clip("c3", "m3", 5.0, 3.0, 0.0, 3.0))
 
         asked = []
 

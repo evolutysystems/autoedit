@@ -46,8 +46,10 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
     project_cfg = timeline_config(settings)["project"]
     tolerance = float(project_cfg["sidecar_tolerance_sec"])
     policy = str(project_cfg["missing_media_policy"])
-    clips = list(archive_section(timeline).get("clips") or [])
-    total = max(len(clips), 1)
+    # 復元の対象は**素材 1 本ごと**。統合したセクションには素材が複数ぶら下がる
+    # ため、セクション数で数えると進捗が合わない (ver5 resolve6 §5.3)。
+    total = max(len(archive_timeline.archive_media(timeline))
+                or len(archive_section(timeline).get("clips") or []), 1)
     counters = stats if isinstance(stats, dict) else {}
     counters.setdefault("from_sidecar", 0)
     counters.setdefault("renormalized", 0)
@@ -55,25 +57,28 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
     done = [0]
 
     def recover_one(media, source):
-        entry = next((c for c in clips if c.get("media_id") == media.id), None)
+        # 素材 1 本ごとの控えを引く (ver5 resolve6 §5.3)。
+        # セクションの控え (clips) は統合で 1 件へ畳まれるため、そこから引くと
+        # 畳まれた側の素材を復元できなかった (ver5 resolve6 §2.2)。
+        entry = archive_timeline.archive_media_entry(timeline, media.id)
         if entry is None:
             return None                 # アーカイブのクリップ素材ではない (画像など)
 
         vod = _vod_path(source)
         if not vod:
-            _logger.warning("元 VOD が見つからないため clip%s を復元できません",
-                            entry.get("index"))
+            _logger.warning("元 VOD が見つからないため素材 %s を復元できません", media.id)
             return None
 
-        index = entry.get("index")
-        clip_dir = os.path.join(workdir, f"clip{index}")
+        # 作業サブフォルダは**素材 ID**で分ける。統合後は 1 セクションに複数素材が
+        # ぶら下がるため、セクション番号で分けると出力先が衝突する。
+        clip_dir = os.path.join(workdir, f"media_{media.id}")
         os.makedirs(clip_dir, exist_ok=True)
         done[0] += 1
         position = (done[0] - 1) / total
 
         # ① 映像を切り直す (ストリームコピーのため数秒)
         if progress_cb:
-            progress_cb(position, f"クリップ {done[0]}/{len(clips)} を復元中…（切り出し）")
+            progress_cb(position, f"素材 {done[0]}/{total} を復元中…（切り出し）")
         raw = os.path.join(clip_dir, "raw.mp4")
         clip_writer.cut_region(vod, float(entry.get("vod_start", 0.0)),
                                float(entry.get("vod_end", 0.0)), raw, ffmpeg_cfg)
@@ -88,7 +93,7 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
         if sidecar:
             if progress_cb:
                 progress_cb(position,
-                            f"クリップ {done[0]}/{len(clips)} を復元中…（音声の復元）")
+                            f"素材 {done[0]}/{total} を復元中…（音声の復元）")
             if media_sidecar.matches_duration(
                     sidecar, media.duration_sec, ffmpeg_cfg, tolerance):
                 _container, video_suffix = media_sidecar.suffixes_for(ffmpeg_cfg)
@@ -101,13 +106,13 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
 
         # ④ サイドカーが無い / 使えない → 正規化をやり直す (時間がかかる)
         if policy == "use_source":
-            _logger.info("設定に従い切り出したままの音量で使います: clip%s", index)
+            _logger.info("設定に従い切り出したままの音量で使います: 素材 %s", media.id)
             counters["raw"] += 1
             return raw
         if progress_cb:
             progress_cb(position,
-                        f"クリップ {done[0]}/{len(clips)} を復元中…（音量を正規化）")
-        _logger.info("音声サイドカーが無いため clip%s の正規化をやり直します", index)
+                        f"素材 {done[0]}/{total} を復元中…（音量を正規化）")
+        _logger.info("音声サイドカーが無いため素材 %s の正規化をやり直します", media.id)
         normalized = loudness_normalizer.normalize_file(
             raw, os.path.join(clip_dir, "normalized.mp4"), settings)
         counters["renormalized"] += 1
@@ -213,6 +218,13 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
 
         # ① 素材の復旧
         stats = {}
+        # ver5 resolve6 より前に保存したプロジェクトは、統合で畳まれた素材の
+        # 復元情報を失っている。開く前に、穴と尺の突き合わせで拾える範囲を拾う
+        # (ver5 resolve6 §3.2)。拾えたぶんは確定後の上書き保存で控えに残る。
+        repaired = archive_timeline.repair_archive_media(timeline)
+        if repaired:
+            _logger.info("素材の復元情報を %d 件補いました: %s",
+                         len(repaired), ", ".join(repaired))
         if progress_cb:
             progress_cb(0.0, "素材を復元中…")
         recover_progress = None

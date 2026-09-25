@@ -113,25 +113,27 @@ WHISPER_DEVICE_OPTIONS = [
     ("cpu", "CPU"),
 ]
 
-# トラッキングぼかしの選択肢 (ver5 resolve2 §5.8)
+# トラッキングぼかしの選択肢 (ver5 resolve8 §7)
 BLUR_MODE_OPTIONS = [
     ("gaussian", "ぼかし"),
     ("pixelate", "モザイク"),
 ]
-BLUR_POLICY_OPTIONS = [
-    ("blur_others", "ぼかす (映り込みを取りこぼさない)"),
-    ("manual_only", "ぼかさない (囲ったものだけ)"),
-]
+# 囲みの塗り方 (ver5 resolve8 §3.6)。身体の輪郭は廃止した
 BLUR_SHAPE_OPTIONS = [
-    ("silhouette", "身体の輪郭に沿う"),
+    ("rect", "囲んだとおりの四角"),
     ("rounded", "角の丸い四角"),
-    ("rect", "四角"),
     ("ellipse", "楕円"),
 ]
 BLUR_SAMPLE_FPS_OPTIONS = [
     (3.0, "速い (3fps)"),
     (5.0, "標準 (5fps)"),
     (10.0, "丁寧 (10fps)"),
+]
+# コマ送りの飛び幅 (Shift + ← →)
+BLUR_STEP_FRAMES_OPTIONS = [
+    (5, "5 コマ"),
+    (10, "10 コマ"),
+    (30, "30 コマ"),
 ]
 
 # 計算精度 (compute_type) 選択肢 (value, 表示テキスト)
@@ -374,6 +376,10 @@ DEFAULT_SETTINGS = {
             "keep_audio": True,
             # サイドカー音声の尺が保存値とどれだけズレたら使わないか (秒)
             "sidecar_tolerance_sec": 0.5,
+            # 保存時にぼかしの解析結果 (<プロジェクト>.blur.json) をプロジェクトの隣へ残す
+            # (ver5 resolve4 §5.12.3)。false にすると開き直したときに解析をやり直すため、
+            # 素材によっては数十分〜数時間の待ち時間が発生する。数 MB のディスクを使う。
+            "keep_blur_cache": True,
             # 一覧に削除ボタンを出す
             "delete_button": True,
             # 削除をゴミ箱経由にする (false で完全削除 / ver3 resolve9 §3-7)
@@ -713,6 +719,15 @@ DEFAULT_SETTINGS = {
             "default_length_sec": 180,
             "min_length_sec": 1.0,      # これより短い区間は追加させない
             "merge_on_overlap": True,   # 既存セクションと重なったら 1 つへ統合する
+            # 何を「使用中」とみなすか (ver5 resolve6 §3.4)
+            #   "used"     = Timeline に実際に載っている区間だけ (既定)
+            #   "declared" = セクション作成時に宣言した区間 (従来の挙動)
+            "occupied_by": "used",
+            # 使用中の区間どうしの隙間がこの秒数以内なら 1 つに繋ぐ。
+            # 無音カットの細かい穴で追加区間が刻まれすぎるのを防ぐ。
+            "used_gap_merge_sec": 10.0,
+            # 1 回の追加で用意する区間の上限 (超える指定は断る)
+            "max_ranges": 20,
         },
         # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
         "clip_pipeline": {
@@ -804,101 +819,60 @@ DEFAULT_SETTINGS = {
         # 残高インジケータの更新間隔 (秒)
         "balance_refresh_sec": 300,
     },
-    # トラッキングぼかし (ver5 resolve2 §7)。
-    # 既定は無効。有効にしたときだけ解析・マスク生成・焼き込みが走る (R1 / R9)。
-    # 設定画面に出すのは「使うかどうか」と見え方だけで、モデルやしきい値は出さない (§5.8)。
+    # トラッキングぼかし (ver5 resolve8 §7)。
+    # 既定は無効。有効にしたときだけ追従・マスク生成・焼き込みが走る (R14)。
+    # 設定画面に出すのは「使うかどうか」と見え方だけで、モデルやしきい値は出さない。
     "blur": {
-        # 機能の有効化 (R1)。false のとき解析もボタン表示も一切行わない
+        # 機能の有効化。false のとき追従もボタン表示も一切行わない
         "enabled": False,
-        # 囲っていない人物をどう扱うか (§9-1)
-        #   "blur_others" = 主役以外はぼかす / "manual_only" = 囲ったものだけぼかす
-        "default_policy": "blur_others",
-        # プレビューへぼかし対象の目印を出す (§5.7)
+        # プレビューへ「ぼかしを外した所」の目印を出す
         "preview_marker": True,
-        # ── モデル (設定画面には出さない / §3.7)
+        # Timeline 編集画面のプレビューで、停止中に実際のぼかしを反映する (ver5 resolve4 §5.8)。
+        # 再生中は速度のため目印のままにする。
+        "preview_blur": True,
+        # ── モデル (設定画面には出さない)。
+        # ver5 resolve8 では検出は**囲みを追う助け**でしかない。無くても相関だけで追う。
         "model": {
             "detector": "models/yolox_tiny.onnx",   # src/ からの相対パス。Apache-2.0
             "detector_format": "yolox",             # 出力の解釈方法 (差し替えの切り替え点)
             "detector_input": 416,                  # 入力の一辺 (px)。YOLOX-Tiny は 416
             "detector_pad_value": 114,              # letterbox の余白色 (YOLOX の既定)
-            "detector_score": 0.4,                  # 採用する最低スコア (obj x cls)
+            "detector_score": 0.2,                  # 採用する最低スコア (追従用に低め)
             "detector_nms": 0.5,                    # NMS の IoU しきい値
-            "reid": "models/osnet_x0_25.onnx",      # OSNet-x0.25 / MIT
-            "reid_format": "osnet",                 # 前後処理の切り替え点
-            "reid_input": [128, 256],               # 幅 x 高さ (縦横比は無視して伸ばす)
-            "reid_dim": 512,                        # 出力ベクトルの次元 (L2 正規化して保存)
             "providers": ["CPUExecutionProvider"],  # onnxruntime の実行プロバイダ
         },
-        # ── 解析 (設定画面に出すのは sample_fps だけ)
-        "analysis": {
-            "sample_fps": 5.0,        # 1 秒あたり何枚を検出にかけるか
-            "auto_start": True,       # Timeline 画面を開いた直後に背後で始める (§3.6)
-            "min_track_sec": 0.6,     # これより短い tracklet は捨てる (誤検出よけ)
-            "iou_threshold": 0.3,     # 連続フレームを同一とみなす重なり
-            "embed_threshold": 0.35,  # 同一人物とみなす特徴ベクトルの距離
-            "merge_threshold": 0.30,  # 全体クラスタリングで統合する距離 (§3.2 ②)
-            "max_identities": 50,     # 人物 ID の上限 (超えたら短いものから捨てる)
-            # 同じ時刻の 2 つの枠を「1 人への重複した枠」とみなす条件 (ver5 resolve3 §5.8)
-            "same_box_containment": 0.85,   # 小さい枠がこの割合以上入っている
-            "same_box_center_ratio": 0.5,   # 横の中心のずれが小さい枠の幅のこの倍率以内
-        },
-        # ── 領域 (建物など / §3.4)
-        "region": {
-            "follow": "track",        # track = 位相相関で追従 / fixed = 固定
-            "search_scale": 0.5,      # 相関を取るときの縮小率 (速度のため)
-            "match_psr": 25.0,        # 相関ピークの PSR がこれを下回ったら見失ったとみなす
-            "hold_sec": 1.0,          # 見失ってから位置を保持する時間
+        # ── 囲みの追従 (ver5 resolve8 §3.4)。設定画面に出すのは sample_fps だけ
+        "track": {
+            "sample_fps": 10.0,       # 1 秒あたり何枚を追うか (間は補間する)
+            "auto_start": True,       # 囲んだ直後に自動で追う
+            "search_ratio": 1.0,      # 前の位置の周りを枠の何倍ぶん広げて探すか
+            "min_iou": 0.3,           # 検出枠を同じ相手とみなす重なり
+            # 検出できない時刻に位置を補う相関の合格ライン (PSR)。
+            # 人物のまわりの小さな範囲では動きで下がりやすいため低くしてある
+            "match_psr": 8.0,
+            "hold_sec": 1.0,          # 分からない状態を我慢する秒数 (超えたら見失った扱い)
         },
         # ── ぼかしの見え方。大きさはキャンバス幅に対する比率で決める (watermark と同じ方針)
         "render": {
             "mode": "gaussian",       # gaussian | pixelate
             "strength": 50,           # 1〜100。sigma = キャンバス幅 x 0.00025 x strength
-            "margin_ratio": 0.06,     # 検出枠を広げる量 (枠 / 幅の比)
-            "feather_ratio": 0.006,   # 境界をぼかす量 (キャンバス幅比)
-            "pad_sec": 0.2,           # トラックの前後へ伸ばす時間 (取りこぼし対策)
+            # 囲みの塗り方: rect (囲んだとおり) | rounded (角丸) | ellipse (楕円)
+            "shape": "rect",
+            "margin_ratio": 0.0,      # 囲みを広げる量 (囲みの大きさは利用者が決めるため既定 0)
+            "feather_ratio": 0.006,   # 境界をなじませる量 (キャンバス幅比)
             "mask_scale": 0.25,       # マスクを作る解像度 (キャンバスに対する比)
-            # 人物の塗り方: silhouette | rounded | rect | ellipse (ver5 resolve3 §3.1)
-            # silhouette は輪郭モデルで身体に沿わせる。モデルが無い・取れない時刻は rounded
-            "shape": "silhouette",
-            "keep_margin_ratio": 0.0, # ぼかさない形を広げる量 (0 = 形ちょうどで削る / resolve3 §3.4)
-            # ぼかさない人物が激しく動いた時刻だけ、動いた量ぶん守る形を広げる。
-            # 守る人物はぼけにくくなるが、重なったぼかす人物が見えやすくなる (既定 false / resolve3 §3.3.3)
-            "keep_motion_margin": False,
         },
-        # ── 身体の輪郭 (ver5 resolve3 §3.1〜§3.3 / 設定画面には出さない)
-        "silhouette": {
-            "model": "models/silhouette_encoder.onnx",    # 画像エンコーダ
-            "decoder": "models/silhouette_decoder.onnx",  # 枠プロンプトのデコーダ
-            "format": "mobilesam",    # 前後処理の切り替え点 (mobilesam | efficientsam | sam2)
-            "input": 1024,            # エンコーダの入力の長辺 (px)
-            "threshold": 0.0,         # 確率マップ (logit) の 2 値化しきい値
-            "every_n_samples": 4,     # 解析サンプルの何枚に 1 枚で輪郭を作るか
-            "points": 64,             # 輪郭の点数
-            "min_fill_ratio": 0.15,   # 枠に対する面積がこれ未満なら取り損ねとして四角へ落とす
-            "max_gap_sec": 1.0,       # 前後の輪郭からこれ以上離れたら四角へ落とす
-            # 輪郭の外側へ取る余白 (ver5 resolve3 §3.3.3)。激しい動きでぼかしが外れないようにする
-            #   余白 = max(画面幅 x dilate_ratio, 人物の幅 x margin_box_ratio) + 前後の動いた量
-            "dilate_ratio": 0.01,     # 画面幅に対する最低限の余白
-            "margin_box_ratio": 0.15, # 人物の幅に対する余白
-            "max_margin_box_ratio": 0.5,   # 余白の上限 (人物の枠の長い辺に対する比)
-            "motion_lookahead_sec": 0.3,   # 前後この秒数の枠の動きを余白へ足す (0 = 足さない)
-            # 動いた量が人物の幅のこの割合を超える時刻は、輪郭をやめて四角 (+ 余白) でぼかす (0 = しない)
-            "fast_motion_box_ratio": 0.15,
-        },
-        # ── 手で足した人物・物の追従 (ver5 resolve3 §3.6)
-        "manual": {
-            "detector_score": 0.2,    # 探すときの検出しきい値 (通常の解析より低くする)
-            "search_ratio": 1.0,      # 前の位置の周りを枠の何倍ぶん広げて探すか
-            "min_iou": 0.3,           # 乗り換える枠の最小 IoU
-            "fixed_span_sec": 2.0,    # 追えなかった枠を固定で置くときの前後の秒数
-            # 検出できない時刻に位置を補う相関の合格ライン (PSR)。場所の追従 (region.match_psr) は
-            # 画面全体で相関を取るため高くてよいが、人物のまわりの小さな範囲では動きで下がりやすい
-            "match_psr": 8.0,
-        },
-        # ── 指定画面
-        "spec": {
-            "hit_ratio": 0.5,         # 囲みと検出枠の重なりがこの比率以上なら選択
-            "thumb_px": 96,           # 人物一覧に出す見本の一辺
+        # ── ぼかしの画面 (ver5 resolve8 §5.10)
+        "editor": {
+            # 開いたときの表示: "blur" = 実際のぼかし / "keep" = ボカさない範囲 (緑) / "none" = 枠だけ
+            "preview_mode": "blur",
+            # 画像・動画・字幕のオーバーレイを重ねる (ver5 resolve4 §5.7.2)
+            "show_overlays": True,
+            "step_frames": 10,        # Shift + ← → で送るコマ数
+            "frame_cache": 32,        # コマ送りのために保持するフレーム枚数
+            "handle_px": 10,          # 大きさを変えるハンドルの当たり判定 (画面 px)
+            "min_size_ratio": 0.01,   # 囲みの最小の大きさ (キャンバス幅比)
+            "name_max_len": 32,       # 指定に付けられる名前の最大文字数
         },
     },
     # 画面の見た目 (ガラスモーフィズム / resolve3 §6)。
@@ -1098,8 +1072,8 @@ def _fill_ui_nested_defaults(merged):
     return _fill_nested_defaults(merged, "ui")
 
 
-# blur セクションの入れ子 (model / analysis / region / render / spec) も補完する
-# (ver5 resolve2 §7)。モデルのパスやしきい値は設定画面に出さず setting.json で
+# blur セクションの入れ子 (model / track / render / editor) も補完する
+# (ver5 resolve8 §7)。モデルのパスやしきい値は設定画面に出さず setting.json で
 # 調整する前提のため、新バージョンで増えたキーがファイル上に現れる必要がある。
 def _fill_blur_nested_defaults(merged):
     return _fill_nested_defaults(merged, "blur")
@@ -1754,8 +1728,8 @@ class SettingsWindow(QWidget):
         # 機能の有効化 (R1)。外すと解析もボタン表示も行わない (R9)
         self.blur_enabled_check = QCheckBox("トラッキングぼかしを使用する")
         self.blur_enabled_check.setToolTip(
-            "人物・建物を追跡して、出力へぼかしを焼き込みます。"
-            "使用しない場合、解析もぼかし指定ボタンも一切出ません。")
+            "マウスで囲んだ場所を追いかけて、出力へぼかしを焼き込みます。"
+            "使用しない場合、追従もぼかしボタンも一切出ません。")
         grid.addWidget(self._make_column_label("トラッキングぼかし"), row, 0)
         grid.addWidget(self.blur_enabled_check, row, 1)
         row += 1
@@ -1776,31 +1750,37 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.blur_strength_edit, row, 1)
         row += 1
 
-        # 人物の形 (ver5 resolve3 §5.10)。輪郭は輪郭モデルが無ければ角丸で塗る
+        # 囲みの塗り方 (ver5 resolve8 §3.6)
         self.blur_shape_combo = self._make_value_combo(BLUR_SHAPE_OPTIONS)
         self.blur_shape_combo.setToolTip(
-            "「身体の輪郭に沿う」は人物の身体だけをぼかします。解析に時間がかかります。\n"
-            "輪郭が取れない場面では、ぼかし漏れを防ぐため角の丸い四角でぼかします。")
-        self.blur_shape_combo.currentIndexChanged.connect(
-            lambda _index: self._update_blur_status(getattr(self, "_loaded_settings", {}) or {}))
-        grid.addWidget(self._make_column_label("人物の形"), row, 0)
+            "マウスで囲んだ形をどう塗るかです。\n"
+            "「囲んだとおりの四角」が一番分かりやすく、角丸・楕円は縁が目立ちにくくなります。")
+        grid.addWidget(self._make_column_label("囲みの塗り方"), row, 0)
         grid.addWidget(self.blur_shape_combo, row, 1)
         row += 1
 
-        # 囲っていない人物をどう扱うか (§9-1)
-        self.blur_policy_combo = self._make_value_combo(BLUR_POLICY_OPTIONS)
-        self.blur_policy_combo.setToolTip(
-            "一番映っている人物 (主役) は、どちらを選んでもぼかしません。")
-        grid.addWidget(self._make_column_label("囲っていない人物"), row, 0)
-        grid.addWidget(self.blur_policy_combo, row, 1)
+        # 縁をなじませるか (フェザー)
+        self.blur_feather_check = QCheckBox("縁をなじませる")
+        self.blur_feather_check.setToolTip(
+            "ぼかした範囲の縁をなじませて、切り抜いたような境目を目立たなくします。")
+        grid.addWidget(self._make_column_label(""), row, 0)
+        grid.addWidget(self.blur_feather_check, row, 1)
         row += 1
 
-        # 解析の細かさ (1 秒あたり何枚を検出にかけるか)
+        # 追従の細かさ (1 秒あたり何枚を追うか)
         self.blur_sample_fps_combo = self._make_value_combo(BLUR_SAMPLE_FPS_OPTIONS)
         self.blur_sample_fps_combo.setToolTip(
-            "細かくするほど追従が良くなりますが、解析に時間がかかります。")
-        grid.addWidget(self._make_column_label("解析の細かさ"), row, 0)
+            "細かくするほど追従が良くなりますが、囲んだあとの待ち時間が長くなります。")
+        grid.addWidget(self._make_column_label("追従の細かさ"), row, 0)
         grid.addWidget(self.blur_sample_fps_combo, row, 1)
+        row += 1
+
+        # コマ送りの飛び幅 (Shift + ← →)
+        self.blur_step_frames_combo = self._make_value_combo(BLUR_STEP_FRAMES_OPTIONS)
+        self.blur_step_frames_combo.setToolTip(
+            "ぼかしの画面で Shift + ← → を押したときに送るコマ数です。")
+        grid.addWidget(self._make_column_label("コマ送りの飛び幅"), row, 0)
+        grid.addWidget(self.blur_step_frames_combo, row, 1)
         row += 1
 
         # モデルの状態 (見つからなければ理由を出す / §8-6)
@@ -1819,8 +1799,8 @@ class SettingsWindow(QWidget):
 
         layout.addLayout(grid)
         note = QLabel(
-            "ぼかす対象は Timeline 編集画面の「ぼかし指定...」で選びます。"
-            "囲んだ人物は、Timeline 上の全セクションへまとめて反映されます。")
+            "ぼかす場所は Timeline 編集画面でクリップを選び、「ぼかし...」で囲んで決めます。"
+            "指定はそのクリップの中だけに効きます。")
         note.setWordWrap(True)
         theme.mark_note(note)
         note_font = QFont(note.font())
@@ -2249,18 +2229,25 @@ class SettingsWindow(QWidget):
         self.vertical_margin_r_edit.setText(str(vertical.get("margin_r", 40)))
         self.vertical_margin_v_edit.setText(str(vertical.get("margin_v", 320)))
 
-        # トラッキングぼかし (ver5 resolve2 §5.8)
+        # トラッキングぼかし (ver5 resolve8 §7)。
+        # 旧キー (analysis / spec) しか無い設定でも読めるようにする
         blur = self._loaded_settings.get("blur", {}) or {}
         blur_render = blur.get("render", {}) or {}
-        blur_analysis = blur.get("analysis", {}) or {}
+        blur_track = blur.get("track", {}) or blur.get("analysis", {}) or {}
+        blur_editor = blur.get("editor", {}) or blur.get("spec", {}) or {}
         self.blur_enabled_check.setChecked(bool(blur.get("enabled", False)))
         self._set_combo_data(self.blur_mode_combo, blur_render.get("mode", "gaussian"))
         self.blur_strength_edit.setText(str(blur_render.get("strength", 50)))
-        self._set_combo_data(self.blur_policy_combo,
-                             blur.get("default_policy", "blur_others"))
-        self._set_combo_data(self.blur_shape_combo, blur_render.get("shape", "silhouette"))
+        self.blur_feather_check.setChecked(
+            float(blur_render.get("feather_ratio", 0.006) or 0.0) > 0.0)
+        # 廃止した "silhouette" は一番近い塗り方 (角丸) へ落とす
+        shape = str(blur_render.get("shape", "rect") or "rect")
+        self._set_combo_data(self.blur_shape_combo,
+                             "rounded" if shape == "silhouette" else shape)
         self._set_combo_data(self.blur_sample_fps_combo,
-                             float(blur_analysis.get("sample_fps", 5.0) or 5.0))
+                             float(blur_track.get("sample_fps", 10.0) or 10.0))
+        self._set_combo_data(self.blur_step_frames_combo,
+                             int(blur_editor.get("step_frames", 10) or 10))
         self._update_blur_status(self._loaded_settings)
 
         # アーカイブ切り抜き: 本体の有効/無効 (メイン画面タブの表示可否)。
@@ -2516,12 +2503,15 @@ class SettingsWindow(QWidget):
         # 画面に出していない値 (モデル・しきい値・マスクの解像度) は触らない。
         blur = settings.setdefault("blur", {})
         blur["enabled"] = self.blur_enabled_check.isChecked()
-        blur["default_policy"] = self.blur_policy_combo.currentData() or "blur_others"
         blur.setdefault("render", {})["mode"] = self.blur_mode_combo.currentData() or "gaussian"
         blur["render"]["strength"] = self._to_int(self.blur_strength_edit.text(), 50)
-        blur["render"]["shape"] = self.blur_shape_combo.currentData() or "silhouette"
-        blur.setdefault("analysis", {})["sample_fps"] = float(
-            self.blur_sample_fps_combo.currentData() or 5.0)
+        blur["render"]["shape"] = self.blur_shape_combo.currentData() or "rect"
+        blur["render"]["feather_ratio"] = 0.006 if self.blur_feather_check.isChecked() else 0.0
+        blur.setdefault("track", {})["sample_fps"] = float(
+            self.blur_sample_fps_combo.currentData() or 10.0)
+        blur.setdefault("editor", {})["step_frames"] = int(
+            self.blur_step_frames_combo.currentData() or 10)
+        # 外すときの余裕 (ver5 resolve7 §3.4)。既定方針は廃止した。
         return settings
 
     # モデルの状態を出す (見つからなければ理由をそのまま出す / §8-6)
@@ -2531,16 +2521,8 @@ class SettingsWindow(QWidget):
             from ..blur.config import config         # noqa: PLC0415
 
             cfg = config(settings)
+            # 検出モデルは「囲みを追う助け」なので、無くても機能は動く (resolve8 §5.13)
             _available, reason = models.availability(cfg)
-            # 人物の形が輪郭なら、輪郭モデルの状態も出す (ver5 resolve3 §5.10)。
-            # 画面で選び直した値を優先する (保存前でも状態が分かるように)
-            combo = getattr(self, "blur_shape_combo", None)
-            shape = (combo.currentData() if combo is not None else None) or cfg["render"]["shape"]
-            if shape == "silhouette":
-                from ..blur import silhouette        # noqa: PLC0415
-
-                _sil_available, sil_reason = silhouette.availability(cfg)
-                reason = f"{reason}\n{sil_reason}"
         except Exception as error:                   # noqa: BLE001 (設定画面を落とさない)
             reason = f"ぼかし機能の状態を確認できません: {error}"
         self.blur_status_label.setText(reason)

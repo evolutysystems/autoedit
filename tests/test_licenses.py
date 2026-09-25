@@ -17,7 +17,8 @@ _MANIFEST = os.path.join(_ROOT, "tools", "license_manifest.json")
 _LICENSES = os.path.join(_ROOT, "licenses")
 
 # 表記が無いと再配布できない同梱物 (漏れると法務上の問題になる)
-_REQUIRED = ("FFmpeg", "PySide6", "Python", "YOLOX", "torchreid")
+# ver5 resolve8 で osnet (torchreid) と MobileSAM は同梱しなくなった
+_REQUIRED = ("FFmpeg", "PySide6", "Python", "YOLOX")
 
 
 class LicenseManifestTest(unittest.TestCase):

@@ -66,9 +66,9 @@ class SectionAddTestBase(unittest.TestCase):
                 for r in archive_timeline.sections_by_vod(timeline)]
 
     # 区間 [start, end] を追加する (計画 → 素材の用意 → コマンド)
-    def _add(self, timeline, start, end, merge=True):
+    def _add(self, timeline, start, end, merge=True, **kwargs):
         plan = archive_timeline.plan_section_add(
-            timeline, start, end, merge_on_overlap=merge)
+            timeline, start, end, merge_on_overlap=merge, **kwargs)
         if plan is None:
             return None, False
         base = archive_timeline.next_section_index(timeline)
@@ -299,6 +299,121 @@ class SectionAddConfigTest(unittest.TestCase):
         cfg = archive_config.section_add_config(
             {"archive": {"section_add": {"enabled": False}}})
         self.assertFalse(cfg["enabled"])
+
+    # ver5 resolve6 §7: 「使用中」の判定は既定で実態ベース
+    def test_occupied_by_defaults_to_used(self):
+        cfg = archive_config.section_add_config({})
+        self.assertEqual(cfg["occupied_by"], "used")
+        self.assertEqual(cfg["used_gap_merge_sec"], 10.0)
+        self.assertEqual(cfg["max_ranges"], 20)
+
+    def test_occupied_by_can_go_back_to_declared(self):
+        cfg = archive_config.section_add_config(
+            {"archive": {"section_add": {"occupied_by": "declared"}}})
+        self.assertEqual(cfg["occupied_by"], "declared")
+
+    def test_unknown_occupied_by_falls_back_to_used(self):
+        cfg = archive_config.section_add_config(
+            {"archive": {"section_add": {"occupied_by": "なにこれ"}}})
+        self.assertEqual(cfg["occupied_by"], "used")
+
+
+class UsedRangeTest(SectionAddTestBase):
+    """ver5 resolve6 §3.4 / §5.6: 「使用中」は Timeline の実態で判定する"""
+
+    # セクションの宣言区間ではなく、実際に載っているクリップを見る
+    def test_used_ranges_follow_the_timeline(self):
+        timeline = self._timeline([(100, 200)])
+        base = timeline.base_video_track()
+        # 100-200 のうち 100-130 だけ残す (利用者が後ろを削った状態)
+        clip = base.clips[0]
+        clip.duration = 30.0
+        clip.source_out = 30.0
+        self.assertEqual(archive_timeline.used_vod_ranges(timeline, 1),
+                         [(100.0, 130.0)])
+
+    # 削除した区間は「使用中」ではないので、もう一度足せる (B3 の回帰テスト)
+    def test_deleted_range_can_be_added_again(self):
+        timeline = self._timeline([(100, 200)])
+        clip = timeline.base_video_track().clips[0]
+        clip.duration = 30.0
+        clip.source_out = 30.0
+
+        # 従来方式 (宣言区間) では「既に含まれている」と断られていた
+        self.assertIsNone(archive_timeline.plan_section_add(
+            timeline, 150, 190, occupied_by="declared"))
+        # 実態ベースでは足せる
+        plan = archive_timeline.plan_section_add(timeline, 150, 190)
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["ranges"], [(150.0, 190.0)])
+        self.assertEqual(plan["merge_indexes"], [1])
+
+    # 指定区間が本当に使われていれば、今までどおり断る
+    def test_used_range_is_still_refused(self):
+        timeline = self._timeline([(100, 200)])
+        self.assertIsNone(archive_timeline.plan_section_add(timeline, 120, 180))
+
+    # 隙間は gap_merge_sec までなら 1 つの使用区間として繋ぐ
+    def test_small_gaps_are_bridged(self):
+        timeline = self._timeline([(100, 200)])
+        base = timeline.base_video_track()
+        clip = base.clips[0]
+        clip.duration = 30.0
+        clip.source_out = 30.0
+        # 無音カットを模して 32-100 秒目をもう 1 本足す (隙間 2 秒)
+        from src.timeline.model import BASE_Z_ORDER, Clip, ORIGIN_SILENCE_CUT
+        base.clips.append(Clip(
+            "cx", clip.media_id, 30.0, 68.0, source_in=32.0, source_out=100.0,
+            z_order=BASE_Z_ORDER,
+            origin={"type": ORIGIN_SILENCE_CUT,
+                    archive_timeline.ORIGIN_ARCHIVE_INDEX: 1}))
+        self.assertEqual(len(archive_timeline.used_vod_ranges(timeline, 1, 0.0)), 2)
+        self.assertEqual(archive_timeline.used_vod_ranges(timeline, 1, 10.0),
+                         [(100.0, 200.0)])
+
+    # 「使わない」にしただけのクリップも使用中に数える (使用可否を戻せるようにするため)
+    def test_disabled_clips_count_as_used(self):
+        timeline = self._timeline([(100, 200)])
+        timeline.base_video_track().clips[0].enabled = False
+        self.assertEqual(archive_timeline.used_vod_ranges(timeline, 1),
+                         [(100.0, 200.0)])
+        self.assertEqual(
+            archive_timeline.used_vod_ranges(timeline, 1, include_disabled=False), [])
+
+    # 切れ端 (min_range_sec 未満) は用意しない
+    def test_tiny_leftover_is_not_prepared(self):
+        timeline = self._timeline([(100, 200)])
+        plan = archive_timeline.plan_section_add(
+            timeline, 99.9, 200, min_range_sec=1.0)
+        self.assertIsNone(plan)
+
+    # 刻まれすぎる指定は理由つきで断る
+    def test_too_many_ranges_is_refused(self):
+        timeline = self._timeline([(0, 300)])
+        base = timeline.base_video_track()
+        from src.timeline.model import BASE_Z_ORDER, Clip, ORIGIN_SILENCE_CUT
+        base.clips.clear()
+        # 20 秒おきに 1 秒だけ残した状態 = 穴だらけ
+        for i in range(15):
+            base.clips.append(Clip(
+                f"cs{i}", "m1", float(i), 1.0,
+                source_in=float(i * 20), source_out=float(i * 20 + 1),
+                z_order=BASE_Z_ORDER,
+                origin={"type": ORIGIN_SILENCE_CUT,
+                        archive_timeline.ORIGIN_ARCHIVE_INDEX: 1}))
+        plan = archive_timeline.plan_section_add(timeline, 0, 300, max_ranges=5)
+        self.assertIsNotNone(plan)
+        self.assertGreater(plan["too_many"], 5)
+        self.assertEqual(plan["ranges"], [])
+
+    # 従来方式では結果が変わらないこと (差し引く先を span → 指定区間へ変えた影響)
+    def test_declared_mode_is_unchanged(self):
+        timeline = self._timeline([(100, 200), (400, 500)])
+        plan = archive_timeline.plan_section_add(
+            timeline, 150, 450, occupied_by="declared")
+        self.assertEqual(plan["ranges"], [(200.0, 400.0)])
+        self.assertEqual(plan["merge_indexes"], [1, 2])
+        self.assertEqual(plan["span"], (100.0, 500.0))
 
 
 if __name__ == "__main__":

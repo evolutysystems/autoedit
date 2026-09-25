@@ -1,0 +1,22 @@
+2026-09-19 01:47:23,725 [INFO] src.utils.updater: 非凍結実行のため更新チェックをスキップ
+2026-09-19 01:47:30,840 [INFO] src.archive.project_resume: ==================================================
+2026-09-19 01:47:30,840 [INFO] src.archive.project_resume: 保存済みアーカイブプロジェクトから再開: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-19 01:47:30,844 [INFO] src.timeline.project_io: プロジェクト読込: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-19 01:47:33,750 [INFO] src.archive.project_resume: 素材の復元: 音声サイドカー 3 件 / 再正規化 0 件 / 切り出しのまま 0 件
+2026-09-19 01:47:38,401 [INFO] src.blur.analyzer: ぼかし解析: 輪郭モデル: 準備完了
+2026-09-19 01:47:38,554 [INFO] src.blur.models: モデルを読み込みました: yolox_tiny.onnx
+2026-09-19 01:47:39,028 [INFO] src.blur.models: モデルを読み込みました: osnet_x0_25.onnx
+2026-09-19 01:47:39,592 [INFO] src.blur.models: モデルを読み込みました: silhouette_encoder.onnx
+2026-09-19 01:47:39,791 [INFO] src.blur.models: モデルを読み込みました: silhouette_decoder.onnx
+2026-09-19 03:36:58,136 [INFO] src.blur.tracker: 人物が 77 人を超えたため、短いものから捨てます (上限 50)
+2026-09-19 03:36:58,137 [INFO] src.blur.tracker: 人物クラスタリング: tracklet 2064 本 → 人物 50 人 (主役 p1)
+2026-09-19 03:36:58,503 [INFO] src.blur.store: ぼかしの解析結果を保存しました: vod_2877176496.archive.timeline.blur.json
+2026-09-19 07:14:47,540 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 3 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-19 07:14:47,558 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-19 07:14:48,904 [INFO] src.gui.timeline.timeline_editor_dialog: 音声サイドカーを 3 件保存しました: D:\develop\autoedit\output\vod_2877176496.archive.media
+2026-09-19 07:14:48,912 [INFO] src.timeline.project_io: プロジェクト保存: D:/develop/autoedit/output/vod_2877176496.archive.timeline.json
+2026-09-20 21:27:19,364 [INFO] src.timeline.project_io: プロジェクト保存: D:\develop\autoedit\output\vod_2877176496.archive.timeline.json
+2026-09-20 21:27:19,380 [INFO] src.timeline.renderer: ベース映像構築: 2 クリップ / ギャップ 0 件 / 合計 1260.4s
+2026-09-20 21:27:19,380 [INFO] src.timeline.renderer: 素材を正規化: normalized.mp4 (960x540 29.6fps → 1920x1080 60fps)
+2026-09-20 21:48:38,535 [INFO] src.timeline.renderer: ベース映像の尺: モデル 1260.400s / 実測 1260.400s (差 +0.000s / 2 部品)
+2026-09-20 21:51:17,612 [INFO] src.timeline.renderer: 字幕焼き込み: 426 件

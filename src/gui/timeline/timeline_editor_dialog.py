@@ -94,13 +94,13 @@ class TimelineEditorDialog(QDialog):
         # 起動用音声の先読みを 1 回だけ行うための印 (resolve6 §5.9)
         self._prefetched = False
 
-        # トラッキングぼかしの解析 (ver5 resolve2 §3.6 案 2)。
-        # 画面を開いた直後に背後で走らせ、終わったらボタンを有効にする。
-        self._blur_worker = None
-        self._blur_analysis = None
+        # トラッキングぼかし (ver5 resolve8 §5.12.3)。
+        # **画面を開いても追従は走らない。**指定画面で囲んだときにその区切りだけ追う。
+        # ここでは手元の追従結果 (あれば) を読むだけで、無くてもぼかしの指定はできる。
+        self._blur_tracks = None
         self._blur_cache_path = None
         self._work_dir = work_dir
-        self._start_blur_analysis()
+        self._load_blur_tracks()
 
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.timeline_changed.connect(self._on_timeline_changed)
@@ -180,13 +180,15 @@ class TimelineEditorDialog(QDialog):
             self.save_as_button.clicked.connect(lambda: self.save_project(ask=True))
             button_row.addWidget(self.save_as_button)
 
-        # ぼかし指定 (ver5 resolve2 §5.6.1)。
-        # blur.enabled が False のときは**ボタンを出さない** (R1 / R9)。
+        # ぼかし (ver5 resolve8 §5.12.3)。
+        # blur.enabled が False のときは**ボタンを出さない** (R14)。
         self.blur_button = None
         if self._blur_enabled():
-            self.blur_button = QPushButton("ぼかし指定...")
+            self.blur_button = QPushButton("ぼかし...")
             self.blur_button.setAutoDefault(False)
-            self.blur_button.setEnabled(False)
+            self.blur_button.setToolTip(
+                "選んだクリップのぼかしを編集します。\n"
+                "画面をドラッグで囲み、「ボカす / ボカさない」を選ぶだけです。")
             self.blur_button.clicked.connect(self._open_blur_spec)
             button_row.addWidget(self.blur_button)
 
@@ -436,117 +438,192 @@ class TimelineEditorDialog(QDialog):
 
         return is_enabled(self._settings)
 
-    # 解析を背後で始める。モデルが無ければボタンを無効のままにして理由を出す。
-    def _start_blur_analysis(self):
+    # 手元の追従結果を読むだけ (ver5 resolve8 §5.12.3)。
+    #
+    # **追従は走らせない。**画面を開いた瞬間に動画全体を解析していたのをやめ、
+    # 指定画面で囲んだときだけ、その区切りを追うようにした。
+    # ここで読めた結果があれば、プレビューの目印と実際のぼかしにすぐ使える。
+    def _load_blur_tracks(self):
         if self.blur_button is None:
             return
-        from ...blur import models, store           # noqa: PLC0415
+        from ...blur import store                   # noqa: PLC0415 (機能 OFF なら読まない)
         from ...blur.config import config           # noqa: PLC0415
-        from .blur_spec_dialog import BlurAnalysisWorker   # noqa: PLC0415
 
         cfg = config(self._settings)
-        available, reason = models.availability(cfg)
-        if not available:
-            # モデルが見つからない: ボタンは出すが無効。理由をツールチップに出す (§5.6.1)
-            self.blur_button.setEnabled(False)
-            self.blur_button.setToolTip(reason)
-            _logger.warning("ぼかし機能を無効にします: %s", reason)
-            return
-        if not cfg["analysis"]["auto_start"]:
-            self.blur_button.setEnabled(True)
-            self.blur_button.setToolTip("押すと解析を始めます")
-            return
+        self._blur_cache_path = self._find_blur_cache(store)
+        self._blur_tracks = store.load(
+            self._blur_cache_path, store.settings_key(cfg, self.controller.timeline))
+        self._refresh_blur_preview()
+        self._update_blur_markers()
+        self._update_blur_button()
 
-        self._blur_cache_path = store.cache_path_for(self._project_path, self._work_dir)
-        self.blur_button.setText("ぼかし解析中… 0%")
-        self._blur_worker = BlurAnalysisWorker(
-            self.controller.timeline, self._settings, self._blur_cache_path, parent=self)
-        self._blur_worker.progress.connect(self._on_blur_progress)
-        self._blur_worker.finished_analysis.connect(self._on_blur_analysis_done)
-        # プレビュー再生を邪魔しないよう優先度を下げる (§5.3.5)
-        self._blur_worker.start(QThread.LowPriority)
-
-    def _on_blur_progress(self, ratio, _label):
-        if self.blur_button is not None:
-            self.blur_button.setText(f"ぼかし解析中… {int(ratio * 100)}%")
-
-    def _on_blur_analysis_done(self, analysis):
-        self._blur_worker = None
+    # ボタンの表示を指定の状態に合わせる
+    def _update_blur_button(self):
         if self.blur_button is None:
             return
-        self._blur_analysis = analysis
-        if not analysis:
-            self.blur_button.setText("ぼかし指定...")
-            self.blur_button.setEnabled(False)
-            self.blur_button.setToolTip(
-                "ぼかしの解析ができなかったため、ぼかし指定は使えません。"
-                "ログに理由が残っています。Timeline の編集と書き出しは続けられます。")
-            return
-
-        # 解析結果の在りかと指紋を指定へ書き留める。
-        # これが無いと書き出しのときに解析結果を見つけられない (§5.4 prepare)。
         from ...blur import decisions as blur_decisions   # noqa: PLC0415
-        from ...blur.config import config           # noqa: PLC0415
 
-        # 前回と違う解析結果で、人物への明示指定がある = 人物の番号が変わって指定が別人を指すことがある
-        # (ver5 resolve3 §10 #8)。解析のたびに作業を止めないよう、ボタンの表示で知らせる。
-        previous = blur_decisions.load(self.controller.timeline)
-        needs_review = bool(previous["identities"] and previous["fingerprint"]
-                            and previous["fingerprint"] != analysis.get("fingerprint", ""))
+        decisions = blur_decisions.load(self.controller.timeline)
+        count = sum(1 for s in decisions["specs"] if s.get("mode") == blur_decisions.BLUR)
+        self.blur_button.setText(f"ぼかし... ({count})" if count else "ぼかし...")
 
-        self.controller.execute(commands.SetBlurAnalysis(
-            self._blur_cache_path, analysis.get("fingerprint", ""),
-            project_path=self._project_path,
-            default_policy=config(self._settings)["default_policy"]))
+    # 追従結果の置き場を決める。mask_builder._cache_candidates と同じ順で探す。
+    #   1. 指定に書かれた相対パス (プロジェクトごと移しても効く)
+    #   2. 解析したときの絶対パス
+    #   3. 既定の置き場 (プロジェクトの隣 / 一時フォルダ)
+    # 見つからなければ 3 を返す (そこへ新しく書く)。
+    def _find_blur_cache(self, store):
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
 
-        self._update_blur_markers()
-        count = len(analysis.get("identities", []))
-        self.blur_button.setEnabled(True)
-        if needs_review:
-            _logger.info("ぼかしの解析をやり直したため、人物への指定の確認を案内します")
-            self.blur_button.setText("ぼかし指定... (確認してください)")
-            self.blur_button.setToolTip(
-                f"検出した人物: {count} 人\n"
-                "素材や設定が変わったため、ぼかしの解析をやり直しました。"
-                "人物の番号が変わり、「ぼかす / ぼかさない」の指定が別の人を指している場合があります。"
-                "見本画像を見て確認してください。")
-        else:
-            self.blur_button.setText("ぼかし指定...")
-            self.blur_button.setToolTip(f"検出した人物: {count} 人")
+        decisions = blur_decisions.load(self.controller.timeline)
+        default = store.cache_path_for(self._project_path, self._work_dir)
+        base = (os.path.dirname(self._project_path) if self._project_path else self._work_dir)
+        candidates = []
+        cached = decisions.get("cache")
+        if cached:
+            candidates.append(cached if os.path.isabs(cached)
+                              else os.path.join(base or "", cached))
+        if decisions.get("cache_abs"):
+            candidates.append(decisions["cache_abs"])
+        candidates.append(default)
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return default
 
-    # ぼかし指定画面を開く (R4)
-    def _open_blur_spec(self):
-        if not self._blur_analysis:
-            QMessageBox.information(
-                self, "ぼかし指定",
-                "ぼかしの解析がまだ終わっていません。しばらく待ってからお試しください。")
+    # ------------------------------------------------------------------
+    # クリップ単位のぼかし (ver5 resolve8 §5.12.3)
+    # ------------------------------------------------------------------
+
+    # 選択中 (無ければ再生位置) のベースクリップ一覧
+    def _blur_target_clips(self):
+        timeline = self.controller.timeline
+        clips = [timeline.clip_by_id(clip_id) for clip_id in self.controller.selected_ids()]
+        clips = [c for c in clips if c is not None and not c.is_opening_or_ending()
+                 and getattr(c, "media_id", "")]
+        if clips:
+            return clips
+        clip = self.controller.clip_at_playhead()
+        return [clip] if clip is not None and not clip.is_opening_or_ending() else []
+
+    # 選んだクリップに「画面全体をぼかす」指定を足す (§10 #9)。
+    # クリップ 1 本につき 1 件。1 回のコマンドで積むため Ctrl+Z 1 回で戻る。
+    def _blur_selected_clips(self):
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
+
+        clips = self._blur_target_clips()
+        if not clips:
+            self.preview.set_status("ぼかすクリップを選んでください。")
             return
+        timeline = self.controller.timeline
+        specs = []
+        for clip in clips:
+            middle = (float(clip.source_in) + float(clip.source_out)) / 2.0
+            if blur_decisions.frame_spec_at(blur_decisions.load(timeline),
+                                            str(clip.media_id), middle) is not None:
+                continue                        # 既に全面ぼかしが掛かっている
+            specs.append(blur_decisions.make_frame_spec(
+                "", str(clip.media_id), blur_decisions.span_for(timeline, clip)))
+        if not specs:
+            self.preview.set_status("このクリップにはすでにぼかしが掛かっています。")
+            return
+        if self.controller.execute(commands.AddBlurSpecs(specs)):
+            self.preview.set_status(
+                f"{len(specs)} 件のぼかしを追加しました。"
+                "見せたい場所があるときは「ぼかし...」から囲んでください。")
+        self._after_blur_change()
+
+    # 選んだクリップに掛かっているぼかしの指定をすべて消す
+    def _unblur_selected_clips(self):
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
+
+        clips = self._blur_target_clips()
+        if not clips:
+            return
+        decisions = blur_decisions.load(self.controller.timeline)
+        targets = []
+        for clip in clips:
+            for spec in blur_decisions.specs_in_clip(decisions, clip):
+                if str(spec.get("id")) not in targets:
+                    targets.append(str(spec.get("id")))
+        if not targets:
+            self.preview.set_status("このクリップにはぼかしが掛かっていません。")
+            return
+        if self.controller.execute(commands.RemoveBlurSpecs(targets)):
+            self.preview.set_status(f"ぼかしの指定を {len(targets)} 件消しました。")
+        self._after_blur_change()
+
+    # そのクリップにぼかしの指定があるか (メニューの出し分け用)
+    def _clips_have_blur(self, clips):
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
+
+        decisions = blur_decisions.load(self.controller.timeline)
+        return any(blur_decisions.specs_in_clip(decisions, clip) for clip in clips)
+
+    # クリップの右クリックメニューへ足す項目 (timeline_view から呼ばれる)
+    def blur_menu_actions(self, menu):
+        if self.blur_button is None:
+            return
+        clips = self._blur_target_clips()
+        if not clips:
+            return
+        menu.addSeparator()
+        count = len(clips)
+        label = ("このクリップを全部ぼかす" if count == 1
+                 else f"選んだ {count} クリップを全部ぼかす")
+        menu.addAction(label, self._blur_selected_clips)
+        if self._clips_have_blur(clips):
+            menu.addAction("このクリップのぼかしを消す", self._unblur_selected_clips)
+        menu.addAction("ぼかし...", self._open_blur_spec)
+
+    # 指定が変わったあとの共通処理
+    def _after_blur_change(self):
+        self._update_history_buttons()
+        self._refresh_blur_preview()
+        self._update_blur_markers()
+        self._update_blur_button()
+        self.timeline_panel.view.viewport().update()
+
+    # ぼかしの画面を開く (R1)。
+    # 追従はこの画面の中で囲んだときに走るため、**ここでは待たない** (§5.10.7)。
+    def _open_blur_spec(self):
         from .blur_spec_dialog import BlurSpecDialog     # noqa: PLC0415
 
+        clips = self._blur_target_clips()
+        if not clips:
+            # 対象が決まらないまま開くと「どのクリップを触っているか」が分からなくなる
+            self.preview.set_status("ぼかすクリップを選んでください。")
+            return
         dialog = BlurSpecDialog(
-            self.controller, self._blur_analysis, parent=self,
-            cache_path=self._blur_cache_path)
+            self.controller, self._blur_tracks, parent=self,
+            cache_path=self._blur_cache_path, settings=self._settings, clip=clips[0])
         dialog.exec()
-        self._update_history_buttons()
-        # 指定画面で変えた指定・追加した枠をプレビューの目印へ反映する
-        self._update_blur_markers()
-        # 指定画面を開いた = 確認した。案内の表示を戻す
-        self.blur_button.setText("ぼかし指定...")
+        # 指定画面で追った結果を引き取る (次に開いたときに追い直さない)
+        self._blur_tracks = dialog.tracks()
+        if self._blur_tracks is not None and self._blur_cache_path:
+            self.controller.execute(commands.SetBlurCache(
+                self._blur_cache_path, project_path=self._project_path))
+        self._after_blur_change()
 
-    # プレビューへぼかし対象の目印を出す (§5.7)
-    # 実際のぼかしはしない (1 枚ずつ取得しているため、画像処理を足すと重くなる)。
-    # 何をぼかすかは指定画面・出力と同じ blur.plan で決める (ver5 resolve3 §5.9)。
-    # 削除した枠・指定に無い領域の古い追従は出さない。
+    # プレビューへぼかしを反映する (ver5 resolve4 §5.8 / ver5 resolve7 §5.9)。
+    #
+    #   停止中 + blur.preview_blur … **実際にぼかした絵**を出す (目印は出さない)
+    #   再生中 / 反映 OFF          … 目印を出す
+    #
+    # 目印は「**ぼかしを外した所**」を示す。クリップ全体をぼかす方式では
+    # 「ぼかす所」を示しても画面全体になり、何も分からないため (resolve7 §5.9)。
     def _update_blur_markers(self, _timeline_sec=None):
-        if not self._blur_analysis or not hasattr(self.preview, "set_blur_markers"):
+        if self.blur_button is None or not hasattr(self.preview, "set_blur_markers"):
             return
         from ...blur import contour                       # noqa: PLC0415
         from ...blur import decisions as blur_decisions   # noqa: PLC0415
         from ...blur.config import config                 # noqa: PLC0415
-        from ...blur.plan import ROLE_BLUR, BlurPlan      # noqa: PLC0415
+        from ...blur.plan import BlurPlan                 # noqa: PLC0415
 
         cfg = config(self._settings)
-        if not cfg["preview_marker"]:
+        # ぼかしを絵で反映しているあいだは目印を重ねない (二重に見えるため)
+        if self.preview.blur_preview_active() or not cfg["preview_marker"]:
+            self.preview.set_blur_markers([])
             return
 
         resolved = self.controller.source_at_playhead()
@@ -556,28 +633,39 @@ class TimelineEditorDialog(QDialog):
         media, source_sec = resolved
 
         timeline = self.controller.timeline
-        plan = BlurPlan(timeline, self._blur_analysis, blur_decisions.load(timeline), cfg)
+        plan = BlurPlan(timeline, self._blur_tracks, blur_decisions.load(timeline), cfg)
         markers = []
-        for shape in plan.shapes_at(media.id, source_sec):
-            if shape["role"] != ROLE_BLUR:
-                continue
-            relative = shape["silhouette"] if shape["silhouette"] is not None else shape["outline"]
+        for layer in plan.layers_at(media.id, source_sec):
+            shape = layer["shape"]
+            if layer["mode"] != blur_decisions.KEEP:
+                continue                    # ぼかす所ではなく、外した所を示す
+            relative = shape["outline"]
             markers.append({
                 "rect": shape["rect"],
                 "polygon": (contour.to_absolute(relative, shape["rect"])
                             if relative is not None else None),
-                "label": shape["label"] if shape["kind"] != "person" else "ぼかし",
+                "label": shape["label"],
             })
         self.preview.set_blur_markers(markers)
 
-    # 解析スレッドを必ず止めてから閉じる (§5.3.5)
-    def _stop_blur_analysis(self):
-        worker = self._blur_worker
-        if worker is None:
+    # プレビューのぼかし反映器を作り直して渡す (解析後・指定を変えた後)
+    def _refresh_blur_preview(self):
+        if not hasattr(self.preview, "set_blur_preview"):
             return
-        worker.cancel()
-        worker.wait()
-        self._blur_worker = None
+        from ...blur import decisions as blur_decisions   # noqa: PLC0415
+        from ...blur import preview as blur_preview      # noqa: PLC0415
+        from ...blur.config import config                # noqa: PLC0415
+
+        cfg = config(self._settings)
+        timeline = self.controller.timeline
+        decisions = blur_decisions.load(timeline)
+        # 追従結果が無くても全面ぼかしは反映できるため、指定があれば作る
+        if (not blur_decisions.needs_mask(decisions) or not cfg["preview_blur"]
+                or not blur_preview.is_available()):
+            self.preview.set_blur_preview(None)
+            return
+        self.preview.set_blur_preview(blur_preview.BlurPreview(
+            timeline, self._blur_tracks, decisions, cfg))
 
     def _on_timeline_changed(self):
         self._update_history_buttons()
@@ -589,6 +677,9 @@ class TimelineEditorDialog(QDialog):
 
     # 再生中は編集操作を受け付けない (状態の競合を避ける / §4-8)
     def _on_playing_changed(self, playing):
+        # 止めた瞬間に「実際のぼかし」へ、再生を始めた瞬間に目印へ切り替える
+        # (ver5 resolve4 §5.8)
+        self._update_blur_markers()
         self.timeline_panel.setEnabled(not playing)
         self.inspector.setEnabled(not playing)
         self.undo_button.setEnabled(not playing and self.controller.can_undo())
@@ -629,6 +720,10 @@ class TimelineEditorDialog(QDialog):
             # 正規化済みの音声だけ残す (resolve9 §3-1 案D)。映像は開くときに
             # 元動画から切り直すため、これだけで復元が数分から数十秒になる。
             self._export_audio_sidecars(target)
+        if self._project_cfg["keep_blur_cache"]:
+            # ぼかしの解析結果をプロジェクトの隣へ移す (ver5 resolve4 §5.12.3)。
+            # JSON を書く前に行う = 更新した置き場 (cache / cache_abs) を保存に載せるため。
+            self._keep_blur_cache_beside_project(target)
         try:
             # 初回作成時刻は引き継ぐ (上書きのたびに created_at が変わらないように)
             project_io.save(self.controller.timeline, target,
@@ -647,6 +742,46 @@ class TimelineEditorDialog(QDialog):
         project_thumbnail.ensure(target, self._settings, timeline=self.controller.timeline)
         self.preview.set_status(f"保存しました: {os.path.basename(target)}")
         return True
+
+    # ぼかしの解析結果をプロジェクトの隣へ置く (ver5 resolve4 §5.12.3)
+    #
+    # 追従結果の置き場は画面を開いた時点で決まるため、**未保存のまま追うと
+    # 一時フォルダに置かれる**。そのまま保存しても隣へは来ず、一時フォルダは
+    # 実行の終わりに消えるので、次に開いたときに追従をやり直すことになる
+    # (ver5 resolve4 §2.8 (b))。保存のたびにここで隣へ引き取る。
+    # 既に隣にあれば何もしない (2 回目以降の上書き保存では起きない)。
+    # 失敗しても保存そのものは続ける。
+    def _keep_blur_cache_beside_project(self, project_path):
+        source = self._blur_cache_path
+        if not source or not os.path.isfile(source):
+            return
+        dest = project_io.blur_cache_path(project_path)
+        if not dest:
+            return
+        if os.path.normcase(os.path.abspath(source)) == os.path.normcase(
+                os.path.abspath(dest)):
+            self._update_blur_cache_location(dest, project_path)
+            return
+        try:
+            # 元は消さない。元のプロジェクトを開き直したときにも使えるようにする
+            shutil.copy2(source, dest)
+        except OSError as error:
+            _logger.warning("ぼかしの追従結果をプロジェクトの隣へ置けませんでした: %s (%s)",
+                            dest, error)
+            return
+        _logger.info("ぼかしの追従結果をプロジェクトの隣へ置きました: %s",
+                     os.path.basename(dest))
+        self._blur_cache_path = dest
+        self._update_blur_cache_location(dest, project_path)
+
+    # 指定 (source["blur"]) の置き場を書き換える。保存する JSON へ載せるため保存前に呼ぶ。
+    #
+    # ver5 resolve7 で SetBlurAnalysis の引数から fingerprint を外したのに、
+    # ここだけ 3 引数で呼んでいて保存が TypeError になっていた (resolve8 §2.8)。
+    def _update_blur_cache_location(self, cache_path, project_path):
+        if not self._blur_tracks:
+            return
+        self.controller.execute(commands.SetBlurCache(cache_path, project_path=project_path))
 
     # 正規化済み素材から音声だけを <プロジェクト名>.media/ へ残す (resolve9 §5.5-a)
     # 映像は -c:v copy で作られているため保存する必要が無く、音声だけで復元できる。
@@ -837,7 +972,6 @@ class TimelineEditorDialog(QDialog):
         # 決定後はパイプラインが本体を上書き保存するため、自動保存は不要になる
         if self._save_enabled:
             self._discard_autosave()
-        self._stop_blur_analysis()
         super().accept()
 
     # 編集済みのまま閉じようとしたら確認する (誤操作でパイプラインを中断させない)
@@ -845,7 +979,6 @@ class TimelineEditorDialog(QDialog):
     def reject(self):
         if not self._confirm_close():
             return
-        self._stop_blur_analysis()
         super().reject()
 
     # 閉じてよければ True。保存できる画面では 3 択で確認する (resolve7 §5.7 / C5)。

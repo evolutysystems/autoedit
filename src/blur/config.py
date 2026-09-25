@@ -1,113 +1,100 @@
-# setting.json の blur セクションを読み、型と範囲を整えて返す (ver5 resolve2 §7)
+# setting.json の blur セクションを読み、型と範囲を整えて返す (ver5 resolve8 §7)
 #
 # 呼び出し側は「設定が壊れていても既定で動く」ことだけを期待してよい。
 # 値の範囲外・型違い・欠落はすべてここで既定へ落とす (画面を落とさない / §4-5)。
+#
+# ver5 resolve8 で構成を入れ替えた。
+#   ・"analysis" / "region" / "manual" を **"track" 1 つ**へまとめた (囲みの追従だけになったため)
+#   ・"silhouette" (身体の輪郭) と model.reid を廃止した
+#   ・"spec" を **"editor"** へ改名した (データ側の「指定 (specs)」と紛れないため)
+# 旧キーしか無い設定でも動くよう、ここで読み替える (§7「旧キーの読み替え」)。
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
-
-# 囲っていない人物の扱い (§9-1)
-POLICY_BLUR_OTHERS = "blur_others"    # 主役以外はぼかす (既定)
-POLICY_MANUAL_ONLY = "manual_only"    # 囲ったものだけぼかす
-_POLICIES = (POLICY_BLUR_OTHERS, POLICY_MANUAL_ONLY)
 
 # ぼかしの種類
 MODE_GAUSSIAN = "gaussian"
 MODE_PIXELATE = "pixelate"
 _MODES = (MODE_GAUSSIAN, MODE_PIXELATE)
 
-# 人物の塗り方。silhouette は輪郭モデルで身体の形に沿わせる (ver5 resolve3 §3.1)。
-# 輪郭が取れない時刻・モデルが無い環境では rounded と同じ塗りへ落ちる (§3.3)。
-SHAPE_SILHOUETTE = "silhouette"
+# 囲みの塗り方 (ver5 resolve8 §3.6)。囲んだ矩形をそのまま塗るのが既定。
+SHAPE_RECT = "rect"
 SHAPE_ROUNDED = "rounded"
-_SHAPES = (SHAPE_SILHOUETTE, SHAPE_ROUNDED, "rect", "ellipse")
+SHAPE_ELLIPSE = "ellipse"
+_SHAPES = (SHAPE_RECT, SHAPE_ROUNDED, SHAPE_ELLIPSE)
+# 廃止した塗り方の読み替え先 (身体の輪郭は無くなった / resolve8 §0.3)
+_SHAPE_ALIASES = {"silhouette": SHAPE_ROUNDED}
 
-# 輪郭モデルの前後処理の種類 (§5.3.2)
-_SILHOUETTE_FORMATS = ("mobilesam", "efficientsam", "sam2")
+# 指定画面のフレームの見せ方 (ver5 resolve8 §5.12.1)
+PREVIEW_BLUR = "blur"     # 実際にぼかした絵を出す (既定)
+PREVIEW_KEEP = "keep"     # ボカさない範囲を緑で塗る
+PREVIEW_NONE = "none"     # 枠だけ
+_PREVIEW_MODES = (PREVIEW_BLUR, PREVIEW_KEEP, PREVIEW_NONE)
+# 廃止した表示モードの読み替え先 ("mask" = ぼかす範囲を赤。全面ぼかしでは役に立たない)
+_PREVIEW_ALIASES = {"mask": PREVIEW_KEEP}
 
-# 領域の追従方法 (§3.4)
-FOLLOW_TRACK = "track"
-FOLLOW_FIXED = "fixed"
+# 囲みの追従方法 (ver5 resolve8 §5.2)
+FOLLOW_TRACK = "track"     # 追いかける (既定)
+FOLLOW_FIXED = "fixed"     # 動かさない (追えなかった枠の逃げ道)
 _FOLLOWS = (FOLLOW_TRACK, FOLLOW_FIXED)
 
 # 設定が空だったときの既定値 (settings_window.DEFAULT_SETTINGS["blur"] と同じ)
 _DEFAULTS = {
     "enabled": False,
-    "default_policy": POLICY_BLUR_OTHERS,
     "preview_marker": True,
+    # Timeline 編集画面のプレビューで、停止中に実際のぼかしを反映する (ver5 resolve4 §5.8)
+    "preview_blur": True,
     "model": {
         "detector": "models/yolox_tiny.onnx",
         "detector_format": "yolox",
         "detector_input": 416,
         "detector_pad_value": 114,
-        "detector_score": 0.4,
+        # 追従の助けとして使うため、拾いやすいしきい値にする (ver5 resolve8 §7)
+        "detector_score": 0.2,
         "detector_nms": 0.5,
-        "reid": "models/osnet_x0_25.onnx",
-        "reid_format": "osnet",
-        "reid_input": [128, 256],
-        "reid_dim": 512,
         "providers": ["CPUExecutionProvider"],
     },
-    "analysis": {
-        "sample_fps": 5.0,
-        "auto_start": True,
-        "min_track_sec": 0.6,
-        "iou_threshold": 0.3,
-        "embed_threshold": 0.35,
-        "merge_threshold": 0.30,
-        "max_identities": 50,
-        # 同じ時刻の 2 つの枠を「1 人への重複した枠」とみなす条件 (ver5 resolve3 §5.8)。
-        # 小さい枠がこの割合以上入っていて、かつ横の中心のずれが小さい枠の幅のこの倍率以内。
-        "same_box_containment": 0.85,
-        "same_box_center_ratio": 0.5,
-    },
-    "region": {
-        "follow": FOLLOW_TRACK,
-        "search_scale": 0.5,
-        "match_psr": 25.0,
-        "hold_sec": 1.0,
+    # 囲みの追従 (ver5 resolve8 §3.4)
+    "track": {
+        "sample_fps": 10.0,       # 追う間隔
+        "auto_start": True,       # 囲んだ直後に自動で追う
+        "search_ratio": 1.0,      # 枠の何倍ぶん広げて探すか
+        "min_iou": 0.3,           # 検出枠を同じ相手とみなす重なり
+        "match_psr": 8.0,         # 位相相関の合格ライン
+        "hold_sec": 1.0,          # 分からない状態を我慢する秒数
     },
     "render": {
         "mode": MODE_GAUSSIAN,
         "strength": 50,
-        "margin_ratio": 0.06,
-        "feather_ratio": 0.006,
-        "pad_sec": 0.2,
+        "shape": SHAPE_RECT,
+        "margin_ratio": 0.0,      # 囲みの大きさは利用者が決めるため既定は 0
+        "feather_ratio": 0.006,   # 縁のなじませ (ぼかす / ボカさない 共通)
         "mask_scale": 0.25,
-        "shape": SHAPE_SILHOUETTE,
-        # ぼかさない層を広げる量 (キャンバス幅比)。0 = 形ちょうどで削る (ver5 resolve3 §3.4)
-        "keep_margin_ratio": 0.0,
-        "keep_motion_margin": False,
     },
-    # 身体の輪郭 (ver5 resolve3 §3.1〜§3.3)
-    "silhouette": {
-        "model": "models/silhouette_encoder.onnx",
-        "decoder": "models/silhouette_decoder.onnx",
-        "format": "mobilesam",
-        "input": 1024,
-        "threshold": 0.0,
-        "every_n_samples": 4,
-        "points": 64,
-        "min_fill_ratio": 0.15,
-        "max_gap_sec": 1.0,
-        "dilate_ratio": 0.01,
-        "margin_box_ratio": 0.15,
-        "max_margin_box_ratio": 0.5,
-        "motion_lookahead_sec": 0.3,
-        "fast_motion_box_ratio": 0.15,
+    # 指定画面のふるまい (旧 "spec")
+    "editor": {
+        "preview_mode": PREVIEW_BLUR,
+        "show_overlays": True,
+        "step_frames": 10,        # Shift + ← → で送るコマ数
+        "frame_cache": 32,        # 指定画面のフレームキャッシュ枚数
+        "handle_px": 10,          # 大きさを変えるハンドルの当たり判定 (画面 px)
+        "min_size_ratio": 0.01,   # 囲みの最小の大きさ (キャンバス幅比)
+        "name_max_len": 32,       # 指定の名前の最大文字数
     },
-    # 手で足した人物・物の追従 (ver5 resolve3 §3.6)
-    "manual": {
-        "detector_score": 0.2,
-        "search_ratio": 1.0,
-        "min_iou": 0.3,
-        "fixed_span_sec": 2.0,
-        "match_psr": 8.0,
-    },
-    "spec": {
-        "hit_ratio": 0.5,
-        "thumb_px": 96,
-    },
+}
+
+# 旧キーからの読み替え表 (新しいキー → 旧セクションと旧キー / ver5 resolve8 §7)
+_LEGACY = {
+    ("track", "sample_fps"): ("analysis", "sample_fps"),
+    ("track", "auto_start"): ("analysis", "auto_start"),
+    ("track", "search_ratio"): ("manual", "search_ratio"),
+    ("track", "min_iou"): ("manual", "min_iou"),
+    ("track", "match_psr"): ("manual", "match_psr"),
+    ("track", "hold_sec"): ("region", "hold_sec"),
+    ("model", "detector_score"): ("manual", "detector_score"),
+    ("editor", "preview_mode"): ("spec", "preview_mode"),
+    ("editor", "show_overlays"): ("spec", "show_overlays"),
+    ("editor", "name_max_len"): ("spec", "name_max_len"),
 }
 
 
@@ -117,129 +104,70 @@ def config(settings):
     if not isinstance(section, dict):
         section = {}
 
-    model = _sub(section, "model")
-    analysis = _sub(section, "analysis")
-    region = _sub(section, "region")
-    render = _sub(section, "render")
-    spec = _sub(section, "spec")
-    silhouette = _sub(section, "silhouette")
-    manual = _sub(section, "manual")
-    sil_defaults = _DEFAULTS["silhouette"]
-    manual_defaults = _DEFAULTS["manual"]
+    model = _Reader(section, "model")
+    track = _Reader(section, "track")
+    render = _Reader(section, "render")
+    editor = _Reader(section, "editor")
+    model_defaults = _DEFAULTS["model"]
+    track_defaults = _DEFAULTS["track"]
+    render_defaults = _DEFAULTS["render"]
+    editor_defaults = _DEFAULTS["editor"]
 
     return {
         "enabled": bool(section.get("enabled", _DEFAULTS["enabled"])),
-        "default_policy": _choice(section.get("default_policy"), _POLICIES,
-                                  _DEFAULTS["default_policy"], "blur.default_policy"),
         "preview_marker": bool(section.get("preview_marker", _DEFAULTS["preview_marker"])),
+        "preview_blur": bool(section.get("preview_blur", _DEFAULTS["preview_blur"])),
         "model": {
-            "detector": _text(model.get("detector"), _DEFAULTS["model"]["detector"]),
+            "detector": _text(model.get("detector"), model_defaults["detector"]),
             "detector_format": _text(model.get("detector_format"),
-                                     _DEFAULTS["model"]["detector_format"]).lower(),
+                                     model_defaults["detector_format"]).lower(),
             # 入力の一辺は 32 の倍数でなければ検出器のグリッドと合わない
             "detector_input": _multiple_of(model.get("detector_input"), 32,
-                                           _DEFAULTS["model"]["detector_input"], 128, 1280),
+                                           model_defaults["detector_input"], 128, 1280),
             "detector_pad_value": _int(model.get("detector_pad_value"),
-                                       _DEFAULTS["model"]["detector_pad_value"], 0, 255),
+                                       model_defaults["detector_pad_value"], 0, 255),
             "detector_score": _float(model.get("detector_score"),
-                                     _DEFAULTS["model"]["detector_score"], 0.01, 0.99),
+                                     model_defaults["detector_score"], 0.01, 0.99),
             "detector_nms": _float(model.get("detector_nms"),
-                                   _DEFAULTS["model"]["detector_nms"], 0.05, 0.95),
-            "reid": _text(model.get("reid"), _DEFAULTS["model"]["reid"]),
-            "reid_format": _text(model.get("reid_format"),
-                                 _DEFAULTS["model"]["reid_format"]).lower(),
-            "reid_input": _size_pair(model.get("reid_input"), _DEFAULTS["model"]["reid_input"]),
-            "reid_dim": _int(model.get("reid_dim"), _DEFAULTS["model"]["reid_dim"], 32, 4096),
+                                   model_defaults["detector_nms"], 0.05, 0.95),
             "providers": _providers(model.get("providers")),
         },
-        "analysis": {
-            "sample_fps": _float(analysis.get("sample_fps"),
-                                 _DEFAULTS["analysis"]["sample_fps"], 0.5, 30.0),
-            "auto_start": bool(analysis.get("auto_start", _DEFAULTS["analysis"]["auto_start"])),
-            "min_track_sec": _float(analysis.get("min_track_sec"),
-                                    _DEFAULTS["analysis"]["min_track_sec"], 0.0, 10.0),
-            "iou_threshold": _float(analysis.get("iou_threshold"),
-                                    _DEFAULTS["analysis"]["iou_threshold"], 0.01, 0.95),
-            "embed_threshold": _float(analysis.get("embed_threshold"),
-                                      _DEFAULTS["analysis"]["embed_threshold"], 0.01, 2.0),
-            "merge_threshold": _float(analysis.get("merge_threshold"),
-                                      _DEFAULTS["analysis"]["merge_threshold"], 0.01, 2.0),
-            "max_identities": _int(analysis.get("max_identities"),
-                                   _DEFAULTS["analysis"]["max_identities"], 1, 500),
-            "same_box_containment": _float(analysis.get("same_box_containment"),
-                                           _DEFAULTS["analysis"]["same_box_containment"],
-                                           0.1, 1.0),
-            "same_box_center_ratio": _float(analysis.get("same_box_center_ratio"),
-                                            _DEFAULTS["analysis"]["same_box_center_ratio"],
-                                            0.0, 5.0),
-        },
-        "region": {
-            "follow": _choice(region.get("follow"), _FOLLOWS,
-                              _DEFAULTS["region"]["follow"], "blur.region.follow"),
-            "search_scale": _float(region.get("search_scale"),
-                                   _DEFAULTS["region"]["search_scale"], 0.1, 1.0),
-            "match_psr": _float(region.get("match_psr"),
-                                _DEFAULTS["region"]["match_psr"], 1.0, 1000.0),
-            "hold_sec": _float(region.get("hold_sec"), _DEFAULTS["region"]["hold_sec"], 0.0, 10.0),
+        "track": {
+            "sample_fps": _float(track.get("sample_fps"),
+                                 track_defaults["sample_fps"], 0.5, 30.0),
+            "auto_start": bool(_default(track.get("auto_start"), track_defaults["auto_start"])),
+            "search_ratio": _float(track.get("search_ratio"),
+                                   track_defaults["search_ratio"], 0.1, 5.0),
+            "min_iou": _float(track.get("min_iou"), track_defaults["min_iou"], 0.01, 0.99),
+            "match_psr": _float(track.get("match_psr"),
+                                track_defaults["match_psr"], 1.0, 1000.0),
+            "hold_sec": _float(track.get("hold_sec"), track_defaults["hold_sec"], 0.0, 10.0),
         },
         "render": {
             "mode": _choice(render.get("mode"), _MODES,
-                            _DEFAULTS["render"]["mode"], "blur.render.mode"),
-            "strength": _int(render.get("strength"), _DEFAULTS["render"]["strength"], 1, 100),
+                            render_defaults["mode"], "blur.render.mode"),
+            "strength": _int(render.get("strength"), render_defaults["strength"], 1, 100),
+            "shape": _shape(render.get("shape")),
             "margin_ratio": _float(render.get("margin_ratio"),
-                                   _DEFAULTS["render"]["margin_ratio"], 0.0, 0.5),
+                                   render_defaults["margin_ratio"], 0.0, 0.5),
             "feather_ratio": _float(render.get("feather_ratio"),
-                                    _DEFAULTS["render"]["feather_ratio"], 0.0, 0.1),
-            "pad_sec": _float(render.get("pad_sec"), _DEFAULTS["render"]["pad_sec"], 0.0, 5.0),
+                                    render_defaults["feather_ratio"], 0.0, 0.1),
             "mask_scale": _float(render.get("mask_scale"),
-                                 _DEFAULTS["render"]["mask_scale"], 0.05, 1.0),
-            "shape": _choice(render.get("shape"), _SHAPES,
-                             _DEFAULTS["render"]["shape"], "blur.render.shape"),
-            "keep_margin_ratio": _float(render.get("keep_margin_ratio"),
-                                        _DEFAULTS["render"]["keep_margin_ratio"], 0.0, 0.2),
-            "keep_motion_margin": bool(render.get("keep_motion_margin",
-                                                  _DEFAULTS["render"]["keep_motion_margin"])),
+                                 render_defaults["mask_scale"], 0.05, 1.0),
         },
-        "silhouette": {
-            "model": _text(silhouette.get("model"), sil_defaults["model"]),
-            "decoder": _text(silhouette.get("decoder"), sil_defaults["decoder"]),
-            "format": _choice(silhouette.get("format"), _SILHOUETTE_FORMATS,
-                              sil_defaults["format"], "blur.silhouette.format"),
-            "input": _multiple_of(silhouette.get("input"), 32, sil_defaults["input"], 256, 2048),
-            "threshold": _float(silhouette.get("threshold"), sil_defaults["threshold"],
-                                -20.0, 20.0),
-            "every_n_samples": _int(silhouette.get("every_n_samples"),
-                                    sil_defaults["every_n_samples"], 1, 30),
-            "points": _int(silhouette.get("points"), sil_defaults["points"], 16, 256),
-            "min_fill_ratio": _float(silhouette.get("min_fill_ratio"),
-                                     sil_defaults["min_fill_ratio"], 0.0, 1.0),
-            "max_gap_sec": _float(silhouette.get("max_gap_sec"), sil_defaults["max_gap_sec"],
-                                  0.1, 30.0),
-            "dilate_ratio": _float(silhouette.get("dilate_ratio"), sil_defaults["dilate_ratio"],
-                                   0.0, 0.1),
-            "margin_box_ratio": _float(silhouette.get("margin_box_ratio"),
-                                       sil_defaults["margin_box_ratio"], 0.0, 1.0),
-            "max_margin_box_ratio": _float(silhouette.get("max_margin_box_ratio"),
-                                           sil_defaults["max_margin_box_ratio"], 0.0, 2.0),
-            "motion_lookahead_sec": _float(silhouette.get("motion_lookahead_sec"),
-                                           sil_defaults["motion_lookahead_sec"], 0.0, 2.0),
-            "fast_motion_box_ratio": _float(silhouette.get("fast_motion_box_ratio"),
-                                            sil_defaults["fast_motion_box_ratio"], 0.0, 5.0),
-        },
-        "manual": {
-            "detector_score": _float(manual.get("detector_score"),
-                                     manual_defaults["detector_score"], 0.01, 0.99),
-            "search_ratio": _float(manual.get("search_ratio"), manual_defaults["search_ratio"],
-                                   0.1, 5.0),
-            "min_iou": _float(manual.get("min_iou"), manual_defaults["min_iou"], 0.01, 0.99),
-            "fixed_span_sec": _float(manual.get("fixed_span_sec"),
-                                     manual_defaults["fixed_span_sec"], 0.1, 60.0),
-            "match_psr": _float(manual.get("match_psr"), manual_defaults["match_psr"],
-                                1.0, 1000.0),
-        },
-        "spec": {
-            "hit_ratio": _float(spec.get("hit_ratio"), _DEFAULTS["spec"]["hit_ratio"], 0.0, 1.0),
-            "thumb_px": _int(spec.get("thumb_px"), _DEFAULTS["spec"]["thumb_px"], 32, 512),
+        "editor": {
+            "preview_mode": _preview_mode(editor.get("preview_mode")),
+            "show_overlays": bool(_default(editor.get("show_overlays"),
+                                           editor_defaults["show_overlays"])),
+            "step_frames": _int(editor.get("step_frames"),
+                                editor_defaults["step_frames"], 1, 120),
+            "frame_cache": _int(editor.get("frame_cache"),
+                                editor_defaults["frame_cache"], 1, 256),
+            "handle_px": _int(editor.get("handle_px"), editor_defaults["handle_px"], 4, 40),
+            "min_size_ratio": _float(editor.get("min_size_ratio"),
+                                     editor_defaults["min_size_ratio"], 0.001, 0.5),
+            "name_max_len": _int(editor.get("name_max_len"),
+                                 editor_defaults["name_max_len"], 1, 200),
         },
     }
 
@@ -250,7 +178,7 @@ def is_enabled(settings):
     return bool(section.get("enabled", False)) if isinstance(section, dict) else False
 
 
-# ぼかしの sigma / モザイク片の大きさ (キャンバス幅から求める / §7)
+# ぼかしの sigma / モザイク片の大きさ (キャンバス幅から求める)
 # strength 1〜100 を「キャンバス幅 x 0.00025 x strength」へ写す。
 # 1920px・strength 50 で sigma 24 相当。比率で決めるため縦動画でも見え方が揃う。
 def blur_sigma(canvas_width, cfg):
@@ -258,9 +186,44 @@ def blur_sigma(canvas_width, cfg):
     return max(width * 0.00025 * float(cfg["render"]["strength"]), 1.0)
 
 
-def _sub(section, key):
-    value = section.get(key)
-    return value if isinstance(value, dict) else {}
+# 新しいキーを読み、無ければ旧キーを読む道具 (ver5 resolve8 §7)
+class _Reader:
+
+    def __init__(self, section, name):
+        self._name = name
+        value = section.get(name)
+        self._values = value if isinstance(value, dict) else {}
+        self._section = section
+
+    def get(self, key):
+        if key in self._values:
+            return self._values[key]
+        legacy = _LEGACY.get((self._name, key))
+        if legacy is None:
+            return None
+        old_section = self._section.get(legacy[0])
+        if isinstance(old_section, dict) and legacy[1] in old_section:
+            return old_section[legacy[1]]
+        return None
+
+
+# 囲みの塗り方。廃止した "silhouette" は "rounded" へ読み替える
+def _shape(value):
+    text = str(value if value is not None else "").strip()
+    text = _SHAPE_ALIASES.get(text, text)
+    return _choice(text, _SHAPES, _DEFAULTS["render"]["shape"], "blur.render.shape")
+
+
+# 指定画面の表示モード。廃止した "mask" は "keep" へ読み替える
+def _preview_mode(value):
+    text = str(value if value is not None else "").strip()
+    text = _PREVIEW_ALIASES.get(text, text)
+    return _choice(text, _PREVIEW_MODES, _DEFAULTS["editor"]["preview_mode"],
+                   "blur.editor.preview_mode")
+
+
+def _default(value, default):
+    return default if value is None else value
 
 
 def _text(value, default):
@@ -299,15 +262,6 @@ def _int(value, default, low, high):
 def _multiple_of(value, unit, default, low, high):
     number = _int(value, default, low, high)
     return max(int(round(number / unit)) * unit, unit)
-
-
-# [幅, 高さ] の組。壊れていれば既定を返す。
-def _size_pair(value, default):
-    if isinstance(value, (list, tuple)) and len(value) == 2:
-        width = _int(value[0], default[0], 8, 2048)
-        height = _int(value[1], default[1], 8, 2048)
-        return [width, height]
-    return list(default)
 
 
 # onnxruntime の実行プロバイダ。空なら CPU にする。

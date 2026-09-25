@@ -131,6 +131,19 @@ def section_add_config(settings):
         # マージ方式 "delta"=差分だけ用意 (既定 / §3-4 案B)。
         # "rebuild" (和集合の作り直し) は未実装のため delta へ寄せる (§7)。
         "merge_mode": "delta",
+        # 何を「使用中」とみなすか (ver5 resolve6 §3.4)
+        #   "used"     = Timeline に実際に載っている区間だけ (既定)
+        #   "declared" = セクションが宣言した区間 (従来の挙動 / 切り戻し用)
+        # 宣言区間は作成時のもので、無音カットや利用者の削除では更新されない。
+        # "declared" のままだと、もう Timeline に無い区間まで塞いでしまう。
+        "occupied_by": ("declared"
+                        if str(add.get("occupied_by", "")).strip() == "declared"
+                        else "used"),
+        # 使用中の区間どうしの隙間がこの秒数以内なら 1 つに繋ぐ。
+        # 無音カットが空ける細かい穴で、追加区間が刻まれすぎるのを防ぐ。
+        "used_gap_merge_sec": max(float(add.get("used_gap_merge_sec", 10.0) or 0.0), 0.0),
+        # 1 回の追加で用意する区間の上限。超える指定は理由を出して断る。
+        "max_ranges": max(int(add.get("max_ranges", 20) or 20), 1),
     }
 
 

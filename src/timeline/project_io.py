@@ -92,6 +92,21 @@ def autosave_path(project_path, suffix=".autosave.json"):
     return os.path.splitext(project_path)[0] + (suffix or ".autosave.json")
 
 
+# ぼかしの解析結果のパス (<プロジェクト>.blur.json / ver5 resolve4 §5.12.3)
+#
+# 解析結果は重いためプロジェクト JSON へは入れず隣へ置いている (ver5 resolve2 §4-2)。
+# 改名・削除・保存で一緒に動かさないと、次に開いたときに見つからず
+# **約 2 時間の解析をやり直すことになる** (ver5 resolve4 §2.8 (b)(c))。
+# blur パッケージを import すると機能 OFF でも重くなるため、接尾辞はここに持つ。
+BLUR_CACHE_SUFFIX = ".blur.json"
+
+
+def blur_cache_path(project_path, suffix=BLUR_CACHE_SUFFIX):
+    if not project_path:
+        return ""
+    return os.path.splitext(project_path)[0] + (suffix or BLUR_CACHE_SUFFIX)
+
+
 # 素材の複製先フォルダ (<プロジェクト名>.media / ver3 resolve7 §3-5 案B)
 # プロジェクトの接尾辞 (.timeline.json) は 2 段の拡張子のため、splitext では
 # ".timeline" が残る。接尾辞に一致する場合はそれを丸ごと落とす。
@@ -115,7 +130,8 @@ def media_dir_path(project_path, project_suffix=".timeline.json",
 # Timeline を JSON 文字列へ変換する (§6.2.2)
 # created_at   : 初回作成時刻 (上書き保存で引き継ぐ / resolve7 §5.7)
 # project_path : 保存先。渡すと素材へ相対パス (path_rel) を併記する (resolve7 §5.9)
-def to_json(timeline, generator="", created_at=None, project_path=None):
+def to_json(timeline, generator="", created_at=None, project_path=None,
+            drop_unused_media=True):
     now = datetime.now().isoformat(timespec="seconds")
     edit_points = dict(timeline.edit_points or {})
     # cut_segments は導出値。keep_segments から毎回作り直す (§6.2.3)
@@ -143,10 +159,29 @@ def to_json(timeline, generator="", created_at=None, project_path=None):
         "source": _source_to_dict(timeline.source),
         "edit_points": edit_points,
         "media_pool": [_media_to_dict(media, project_path)
-                       for media in timeline.media_pool],
+                       for media in _media_pool_to_save(timeline, drop_unused_media)],
         "tracks": [track.to_dict() for track in timeline.tracks],
     }
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+# 書き出す素材の一覧 (ver5 resolve6 §3.3 / §5.5)
+#
+# どのクリップからも参照されていない素材を JSON へ書かない。
+# セクション追加・統合・クリップの削除で残った素材はメディアプールから外れず、
+# 開き直すたびに「素材が元の場所にありません」を出していた (ver5 resolve6 §2.3)。
+#
+# **timeline.media_pool そのものは変更しない。**開いている画面と Undo 履歴を壊さないため、
+# 落とすのは書き出す JSON からだけにする。
+def _media_pool_to_save(timeline, drop_unused_media=True):
+    if not drop_unused_media:
+        return list(timeline.media_pool)
+    used = timeline.used_media_ids()
+    kept = [media for media in timeline.media_pool if media.id in used]
+    dropped = len(timeline.media_pool) - len(kept)
+    if dropped:
+        _logger.info("使われていない素材 %d 件を保存対象から外しました", dropped)
+    return kept
 
 
 # source セクションを丸めて整形する
@@ -199,9 +234,11 @@ def derive_cut_segments(keep_segments, total_duration):
 # Timeline をプロジェクト JSON として書き出す (一時ファイル → 成功時 rename)
 # 失敗しても実行は止めない方針のため、呼び出し側で握りつぶせるよう例外は投げるが
 # pipeline 側では WARNING に留める (§10)。
-def save(timeline, dest_path, generator="", created_at=None, project_path=None):
+def save(timeline, dest_path, generator="", created_at=None, project_path=None,
+         drop_unused_media=True):
     content = to_json(timeline, generator=generator, created_at=created_at,
-                      project_path=project_path or dest_path)
+                      project_path=project_path or dest_path,
+                      drop_unused_media=drop_unused_media)
     temp_path = dest_path + _TEMP_SUFFIX
     try:
         os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
@@ -691,7 +728,7 @@ def _resolve_frame_media(timeline, source, clip, source_sec):
 
 
 # プロジェクトに付随するファイルを集める (削除・リネームの対象 / §3-6 / §3-10)
-# 戻り値: {"project","autosave","media_dir"} (存在しないものは空文字)
+# 戻り値: {"project","autosave","media_dir","blur_cache"} (存在しないものは空文字)
 def related_paths(path, timeline_cfg=None, include_media_dir=True):
     cfg = timeline_cfg or {}
     project_cfg = cfg.get("project", {}) or {}
@@ -700,11 +737,15 @@ def related_paths(path, timeline_cfg=None, include_media_dir=True):
     media_dir = media_dir_path(
         full, cfg.get("project_suffix", ".timeline.json"),
         project_cfg.get("media_dir_suffix", ".media"))
+    blur_cache = blur_cache_path(full)
     return {
         "project": full if os.path.exists(full) else "",
         "autosave": autosave if autosave and os.path.exists(autosave) else "",
         "media_dir": media_dir if (include_media_dir and media_dir
                                    and os.path.isdir(media_dir)) else "",
+        # ぼかしの解析結果 (ver5 resolve4 §5.12.3)。消し忘れると数 MB のゴミが残り、
+        # 改名し忘れると開き直したときに解析をやり直すことになる。
+        "blur_cache": blur_cache if blur_cache and os.path.isfile(blur_cache) else "",
     }
 
 
@@ -737,6 +778,8 @@ def rename_project(path, new_stem, settings=None, timeline_cfg=None):
     new_autosave = autosave_path(new_path, autosave_suffix)
     old_media = media_dir_path(old_path, suffix, media_suffix)
     new_media = media_dir_path(new_path, suffix, media_suffix)
+    old_blur = blur_cache_path(old_path)
+    new_blur = blur_cache_path(new_path)
 
     done = []           # 巻き戻し用 (新, 旧)
     try:
@@ -745,6 +788,11 @@ def rename_project(path, new_stem, settings=None, timeline_cfg=None):
         if old_autosave and os.path.exists(old_autosave):
             os.replace(old_autosave, new_autosave)
             done.append((new_autosave, old_autosave))
+        # ぼかしの解析結果も一緒に改名する。置いていくと相対パスが外れ、
+        # 開き直したときに解析をやり直すことになる (ver5 resolve4 §5.12.3)
+        if old_blur and os.path.isfile(old_blur):
+            os.replace(old_blur, new_blur)
+            done.append((new_blur, old_blur))
         if old_media and os.path.isdir(old_media):
             if os.path.exists(new_media):
                 raise TimelineError(
@@ -821,7 +869,8 @@ def _rewrite_media_paths(project_path, old_dir, new_dir):
 def delete_project(path, timeline_cfg=None, delete_media_dir=True, use_trash=True):
     related = related_paths(path, timeline_cfg, include_media_dir=delete_media_dir)
     # 付随物 → 本体 の順。逆にすると失敗時にどのプロジェクトの残骸か分からなくなる
-    targets = [related["media_dir"], related["autosave"], related["project"]]
+    targets = [related["media_dir"], related["autosave"], related["blur_cache"],
+               related["project"]]
     targets = [t for t in targets if t]
     result = {"deleted": [], "failed": [], "trashed": False}
     if not targets:
