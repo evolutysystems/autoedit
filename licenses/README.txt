@@ -202,15 +202,6 @@
   ライセンス : MIT License
   全文       : mdurl\LICENSE
 
-[MobileSAM]  トラッキングぼかしの人物の輪郭 (silhouette_encoder.onnx / silhouette_decoder.onnx)
-  配布元     : https://github.com/ChaoningZhang/MobileSAM
-  ライセンス : Apache-2.0
-  全文       : MobileSAM\LICENSE.txt
-  備考       : 同梱物: 公式配布の重み (weights/mobile_sam.pt) を tools/export_silhouette.py で ONNX へ変換したもの。
-               MobileSAM は Segment Anything (Meta / Apache-2.0) の画像エンコーダを TinyViT へ置き換えて蒸留したモデル。
-  ※ 同梱物を更新したときは、配布元の LICENSE / NOTICE を
-     そのまま上書きしてください。
-
 [mpmath]
   版         : 1.3.0
   配布元     : http://mpmath.org/
@@ -422,16 +413,6 @@
   配布元     : https://github.com/pytorch/audio
   ライセンス : BSD License
   全文       : torchaudio\LICENSE
-
-[torchreid (OSNet)]  トラッキングぼかしの人物同定 (osnet_x0_25.onnx)
-  配布元     : https://github.com/KaiyangZhou/deep-person-reid
-  ライセンス : MIT
-  全文       : torchreid\LICENSE.txt
-  備考       : 同梱物: osnet_x0_25.onnx (osnet_x0_25 の重みを ONNX へ変換したもの)。
-               重み: Model Zoo の MSMT17 (combineall) 学習版 (Google Drive ID 1Kkx2zW89jq_NETu4u42CFZTMVD5Hwm6e)。
-               変換手順は tools/export_osnet.py。
-  ※ 同梱物を更新したときは、配布元の LICENSE / NOTICE を
-     そのまま上書きしてください。
 
 [tqdm]
   版         : 4.67.3
