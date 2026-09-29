@@ -139,9 +139,7 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [
-                "D:\\develop\\autoedit\\output\\vod_2884417212.archive.timeline.json"
-            ],
+            "recent_archive": [],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
@@ -196,7 +194,7 @@
             "archive_graph_dock_area": "top",
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAicAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAInAAAAG8A////AAAInAAABBwAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAXUAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAF1AAAAG8A////AAAF1AAABAkAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
