@@ -121,6 +121,11 @@ class PointsIndicator(QWidget):
 
     # ログイン状態が変わった (設定画面のアカウントタブと合わせるため)
     login_changed = Signal(bool)
+    # 表示に使った残高 (取れなければ最後に取得できた値 / 一度も取れていなければ None)。
+    # メイン画面のサブスクリプションボタンがこれを見て加入状態を反映する
+    # (ver6 resolve2 §4.2 / §4.3)。GET /api/points を読む場所を増やさないため、
+    # 残高の取得はこのクラス 1 か所に保つ (ver5 resolve §6.4 のリフレッシュ直列化)。
+    balance_changed = Signal(object)
 
     def __init__(self, points, settings=None, parent=None):
         super().__init__(parent)
@@ -156,6 +161,9 @@ class PointsIndicator(QWidget):
     def refresh(self, force=False):
         if not self._points.auth.is_logged_in():
             self._apply_state()
+            # ログアウト直後もここへ来る。購読側の加入表示を消すため空を流す
+            # (流さないとログアウト後もチェックマークが残る)。
+            self.balance_changed.emit(None)
             return
         if self._worker is not None and self._worker.isRunning():
             return
@@ -171,8 +179,11 @@ class PointsIndicator(QWidget):
 
     def _on_loaded(self, balance):
         # オフラインなら最後に取得できた値を薄字で出す
-        self._apply_state(balance if balance else self._points.last_balance(),
-                          offline=not balance)
+        shown = balance if balance else self._points.last_balance()
+        self._apply_state(shown, offline=not balance)
+        # 表示に使った値をそのまま流す。購読側 (メイン画面) が
+        # GET /api/points をもう一度叩かずに加入状態を知れるようにする。
+        self.balance_changed.emit(shown)
 
     def _apply_state(self, balance=None, offline=False):
         logged_in = self._points.auth.is_logged_in()

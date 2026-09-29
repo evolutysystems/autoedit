@@ -662,6 +662,10 @@ DEFAULT_SETTINGS = {
             "project_suffix": "_vertical",
             # 選んだクリップ間の空白を詰めるか
             "close_gaps": True,
+            # アーカイブ切り抜きから縦プロジェクトを作るとき、素材を元 VOD へ
+            # 張り替えるために「切り出しの先頭 (キーフレーム)」を探す幅 (秒)。
+            # Twitch の VOD は 2 秒間隔のため既定で十分に広い (ver5 resolve10 §5.2)。
+            "keyframe_window_sec": 30.0,
         },
     },
     "logging": {
@@ -837,6 +841,20 @@ DEFAULT_SETTINGS = {
         # サブスク導線 (設定画面のアカウントタブ) で開く URL。
         # 配信者ごとに違うため既定は空にし、空のあいだはボタンを出さない。
         "subscribe_url": "",
+    },
+    # サブスクリプション (Stripe) のクライアント側の挙動 (ver6 resolve §5)。設定画面には出さない。
+    #
+    # 【重要】ここに無いセクションは _merge_with_defaults が落とすため、
+    #   setting.json 側にだけ書いても load_settings → save_settings で消える
+    #   (ver6 resolve2 §1.4 / §5.1)。価格はサーバーから配るのでここには置かない。
+    #   入れ子は作らない (欠落キー補完 _fill_*_nested_defaults を増やさないため)。
+    "billing": {
+        # GET /api/billing/config の再取得間隔 (秒)
+        "config_cache_sec": 3600,
+        # 支払いの反映待ちのポーリング間隔 (秒)
+        "activation_poll_sec": 3,
+        # 支払いの反映待ちの上限 (秒)
+        "activation_timeout_sec": 180,
     },
     # トラッキングぼかし (ver5 resolve8 §7)。
     # 既定は無効。有効にしたときだけ追従・マスク生成・焼き込みが走る (R14)。

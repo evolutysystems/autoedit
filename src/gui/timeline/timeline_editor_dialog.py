@@ -596,16 +596,23 @@ class TimelineEditorDialog(QDialog):
                  else f"選んだ {count} クリップから縦動画プロジェクトを作成...")
         menu.addAction(label, self._open_vertical_project)
 
-    # 縦動画にできる Timeline か。
-    # 既に縦のもの (§10 #10) と、アーカイブ切り抜き用 (§3.7) は対象外。
+    # 縦動画にできる Timeline か。既に縦のものは対象外 (§10 #10)。
+    #
+    # アーカイブ切り抜き用も対象にする (ver5 resolve10 §5.4)。
+    # 参照している中間ファイルは実行の終わりに消えるが、作成時に素材を
+    # 元 VOD へ張り替えるため、保存した縦プロジェクトは後からでも開ける。
     def _can_make_vertical(self):
         timeline = self.controller.timeline
         if timeline.orientation == "portrait" or timeline.height >= timeline.width:
             return False
-        # 画面の種別と Timeline の中身の両方でクリップ用だと確かめる。
+        # 画面の種別と Timeline の中身が食い違っていたら出さない。
         # アーカイブ用の画面は _project_kind() が "archive" を返す。
-        return (self._project_kind() == project_io.KIND_CLIP
-                and project_io.project_kind(timeline) == project_io.KIND_CLIP)
+        return self._project_kind() == project_io.project_kind(timeline)
+
+    # 素材の張り替え指定 (ver5 resolve10 §3.1)。
+    # クリップ用は素材がそのまま残るため張り替えない。
+    def _vertical_rebase(self, clips):
+        return None
 
     # 対象クリップ (ぼかしと同じ規約。選択が無ければ再生ヘッド上のもの)
     def _vertical_target_clips(self):
@@ -628,7 +635,9 @@ class TimelineEditorDialog(QDialog):
             self.preview.set_status("縦動画にするクリップを選んでください。")
             return
 
-        dialog = VerticalProjectDialog(self.controller, clips, self._settings, parent=self)
+        dialog = VerticalProjectDialog(
+            self.controller, clips, self._settings, parent=self,
+            make_rebase=lambda: self._vertical_rebase(clips))
         dialog.exec()
         if dialog.saved_path():
             self.preview.set_status(

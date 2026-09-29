@@ -4,6 +4,10 @@
 #   ・config() は例外を投げない。API 未実装 (404) もオフラインも enabled=False (§4.2 / §4.3)
 #   ・start_checkout / open_portal は利用者が押した操作なので例外を通す (§4.2)
 #   ・反映待ちは unlimited が立つまでポーリングし、通信エラーでは止まらない (§4.4)
+# 要望 (ver6 resolve2):
+#   ・purchase_blocked_reason は §6 の真理値表どおりに理由を返す。
+#     Twitch サブスク中は購入させない (request2 ①)
+#   ・subscription() は例外を投げない。API 未実装 (404) もオフラインも None (§4.4)
 # ネットワークは使わない。API クライアントと時間待ちを差し替えて応答だけを与える。
 import unittest
 
@@ -13,7 +17,10 @@ from src.services.billing import (
     CODE_ALREADY_SUBSCRIBED,
     TYPE_NONE,
     TYPE_STRIPE,
+    TYPE_TWITCH,
+    BillingConfig,
     BillingService,
+    purchase_blocked_reason,
 )
 
 _SETTINGS = {
@@ -256,6 +263,88 @@ class BillingServiceTest(unittest.TestCase):
         self._points.balances = [None]
 
         self.assertEqual(TYPE_NONE, self._service.subscription_type())
+
+    # ---- 加入状態と履歴 (ver6 resolve2 §4.4 / ③) --------------------------
+
+    def test_subscription_is_none_when_the_api_is_missing(self):
+        # API が未実装のあいだは None。アカウントタブは種別だけを出す。
+        self._auth.client.errors["/api/billing/subscription"] = ApiError(
+            "not found", status=404)
+
+        self.assertIsNone(self._service.subscription())
+
+    def test_subscription_is_none_when_offline(self):
+        self._auth.client.errors["/api/billing/subscription"] = ApiOfflineError("offline")
+
+        self.assertIsNone(self._service.subscription())
+
+    def test_subscription_returns_the_state_and_the_history(self):
+        self._auth.client.responses["/api/billing/subscription"] = {
+            "type": TYPE_STRIPE,
+            "status": "active",
+            "currentPeriodEnd": "2026-10-28T12:00:00Z",
+            "history": [{"at": "2026-09-28T12:03:00Z", "type": TYPE_STRIPE,
+                         "event": "subscribed", "detail": "月額 980 円 (税込)"}],
+        }
+
+        state = self._service.subscription()
+
+        self.assertEqual(TYPE_STRIPE, state["type"])
+        self.assertEqual(1, len(state["history"]))
+
+
+# 購入ボタンを押せるかの判定 (ver6 resolve2 §6 の真理値表)。
+# PySide6 に依存しないため、画面を作らずに全パターンを確かめられる。
+class PurchaseBlockedReasonTest(unittest.TestCase):
+
+    @staticmethod
+    def _config(enabled=True, price_label="月額 980 円 (税込)"):
+        return BillingConfig(enabled=enabled, provider="Stripe",
+                             price_label=price_label, manageable=True)
+
+    def test_not_logged_in(self):
+        # 購入には JWT が要る。まずログインさせる。
+        self.assertEqual(
+            billing_module.BLOCK_NOT_LOGGED_IN,
+            purchase_blocked_reason(self._config(), TYPE_NONE, logged_in=False))
+
+    def test_unknown_while_the_config_is_missing(self):
+        self.assertEqual(
+            billing_module.BLOCK_UNKNOWN,
+            purchase_blocked_reason(None, TYPE_NONE, logged_in=True))
+
+    def test_unknown_while_the_type_is_missing(self):
+        # 残高が取れない (オフライン) 間もここへ来る。
+        self.assertEqual(
+            billing_module.BLOCK_UNKNOWN,
+            purchase_blocked_reason(self._config(), None, logged_in=True))
+
+    def test_unavailable_when_stripe_is_not_configured(self):
+        self.assertEqual(
+            billing_module.BLOCK_UNAVAILABLE,
+            purchase_blocked_reason(self._config(enabled=False), TYPE_NONE,
+                                    logged_in=True))
+
+    def test_unavailable_without_a_price_label(self):
+        self.assertEqual(
+            billing_module.BLOCK_UNAVAILABLE,
+            purchase_blocked_reason(self._config(price_label=""), TYPE_NONE,
+                                    logged_in=True))
+
+    def test_purchasable_when_not_subscribed(self):
+        self.assertEqual(
+            "", purchase_blocked_reason(self._config(), TYPE_NONE, logged_in=True))
+
+    def test_blocked_by_a_twitch_subscription(self):
+        # 要望 ①: Twitch の tatsumic をサブスクしていれば購入させない。
+        self.assertEqual(
+            billing_module.BLOCK_TWITCH,
+            purchase_blocked_reason(self._config(), TYPE_TWITCH, logged_in=True))
+
+    def test_blocked_when_already_subscribed(self):
+        self.assertEqual(
+            billing_module.BLOCK_STRIPE,
+            purchase_blocked_reason(self._config(), TYPE_STRIPE, logged_in=True))
 
 
 if __name__ == "__main__":

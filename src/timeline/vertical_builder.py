@@ -4,6 +4,11 @@
 # **クリップ用プロジェクト**にする。素材は元動画をそのまま参照し、切り抜きは
 # 指定 (source["crop"]) として持たせる。切り抜き済みの動画は作らない (§3.1)。
 #
+# アーカイブ切り抜き用の Timeline からも作れる (ver5 resolve10)。
+# その場合は呼び出し側が rebase を渡し、消える中間ファイルの代わりに
+# 元 VOD を参照させる。張り替えの中身は archive/vod_rebase.py が決める
+# (timeline 層が archive 層を import しないための構造 / media_recovery と同じ流儀)。
+#
 # 元の Timeline は読むだけで、変更しない (§4-5)。
 import copy
 
@@ -34,8 +39,13 @@ _MIN_SUBTITLE_SEC = 0.05
 #   layout     : crop.make_layout() が作った切り抜きの指定 (None 可)
 #   settings   : setting.json
 #   close_gaps : True なら選んだクリップ間の空白を詰める
+#   rebase     : 素材を別の 1 本へ張り替える指定 (None 可 / archive.vod_rebase.plan)
+#                {"media": MediaRef,           張り替え先 (元 VOD)
+#                 "offsets": {素材ID: 秒},      素材内の秒へ足すと張り替え先の秒になる
+#                 "source": {キー: 値},         source へ上書きするもの
+#                 "warnings": [文言, ...]}
 # 戻り値: (縦 Timeline, 警告メッセージの一覧)
-def build(timeline, clip_ids, layout, settings, close_gaps=True):
+def build(timeline, clip_ids, layout, settings, close_gaps=True, rebase=None):
     clips = _target_clips(timeline, clip_ids)
     if not clips:
         raise ValueError("縦動画にするクリップが選ばれていません")
@@ -71,13 +81,17 @@ def build(timeline, clip_ids, layout, settings, close_gaps=True):
             audio_track.clips.append(
                 AudioClip(audio.id, new_clip.id, audio.gain_db, audio.muted))
 
-    # ── ② 素材 (参照されるものだけ / R8)
+    # ── ② 素材 (参照されるものだけ / R8)。
+    # アーカイブ用は消える中間ファイルを指しているため、ここで元 VOD へ張り替える。
+    warnings = []
+    replacement = _apply_rebase(timeline, video_track, rebase, warnings)
     used = {clip.media_id for clip in video_track.clips if clip.media_id}
     vertical.media_pool = [copy.deepcopy(media) for media in timeline.media_pool
                            if media.id in used]
+    if replacement is not None:
+        vertical.media_pool.insert(0, replacement)
 
     # ── ③ 字幕 (重なるものを時刻シフト / R10)
-    warnings = []
     _copy_subtitles(timeline, vertical, offsets, warnings)
 
     # ── ④ 引き継がないもの (§3.6 / §5.4-10)
@@ -89,6 +103,10 @@ def build(timeline, clip_ids, layout, settings, close_gaps=True):
     source.pop(crop.KEY, None)
     # ぼかしの指定は座標の基準が変わるため引き継がない (警告は _warn_dropped が積む)
     source.pop("blur", None)
+    if replacement is not None:
+        source.update(rebase.get("source") or {})
+        source["media_id"] = replacement.id
+        layout = _rebase_layout(layout, rebase, replacement, warnings)
     vertical.source = source
     if layout is not None:
         crop.store(vertical, layout)
@@ -114,6 +132,71 @@ def _target_clips(timeline, clip_ids):
              if clip.id in wanted and clip.enabled
              and not clip.is_opening_or_ending() and getattr(clip, "media_id", "")]
     return sorted(clips, key=lambda c: c.timeline_start)
+
+
+# 素材を別の 1 本 (元 VOD) へ張り替える (ver5 resolve10 §5.3)
+#
+# クリップの素材内時刻へ offsets の秒を足し、参照先を張り替え先の素材へ向ける。
+# 張り替え先に控えの無い素材 (D&D で足した動画・画像など) は触らない。
+# 戻り値: 縦プロジェクトへ入れる張り替え先の MediaRef / 張り替えないなら None
+def _apply_rebase(timeline, video_track, rebase, warnings):
+    if not rebase:
+        return None
+    media = rebase.get("media")
+    offsets = {str(key): float(value)
+               for key, value in (rebase.get("offsets") or {}).items()}
+    if media is None or not offsets:
+        return None
+
+    replacement = copy.deepcopy(media)
+    # 張り替えない素材と ID がぶつからないようにする
+    taken = {item.id for item in timeline.media_pool if item.id not in offsets}
+    if replacement.id in taken or not replacement.id:
+        base = replacement.id or "vod"
+        index = 2
+        while f"{base}{index}" in taken:
+            index += 1
+        replacement.id = f"{base}{index}"
+
+    moved = 0
+    for clip in video_track.clips:
+        offset = offsets.get(str(clip.media_id))
+        if offset is None:
+            continue
+        clip.source_in += offset
+        clip.source_out += offset
+        clip.media_id = replacement.id
+        moved += 1
+    if not moved:
+        return None
+
+    warnings.extend(str(text) for text in (rebase.get("warnings") or []))
+    _logger.info("素材を張り替えました: %d クリップ → %s", moved, replacement.path)
+    return replacement
+
+
+# 切り抜きの指定が指す素材を張り替え先へ向け直す
+#
+# crop.is_valid は素材 ID と寸法の一致を見るため、張り替えたまま放っておくと
+# 「指定が噛み合わない」として切り抜きごと捨てられてしまう (§5.5)。
+def _rebase_layout(layout, rebase, replacement, warnings):
+    if layout is None:
+        return None
+    offsets = rebase.get("offsets") or {}
+    if str(layout.get("media_id") or "") not in offsets:
+        return layout
+
+    layout = copy.deepcopy(layout)
+    layout["media_id"] = replacement.id
+    source = layout.get("source") or []
+    size = (int(getattr(replacement, "width", 0) or 0),
+            int(getattr(replacement, "height", 0) or 0))
+    if len(source) == 2 and (int(source[0] or 0), int(source[1] or 0)) != size:
+        # 中間ファイルは VOD のストリームコピーのため、通常はここへ来ない。
+        warnings.append(
+            "元 VOD の解像度が編集中の素材と違うため、切り抜きの指定は入れませんでした。")
+        return None
+    return layout
 
 
 # 選択区間に重なる字幕を、同じ時間差で移す。はみ出しは端で切り詰める。

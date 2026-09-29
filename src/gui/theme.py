@@ -92,6 +92,23 @@ COMBO_DROPDOWN_WIDTH_PX = 18
 # ボタンの下辺がペイン (タブの中身の面) へ接する。
 TAB_CORNER_BOTTOM_MARGIN_PX = 6
 
+# 加入済みの印 (ver6 resolve2 §4.5)。サブスクリプションボタンの文言の左へ出す。
+CHECK_GLYPH = "✓"        # ✓ 加入済み (U+2713)
+
+# Twitch のブランド色 (ver6 resolve2 §4.5)。
+# 利用者が変える値ではなく Twitch の規定で決まっているため設定値にはせず、
+# ここ 1 か所へ集約する。#previewCanvas と同じく意図的にテーマの対象外とし、
+# ライト / ダークで色を変えない。
+TWITCH_COLOR = "#9147FF"
+TWITCH_COLOR_HOVER = "#A970FF"
+TWITCH_COLOR_PRESSED = "#772CE8"
+TWITCH_ON = "#FFFFFF"               # ブランド色の上に載せる文字色
+TWITCH_BUTTON = "twitchButton"      # QSS の #twitchButton
+
+# 加入済みの印の種類 (ver6 resolve2 §6)。加入していなければ空文字。
+CHECK_KIND_TWITCH = "twitch"
+CHECK_KIND_STRIPE = "stripe"
+
 # ドラッグ&ドロップ領域 (ver3 resolve15 C1)
 DROP_AREA = "dropArea"   # 破線のガラス面 (QSS の #dropArea)
 DROP_GLYPH = "⬇"         # ⬇ ここへ落とす
@@ -657,6 +674,13 @@ def tokens(settings=None):
     resolved["danger.line"] = _hex(
         _ensure_contrast(parse_color(resolved["danger"]), background_color))
 
+    # Twitch のブランド色 (ver6 resolve2 §4.5)。明暗で変えず、設定でも上書きしない。
+    # QSS から読めるようトークンとして載せるが、定義元は TWITCH_COLOR 定数のまま。
+    resolved["twitch.bg"] = TWITCH_COLOR
+    resolved["twitch.bg.hover"] = TWITCH_COLOR_HOVER
+    resolved["twitch.bg.pressed"] = TWITCH_COLOR_PRESSED
+    resolved["twitch.on"] = TWITCH_ON
+
     # Timeline 背景の不透明度だけは設定で調整できる (§5.2-4)。
     # 色は常にダークのまま、明るい下地の上では濃く敷いて「黒い背景」を保つ (§3-6-3)。
     timeline_bg = parse_color(TIMELINE["timeline.bg"])
@@ -777,6 +801,16 @@ QPushButton:default  { border-color: {accent.line}; }
 }
 #primaryButtonSolid:hover   { background: {accent.hover}; }
 #primaryButtonSolid:pressed { background: {accent.pressed}; }
+/* 主要動作の無効時 (ver6 resolve2 §4.1)。
+   QPushButton:disabled は既にあるが、#primaryButton は ID 指定でそちらより
+   優先度が高いため、塗ったまま (押せるように見えたまま) になる。
+   サブスクリプション画面の「購入」は加入中に押せなくするため、
+   見た目でも押せないと分かる必要がある (要望 ①)。 */
+#primaryButton:disabled, #primaryButtonSolid:disabled {
+    background: {glass.bg};
+    color: {text.disabled};
+    border: {border.width} solid {glass.border};
+}
 /* 破壊的動作 (objectName="dangerButton") は塗らず輪郭で示す (§5.2-3) */
 #dangerButton {
     background: transparent;
@@ -784,6 +818,19 @@ QPushButton:default  { border-color: {accent.line}; }
     border: {border.width} solid {danger.line};
 }
 #dangerButton:hover { background-color: {glass.bg.hover}; }
+/* Twitch のログインボタン (ver6 resolve2 §4.5)。
+   #previewCanvas と同じく意図的にテーマ対象外で、ライト / ダークで色を変えない。
+   Twitch のログインであることはブランド色でしか伝わらないため、
+   差し色 (accent) で塗ると「アプリの主要動作」に見えてしまう。 */
+#twitchButton {
+    background-color: {twitch.bg};
+    color: {twitch.on};
+    border: {border.width} solid {twitch.bg};
+}
+#twitchButton:hover   { background-color: {twitch.bg.hover}; border-color: {twitch.bg.hover}; }
+#twitchButton:pressed { background-color: {twitch.bg.pressed}; border-color: {twitch.bg.pressed}; }
+#twitchButton:disabled { background-color: {glass.bg.strong}; color: {text.disabled};
+                         border-color: {glass.border}; }
 
 QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     background-color: {glass.bg.strong};
@@ -1496,6 +1543,51 @@ def glyph_icon(glyph, color_value, size_px=BUTTON_ICON_PX):
     painter.drawText(pixmap.rect(), Qt.AlignCenter, glyph)
     painter.end()
     return QIcon(pixmap)
+
+
+# 残高の応答 (GET /api/points) から、加入済みの印の種類を返す (ver6 resolve2 §6)。
+#   "twitch" … Twitch のサブスクリプションで特典適用中
+#   "stripe" … Stripe のサブスクリプションに加入中
+#   ""       … 未加入、または状態が分からない (オフライン・未ログイン)
+# 残高が取れていないときに「加入していない」と断定しないため、空文字を返す。
+# billing.py の TYPE_* と同じ文字列を見るが、theme を services へ依存させない
+# (テーマは PySide6 だけに依存させる) ため、ここでは素の文字列で比較する。
+def subscription_check_kind(balance):
+    subscription_type = str((balance or {}).get("subscriptionType") or "")
+    if subscription_type == "TwitchSub":
+        return CHECK_KIND_TWITCH
+    if subscription_type == "Stripe":
+        return CHECK_KIND_STRIPE
+    return ""
+
+
+# 加入済みの印 (チェックマーク) を QIcon で返す (ver6 resolve2 §4.5)。
+#   twitch … Twitch のブランド色 (#9147FF / 明暗で変えない)
+#   stripe … テーマの success (ダーク #6BE0A8 / ライト #1B7A4B)
+# 種類が空なら空の QIcon を返す (呼び出し側の分岐を減らす)。
+#
+# 【重要】同じ絵を QIcon.Disabled へも登録する。
+#   QIcon(pixmap) だけだと無効時の絵をスタイルが自動生成し、灰色に褪せる。
+#   加入済みのボタンは押せなくする (要望 ①後 / ②後) ため、そのままでは
+#   指定された #9147FF が画面に出なくなる。
+def check_icon(kind, settings=None, size_px=BUTTON_ICON_PX):
+    if not kind:
+        return QIcon()
+    if kind == CHECK_KIND_TWITCH:
+        check_color = QColor(TWITCH_COLOR)
+    else:
+        check_color = color("success", settings)
+    icon = glyph_icon(CHECK_GLYPH, check_color, size_px)
+    pixmap = icon.pixmap(QSize(size_px, size_px))
+    icon.addPixmap(pixmap, QIcon.Disabled, QIcon.Off)
+    icon.addPixmap(pixmap, QIcon.Disabled, QIcon.On)
+    return icon
+
+
+# Twitch のログインボタンとして扱う (ver6 resolve2 §4.5)。
+# ブランド色で塗る。QSS の #twitchButton がテーマ対象外の色を当てる。
+def mark_twitch_button(button):
+    button.setObjectName(TWITCH_BUTTON)
 
 
 # 主要動作ボタン (実行 / 採点開始) の見た目を揃える (resolve4 §5.10)。

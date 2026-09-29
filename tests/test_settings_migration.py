@@ -235,6 +235,47 @@ if __name__ == "__main__":
     unittest.main()
 
 
+# サブスクリプション (Stripe) の設定 (ver6 resolve2 §1.4 / §5.1)
+#
+# 背景: setting.json にだけ billing セクションを足しても、DEFAULT_SETTINGS に
+#   無いあいだは _merge_with_defaults が落とすため、load_settings → save_settings で
+#   セクションごと消えていた。同じことを再発させないための回帰テスト。
+class BillingSettingsTest(unittest.TestCase):
+
+    _KEYS = ("config_cache_sec", "activation_poll_sec", "activation_timeout_sec")
+
+    # 配布物が billing セクションを持っていること
+    def test_default_settings_has_billing(self):
+        billing = sw.DEFAULT_SETTINGS.get("billing")
+        self.assertIsInstance(billing, dict)
+        for key in self._KEYS:
+            self.assertIn(key, billing)
+
+    # 既存の setting.json にある billing が保存で消えないこと (§1.4 の回帰)
+    def test_billing_section_survives_a_merge(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        merged = sw._merge_with_defaults(data)
+        self.assertIn("billing", merged)
+        self.assertEqual(sw.DEFAULT_SETTINGS["billing"]["activation_timeout_sec"],
+                         merged["billing"]["activation_timeout_sec"])
+
+    # 旧 setting.json (billing セクションが無い) でも起動時に補われること
+    def test_billing_section_is_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data.pop("billing", None)
+        merged = sw._merge_with_defaults(data)
+        self.assertIn("billing", merged)
+        self.assertTrue(sw._has_new_keys(data, merged))
+
+    # 利用者が変えた値は温存すること
+    def test_user_value_is_kept(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["billing"] = {"activation_timeout_sec": 60}
+        merged = sw._merge_with_defaults(data)
+        self.assertEqual(60, merged["billing"]["activation_timeout_sec"])
+        self.assertEqual(3, merged["billing"]["activation_poll_sec"])   # 欠落は補う
+
+
 # トラッキングぼかしの設定 (ver5 resolve8 §7)
 class BlurSettingsTest(unittest.TestCase):
 

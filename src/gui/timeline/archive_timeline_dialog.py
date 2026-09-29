@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...archive import clip_writer
+from ...archive import clip_writer, project_resume, vod_rebase
 from ...modules import ffmpeg_runner
 from ...archive import config as archive_config
 from ...archive import timeline_builder as archive_timeline
@@ -147,6 +147,24 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
 
     def _title_base(self):
         return "切り抜き編集"
+
+    # ------------------------------------------------------------------
+    # 縦動画プロジェクト (ver5 resolve10)
+    # ------------------------------------------------------------------
+    #
+    # アーカイブ用 Timeline が参照している中間ファイルは実行の終わりに消えるため、
+    # そのまま保存すると開けない縦プロジェクトになる。作成時に素材を元 VOD へ
+    # 張り替えることで、いつでも開き直せるようにする。張り替えには元 VOD が要る
+    # ので、VOD が無いときはメニューを出さない。
+
+    def _can_make_vertical(self):
+        if not super()._can_make_vertical():
+            return False
+        vod = project_resume.recorded_vod_path(self.controller.timeline)
+        return bool(vod) and os.path.exists(vod)
+
+    def _vertical_rebase(self, clips):
+        return vod_rebase.plan(self.controller.timeline, self._settings, clips)
 
     # keep_media / keep_audio の対象は V1 が参照する全クリップ素材
     def _media_to_copy(self):

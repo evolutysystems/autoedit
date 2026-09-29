@@ -1,7 +1,13 @@
-# 設定画面の「アカウント」タブ (ver5 resolve.md §5.6 R13)
+# 設定画面の「アカウント」タブ (ver5 resolve.md §5.6 R13 / ver6 resolve2 §2.3)
 #
-# ログイン状態・残高・履歴・サブスク導線を 1 か所にまとめる。
+# ログイン状態・残高・サブスクの状態と履歴・ポイント履歴を 1 か所にまとめる。
 # ここは**表示と操作だけ**を持ち、消費の判断はサーバーが行う (R9)。
+#
+# ver6 resolve2 で役割を分けた。**加入する導線はここには無い。**
+#   メイン画面 → サブスクリプション画面 … 加入する (Twitch ログイン / 購入)
+#   設定画面 → アカウント (ここ)        … 状態を確認する・履歴を見る・管理する
+# 「サブスクリプションを管理」(解約・カード変更) は残す。メイン画面のボタンは
+# 加入すると押せなくなるため、ここを外すと解約へたどり着けなくなる。
 #
 # ポイントの実体 (PointsService) は画面起動時に作られた共有のものを使う。
 # 起動していない (CLI / テスト) 場合は None が来るため、その場合は
@@ -20,16 +26,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..services.billing import BillingService, TYPE_STRIPE, TYPE_TWITCH
+from ..services.billing import BillingService, TYPE_NONE, TYPE_STRIPE, TYPE_TWITCH
 from ..services.stretheus_auth import parse_timestamp
 from ..utils.logger import get_logger
 from . import theme
+from .billing_workers import BillingConfigWorker, BillingUrlWorker, SubscriptionWorker
 from .points_indicator import BalanceWorker, LoginWorker, format_balance, format_reset
 
 _logger = get_logger(__name__)
 
 # 履歴の取得件数 (画面に出す範囲。ページ送りは設けない)
 _HISTORY_LIMIT = 20
+
+# サブスク履歴の表を何行ぶんの高さで出すか (これを超えたぶんはスクロールで見る)。
+# 高さを抑えないと、加入直後で 1 件しか無くても表が画面いっぱいへ広がり、
+# 下にあるポイント履歴が潰れる。
+_SUBSCRIPTION_HISTORY_ROWS = 5
 
 # 履歴の種別・ジョブ種別の表示名
 _KIND_LABELS = {
@@ -39,6 +51,30 @@ _KIND_LABELS = {
     "Cancel": "解放",
 }
 _JOB_LABELS = {"Clip": "クリップ", "Archive": "アーカイブ"}
+
+# サブスクリプションの加入種別の表示名 (ver6 resolve2 §4.4)
+_SUBSCRIPTION_LABELS = {
+    TYPE_NONE: "未加入",
+    TYPE_STRIPE: "サブスクリプション加入中 (Stripe)",
+    TYPE_TWITCH: "Twitch サブスクリプション",
+}
+
+# 加入状態 (API の status) の表示名
+_STATUS_LABELS = {
+    "active": "有効",
+    "canceling": "解約予定 (期間末まで有効)",
+    "past_due": "支払いが確認できていません",
+    "none": "なし",
+}
+
+# サブスク履歴の出来事 (API の event) の表示名
+_EVENT_LABELS = {
+    "subscribed": "加入",
+    "renewed": "更新",
+    "canceled": "解約",
+    "expired": "終了",
+    "payment_failed": "支払い失敗",
+}
 
 
 # 履歴の取得をワーカースレッドで行う
@@ -62,71 +98,6 @@ class TransactionsWorker(QThread):
         self.loaded.emit(items)
 
 
-# Stripe の決済ページ / カスタマーポータルの URL 取得をワーカースレッドで行う。
-# 利用者が押した操作なので、失敗は理由つきで通知する (ver6 resolve §4.2)。
-class BillingUrlWorker(QThread):
-
-    ready = Signal(str)         # 取得できた URL
-    failed = Signal(str)        # 失敗した理由
-
-    def __init__(self, billing, action, parent=None):
-        super().__init__(parent)
-        self._billing = billing
-        self._action = action   # "checkout" / "portal"
-
-    def run(self):
-        try:
-            if self._action == "checkout":
-                self.ready.emit(self._billing.start_checkout())
-            else:
-                self.ready.emit(self._billing.open_portal())
-        except Exception as e:  # noqa: BLE001 (GUI へ集約通知するため広く捕捉)
-            _logger.exception("サブスクリプションの URL 取得に失敗")
-            self.failed.emit(str(e))
-
-
-# サブスクリプションの契約情報の取得をワーカースレッドで行う。
-# config() は HTTP を伴うため、GUI スレッドから直接呼ぶと
-# API へ到達できないときにタイムアウト (既定 15 秒) ぶん画面が固まる。
-class BillingConfigWorker(QThread):
-
-    loaded = Signal(object)     # BillingConfig (取れなければ enabled=False のもの)
-
-    def __init__(self, billing, parent=None):
-        super().__init__(parent)
-        self._billing = billing
-
-    def run(self):
-        config = None
-        try:
-            config = self._billing.config()
-        except Exception:  # noqa: BLE001 (契約情報が取れなくても画面は開いたままにする)
-            _logger.exception("サブスクリプションの契約情報の取得に失敗")
-        self.loaded.emit(config)
-
-
-# 支払いがサーバーへ反映される (unlimited が立つ) のを待つ (ver6 resolve §4.4)。
-#
-# 支払いを取りやめてブラウザを閉じた場合もタイムアウトで False になる。
-# 異常ではないため、呼び出し側は「確認できなかった」と伝えるだけにする。
-class ActivationWorker(QThread):
-
-    done = Signal(bool)
-
-    def __init__(self, billing, parent=None):
-        super().__init__(parent)
-        self._billing = billing
-
-    def run(self):
-        activated = False
-        try:
-            activated = self._billing.wait_for_activation(
-                should_continue=lambda: not self.isInterruptionRequested())
-        except Exception:  # noqa: BLE001 (待ち合わせの失敗で画面を壊さない)
-            _logger.exception("サブスクリプションの反映待ちに失敗")
-        self.done.emit(activated)
-
-
 class AccountTab(QWidget):
 
     def __init__(self, points, settings=None, parent=None):
@@ -138,10 +109,12 @@ class AccountTab(QWidget):
         self._login_worker = None
         self._billing_worker = None
         self._config_worker = None
-        self._activation_worker = None
+        self._subscription_worker = None
         # 契約情報と加入種別は別々のタイミングで届く。両方そろってから節を描く。
         self._billing_config = None
         self._subscription_type = None
+        # GET /api/billing/subscription の応答 (期間と履歴)。取れなければ None
+        self._subscription_state = None
         # サブスクリプション (Stripe)。points が無い (CLI / テスト) なら導線は出さない。
         self._billing = BillingService(points, self._settings) if points is not None else None
 
@@ -177,15 +150,18 @@ class AccountTab(QWidget):
         self.subscribe_button.clicked.connect(self._on_subscribe)
         layout.addWidget(self.subscribe_button)
 
-        # ---- サブスクリプション (Stripe) ---------------------------------
-        # API 側が未実装・未設定のあいだは節ごと出さない (ver6 resolve §4.3)。
-        # 価格はサーバーから配られる。配布済みの exe に価格を焼き込まないため。
-        self.billing_title = QLabel("サブスクリプション")
+        # ---- サブスクリプション状態 (ver6 resolve2 §2.3 / ③) ---------------
+        # 状態は 2 つの情報から作る。
+        #   種別    … GET /api/points の subscriptionType (権威)
+        #   期間/履歴 … GET /api/billing/subscription (新設。取れなければ出さない)
+        # 登録の導線はここには置かない (メイン画面へ移した)。
+        self.billing_title = QLabel("サブスクリプション状態")
         theme.mark_title(self.billing_title)
         layout.addWidget(self.billing_title)
 
-        self.billing_price_label = QLabel("")
-        layout.addWidget(self.billing_price_label)
+        self.billing_state_label = QLabel("")
+        self.billing_state_label.setWordWrap(True)
+        layout.addWidget(self.billing_state_label)
 
         self.billing_note_label = QLabel("")
         self.billing_note_label.setWordWrap(True)
@@ -193,18 +169,30 @@ class AccountTab(QWidget):
         layout.addWidget(self.billing_note_label)
 
         billing_row = QHBoxLayout()
-        self.checkout_button = QPushButton("サブスクリプションに登録")
-        self.checkout_button.clicked.connect(self._on_checkout)
-        billing_row.addWidget(self.checkout_button)
         self.portal_button = QPushButton("サブスクリプションを管理")
         self.portal_button.clicked.connect(self._on_portal)
         billing_row.addWidget(self.portal_button)
         billing_row.addStretch(1)
         layout.addLayout(billing_row)
 
+        self.subscription_history_title = QLabel("サブスクリプション履歴")
+        theme.mark_title(self.subscription_history_title)
+        layout.addWidget(self.subscription_history_title)
+
+        self.subscription_history_table = QTableWidget(0, 3)
+        self.subscription_history_table.setHorizontalHeaderLabels(["日時", "種別", "内容"])
+        self.subscription_history_table.verticalHeader().setVisible(False)
+        self.subscription_history_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.subscription_history_table.setSelectionMode(QTableWidget.NoSelection)
+        self.subscription_history_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents)
+        self.subscription_history_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.subscription_history_table)
+
         self._show_billing(False)
 
-        history_label = QLabel("履歴")
+        # ポイントの履歴。サブスクの履歴と見分けられるよう見出しを分ける。
+        history_label = QLabel("ポイント履歴")
         theme.mark_title(history_label)
         layout.addWidget(history_label)
 
@@ -234,8 +222,9 @@ class AccountTab(QWidget):
             self.status_label.setText("ログインしていません")
             self.balance_label.setText("")
             self.history_table.setRowCount(0)
-            # 登録には JWT が要るため、未ログインでは節ごと出さない。
+            # 状態の照会には JWT が要るため、未ログインでは節ごと出さない。
             self._subscription_type = None
+            self._subscription_state = None
             self._show_billing(False)
             return
 
@@ -246,6 +235,7 @@ class AccountTab(QWidget):
         self._start_balance()
         self._start_history()
         self._start_billing_config()
+        self._start_subscription()
 
     def _is_logged_in(self):
         return bool(self._points is not None and self._points.auth.is_logged_in())
@@ -266,7 +256,7 @@ class AccountTab(QWidget):
         balance = balance or self._points.last_balance()
         if not balance:
             self.balance_label.setText("残高を取得できません (オフラインの可能性があります)")
-            # 状態が分からないまま登録ボタンを出すと二重課金を招く。
+            # 加入しているかどうか分からない状態で「未加入」とは書かない。
             self._subscription_type = None
             self._show_billing(False)
             return
@@ -373,13 +363,17 @@ class AccountTab(QWidget):
         if url:
             QDesktopServices.openUrl(QUrl(url))
 
-    # ---- サブスクリプション (Stripe) -------------------------------------
-    # 節ごとの表示 / 非表示。API 未実装・オフライン・未ログインでは出さない。
+    # ---- サブスクリプション状態と履歴 (ver6 resolve2 §4.4 / ③) -----------
+    # 節ごとの表示 / 非表示。未ログイン・状態不明では出さない。
     def _show_billing(self, visible):
-        for widget in (self.billing_title, self.billing_price_label,
-                       self.billing_note_label, self.checkout_button,
-                       self.portal_button):
+        for widget in (self.billing_title, self.billing_state_label,
+                       self.billing_note_label, self.portal_button):
             widget.setVisible(bool(visible))
+        # 履歴は API (GET /api/billing/subscription) が無いと 1 件も作れない。
+        # 空の表を出すより、節ごと出さない方が「取れていない」と分かりやすい。
+        has_history = bool(visible and self._subscription_history())
+        self.subscription_history_title.setVisible(has_history)
+        self.subscription_history_table.setVisible(has_history)
 
     # 契約情報の取得を始める。HTTP を伴うため GUI スレッドでは呼ばない。
     def _start_billing_config(self):
@@ -395,74 +389,129 @@ class AccountTab(QWidget):
         self._billing_config = config
         self._refresh_billing()
 
-    # 契約情報と加入種別がそろったら節を描く。
-    # どちらかでも欠けていれば出さない。片方だけで描くと、
-    # 加入中の人に「登録」を出してしまう瞬間ができる。
+    # 加入状態と履歴の取得を始める。API 未実装でも None が届くだけで画面は壊れない。
+    def _start_subscription(self):
+        if self._billing is None:
+            return
+        if self._subscription_worker is not None and self._subscription_worker.isRunning():
+            return
+        self._subscription_worker = SubscriptionWorker(self._billing, parent=self)
+        self._subscription_worker.loaded.connect(self._on_subscription)
+        self._subscription_worker.start()
+
+    def _on_subscription(self, state):
+        self._subscription_state = state
+        self._fill_subscription_history()
+        self._refresh_billing()
+
+    # API の応答から履歴の一覧を取り出す (取れていなければ空)
+    def _subscription_history(self):
+        state = self._subscription_state
+        if not isinstance(state, dict):
+            return []
+        return [item for item in (state.get("history") or []) if isinstance(item, dict)]
+
+    def _fill_subscription_history(self):
+        items = self._subscription_history()
+        self.subscription_history_table.setRowCount(len(items))
+        for row, item in enumerate(items):
+            at = parse_timestamp(item.get("at"))
+            when = at.astimezone().strftime("%m/%d %H:%M") if at else ""
+            event = _EVENT_LABELS.get(str(item.get("event") or ""),
+                                      str(item.get("event") or ""))
+            detail = str(item.get("detail") or "")
+            cells = [when, self._subscription_kind(item.get("type")),
+                     f"{event} ({detail})" if detail else event]
+            for column, text in enumerate(cells):
+                self.subscription_history_table.setItem(row, column,
+                                                        QTableWidgetItem(text))
+        self._fit_subscription_history()
+
+    # 表の高さを中身に合わせて詰める。
+    # QTableWidget は既定で縦へ伸びるため、1 件しか無くても画面を占有してしまう。
+    def _fit_subscription_history(self):
+        table = self.subscription_history_table
+        rows = max(min(table.rowCount(), _SUBSCRIPTION_HISTORY_ROWS), 1)
+        height = (table.horizontalHeader().height()
+                  + table.verticalHeader().defaultSectionSize() * rows
+                  + table.frameWidth() * 2)
+        table.setMaximumHeight(height)
+
+    # 種別の表示名。未知の値はそのまま出す (API が増やしても画面は壊れない)。
+    @staticmethod
+    def _subscription_kind(subscription_type):
+        key = str(subscription_type or TYPE_NONE)
+        if key == TYPE_TWITCH:
+            return "Twitch"
+        if key == TYPE_STRIPE:
+            return "Stripe"
+        return _SUBSCRIPTION_LABELS.get(key, key)
+
+    # 加入種別が分かったら節を描く。種別が不明なあいだは出さない
+    # (「未加入」と書いてしまうと、オフラインの加入者へ誤った表示になる)。
+    #
+    # 契約情報 (config) は「管理ページが使えるか」の判断にだけ使う。
+    # config が取れなくても状態そのものは出す。ここは登録の導線ではないため、
+    # 受付停止中でも加入者に状態を見せないと解約できなくなる。
     def _refresh_billing(self):
-        config = self._billing_config
         subscription_type = self._subscription_type
-        if config is None or subscription_type is None or not config.is_available():
+        if subscription_type is None:
             self._show_billing(False)
             return
 
         self._show_billing(True)
-        self.billing_price_label.setText(config.price_label)
+        self.billing_state_label.setText("\n".join(self._state_lines(subscription_type)))
 
-        subscribed_here = subscription_type == TYPE_STRIPE
-        self.checkout_button.setVisible(not subscribed_here)
-        self.portal_button.setVisible(subscribed_here and config.manageable)
+        config = self._billing_config
+        manageable = config is not None and config.manageable
+        self.portal_button.setVisible(subscription_type == TYPE_STRIPE and manageable)
 
-        if subscribed_here:
+        if subscription_type == TYPE_STRIPE:
             self.billing_note_label.setText(
-                "サブスクリプションに加入中です。"
                 "解約・カードの変更・請求書の確認は「サブスクリプションを管理」から行えます。")
-            return
-
-        if subscription_type == TYPE_TWITCH:
-            # Twitch サブは切れる。切れたあとも続けたい人のために登録は出すが、
-            # 黙って出すと「今も無制限なのに課金させられた」という話になる (§4.6)。
+        elif subscription_type == TYPE_TWITCH:
             self.billing_note_label.setText(
-                "現在は Twitch サブスクリプションの特典で無制限にご利用いただけます。"
-                "登録しておくと、Twitch サブスクが切れたあとも継続してご利用いただけます"
-                "(両方に加入した場合、料金は二重に発生します)。")
-            return
+                "Twitch のサブスクリプションが切れると、ポイント制に戻ります"
+                "(残高が足りない出力には透かしが入ります)。")
+        else:
+            self.billing_note_label.setText(
+                "登録はメイン画面の「サブスクリプション」から行えます。")
 
-        self.billing_note_label.setText(
-            "ポイントを消費せず、透かしの入らない出力を回数無制限で行えます。"
-            "お支払いはブラウザ (Stripe) で行います。")
+    # 状態の表示行を組み立てる (種別 / 状態 / 次回更新日)
+    def _state_lines(self, subscription_type):
+        state = self._subscription_state if isinstance(self._subscription_state, dict) else {}
 
-    def _on_checkout(self):
-        self._start_billing_url("checkout")
+        kind = _SUBSCRIPTION_LABELS.get(subscription_type, subscription_type)
+        channel = str(state.get("twitchChannel") or "").strip()
+        if subscription_type == TYPE_TWITCH and channel:
+            kind = f"{kind} ({channel})"
+        lines = [f"種別: {kind}"]
 
+        status = str(state.get("status") or "")
+        if status:
+            lines.append("状態: " + _STATUS_LABELS.get(status, status))
+
+        period_end = parse_timestamp(state.get("currentPeriodEnd"))
+        if period_end is not None:
+            label = "終了" if state.get("cancelAtPeriodEnd") else "次回更新"
+            lines.append(f"{label}: " + period_end.astimezone().strftime("%Y/%m/%d"))
+        return lines
+
+    # 管理ページ (解約・カード変更・請求書) を開く。
     def _on_portal(self):
-        self._start_billing_url("portal")
-
-    # 決済ページ / 管理ページの URL 取得を始める。
-    def _start_billing_url(self, action):
         if self._billing is None:
             return
         if self._billing_worker is not None and self._billing_worker.isRunning():
             return
 
-        self.checkout_button.setEnabled(False)
         self.portal_button.setEnabled(False)
         self.billing_note_label.setText("ブラウザで手続きしてください…")
 
-        self._billing_worker = BillingUrlWorker(self._billing, action, parent=self)
-        if action == "checkout":
-            self._billing_worker.ready.connect(self._on_checkout_url)
-        else:
-            self._billing_worker.ready.connect(self._on_portal_url)
+        self._billing_worker = BillingUrlWorker(self._billing, "portal", parent=self)
+        self._billing_worker.ready.connect(self._on_portal_url)
         self._billing_worker.failed.connect(self._on_billing_failed)
         self._billing_worker.finished.connect(self._reset_billing_buttons)
         self._billing_worker.start()
-
-    # 決済ページを開き、反映を待ち始める。
-    def _on_checkout_url(self, url):
-        QDesktopServices.openUrl(QUrl(url))
-        self.billing_note_label.setText(
-            "ブラウザでお支払いを完了してください。反映を待っています…")
-        self._start_activation()
 
     # 管理ページを開く。解約はブラウザ側で完結するため、反映は待たない
     # (解約しても期間の末日までは unlimited のままで、画面は変わらない)。
@@ -479,29 +528,4 @@ class AccountTab(QWidget):
         self.reload()
 
     def _reset_billing_buttons(self):
-        self.checkout_button.setEnabled(True)
         self.portal_button.setEnabled(True)
-
-    # 支払いがサーバーへ反映されるのを待つ。画面は操作可能なままにする (§4.7)。
-    def _start_activation(self):
-        if self._activation_worker is not None and self._activation_worker.isRunning():
-            return
-        self._activation_worker = ActivationWorker(self._billing, parent=self)
-        self._activation_worker.done.connect(self._on_activation)
-        self._activation_worker.start()
-
-    def _on_activation(self, activated):
-        if activated:
-            self.reload()
-            return
-        # 支払いを取りやめた場合もここへ来る。失敗とは書かない。
-        self.billing_note_label.setText(
-            "お支払いの反映を確認できませんでした。"
-            "手続きが完了している場合は、しばらくしてから「更新」を押してください。")
-
-    # 反映待ちは最大 180 秒動く。タブが閉じられたら止める。
-    def closeEvent(self, event):
-        if self._activation_worker is not None and self._activation_worker.isRunning():
-            self._activation_worker.requestInterruption()
-            self._activation_worker.wait(5000)
-        super().closeEvent(event)

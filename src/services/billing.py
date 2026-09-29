@@ -24,6 +24,7 @@ _logger = get_logger(__name__)
 _CONFIG_PATH = "/api/billing/config"
 _CHECKOUT_PATH = "/api/billing/checkout-session"
 _PORTAL_PATH = "/api/billing/portal-session"
+_SUBSCRIPTION_PATH = "/api/billing/subscription"
 _POINTS_PATH = "/api/points"
 
 # API が返すエラーコード (ver6 resolve §6)
@@ -34,6 +35,14 @@ CODE_NO_SUBSCRIPTION = "no_subscription"
 TYPE_NONE = "None"
 TYPE_STRIPE = "Stripe"
 TYPE_TWITCH = "TwitchSub"
+
+# 購入ボタンを押せない理由のコード (ver6 resolve2 §4.6 / §6)。
+# 押せるなら空文字。文言は画面側が持ち、ここはコードだけを返す。
+BLOCK_NOT_LOGGED_IN = "not_logged_in"   # ログインしていない (JWT が無いと購入できない)
+BLOCK_UNKNOWN = "unknown"               # 加入状態が分からない (取得前・オフライン)
+BLOCK_UNAVAILABLE = "unavailable"       # 受付停止 (API 未実装・Stripe 未設定)
+BLOCK_TWITCH = "twitch"                 # Twitch サブで特典適用中 (request2 ①)
+BLOCK_STRIPE = "stripe"                 # すでに Stripe で加入中
 
 # 設定の既定値
 _DEFAULT_CONFIG_CACHE_SEC = 3600
@@ -75,6 +84,40 @@ class BillingConfig:
 
 # 未取得・取得失敗を表す無効な設定 (呼び出し側の None 判定を無くす)
 _DISABLED = BillingConfig()
+
+
+# 購入ボタンを押せるかを決める (ver6 resolve2 §4.6 / §6 の真理値表)。
+# 押せるなら空文字、押せないなら BLOCK_* のいずれかを返す。
+#
+# 要望 ① (Twitch サブスク中は購入させない) の分岐を画面の中へ埋めないため、
+# PySide6 に依存しない純関数として切り出す。真理値表をそのまま単体テストできる。
+#
+# config            … BillingConfig。まだ取れていなければ None
+# subscription_type … "None" / "Stripe" / "TwitchSub"。まだ取れていなければ None
+# logged_in         … Stretheus (Twitch) へログイン済みか
+def purchase_blocked_reason(config, subscription_type, logged_in):
+    # 購入には JWT が要る。ログインしていなければまずログインさせる。
+    if not logged_in:
+        return BLOCK_NOT_LOGGED_IN
+
+    # 契約情報と加入種別のどちらかが欠けている間は押させない。
+    # 片方だけで判断すると、加入中の利用者へ一瞬だけ購入ボタンを開いてしまう
+    # (ver6 resolve §4.2 と同じ理由)。オフラインでもここへ来る。
+    if config is None or subscription_type is None:
+        return BLOCK_UNKNOWN
+
+    # Stripe が未設定 / API が未実装なら、そもそも受け付けられない。
+    if not config.is_available():
+        return BLOCK_UNAVAILABLE
+
+    # Twitch サブスクリプションで特典が適用されている間は購入不要 (request2 ①)。
+    if subscription_type == TYPE_TWITCH:
+        return BLOCK_TWITCH
+
+    if subscription_type == TYPE_STRIPE:
+        return BLOCK_STRIPE
+
+    return ""
 
 
 class BillingService:
@@ -146,6 +189,21 @@ class BillingService:
             raise ApiError("サブスクリプション管理ページの URL を取得できませんでした。")
         _logger.info("Stripe のカスタマーポータルを取得しました。")
         return url
+
+    # ---- 加入状態と履歴 ---------------------------------------------------
+    # GET /api/billing/subscription の応答をそのまま返す (ver6 resolve2 §4.4 / §9.1)。
+    #   {type, status, cancelAtPeriodEnd, currentPeriodEnd, twitchChannel, history[]}
+    #
+    # config() と同じく**例外を投げない**。アカウントタブは開くたびにこれを呼ぶため、
+    # ここで例外を通すとタブごと開かなくなる。取れなければ None を返し、
+    # 呼び出し側は GET /api/points の種別だけを出す。
+    def subscription(self):
+        try:
+            return self._points.auth.client.get(_SUBSCRIPTION_PATH) or {}
+        except AutoEditError as e:
+            # 404 = API が未実装。オフラインもここへ来るが、扱いは同じ。
+            _logger.info("サブスクリプションの状態を取得できませんでした: %s", e)
+            return None
 
     # ---- 反映待ち ---------------------------------------------------------
     # 支払いがサーバーへ反映される (unlimited が立つ) のを待つ。

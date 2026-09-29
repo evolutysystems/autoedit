@@ -3,7 +3,8 @@
 # 重点 (docs/request/ver5/resolve9.md §8.1):
 #   ・枠が上限・下限・比率・ソースの内側に収まること (R11 / R16)
 #   ・「作成」でクリップ用の縦プロジェクトが書き出されること (R6 / R14)
-#   ・対象外の Timeline ではメニューを出さないこと (§3.7 / §10 #10)
+#   ・対象外の Timeline ではメニューを出さないこと (§10 #10)
+#   ・アーカイブ用は素材を元 VOD へ張り替えて書き出すこと (resolve10 §3.1)
 import os
 import tempfile
 import unittest
@@ -46,7 +47,9 @@ def _timeline(portrait=False, archive=False):
     subtitle = Track("S1", TRACK_SUBTITLE, 1, name="Subtitle 1")
     source = {"media_id": "m1", "input_path": os.path.abspath(__file__)}
     if archive:
-        source["archive"] = {"vod_path": "x.mp4"}
+        source["archive"] = {"vod_path": os.path.abspath(__file__),
+                             "media": [{"media_id": "m1", "vod_start": 100.0,
+                                        "vod_end": 160.0}]}
     return Timeline(fps=60, width=width, height=height,
                     orientation="portrait" if portrait else "landscape",
                     source=source, media_pool=media, tracks=[video, audio, subtitle])
@@ -210,6 +213,29 @@ class VerticalProjectDialogTest(unittest.TestCase):
 
         self.assertIn("_tate", os.path.basename(dialog._dest_path))
 
+    # アーカイブ用は素材が元 VOD へ張り替わって保存されること (resolve10 §3.1)
+    def test_create_rebases_archive_media(self):
+        from unittest import mock
+
+        from src.archive import vod_rebase
+
+        self.timeline = _timeline(archive=True)
+        dialog = self._dialog()
+        with mock.patch.object(vod_rebase, "_keyframe_at_or_before",
+                               lambda *_a, **_k: 98.5):
+            dialog._make_rebase = lambda: vod_rebase.plan(self.timeline, {})
+            with tempfile.TemporaryDirectory() as tmp:
+                self._create(dialog, os.path.join(tmp, "out.timeline.json"))
+                timeline, _meta = project_io.load_project(dialog._dest_path)
+
+        self.assertEqual(project_io.project_kind(timeline), project_io.KIND_CLIP)
+        self.assertEqual([media.path for media in timeline.media_pool],
+                         [os.path.abspath(__file__)])
+        clips = timeline.base_video_track().clips
+        # 素材内 0.0 / 20.0 が VOD の 98.5 / 118.5 になる
+        self.assertAlmostEqual(clips[0].source_in, 98.5)
+        self.assertAlmostEqual(clips[1].source_in, 118.5)
+
     # 背景の選択が指定へ入ること
     def test_background_is_stored(self):
         dialog = self._dialog()
@@ -221,7 +247,7 @@ class VerticalProjectDialogTest(unittest.TestCase):
 
 class MenuGateTest(unittest.TestCase):
 
-    # 縦・アーカイブ用の Timeline では作成メニューを出さないこと
+    # 縦の Timeline と、画面の種別と中身が食い違うものでは出さないこと
     def test_gate(self):
         from src.gui.timeline import timeline_editor_dialog as module
 
@@ -236,9 +262,33 @@ class MenuGateTest(unittest.TestCase):
 
         self.assertTrue(_Dialog(_timeline())._can_make_vertical())
         self.assertFalse(_Dialog(_timeline(portrait=True))._can_make_vertical())
+        # クリップ用の画面にアーカイブ用の中身 (逆も) は食い違いのため出さない
         self.assertFalse(_Dialog(_timeline(archive=True))._can_make_vertical())
         self.assertFalse(
             _Dialog(_timeline(), kind=project_io.KIND_ARCHIVE)._can_make_vertical())
+        # アーカイブ用の画面 + アーカイブ用の中身は対象 (resolve10 §3.1)
+        self.assertTrue(
+            _Dialog(_timeline(archive=True),
+                    kind=project_io.KIND_ARCHIVE)._can_make_vertical())
+
+    # アーカイブ用の画面は、元 VOD が無いときだけ出さないこと (resolve10 §5.4)
+    def test_archive_gate_needs_vod(self):
+        from src.gui.timeline import archive_timeline_dialog as module
+
+        def _dialog(timeline):
+            dialog = module.ArchiveTimelineDialog.__new__(module.ArchiveTimelineDialog)
+            dialog.controller = type("C", (), {"timeline": timeline})()
+            dialog._project_kind = lambda: project_io.KIND_ARCHIVE
+            return dialog
+
+        self.assertTrue(_dialog(_timeline(archive=True))._can_make_vertical())
+
+        gone = _timeline(archive=True)
+        gone.source = dict(gone.source,
+                           archive=dict(gone.source["archive"],
+                                        vod_path="D:/does/not/exist.mp4"),
+                           input_path="D:/does/not/exist.mp4")
+        self.assertFalse(_dialog(gone)._can_make_vertical())
 
 
 if __name__ == "__main__":

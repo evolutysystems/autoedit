@@ -105,3 +105,16 @@ Qt と HTML の描画モデルの違いから、以下だけは近似になっ�
 * プロジェクト一覧 (`src/gui/project_library_dialog.py`)
 * アーカイブ結果 (`src/gui/archive_result_window.py`)
 * 素材の再リンク (`src/gui/timeline/missing_media_dialog.py`)、音量解析 (`src/gui/volume_threshold_dialog.py`)
+* サブスクリプション (`src/gui/subscription_window.py`)
+  — メイン画面の「サブスクリプション」ボタンから開く。ボタン 2 つだけの小さな画面
+  (ver6 resolve2 §2.2)
+
+## 収録ページの版ずれ (未反映)
+
+`main_window.html` / `settings_window.html` は ver3 resolve4 時点の写しで、
+以下がまだ反映されていない。実装を読むときは `src/` を正とすること。
+
+| 版 | 未反映の内容 |
+| --- | --- |
+| ver5 | 右上コーナーの残高インジケータ (`src/gui/points_indicator.py`)、設定画面の「アカウント」タブ (`src/gui/account_tab.py`) |
+| ver6 | コーナーの「サブスクリプション」ボタンと加入済みのチェックマーク、アカウントタブのサブスクリプション状態・履歴 (ver6 resolve2 §2.1 / §2.3) |

@@ -6,11 +6,13 @@
 # 右側の「仕上がり」は取得済みのフレームを Qt で切り出して並べるだけで、
 # FFmpeg は起動しない。配置の計算は出力と同じ crop.preview_rects を通すため、
 # ここで見た構図がそのまま書き出される (§4-3)。
+import contextlib
 import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -38,15 +40,29 @@ _PREVIEW_HEIGHT = 520
 _BACKGROUNDS = (("ぼかし", crop.BG_BLUR), ("黒", crop.BG_BLACK))
 
 
+# 待ちの間だけ砂時計カーソルにする (素材の張り替えは ffprobe を数回叩く)
+@contextlib.contextmanager
+def _busy_cursor():
+    QApplication.setOverrideCursor(Qt.WaitCursor)
+    try:
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
+
+
 class VerticalProjectDialog(QDialog):
 
-    # controller : Timeline 編集画面のコントローラ
-    # clips      : 対象のベースクリップ (timeline_start 昇順)
-    # settings   : setting.json
-    def __init__(self, controller, clips, settings, parent=None):
+    # controller  : Timeline 編集画面のコントローラ
+    # clips       : 対象のベースクリップ (timeline_start 昇順)
+    # settings    : setting.json
+    # make_rebase : 素材の張り替え指定を作る関数 (None 可 / ver5 resolve10 §5.5)。
+    #               アーカイブ切り抜き用の画面だけが渡す。ffprobe を数回叩くため、
+    #               画面を開くときではなく「作成」を押したときに呼ぶ。
+    def __init__(self, controller, clips, settings, parent=None, make_rebase=None):
         super().__init__(parent)
         self.setWindowTitle("縦動画プロジェクトの作成")
         self._controller = controller
+        self._make_rebase = make_rebase
         self._timeline = controller.timeline
         self._settings = settings
         self._cfg = crop.config(settings)
@@ -326,9 +342,12 @@ class VerticalProjectDialog(QDialog):
                 return
 
         try:
+            # アーカイブ用は素材を元 VOD へ張り替える (消える中間ファイルを指さない)
+            with _busy_cursor():
+                rebase = self._make_rebase() if self._make_rebase else None
             vertical, warnings = vertical_builder.build(
                 self._timeline, [clip.id for clip in self._clips], self._layout(),
-                self._settings, close_gaps=self._cfg["close_gaps"])
+                self._settings, close_gaps=self._cfg["close_gaps"], rebase=rebase)
             project_io.save(vertical, self._dest_path, generator="vertical",
                             project_path=self._dest_path)
         except Exception as e:            # noqa: BLE001 (画面へ集約通知)

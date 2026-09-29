@@ -39,6 +39,7 @@ _DEFAULTS = {
     "max_scale": 2.0,
     "project_suffix": "_vertical",
     "close_gaps": True,
+    "keyframe_window_sec": 30.0,
 }
 
 
@@ -61,6 +62,9 @@ def config(settings):
         "project_suffix": str(section.get("project_suffix",
                                           _DEFAULTS["project_suffix"]) or ""),
         "close_gaps": bool(section.get("close_gaps", _DEFAULTS["close_gaps"])),
+        # 切り出しの先頭 (キーフレーム) を探しに戻る幅 (ver5 resolve10 §5.2)
+        "keyframe_window_sec": _clamp(section.get("keyframe_window_sec"),
+                                      _DEFAULTS["keyframe_window_sec"], 1.0, 600.0),
     }
 
 

@@ -29,6 +29,7 @@ if __package__ is None or __package__ == "":
     from src.gui.timeline.timeline_editor_dialog import TimelineEditorDialog
     from src.gui.volume_threshold_dialog import VolumeThresholdDialog
     from src.gui.points_indicator import PointsIndicator, WatermarkConfirmBridge
+    from src.gui.subscription_window import SubscriptionWindow
     from src.pipeline.pipeline_runner import (
         is_timeline_mode,
         run_from_project,
@@ -72,6 +73,7 @@ else:
     from .points_indicator import PointsIndicator, WatermarkConfirmBridge
     from .project_library_dialog import ProjectLibraryDialog
     from .project_resume_row import PROJECT_FILE_FILTER, confirm_project_kind
+    from .subscription_window import SubscriptionWindow
     from .subtitle_editor_dialog import SubtitleEditorDialog
     from .timeline.missing_media_dialog import MediaRelinkBridge
     from .timeline.timeline_editor_dialog import TimelineEditorDialog
@@ -1009,8 +1011,13 @@ class MainWindow(QWidget):
         self._backdrop_requested = False
         # 設定画面の参照を保持する (ガベージコレクトによる即時クローズを防ぐ / resolve4 M3)
         self._settings_window = None
+        # サブスクリプション画面の参照 (同上 / ver6 resolve2 §4.2)
+        self._subscription_window = None
         # 実行中のタブ (resolve4 §5.7-4)。空でないあいだ設定ボタンを無効化する。
         self._running_tabs = set()
+        # 加入済みの印の種類 ("twitch" / "stripe" / 未加入は "")。
+        # テーマ貼り替え時に描き直すため保持する (ver6 resolve2 §4.2)。
+        self._subscription_kind = ""
         # ポイント (ver5 resolve §5.4)。プロセス全体で 1 つだけ持ち、
         # 出力処理・残高表示・アカウントタブで共有する (§6.4 のリフレッシュ直列化)。
         self._points = services_config.shared_points(self._settings)
@@ -1048,6 +1055,11 @@ class MainWindow(QWidget):
         self.clip_tab.refresh_theme()
         self.archive_tab.refresh_theme()
         self._refresh_settings_icon()
+        # 加入済みの印も QPixmap へ焼き込むため描き直す (ver6 resolve2 §4.2)。
+        # Twitch のブランド色は変わらないが、Stripe の success はテーマに追随する。
+        if self._subscription_kind:
+            self.subscription_button.setIcon(
+                theme.check_icon(self._subscription_kind, self._settings))
         theme.refresh_all_windows(app)
 
     # 表示後にネイティブのすりガラスを要求する (resolve3 §5.4)
@@ -1084,15 +1096,29 @@ class MainWindow(QWidget):
         self.settings_button.setToolTip("設定")
         theme.mark_icon_button(self.settings_button)
         self.settings_button.clicked.connect(self._on_open_settings)
+        # サブスクリプション画面を開くボタン (ver6 resolve2 §2.1 / 要望 A)。
+        # 設定ボタンの左へ置く。加入済みなら押せなくし、文言の左へチェックマークを出す。
+        self.subscription_button = QPushButton("サブスクリプション")
+        self.subscription_button.setIconSize(
+            QSize(theme.BUTTON_ICON_PX, theme.BUTTON_ICON_PX))
+        self.subscription_button.setToolTip("サブスクリプションの登録")
+        self.subscription_button.clicked.connect(self._on_open_subscription)
         # 残高インジケータ (ver5 resolve §5.6 R11)。設定ボタンの左へ並べる。
         self.points_indicator = PointsIndicator(self._points, self._settings)
+        # 加入状態は残高の応答 (GET /api/points) だけで分かる。読む場所を増やさず、
+        # インジケータが取った値を購読する (ver6 resolve2 §4.2)。
+        self.points_indicator.balance_changed.connect(self._refresh_subscription_button)
 
         # コーナーへ直接置くとボタンの下辺がペインへ接するため、
         # 余白付きの入れ物で包んでから渡す (ver3 resolve15 D1)。
         theme.install_tab_corner(
-            self.tabs, [self.points_indicator, self.settings_button],
+            self.tabs,
+            [self.points_indicator, self.subscription_button, self.settings_button],
             spacing=theme.BUTTON_ICON_PX // 2)
         self._refresh_settings_icon()
+        # インジケータの生成中に流れた 1 回目は購読前のため取りこぼす。
+        # 手元に残っている値で初期状態を作っておく (通信はしない)。
+        self._refresh_subscription_button(self._points.last_balance())
 
         # どちらかのタブが実行中なら設定ボタンを無効化する (resolve4 §5.7-4 / 回答 Q1)
         self.clip_tab.running_changed.connect(
@@ -1153,6 +1179,42 @@ class MainWindow(QWidget):
             lambda *_a: self.points_indicator.reload())
         self._settings_window.show()
 
+    # サブスクリプション画面を開く (ver6 resolve2 §4.2 / 要望 A)
+    # 設定画面と同じ流儀。既に開いていれば前面に出すだけ。
+    def _on_open_subscription(self):
+        if self._subscription_window is not None and self._subscription_window.isVisible():
+            self._subscription_window.raise_()
+            self._subscription_window.activateWindow()
+            return
+        self._subscription_window = SubscriptionWindow(self._points, self._settings)
+        # 画面を開いたまま加入が確認できた場合にも印を付ける。
+        self._subscription_window.subscription_changed.connect(
+            lambda: self.points_indicator.refresh(force=True))
+        # 「main_window に戻ってきた際に」加入状態を反映する (要望 ①後 / ②後)。
+        # ログイン / 支払いはブラウザ側で進むため、閉じた時点で取り直す。
+        self._subscription_window.destroyed.connect(
+            lambda *_a: self.points_indicator.reload())
+        self._subscription_window.show()
+
+    # 加入状態をサブスクリプションボタンへ反映する (ver6 resolve2 §4.2 / 要望 ①後 ②後)
+    #
+    # 加入済みなら押せなくし、文言の左へ種別ごとの色のチェックマークを出す。
+    #   Twitch サブ … #9147FF (Twitch のブランド色)
+    #   Stripe      … テーマの success
+    # 残高が取れていない (未ログイン・オフライン) ときは印を出さず押せるままにする。
+    # この画面のボタンは入口であって関門ではなく、加入済みかどうかの正しい判断は
+    # サブスクリプション画面が契約情報と加入種別をそろえてから行う。
+    def _refresh_subscription_button(self, balance):
+        self._subscription_kind = theme.subscription_check_kind(balance)
+        subscribed = bool(self._subscription_kind)
+        self.subscription_button.setIcon(
+            theme.check_icon(self._subscription_kind, self._settings)
+            if subscribed else QIcon())
+        self.subscription_button.setEnabled(not subscribed and not self._running_tabs)
+        self.subscription_button.setToolTip(
+            "サブスクリプションに加入済みです" if subscribed
+            else "サブスクリプションの登録")
+
     # タブの実行状態が変わったときに設定ボタンの可否を更新する (resolve4 §5.7-4)
     # 実行中のタブを集合で持つのは、一方が終わってももう一方が実行中なら
     # 有効化してはいけないため (bool 1 個だと取りこぼす)。
@@ -1164,6 +1226,11 @@ class MainWindow(QWidget):
             # 出力が終わると残高が動くため取り直す (ver5 resolve §5.6)
             self.points_indicator.refresh(force=True)
         self.settings_button.setEnabled(not self._running_tabs)
+        # 実行中は加入状態を変えさせない (ver6 resolve2 §2.1)。
+        # 走っている予約の透かし判定は予約時にサーバーが決めた値で固定されるため、
+        # 途中で加入されると画面の表示と実際の出力が食い違う。
+        self.subscription_button.setEnabled(
+            not self._running_tabs and not self._subscription_kind)
 
     # 設定ボタンのアイコンを現在のテーマ色で描き直す (resolve3 §5.10-2)
     def _refresh_settings_icon(self):
