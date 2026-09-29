@@ -29,7 +29,9 @@ class _FakeClient:
         self.items = list(items or [])
         self.paths = []
 
-    def get(self, path):
+    # 実物 (ApiClient.get) と同じ引数を受ける。サブスクの契約情報 (ver6) のように
+    # authenticated=False で呼ばれる経路があるため、キーワードを落とさない。
+    def get(self, path, authenticated=True):
         self.paths.append(path)
         return {"items": list(self.items)}
 

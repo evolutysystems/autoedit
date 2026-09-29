@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -18
+        "last_cut_db": -17
     },
     "loudness": {
         "enabled": true,
@@ -469,6 +469,11 @@
         "subscription_cache_hours": 72,
         "balance_refresh_sec": 300,
         "subscribe_url": ""
+    },
+    "billing": {
+        "config_cache_sec": 3600,
+        "activation_poll_sec": 3,
+        "activation_timeout_sec": 180
     },
     "blur": {
         "enabled": true,
