@@ -18,3 +18,10 @@ src/settings/project_thumbs/
 # 入手方法は src/models/README.md を参照 (YOLOX は公式配布 / OSNet は tools/export_osnet.py)
 src/models/*.onnx
 tools/weights/
+
+# Python のバイトコードキャッシュ (実行時に作り直される生成物)
+__pycache__/
+*.pyc
+
+# 実行ログ (端末ごとの出力。リポジトリに入れると差分がログで埋まる)
+logs/
