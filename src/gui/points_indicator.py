@@ -1,7 +1,8 @@
-# 残高インジケータ (ver5 resolve.md §5.6 R11)
+# 残高インジケータ (ver5 resolve.md §5.6 R11 / ver7 resolve §4)
 #
 # メイン画面の右上へ常時置き、残高と次回リセット日を出す。
-#   ・未ログイン        → 「ログイン」ボタン (課金は任意。押さなければ従来どおり使える)
+#   ・未ログイン        → **この端末の残高**と「ログイン」ボタン (ver7 resolve §1)
+#   ・ログイン済み      → アカウントの残高
 #   ・サブスク会員      → 「サブスク特典で無制限」
 #   ・オフライン        → 最後に取得できた値を薄字で出す (取れていなければ断り書き)
 #
@@ -37,6 +38,11 @@ WATERMARK_MESSAGE = (
 WATERMARK_MESSAGE_RESOLVE = (
     "ポイントが不足しているため、この書き出しには透かしのクリップが入ります。\n"
     "続行しますか？")
+
+# 未ログインのときの注記 (ログインするとアカウントの残高に切り替わる)
+ANONYMOUS_NOTE = (
+    "ログインしていないため、この端末のポイントを使用しています。\n"
+    "ログインするとアカウントのポイントに切り替わります。")
 
 
 # その場 (GUI スレッド) で確認を出す関数を返す (R12)。
@@ -157,14 +163,8 @@ class PointsIndicator(QWidget):
         self._apply_state()
         self.refresh(force=True)
 
-    # 残高を取り直す。未ログインなら何もしない。
+    # 残高を取り直す。未ログインでも端末の残高を取りに行く (ver7 resolve §4)。
     def refresh(self, force=False):
-        if not self._points.auth.is_logged_in():
-            self._apply_state()
-            # ログアウト直後もここへ来る。購読側の加入表示を消すため空を流す
-            # (流さないとログアウト後もチェックマークが残る)。
-            self.balance_changed.emit(None)
-            return
         if self._worker is not None and self._worker.isRunning():
             return
 
@@ -188,16 +188,16 @@ class PointsIndicator(QWidget):
     def _apply_state(self, balance=None, offline=False):
         logged_in = self._points.auth.is_logged_in()
         self.login_button.setVisible(not logged_in)
-        self.label.setVisible(logged_in)
-        if not logged_in:
-            self.label.setText("")
-            return
+        # 未ログインでもポイント制の対象のため、残高は常に出す (ver7 resolve §4)。
+        self.label.setVisible(True)
 
         self.label.setText(format_balance(balance))
         # オフライン表示は薄字にする (無効化で灰色になる)
         self.label.setEnabled(not offline)
-        self.label.setToolTip(
-            "サーバーへ接続できないため、最後に取得した残高です" if offline else "")
+        if offline:
+            self.label.setToolTip("サーバーへ接続できないため、最後に取得した残高です")
+        else:
+            self.label.setToolTip("" if logged_in else ANONYMOUS_NOTE)
 
     def _on_login(self):
         if self._login_worker is not None and self._login_worker.isRunning():

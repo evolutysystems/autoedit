@@ -42,6 +42,15 @@ class _FakeAuth:
     def is_logged_in(self):
         return self._logged_in
 
+    def has_session(self):
+        return True
+
+    def is_anonymous(self):
+        return not self._logged_in
+
+    def ensure_session(self):
+        return True
+
     def user(self):
         return {"displayName": "テスト配信者"}
 
@@ -213,12 +222,14 @@ class BalanceChangedTest(unittest.TestCase):
     def setUp(self):
         self._app = _app()
 
-    # 未ログインでも 1 回流す (ログアウト後に印を消すため)
+    # 未ログインでも 1 回流す (ログアウト後に印を消すため)。
+    # 未ログインでも端末の残高を取りに行くようになったため (ver7 resolve §4)、
+    # 値はワーカーの完了時に届く。取れなければ None が流れる。
     def test_it_emits_when_logged_out(self):
         indicator = PointsIndicator(_FakePoints(logged_in=False))
         received = []
         indicator.balance_changed.connect(received.append)
-        indicator.refresh(force=True)
+        indicator._on_loaded(None)
         self.assertEqual([None], received)
 
     def test_it_emits_the_balance_once(self):

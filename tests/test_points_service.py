@@ -5,6 +5,7 @@
 #   ・ポイント処理で出力を壊さない。API の失敗は外へ出さない (§4-3)
 #   ・オフラインは watermark あり。ただしサブスク会員はキャッシュで救済する (§3.3)
 #   ・送れなかった commit / cancel は次回へ持ち越して再送する (R14)
+#   ・未ログインも未サブスクリプションと同じくポイント制の対象とする (ver7 resolve §1)
 # ネットワークは使わない。API クライアントを差し替えて応答だけを与える。
 import datetime
 import json
@@ -54,15 +55,43 @@ class _FakeClient:
 
 class _FakeAuth:
 
-    def __init__(self, logged_in=True):
+    def __init__(self, logged_in=True, anonymous=False, session=True):
         self.client = _FakeClient()
         self._logged_in = logged_in
+        self._anonymous = anonymous
+        # ensure_session() が成功するか (False = 匿名セッションも作れないオフライン)
+        self._session = session
+        self.ensure_calls = 0
+        # セッションを作り直したときの副作用をテストから差し込む
+        self.on_ensure_session = None
 
     def is_logged_in(self):
         return self._logged_in
 
+    def has_session(self):
+        return self._session
+
+    def is_anonymous(self):
+        return self._anonymous
+
+    # 未ログインなら匿名セッションを作る実物と同じ契約 (作れたら True)。
+    def ensure_session(self):
+        self.ensure_calls += 1
+        if self.on_ensure_session is not None:
+            self.on_ensure_session()
+        return self._session
+
     def set_logged_in(self, value):
         self._logged_in = value
+
+    # 未ログイン (匿名セッション) の状態にする。
+    def set_anonymous(self):
+        self._logged_in = False
+        self._anonymous = True
+
+    # サーバーへ到達できず、匿名セッションも作れない状態にする。
+    def set_offline(self):
+        self._session = False
 
 
 class PointsServiceTest(unittest.TestCase):
@@ -114,16 +143,50 @@ class PointsServiceTest(unittest.TestCase):
         self.assertEqual(0, reservation.amount)
         self.assertTrue(reservation.is_tracked())
 
-    def test_reserve_without_login_does_not_call_the_api(self):
-        # 未ログインのユーザーは従来どおり無償で使える (§4-5)。
-        self._auth.set_logged_in(False)
+    def test_reserve_without_login_consumes_points(self):
+        # 未ログインも未サブスクリプションと同じくポイント制の対象 (ver7 resolve §1)。
+        self._auth.set_anonymous()
+        self._auth.client.responses["/api/points/reservations"] = self._reservation_response()
 
         reservation = self._service.reserve(JOB_CLIP, OUTPUT_VIDEO)
 
-        self.assertFalse(reservation.watermark_required)
-        self.assertFalse(reservation.is_tracked())
+        self.assertEqual(25, reservation.amount)
+        self.assertTrue(reservation.is_tracked())
+        self.assertFalse(reservation.offline)
+        self.assertEqual(1, self._auth.ensure_calls)
+
+    def test_reserve_without_login_and_without_points_requires_a_watermark(self):
+        # 残高が尽きた匿名ユーザーの扱いは、残高が尽きた未サブスクリプションと同じ。
+        self._auth.set_anonymous()
+        self._auth.client.responses["/api/points/reservations"] = self._reservation_response(
+            amount=0, watermark=True)
+
+        reservation = self._service.reserve(JOB_ARCHIVE, OUTPUT_VIDEO)
+
+        self.assertTrue(reservation.watermark_required)
+        self.assertTrue(reservation.is_tracked())
+
+    def test_reserve_without_a_session_falls_back_to_offline(self):
+        # 匿名セッションも作れない (オフライン)。出力は止めず watermark を入れる。
+        self._auth.set_offline()
+
+        reservation = self._service.reserve(JOB_CLIP, OUTPUT_VIDEO)
+
+        self.assertTrue(reservation.watermark_required)
         self.assertTrue(reservation.offline)
+        self.assertFalse(reservation.is_tracked())
         self.assertEqual([], self._auth.client.calls)
+
+    def test_an_anonymous_session_is_never_rescued_by_the_subscription_cache(self):
+        # サブスク会員がログアウトした直後でも、匿名セッションは救済しない。
+        self._write_state({"subscribed": True, "checkedAt": _iso(1)})
+        self._auth.set_anonymous()
+        self._auth.client.errors["/api/points/reservations"] = ApiOfflineError("接続できません")
+
+        reservation = self._service.reserve(JOB_CLIP, OUTPUT_VIDEO)
+
+        self.assertTrue(reservation.watermark_required)
+        self.assertFalse(reservation.unlimited)
 
     def test_reserve_offline_requires_a_watermark(self):
         self._auth.client.errors["/api/points/reservations"] = ApiOfflineError("接続できません")
@@ -184,7 +247,7 @@ class PointsServiceTest(unittest.TestCase):
         self.assertEqual([], self._read_queue())
 
     def test_commit_of_an_untracked_reservation_does_nothing(self):
-        self._auth.set_logged_in(False)
+        self._auth.set_offline()
         reservation = self._service.reserve(JOB_CLIP, OUTPUT_VIDEO)
 
         self._service.commit(reservation)
@@ -219,6 +282,7 @@ class PointsServiceTest(unittest.TestCase):
         self.assertEqual([], self._read_queue())
 
     def test_reauth_required_does_not_break_the_output(self):
+        self._auth.set_offline()
         self._auth.client.errors["/api/points/reservations"] = ReauthRequiredError(
             "再ログインが必要です。", status=401, code="reauth_required")
 
@@ -226,6 +290,27 @@ class PointsServiceTest(unittest.TestCase):
 
         self.assertTrue(reservation.watermark_required)
         self.assertTrue(reservation.offline)
+
+    def test_an_expired_session_is_recreated_and_the_reservation_is_resent(self):
+        # セッションが失効していた場合、作り直して再送する (watermark を入れない)。
+        client = self._auth.client
+        client.errors["/api/points/reservations"] = ReauthRequiredError(
+            "再ログインが必要です。", status=401, code="reauth_required")
+
+        def _on_ensure():
+            # 予約が 401 で弾かれた後の作り直し (2 回目) で、予約が通るようになる。
+            if self._auth.ensure_calls < 2:
+                return
+            client.errors.pop("/api/points/reservations", None)
+            client.responses["/api/points/reservations"] = self._reservation_response()
+
+        self._auth.on_ensure_session = _on_ensure
+
+        reservation = self._service.reserve(JOB_CLIP, OUTPUT_VIDEO)
+
+        self.assertFalse(reservation.watermark_required)
+        self.assertTrue(reservation.is_tracked())
+        self.assertEqual(2, self._auth.ensure_calls)
 
     # ---- 再送 -------------------------------------------------------------
 
@@ -266,8 +351,18 @@ class PointsServiceTest(unittest.TestCase):
 
         self.assertIsNone(self._service.balance())
 
-    def test_balance_returns_none_without_login(self):
-        self._auth.set_logged_in(False)
+    def test_balance_without_login_reads_the_device_wallet(self):
+        # 未ログインでも残高はある (端末に紐づく匿名の台帳)。
+        self._auth.set_anonymous()
+        self._auth.client.responses["/api/points"] = {
+            "balance": 150, "reserved": 0, "available": 150, "unlimited": False,
+        }
+
+        self.assertEqual(150, self._service.balance()["available"])
+        self.assertEqual([("GET", "/api/points", None)], self._auth.client.calls)
+
+    def test_balance_returns_none_without_a_session(self):
+        self._auth.set_offline()
 
         self.assertIsNone(self._service.balance())
         self.assertEqual([], self._auth.client.calls)

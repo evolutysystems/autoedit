@@ -12,6 +12,10 @@
 # ポイントの実体 (PointsService) は画面起動時に作られた共有のものを使う。
 # 起動していない (CLI / テスト) 場合は None が来るため、その場合は
 # 「未ログイン」として静かに閉じたままにする。
+#
+# 未ログインでもポイント制の対象 (端末に紐づく匿名の台帳) であるため、
+# 残高と履歴は未ログインでも出す (ver7 resolve §4)。
+# サブスクリプションの節だけは Twitch ログインが要る (匿名では加入できない)。
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -90,6 +94,8 @@ class TransactionsWorker(QThread):
     def run(self):
         items = []
         try:
+            # 未ログインでも端末の履歴を出す。JWT が無ければ匿名セッションを作る。
+            self._points.auth.ensure_session()
             response = self._points.auth.client.get(
                 f"/api/points/transactions?limit={int(self._limit)}")
             items = list((response or {}).get("items") or [])
@@ -128,7 +134,9 @@ class AccountTab(QWidget):
         layout.addWidget(self.balance_label)
 
         self.note_label = QLabel(
-            "ログインしていないあいだは、ポイントを消費せず透かしも入りません。")
+            "ログインしていないあいだは、この端末のポイントを消費します"
+            "(残高が足りない出力には透かしが入ります)。"
+            "ログインするとアカウントのポイントに切り替わります。")
         self.note_label.setWordWrap(True)
         theme.mark_note(self.note_label)
         layout.addWidget(self.note_label)
@@ -211,21 +219,30 @@ class AccountTab(QWidget):
     # 表示を作り直す (開いたとき・ログイン状態が変わったとき・「更新」押下時)
     def reload(self):
         logged_in = self._is_logged_in()
+        has_points = self._points is not None
         self.login_button.setVisible(not logged_in)
         self.logout_button.setVisible(logged_in)
-        self.refresh_button.setVisible(logged_in)
-        self.history_table.setVisible(logged_in)
+        self.refresh_button.setVisible(has_points)
+        self.history_table.setVisible(has_points)
         self.note_label.setVisible(not logged_in)
         self.subscribe_button.setVisible(logged_in and bool(self._subscribe_url()))
 
         if not logged_in:
-            self.status_label.setText("ログインしていません")
-            self.balance_label.setText("")
-            self.history_table.setRowCount(0)
-            # 状態の照会には JWT が要るため、未ログインでは節ごと出さない。
+            # 未ログインでも端末の残高と履歴は出す。サブスクの節だけ出さない
+            # (匿名では加入できず、状態の照会先も無い)。
+            self.status_label.setText("ログインしていません (この端末のポイント)")
             self._subscription_type = None
             self._subscription_state = None
             self._show_billing(False)
+
+            if not has_points:
+                self.balance_label.setText("")
+                self.history_table.setRowCount(0)
+                return
+
+            self.balance_label.setText("残高を取得しています…")
+            self._start_balance()
+            self._start_history()
             return
 
         user = self._points.auth.user() or {}
@@ -277,6 +294,10 @@ class AccountTab(QWidget):
         self.balance_label.setText("\n".join(lines))
 
         # 残高の応答で初めて subscriptionType が分かるため、ここで節を作り直す。
+        # 未ログイン (匿名) では節ごと出さないため、種別も持たない。
+        if not self._is_logged_in():
+            return
+
         self._subscription_type = subscription
         self._refresh_billing()
 
@@ -345,8 +366,8 @@ class AccountTab(QWidget):
     def _on_logout(self):
         answer = QMessageBox.question(
             self, "ログアウト",
-            "ログアウトすると、次の出力からポイントを消費しなくなります"
-            "(そのぶん透かしも入りません)。\nログアウトしますか？",
+            "ログアウトすると、この端末のポイント (匿名) に切り替わります。"
+            "ポイントの消費と透かしはそのまま続きます。\nログアウトしますか？",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return

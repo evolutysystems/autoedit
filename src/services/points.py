@@ -10,13 +10,17 @@
 # オフライン時は watermark を入れる。ただしサブスク会員だけは直近の判定をキャッシュして救済する
 # (ver5 resolve §3.3)。残高と違いサブスク状態は消費して減るものではないため、
 # キャッシュしても不整合が起きない。
+#
+# 未ログインの利用者も**未サブスクリプションの利用者と同じくポイント制の対象**である
+# (ver7 resolve §1)。JWT が無ければ端末 ID で匿名セッションを作ってから予約する
+# (StretheusAuth.ensure_session)。匿名セッションを作れない場合だけオフライン扱いとなる。
 import datetime
 import json
 import os
 import threading
 import uuid
 
-from ..exceptions import ApiError, ApiOfflineError, AutoEditError
+from ..exceptions import ApiError, ApiOfflineError, AutoEditError, ReauthRequiredError
 from ..utils.logger import get_logger
 from .auth_store import default_auth_path
 from .stretheus_auth import parse_timestamp
@@ -68,7 +72,7 @@ def cancel(service, reservation):
         service.cancel(reservation)
 
 
-# 予約の透かし要否。予約が無ければ入れない (未ログインは従来どおり / §4-5)。
+# 予約の透かし要否。予約が無い (ポイント処理を通さない CLI / テスト) 場合は入れない。
 def watermark_required(reservation):
     return bool(reservation is not None and reservation.watermark_required)
 
@@ -98,7 +102,7 @@ class Reservation:
         self.unlimited = bool(unlimited)
         self.amount = int(amount or 0)
         self.expires_at = expires_at
-        # サーバーへ予約できなかった (未ログイン・オフライン・エラー)
+        # サーバーへ予約できなかった (オフライン・匿名セッションを作れない・エラー)
         self.offline = bool(offline)
 
     # commit / cancel を送る対象か
@@ -142,10 +146,10 @@ class PointsService:
         return self._auth
 
     # ---- 残高 -------------------------------------------------------------
-    # 残高を返す。オフライン・未ログインでは None。
+    # 残高を返す。オフライン (匿名セッションも作れない) なら None。
     # force=False なら balance_refresh_sec の間は前回の値を返す。
     def balance(self, force=False):
-        if not self._auth.is_logged_in():
+        if not self._auth.ensure_session():
             return None
 
         if not force and self._balance is not None and self._balance_at is not None:
@@ -173,9 +177,13 @@ class PointsService:
     def reserve(self, job_type, output_type, project_id=None):
         reservation = Reservation(job_type, output_type)
 
-        # 未ログインのユーザーは従来どおり無償で使える (ver5 resolve §4-5)。
-        if not self._auth.is_logged_in():
+        # 未ログインでもポイント制の対象とする。JWT が無ければ端末 ID で作る
+        # (ver7 resolve §1)。作れなければオフラインと同じ扱いにする。
+        if not self._auth.ensure_session():
+            subscribed = self._subscription_from_cache()
             reservation.offline = True
+            reservation.unlimited = subscribed
+            reservation.watermark_required = not subscribed
             return reservation
 
         # 前回までに送れなかった commit / cancel をここで片付ける。
@@ -190,7 +198,7 @@ class PointsService:
             body["projectId"] = str(project_id)
 
         try:
-            response = self._auth.client.post(_RESERVATIONS_PATH, body)
+            response = self._post_reservation(body)
         except ApiOfflineError as e:
             # サーバーへ到達できない。サブスク会員だけ救済する。
             subscribed = self._subscription_from_cache()
@@ -232,7 +240,7 @@ class PointsService:
 
     # 送れずに残っている commit / cancel を再送する。起動時と予約の直前に呼ぶ。
     def flush_pending(self):
-        if not self._auth.is_logged_in():
+        if not self._auth.has_session():
             return
 
         pending = self._read_queue()
@@ -250,6 +258,18 @@ class PointsService:
         self._write_queue(remaining)
 
     # ---- 内部 ------------------------------------------------------------
+    # 予約を送る。セッションが失効していたら作り直して 1 回だけ再送する。
+    # ここで諦めると、ログインし直すまでの出力に watermark が入ってしまう。
+    # 冪等キー (clientJobId) は同じで良い (利用者が変わるため衝突しない)。
+    def _post_reservation(self, body):
+        try:
+            return self._auth.client.post(_RESERVATIONS_PATH, body)
+        except ReauthRequiredError as e:
+            _logger.warning("セッションが失効していました。作り直して再送します: %s", e)
+            if not self._auth.ensure_session():
+                raise
+            return self._auth.client.post(_RESERVATIONS_PATH, body)
+
     def _complete(self, reservation, action):
         if reservation is None or not reservation.is_tracked():
             return
@@ -298,6 +318,11 @@ class PointsService:
 
     def _subscription_from_cache(self):
         if self._cache_hours <= 0:
+            return False
+
+        # 匿名セッションはサブスクに加入できない。直前までサブスク会員だった
+        # 利用者がログアウトした場合に、古い判定で救済してしまわないようにする。
+        if self._auth.is_anonymous():
             return False
 
         state = self._read_state()

@@ -75,6 +75,16 @@ def _unprotect(encrypted):
         _free(result)
 
 
+# DPAPI の暗号化・復号を他モジュールへ公開する (device_id.py が端末 ID の保存に使う)。
+# 失敗は None で返し、呼び出し側が保存方法を決める。
+def protect(plain):
+    return _protect(plain)
+
+
+def unprotect(encrypted):
+    return _unprotect(encrypted)
+
+
 # JWT とユーザー情報を DPAPI で保護して読み書きする。
 # 保持する内容: access_token / expires_at / session_expires_at / user (§6.4)。
 class AuthStore:

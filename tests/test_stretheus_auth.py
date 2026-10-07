@@ -4,6 +4,7 @@
 #   ・Client ID / RedirectUri は API から取得する
 #   ・JWT は DPAPI で保存し、期限の 5 分前にリフレッシュする
 #   ・401 reauth_required では保存済みトークンを捨てて再ログインを促す
+#   ・未ログインでは端末 ID で匿名セッションを作る (ver7 resolve §2)
 # 外部ネットワークは使わない。localhost に API の代役を立てて通信部分だけを見る。
 import datetime
 import json
@@ -25,6 +26,9 @@ from src.services.stretheus_auth import StretheusAuth, parse_timestamp
 # localhost は ::1 → 127.0.0.1 の順に試されて 1 回あたり数秒待つことがあるため、
 # テストでは接続先を IPv4 で直接指定する (製品コードの挙動には影響しない)。
 _HOST = "127.0.0.1"
+
+# 端末 ID の代役。実機の MachineGuid を読まないようテストから注入する。
+_DEVICE_ID = "test-device-identifier-0001"
 
 
 # 空きポートを 1 つ確保して返す (redirect_uri と API の双方で使う)
@@ -72,6 +76,8 @@ class _FakeApiHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/auth/twitch/login":
             self._json(200, self._token_response("token-1"))
+        elif self.path == "/api/auth/device":
+            self._json(200, self._anonymous_response("token-anon"))
         elif self.path == "/api/auth/refresh":
             self._json(200, self._token_response("token-2"))
         elif self.path == "/api/auth/logout":
@@ -88,6 +94,12 @@ class _FakeApiHandler(BaseHTTPRequestHandler):
             "sessionExpiresAt": _iso(60 * 24 * 90),
             "user": {"id": "user-1", "twitchUserId": "12345", "displayName": "Streamer"},
         }
+
+    def _anonymous_response(self, access_token):
+        response = self._token_response(access_token)
+        response["user"] = {"id": "anon-1", "twitchUserId": None,
+                            "displayName": "", "isAnonymous": True}
+        return response
 
     def _json(self, status, payload):
         raw = json.dumps(payload).encode("utf-8")
@@ -114,7 +126,8 @@ class StretheusAuthTest(unittest.TestCase):
         self._temp = tempfile.mkdtemp(prefix="stretheus-auth-test-")
         self._store = AuthStore(os.path.join(self._temp, "auth.dat"))
         self._auth = StretheusAuth(
-            f"http://{_HOST}:{self._server.server_port}", timeout_sec=5, store=self._store)
+            f"http://{_HOST}:{self._server.server_port}", timeout_sec=5, store=self._store,
+            device_id_provider=lambda: _DEVICE_ID)
 
         self._original_open = stretheus_auth.webbrowser.open
         stretheus_auth.webbrowser.open = self._browser_open
@@ -207,6 +220,54 @@ class StretheusAuthTest(unittest.TestCase):
         self.assertEqual("/api/auth/logout", path)
         self.assertEqual("Bearer token-1", authorization)
         self.assertFalse(self._auth.is_logged_in())
+
+    # ---- 匿名セッション (ver7 resolve §2) --------------------------------
+
+    def test_ensure_session_creates_an_anonymous_session(self):
+        self.assertTrue(self._auth.ensure_session())
+
+        # 匿名セッションは「ログイン済み」にはしない (サブスク導線を出さないため)。
+        self.assertFalse(self._auth.is_logged_in())
+        self.assertTrue(self._auth.is_anonymous())
+        self.assertTrue(self._auth.has_session())
+        self.assertEqual("token-anon", self._auth.access_token())
+
+        _path, body, _authorization = self._call("/api/auth/device")
+        self.assertEqual(_DEVICE_ID, body["deviceId"])
+
+    def test_ensure_session_reuses_the_stored_session(self):
+        self.assertTrue(self._auth.ensure_session())
+        self._server.calls.clear()
+
+        self.assertTrue(self._auth.ensure_session())
+        self.assertEqual([], self._server.calls)
+
+    def test_ensure_session_keeps_the_twitch_login(self):
+        self._auth.login(timeout=10)
+        self._server.calls.clear()
+
+        self.assertTrue(self._auth.ensure_session())
+        self.assertTrue(self._auth.is_logged_in())
+        self.assertFalse(self._auth.is_anonymous())
+        self.assertEqual([], self._server.calls)
+
+    def test_twitch_login_replaces_the_anonymous_session(self):
+        self._auth.ensure_session()
+
+        self._auth.login(timeout=10)
+
+        self.assertTrue(self._auth.is_logged_in())
+        self.assertFalse(self._auth.is_anonymous())
+        self.assertEqual("token-1", self._auth.access_token())
+
+    def test_ensure_session_fails_when_the_api_is_unreachable(self):
+        # オフライン。例外は出さず False を返す (呼び出し側が watermark を入れる)。
+        offline = StretheusAuth(
+            f"http://{_HOST}:{_free_port()}", timeout_sec=2, store=self._store,
+            device_id_provider=lambda: _DEVICE_ID)
+
+        self.assertFalse(offline.ensure_session())
+        self.assertFalse(offline.has_session())
 
     def test_login_is_serialized_with_the_other_login(self):
         # implicit flow と同じポートを使うため、同時ログインを許さない (§6.3)

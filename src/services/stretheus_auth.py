@@ -1,6 +1,15 @@
 # Stretheus API へのログイン (OAuth 認可コードフロー) と JWT の管理
 # (StretheusAPI docs/request/resolve2.md §2 / §6.3〜§6.5)
 #
+# セッションは 2 種類ある。どちらも JWT を 1 つ保持する形は同じで、
+# 保存先 (auth.dat) も共用する。
+#   Twitch ログイン … 利用者のアカウント。サブスク判定の対象。
+#   匿名セッション   … 端末 ID に紐づく利用者 (ver7 resolve §2)。未ログインでも
+#                      ポイント制の対象にするために使う。サブスクには加入できない。
+# is_logged_in() は**従来どおり Twitch ログイン済みかだけ**を返す。画面の
+# ログイン導線とサブスクの判定がここを見ているため、匿名セッションを
+# 「ログイン済み」にはしない。トークンの有無は has_session() で見る。
+#
 # アーカイブ取得用の implicit flow (archive/twitch_auth.py) とは役割が異なる。
 #   implicit flow  … Twitch Helix を直接叩くためのアクセストークン。API を経由しない。
 #   code flow (本) … Stretheus API の JWT。ポイント制・サブスク判定の権威はサーバー側にある。
@@ -19,11 +28,13 @@ from ..exceptions import ApiError, AutoEditError, ReauthRequiredError
 from ..utils.logger import get_logger
 from .api_client import ApiClient, CODE_INVALID_TOKEN
 from .auth_store import AuthStore
+from .device_id import device_id
 
 _logger = get_logger(__name__)
 
 _AUTHORIZE_PARAMS_PATH = "/api/auth/twitch/authorize-params"
 _LOGIN_PATH = "/api/auth/twitch/login"
+_DEVICE_LOGIN_PATH = "/api/auth/device"
 _REFRESH_PATH = "/api/auth/refresh"
 _LOGOUT_PATH = "/api/auth/logout"
 
@@ -130,19 +141,32 @@ def _make_handler():
 # ApiClient から JWT の供給元として参照される (access_token / refresh / on_reauth_required)。
 class StretheusAuth:
 
-    def __init__(self, base_url, timeout_sec=15, store=None, client=None):
+    def __init__(self, base_url, timeout_sec=15, store=None, client=None,
+                 device_id_provider=None):
         self._client = client or ApiClient(base_url, timeout_sec)
         self._client.set_token_provider(self)
         self._store = store or AuthStore()
         self._refresh_lock = threading.Lock()
+        # 匿名セッションの作成を直列化する (同時に 2 本作ってもどちらかが捨てられる)。
+        self._session_lock = threading.Lock()
+        self._device_id_provider = device_id_provider or device_id
         self._data = self._store.load()
 
     @property
     def client(self):
         return self._client
 
+    # Twitch でログイン済みか。匿名セッションでは False を返す。
     def is_logged_in(self):
+        return bool(self.has_session() and not self._data.get("anonymous"))
+
+    # 種類を問わず JWT を持っているか (API を呼べるか)。
+    def has_session(self):
         return bool(self._data and self._data.get("access_token"))
+
+    # 端末に紐づく匿名セッションか。
+    def is_anonymous(self):
+        return bool(self.has_session() and self._data.get("anonymous"))
 
     # ログイン中のユーザー情報 (id / twitchUserId / displayName)。未ログインなら None。
     def user(self):
@@ -155,7 +179,7 @@ class StretheusAuth:
     # ---- ApiClient から呼ばれる JWT の供給 --------------------------------
     # 送信前に期限が近ければリフレッシュしてから返す (§6.4 の契機 (a))。
     def access_token(self, refresh_if_needed=True):
-        if not self.is_logged_in():
+        if not self.has_session():
             return None
         if refresh_if_needed and self._needs_refresh(self._data):
             self.refresh()
@@ -204,6 +228,39 @@ class StretheusAuth:
         self._discard()
 
     # ---- ログイン / ログアウト -------------------------------------------
+    # ポイント制を通すための JWT を確保する。
+    # Twitch ログイン済みならそのまま True。未ログインなら匿名セッションを作る。
+    # 作れなければ False を返す (呼び出し側はオフラインとして扱う / ver7 resolve §3)。
+    def ensure_session(self):
+        if self.has_session():
+            return True
+
+        with self._session_lock:
+            # ロック待ちの間に他スレッドが作っていれば、それを使う。
+            if self.has_session():
+                return True
+            try:
+                self.login_anonymously()
+            except AutoEditError as e:
+                _logger.warning("匿名セッションを作成できませんでした: %s", e)
+                return False
+
+        return True
+
+    # 端末 ID で匿名ログインする。ブラウザは開かない。
+    def login_anonymously(self):
+        identifier = self._device_id_provider()
+        if not identifier:
+            raise AutoEditError("端末 ID を決定できませんでした。")
+
+        response = self._client.request(
+            "POST", _DEVICE_LOGIN_PATH, body={"deviceId": identifier},
+            authenticated=False, retry_auth=False)
+
+        self._apply(response)
+        _logger.info("この端末の匿名セッションを使用します。")
+        return self.user()
+
     # 認可コードフローでログインする。成功でユーザー情報を返す。
     # timeout 秒以内にブラウザで許可されなければ AutoEditError。
     def login(self, timeout=180, open_browser=True):
@@ -232,7 +289,7 @@ class StretheusAuth:
     # 通信できなくてもローカルは必ず削除する。
     def logout(self):
         try:
-            if self.is_logged_in():
+            if self.has_session():
                 self._client.request("POST", _LOGOUT_PATH)
         except (ApiError, AutoEditError) as e:
             _logger.warning("ログアウトの通知に失敗しました: %s", e)
@@ -308,11 +365,14 @@ class StretheusAuth:
         if not response.get("accessToken"):
             raise ApiError("API から JWT を取得できませんでした。")
 
+        user = response.get("user") or {}
         self._data = {
             "access_token": response.get("accessToken"),
             "expires_at": response.get("expiresAt"),
             "session_expires_at": response.get("sessionExpiresAt"),
-            "user": response.get("user"),
+            "user": user,
+            # 匿名かどうかはサーバーの応答だけで決める (残高と同じ流儀)。
+            "anonymous": bool(user.get("isAnonymous")),
         }
         self._store.save(self._data)
 

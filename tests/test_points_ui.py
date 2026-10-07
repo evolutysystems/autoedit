@@ -1,10 +1,11 @@
-# ポイントの画面まわり (ver5 resolve.md §5.6 R11 / R12 / R13) の単体テスト
+# ポイントの画面まわり (ver5 resolve.md §5.6 R11 / R12 / R13 / ver7 resolve §4) の単体テスト
 # 実行: python -m unittest discover -s tests
 # 重点:
-#   ・未ログインでは残高を出さず「ログイン」だけを見せること (§4-5)
+#   ・未ログインでも**この端末の残高**を出し、ログイン導線も残すこと (ver7 resolve §1)
 #   ・オフラインでは最後に取得した値を薄字で出すこと
 #   ・確認ダイアログの既定が「取りやめ」であること (R12)
 #   ・アカウントタブが未ログイン / ログイン済みで表示を切り替えること (R13)
+#   ・未ログインではサブスクリプションの節を出さないこと (匿名では加入できない)
 import os
 import unittest
 
@@ -42,10 +43,22 @@ class _FakeAuth:
         self._logged_in = logged_in
         self._user = user or {"displayName": "テスト配信者"}
         self.logged_out = 0
+        self.sessions = 0
         self.client = _FakeClient()
 
     def is_logged_in(self):
         return self._logged_in
+
+    # 未ログインでも匿名セッションは常に作れる前提のテスト用実装。
+    def has_session(self):
+        return True
+
+    def is_anonymous(self):
+        return not self._logged_in
+
+    def ensure_session(self):
+        self.sessions += 1
+        return True
 
     def user(self):
         return self._user
@@ -105,13 +118,15 @@ class IndicatorTest(unittest.TestCase):
         self.addCleanup(indicator.deleteLater)
         return indicator
 
-    # 未ログインでは残高を出さず、ログインボタンだけを見せること
+    # 未ログインでも端末の残高を出し、ログイン導線も残すこと (ver7 resolve §4)
     def test_logged_out(self):
-        indicator = self._indicator(_FakePoints(logged_in=False))
+        indicator = self._indicator(_FakePoints(logged_in=False, balance=_BALANCE))
+        indicator._on_loaded(_BALANCE)
 
         self.assertTrue(indicator.login_button.isVisibleTo(indicator))
-        self.assertFalse(indicator.label.isVisibleTo(indicator))
-        self.assertEqual(indicator.label.text(), "")
+        self.assertTrue(indicator.label.isVisibleTo(indicator))
+        self.assertEqual(indicator.label.text(), "残り 125 pt / 次回リセット 10/11")
+        self.assertIn("この端末", indicator.label.toolTip())
 
     # ログイン済みなら残高を出し、ログインボタンを隠すこと
     def test_logged_in(self):
@@ -202,16 +217,37 @@ class AccountTabTest(unittest.TestCase):
     def test_without_points(self):
         tab = self._tab(None)
 
-        self.assertEqual(tab.status_label.text(), "ログインしていません")
+        self.assertIn("ログインしていません", tab.status_label.text())
         self.assertTrue(tab.login_button.isVisibleTo(tab))
         self.assertFalse(tab.logout_button.isVisibleTo(tab))
+        self.assertFalse(tab.history_table.isVisibleTo(tab))
 
-    # 未ログインでは「消費しない」案内を出すこと (§4-5)
+    # 未ログインでは「この端末のポイントを消費する」案内を出すこと (ver7 resolve §1)
     def test_logged_out_note(self):
         tab = self._tab(_FakePoints(logged_in=False))
 
         self.assertTrue(tab.note_label.isVisibleTo(tab))
-        self.assertIn("透かしも入りません", tab.note_label.text())
+        self.assertIn("この端末のポイントを消費", tab.note_label.text())
+        self.assertIn("透かしが入ります", tab.note_label.text())
+
+    # 未ログインでも残高と履歴は出すこと (ver7 resolve §4)
+    def test_logged_out_shows_the_device_balance(self):
+        tab = self._tab(_FakePoints(logged_in=False, balance=_BALANCE))
+        tab._on_balance(_BALANCE)
+
+        self.assertIn("この端末", tab.status_label.text())
+        self.assertIn("残り 125 pt", tab.balance_label.text())
+        self.assertTrue(tab.history_table.isVisibleTo(tab))
+        self.assertTrue(tab.refresh_button.isVisibleTo(tab))
+        self.assertFalse(tab.logout_button.isVisibleTo(tab))
+
+    # 未ログインではサブスクリプションの節を出さないこと (匿名では加入できない)
+    def test_logged_out_hides_the_subscription_section(self):
+        tab = self._tab(_FakePoints(logged_in=False, balance=_BALANCE))
+        tab._on_balance(_BALANCE)
+
+        self.assertFalse(tab.billing_title.isVisibleTo(tab))
+        self.assertFalse(tab.portal_button.isVisibleTo(tab))
 
     # ログイン済みならユーザー名と残高・単価を出すこと
     def test_logged_in(self):
