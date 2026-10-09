@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGraphicsView,
 )
 
+from ...i18n import tr
 from ...timeline import crop
 from ...utils.logger import get_logger
 
@@ -155,7 +156,8 @@ class CropCanvas(QGraphicsView):
             self._scene.removeItem(item)
         self._items = []
 
-        labels = ("", "上", "下") if self._mode == crop.MODE_SPLIT else ("",)
+        labels = ((("", tr("上"), tr("下")))
+                  if self._mode == crop.MODE_SPLIT else ("",))
         for index, rect in enumerate(self._frames):
             color = _COLORS[min(index + (1 if self._mode == crop.MODE_SPLIT else 0),
                                 len(_COLORS) - 1)]

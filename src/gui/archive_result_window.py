@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..export import resolve_export
+from ..i18n import tr
 from ..modules.subtitle_generator import _format_ass_time
 from ..services import config as services_config
 from ..utils.logger import get_logger
@@ -55,7 +56,7 @@ class ArchiveResultWindow(QDialog):
                  default_font="", default_size=None, font_families=None,
                  theme_placeholder="", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("採点結果 (切り抜き＋字幕焼き込み)")
+        self.setWindowTitle(tr("採点結果 (切り抜き＋字幕焼き込み)"))
         self.resize(1000, 720)
         # ガラスモーフィズムの背景を敷く (resolve3 §3-2)
         theme.install_window_background(self)
@@ -100,14 +101,17 @@ class ArchiveResultWindow(QDialog):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.addWidget(QLabel("クリップ (チェック=使用) を選び、字幕とテーマを編集します。"))
+        left_layout.addWidget(
+            QLabel(tr("クリップ (チェック=使用) を選び、字幕とテーマを編集します。")))
         self.clip_list = QListWidget()
         self.clip_list.setMaximumHeight(120)
         for p in self._prepared:
-            item = QListWidgetItem(
-                f"clip{p.get('index')}  {_fmt_range(p.get('start', 0), p.get('end', 0))}  "
-                f"点{p.get('score', 0):.1f}"
-            )
+            item = QListWidgetItem(tr(
+                "clip{index}  {range}  点{score:.1f}",
+                index=p.get("index"),
+                range=_fmt_range(p.get("start", 0), p.get("end", 0)),
+                score=p.get("score", 0),
+            ))
             item.setFlags((item.flags() | Qt.ItemIsUserCheckable))
             item.setCheckState(Qt.Checked)  # 既定は全使用
             self.clip_list.addItem(item)
@@ -152,21 +156,21 @@ class ArchiveResultWindow(QDialog):
         # 出力ボタン (元 VOD が特定でき、設定で有効なときだけ追加する / resolve20 §5.4)
         self.export_button = None
         if self._can_export():
-            self.export_button = QPushButton(RESOLVE_EXPORT_BUTTON_TEXT)
-            self.export_button.setToolTip(
+            self.export_button = QPushButton(tr(RESOLVE_EXPORT_BUTTON_TEXT))
+            self.export_button.setToolTip(tr(
                 "使用チェックしたクリップのカット編集点と字幕を DaVinci Resolve 用"
                 "プロジェクトファイル(.fcpxml) として出力します。"
-            )
+            ))
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
         # 「完了」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する
         # 破壊的動作として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)。
         # 文言が長いためグラデーションではなく単色になる (§5.2-2)。
-        self.decide_button = QPushButton("完了（切り抜き＋字幕焼き込み）")
+        self.decide_button = QPushButton(tr("完了（切り抜き＋字幕焼き込み）"))
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
         theme.mark_primary(self.decide_button, solid=True)
-        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button = QPushButton(tr("キャンセル"))
         self.cancel_button.clicked.connect(self.reject)
         theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)

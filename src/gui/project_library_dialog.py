@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import tr
 from ..settings.settings_window import save_settings
 from ..timeline import project_io
 from ..timeline.builder import timeline_config
@@ -124,8 +125,9 @@ class ProjectLibraryDialog(QDialog):
         self._truncated = 0
         self._summaries = {}
 
-        label = ("アーカイブ用" if kind == project_io.KIND_ARCHIVE else "クリップ用")
-        self.setWindowTitle(f"Timeline プロジェクト一覧（{label}）")
+        label = (tr("アーカイブ用") if kind == project_io.KIND_ARCHIVE
+                 else tr("クリップ用"))
+        self.setWindowTitle(tr("Timeline プロジェクト一覧（{kind}）", kind=label))
         self.resize(int(self._library_cfg["window_width"]),
                     int(self._library_cfg["window_height"]))
         theme.install_window_background(self)
@@ -141,20 +143,20 @@ class ProjectLibraryDialog(QDialog):
 
         top = QHBoxLayout()
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("名前・パスで絞り込み")
+        self.search_edit.setPlaceholderText(tr("名前・パスで絞り込み"))
         self.search_edit.textChanged.connect(self._apply_filter)
         top.addWidget(self.search_edit, 1)
 
-        top.addWidget(QLabel("並び"))
+        top.addWidget(QLabel(tr("並び")))
         self.sort_combo = QComboBox()
         for text, value in _SORT_CHOICES:
-            self.sort_combo.addItem(text, value)
+            self.sort_combo.addItem(tr(text), value)
         index = self.sort_combo.findData(self._library_cfg["sort"])
         self.sort_combo.setCurrentIndex(max(index, 0))
         self.sort_combo.activated.connect(lambda _row: self._sort_items())
         top.addWidget(self.sort_combo)
 
-        self.reload_button = QPushButton("再読込")
+        self.reload_button = QPushButton(tr("再読込"))
         self.reload_button.setToolTip("F5")
         self.reload_button.clicked.connect(self.reload)
         top.addWidget(self.reload_button)
@@ -175,7 +177,7 @@ class ProjectLibraryDialog(QDialog):
         theme.mark_note(self.count_label)
         bottom.addWidget(self.count_label, 1)
 
-        self.open_button = QPushButton("開く")
+        self.open_button = QPushButton(tr("開く"))
         self.open_button.setToolTip("Enter")
         self.open_button.clicked.connect(self._on_open)
         theme.mark_primary(self.open_button)
@@ -183,20 +185,20 @@ class ProjectLibraryDialog(QDialog):
 
         self.rename_button = None
         if self._cfg["project"]["rename_enabled"]:
-            self.rename_button = QPushButton("リネーム")
+            self.rename_button = QPushButton(tr("リネーム"))
             self.rename_button.setToolTip("F2")
             self.rename_button.clicked.connect(self._on_rename)
             bottom.addWidget(self.rename_button)
 
         self.delete_button = None
         if self._cfg["project"]["delete_button"]:
-            self.delete_button = QPushButton("削除")
+            self.delete_button = QPushButton(tr("削除"))
             self.delete_button.setToolTip("Delete")
             self.delete_button.clicked.connect(self._on_delete)
             theme.mark_danger(self.delete_button)
             bottom.addWidget(self.delete_button)
 
-        self.close_button = QPushButton("閉じる")
+        self.close_button = QPushButton(tr("閉じる"))
         self.close_button.clicked.connect(self.reject)
         bottom.addWidget(self.close_button)
         root.addLayout(bottom)
@@ -244,22 +246,24 @@ class ProjectLibraryDialog(QDialog):
         marks = []
         if summary is not None:
             if summary.get("has_media_dir"):
-                marks.append("素材の複製あり")
+                marks.append(tr("素材の複製あり"))
             if summary.get("has_autosave"):
-                marks.append("自動保存あり")
+                marks.append(tr("自動保存あり"))
             if summary.get("broken"):
-                marks.append("⚠ 読み込めません")
+                marks.append(tr("⚠ 読み込めません"))
         head = name if not marks else f"{name}    {' / '.join(marks)}"
 
         if summary is None:
-            middle = "読み込み中…"
+            middle = tr("読み込み中…")
         elif summary.get("broken"):
-            middle = f"更新 {_fmt_mtime(path)} / {_fmt_size(summary.get('size'))}"
+            middle = tr("更新 {mtime} / {size}", mtime=_fmt_mtime(path),
+                        size=_fmt_size(summary.get("size")))
         else:
-            middle = (f"V1 {summary.get('clip_count', 0)} クリップ / "
-                      f"{_fmt_duration(summary.get('duration_sec'))} / "
-                      f"更新 {_fmt_mtime(path)} / "
-                      f"{_fmt_size(summary.get('size'))}")
+            middle = tr("V1 {clips} クリップ / {duration} / 更新 {mtime} / {size}",
+                        clips=summary.get("clip_count", 0),
+                        duration=_fmt_duration(summary.get("duration_sec")),
+                        mtime=_fmt_mtime(path),
+                        size=_fmt_size(summary.get("size")))
         return f"{head}\n{middle}\n{path}"
 
     def _find_item(self, path):
@@ -292,7 +296,8 @@ class ProjectLibraryDialog(QDialog):
             self._update_count()
             self._sort_items()
         else:
-            self.count_label.setText(f"読み込み中… {done}/{total}")
+            self.count_label.setText(
+                tr("読み込み中… {done}/{total}", done=done, total=total))
 
     def _stop_worker(self):
         if self._worker is None:
@@ -336,9 +341,10 @@ class ProjectLibraryDialog(QDialog):
 
     def _update_count(self):
         visible = self.list_widget.count()
-        text = f"{visible} 件"
+        text = tr("{count} 件", count=visible)
         if self._truncated:
-            text += f"（他 {self._truncated} 件は更新日時が古いため表示していません）"
+            text += tr("（他 {count} 件は更新日時が古いため表示していません）",
+                       count=self._truncated)
         self.count_label.setText(text)
 
     # ------------------------------------------------------------------
@@ -362,13 +368,13 @@ class ProjectLibraryDialog(QDialog):
         if item is None:
             return
         menu = QMenu(self)
-        menu.addAction("開く", self._on_open)
+        menu.addAction(tr("開く"), self._on_open)
         if self.rename_button is not None:
-            menu.addAction("リネーム", self._on_rename)
+            menu.addAction(tr("リネーム"), self._on_rename)
         if self.delete_button is not None:
-            menu.addAction("削除", self._on_delete)
+            menu.addAction(tr("削除"), self._on_delete)
         menu.addSeparator()
-        menu.addAction("フォルダを開く", self._on_open_folder)
+        menu.addAction(tr("フォルダを開く"), self._on_open_folder)
         menu.exec(self.list_widget.viewport().mapToGlobal(position))
 
     def _on_open(self):
@@ -377,8 +383,9 @@ class ProjectLibraryDialog(QDialog):
             return
         path = selected[0]
         if not os.path.exists(path):
-            QMessageBox.warning(self, "開けません",
-                                f"プロジェクトファイルが見つかりません。\n{path}")
+            QMessageBox.warning(
+                self, tr("開けません"),
+                tr("プロジェクトファイルが見つかりません。\n{path}", path=path))
             return
         self.accept()
         self.open_requested.emit(path)
@@ -400,14 +407,14 @@ class ProjectLibraryDialog(QDialog):
         current = project_io.display_name(old_path, self._cfg)
         # 接尾辞 (.timeline.json) はアプリが付けるため入力させない (回答 Q13)
         new_name, ok = QInputDialog.getText(
-            self, "名前を変更", "新しい名前:", QLineEdit.Normal, current)
+            self, tr("名前を変更"), tr("新しい名前:"), QLineEdit.Normal, current)
         if not ok or not new_name.strip() or new_name.strip() == current:
             return
         try:
             new_path = project_io.rename_project(
                 old_path, new_name.strip(), self._settings, timeline_cfg=self._cfg)
         except Exception as e:  # noqa: BLE001 (理由を見せて一覧は残す)
-            QMessageBox.warning(self, "名前を変更できません", str(e))
+            QMessageBox.warning(self, tr("名前を変更できません"), str(e))
             return
         project_thumbnail.rename(old_path, new_path, self._settings)
         if project_io.forget_recent(self._settings, old_path, new_path=new_path):
@@ -456,8 +463,8 @@ class ProjectLibraryDialog(QDialog):
             self._offer_permanent_delete(failed)
         elif failed:
             QMessageBox.warning(
-                self, "削除できませんでした",
-                "次のファイルを削除できませんでした。\n\n"
+                self, tr("削除できませんでした"),
+                tr("次のファイルを削除できませんでした。\n\n")
                 + "\n".join(f"・{f['path']}（{f['reason']}）" for f in failed[:10]))
         self.changed.emit()
         self.reload()
@@ -470,20 +477,23 @@ class ProjectLibraryDialog(QDialog):
                 size = _entry_size(entry)
                 total += size
                 lines.append(f"・{entry}（{_fmt_size(size)}）")
-        head = ("次のファイルをゴミ箱へ移動します。" if use_trash
-                else "次のファイルを削除します。元に戻せません。")
-        tail = ("\n\nゴミ箱から元に戻せます。" if use_trash else "")
+        head = (tr("次のファイルをゴミ箱へ移動します。") if use_trash
+                else tr("次のファイルを削除します。元に戻せません。"))
+        tail = (tr("\n\nゴミ箱から元に戻せます。") if use_trash else "")
         shown = lines[:12]
         if len(lines) > len(shown):
-            shown.append(f"…ほか {len(lines) - len(shown)} 件")
+            shown.append(tr("…ほか {count} 件", count=len(lines) - len(shown)))
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question if use_trash else QMessageBox.Warning)
-        box.setWindowTitle("プロジェクトの削除")
+        box.setWindowTitle(tr("プロジェクトの削除"))
         box.setText(head)
-        box.setInformativeText("\n".join(shown) + f"\n\n合計 {_fmt_size(total)}" + tail)
-        delete = box.addButton("ゴミ箱へ移動" if use_trash else "削除する",
-                               QMessageBox.DestructiveRole)
-        cancel = box.addButton("キャンセル", QMessageBox.RejectRole)
+        box.setInformativeText(
+            "\n".join(shown)
+            + tr("\n\n合計 {size}", size=_fmt_size(total)) + tail)
+        delete = box.addButton(
+            tr("ゴミ箱へ移動") if use_trash else tr("削除する"),
+            QMessageBox.DestructiveRole)
+        cancel = box.addButton(tr("キャンセル"), QMessageBox.RejectRole)
         box.setDefaultButton(cancel)
         box.exec()
         return box.clickedButton() is delete
@@ -492,9 +502,9 @@ class ProjectLibraryDialog(QDialog):
     def _offer_permanent_delete(self, failed):
         listed = "\n".join(f"・{f['path']}（{f['reason']}）" for f in failed[:10])
         answer = QMessageBox.question(
-            self, "ゴミ箱へ送れませんでした",
-            f"次のファイルをゴミ箱へ送れませんでした。\n\n{listed}\n\n"
-            "完全に削除しますか?（元に戻せません）",
+            self, tr("ゴミ箱へ送れませんでした"),
+            tr("次のファイルをゴミ箱へ送れませんでした。\n\n{listed}\n\n"
+               "完全に削除しますか?（元に戻せません）", listed=listed),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return

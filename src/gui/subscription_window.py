@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..services import billing as billing_module
 from ..services.billing import BillingService
 from ..services.stretheus_auth import login_in_progress
@@ -70,7 +71,7 @@ class SubscriptionWindow(QWidget):
 
     def __init__(self, points, settings=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("サブスクリプション")
+        self.setWindowTitle(tr("サブスクリプション"))
         self._points = points
         self._settings = settings or {}
         self._balance_worker = None
@@ -94,16 +95,16 @@ class SubscriptionWindow(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
-        title = QLabel("サブスクリプション")
-        theme.mark_title(title)
-        layout.addWidget(title)
+        self.title_label = QLabel(tr("サブスクリプション"))
+        theme.mark_title(self.title_label)
+        layout.addWidget(self.title_label)
 
         # 価格はサーバーから配られる (配布済みの exe へ焼き込まない / ver6 resolve §3.1)
         self.price_label = QLabel("")
         layout.addWidget(self.price_label)
 
         self.description_label = QLabel(
-            "ポイントを消費せず、透かしの入らない出力を回数無制限で行えます。")
+            tr("ポイントを消費せず、透かしの入らない出力を回数無制限で行えます。"))
         self.description_label.setWordWrap(True)
         theme.mark_note(self.description_label)
         layout.addWidget(self.description_label)
@@ -113,12 +114,12 @@ class SubscriptionWindow(QWidget):
 
         layout.addSpacing(theme.BUTTON_ICON_PX)
 
-        self.twitch_button = QPushButton("Twitch でログイン")
+        self.twitch_button = QPushButton(tr("Twitch でログイン"))
         theme.mark_twitch_button(self.twitch_button)
         self.twitch_button.clicked.connect(self._on_twitch_login)
         layout.addWidget(self.twitch_button)
 
-        self.purchase_button = QPushButton("購入")
+        self.purchase_button = QPushButton(tr("購入"))
         theme.mark_primary(self.purchase_button, solid=True)
         self.purchase_button.clicked.connect(self._on_purchase)
         layout.addWidget(self.purchase_button)
@@ -189,10 +190,11 @@ class SubscriptionWindow(QWidget):
             user = self._points.auth.user() or {}
             name = user.get("displayName") or user.get("twitchUserId") or ""
             self.twitch_button.setText(
-                f"Twitch ログイン済み: {name}" if name else "Twitch ログイン済み")
+                tr("Twitch ログイン済み: {name}", name=name) if name
+                else tr("Twitch ログイン済み"))
             self.twitch_button.setEnabled(False)
         else:
-            self.twitch_button.setText("Twitch でログイン")
+            self.twitch_button.setText(tr("Twitch でログイン"))
             # 別のログインが進行中のあいだは押させない。認可コードの受け口 (localhost)
             # を同じポートで開こうとして失敗するため (ver6 resolve §6.3)。
             self.twitch_button.setEnabled(
@@ -210,16 +212,27 @@ class SubscriptionWindow(QWidget):
             return
 
         self.purchase_button.setEnabled(not reason)
-        self.note_label.setText(_BLOCK_MESSAGES.get(reason, "") if reason
-                                else _PURCHASE_NOTE)
+        self.note_label.setText(tr(_BLOCK_MESSAGES.get(reason, "")) if reason
+                                else tr(_PURCHASE_NOTE))
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # 状態・注記・ボタンの可否は _apply_state が一手に組み立てるため、
+    # 静的なラベルだけ入れ替えてそれを呼び直す (通信は起きない)。
+    def retranslate(self):
+        self.setWindowTitle(tr("サブスクリプション"))
+        self.title_label.setText(tr("サブスクリプション"))
+        self.description_label.setText(
+            tr("ポイントを消費せず、透かしの入らない出力を回数無制限で行えます。"))
+        self.purchase_button.setText(tr("購入"))
+        self._apply_state()
 
     def _state_text(self, logged_in):
         if not logged_in:
-            return "状態: 未ログイン"
+            return tr("状態: 未ログイン")
         if self._subscription_type is None:
-            return "状態: 確認中…"
-        return "状態: " + _STATE_LABELS.get(self._subscription_type,
-                                            self._subscription_type)
+            return tr("状態: 確認中…")
+        return tr("状態: {state}", state=tr(_STATE_LABELS.get(
+            self._subscription_type, self._subscription_type)))
 
     # ---- ① Twitch ログイン ------------------------------------------------
     # 既存の Stretheus ログイン (Twitch の認可コードフロー) をそのまま使う。
@@ -227,15 +240,15 @@ class SubscriptionWindow(QWidget):
     def _on_twitch_login(self):
         if self._billing is None:
             QMessageBox.information(
-                self, "ログインできません",
-                "メイン画面から起動した場合のみログインできます。")
+                self, tr("ログインできません"),
+                tr("メイン画面から起動した場合のみログインできます。"))
             return
         if self._login_worker is not None and self._login_worker.isRunning():
             return
 
         self.twitch_button.setEnabled(False)
-        self.twitch_button.setText("ブラウザで許可してください…")
-        self.note_label.setText("ブラウザで Twitch の認可を行ってください。")
+        self.twitch_button.setText(tr("ブラウザで許可してください…"))
+        self.note_label.setText(tr("ブラウザで Twitch の認可を行ってください。"))
         self._login_worker = LoginWorker(self._points.auth, parent=self)
         self._login_worker.logged_in.connect(self._on_logged_in)
         self._login_worker.failed.connect(self._on_login_failed)
@@ -251,8 +264,8 @@ class SubscriptionWindow(QWidget):
 
     def _on_login_failed(self, message):
         self._apply_state()
-        QMessageBox.warning(self, "ログインできません",
-                            f"ログインに失敗しました。\n{message}")
+        QMessageBox.warning(self, tr("ログインできません"),
+                            tr("ログインに失敗しました。\n{message}", message=message))
 
     # ---- ② 購入 -----------------------------------------------------------
     def _on_purchase(self):
@@ -263,7 +276,7 @@ class SubscriptionWindow(QWidget):
 
         self._in_progress = True
         self.purchase_button.setEnabled(False)
-        self.note_label.setText("ブラウザで手続きしてください…")
+        self.note_label.setText(tr("ブラウザで手続きしてください…"))
 
         self._url_worker = BillingUrlWorker(self._billing, "checkout", parent=self)
         self._url_worker.ready.connect(self._on_checkout_url)
@@ -273,14 +286,15 @@ class SubscriptionWindow(QWidget):
     def _on_checkout_url(self, url):
         QDesktopServices.openUrl(QUrl(url))
         self.note_label.setText(
-            "ブラウザでお支払いを完了してください。反映を待っています…")
+            tr("ブラウザでお支払いを完了してください。反映を待っています…"))
         self._start_activation()
 
     def _on_checkout_failed(self, message):
         self._in_progress = False
         QMessageBox.warning(
-            self, "手続きを開始できません",
-            f"サブスクリプションの手続きを開始できませんでした。\n{message}")
+            self, tr("手続きを開始できません"),
+            tr("サブスクリプションの手続きを開始できませんでした。\n{message}",
+               message=message))
         # 409 (すでに加入) もここへ来る。状態を取り直して表示を作り直す。
         self.reload()
 
@@ -301,8 +315,8 @@ class SubscriptionWindow(QWidget):
         # 支払いを取りやめた場合もここへ来る。失敗とは書かない。
         self._apply_state()
         self.note_label.setText(
-            "お支払いの反映を確認できませんでした。"
-            "手続きが完了している場合は、しばらくしてからこの画面を開き直してください。")
+            tr("お支払いの反映を確認できませんでした。"
+               "手続きが完了している場合は、しばらくしてからこの画面を開き直してください。"))
 
     # 画面を閉じるときの後始末。
     #

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...i18n import tr
 from ...timeline import crop, project_io, vertical_builder
 from ...timeline.frame_source import create_frame_source
 from ...utils.logger import get_logger
@@ -37,6 +38,7 @@ _logger = get_logger(__name__)
 _PREVIEW_HEIGHT = 520
 
 # 背景の選択肢 (表示名, 値)
+# 表示名は出すところで tr() を通す (値は crop の定数なので言語に左右されない)
 _BACKGROUNDS = (("ぼかし", crop.BG_BLUR), ("黒", crop.BG_BLACK))
 
 
@@ -60,7 +62,7 @@ class VerticalProjectDialog(QDialog):
     #               画面を開くときではなく「作成」を押したときに呼ぶ。
     def __init__(self, controller, clips, settings, parent=None, make_rebase=None):
         super().__init__(parent)
-        self.setWindowTitle("縦動画プロジェクトの作成")
+        self.setWindowTitle(tr("縦動画プロジェクトの作成"))
         self._controller = controller
         self._make_rebase = make_rebase
         self._timeline = controller.timeline
@@ -93,27 +95,27 @@ class VerticalProjectDialog(QDialog):
 
         # ── 切り抜き方と背景
         top_row = QHBoxLayout()
-        top_row.addWidget(QLabel("切り抜き方:"))
-        self.single_radio = QRadioButton("全体")
-        self.split_radio = QRadioButton("分割")
+        top_row.addWidget(QLabel(tr("切り抜き方:")))
+        self.single_radio = QRadioButton(tr("全体"))
+        self.split_radio = QRadioButton(tr("分割"))
         self.single_radio.setChecked(True)
-        self.single_radio.setToolTip("枠 1 つ。余った上下は背景で埋めます。")
-        self.split_radio.setToolTip("枠 2 つ。上下に積んで縦画面をぴったり埋めます。")
+        self.single_radio.setToolTip(tr("枠 1 つ。余った上下は背景で埋めます。"))
+        self.split_radio.setToolTip(tr("枠 2 つ。上下に積んで縦画面をぴったり埋めます。"))
         self.single_radio.toggled.connect(self._on_mode_changed)
         top_row.addWidget(self.single_radio)
         top_row.addWidget(self.split_radio)
         top_row.addSpacing(16)
 
-        self.background_label = QLabel("背景:")
+        self.background_label = QLabel(tr("背景:"))
         top_row.addWidget(self.background_label)
         self.background_combo = QComboBox()
-        for label, value in _BACKGROUNDS:
+        for label, value in ((tr(t), v) for t, v in _BACKGROUNDS):
             self.background_combo.addItem(label, value)
         index = self.background_combo.findData(self._cfg["background"])
         self.background_combo.setCurrentIndex(max(index, 0))
         self.background_combo.currentIndexChanged.connect(self._update_preview)
         self.background_combo.setToolTip(
-            "「全体」で余った上下の埋め方です。ぼかしは書き出しでのみ反映されます。")
+            tr("「全体」で余った上下の埋め方です。ぼかしは書き出しでのみ反映されます。"))
         top_row.addWidget(self.background_combo)
         top_row.addStretch(1)
         root.addLayout(top_row)
@@ -127,7 +129,7 @@ class VerticalProjectDialog(QDialog):
         middle.addWidget(self.canvas, 3)
 
         preview_box = QVBoxLayout()
-        preview_box.addWidget(QLabel("仕上がり"))
+        preview_box.addWidget(QLabel(tr("仕上がり")))
         self.preview_label = QLabel()
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setMinimumHeight(_PREVIEW_HEIGHT)
@@ -144,7 +146,7 @@ class VerticalProjectDialog(QDialog):
 
         # ── 時刻 (どのコマで枠を決めるか)
         time_row = QHBoxLayout()
-        time_row.addWidget(QLabel("表示する位置:"))
+        time_row.addWidget(QLabel(tr("表示する位置:")))
         self.time_slider = QSlider(Qt.Horizontal)
         self.time_slider.setMinimum(0)
         self.time_slider.setMaximum(max(int(self._total_sec() * 10), 1))
@@ -157,16 +159,17 @@ class VerticalProjectDialog(QDialog):
 
         # ── 対象と保存先
         self.target_label = QLabel(
-            f"対象: {len(self._clips)} クリップ / 合計 {self._total_sec():.1f} 秒")
+            tr("対象: {count} クリップ / 合計 {sec:.1f} 秒",
+               count=len(self._clips), sec=self._total_sec()))
         theme.mark_note(self.target_label)
         root.addWidget(self.target_label)
 
         dest_row = QHBoxLayout()
-        dest_row.addWidget(QLabel("保存先:"))
+        dest_row.addWidget(QLabel(tr("保存先:")))
         self.dest_label = QLabel(self._dest_path)
         self.dest_label.setWordWrap(True)
         dest_row.addWidget(self.dest_label, 1)
-        change_button = QPushButton("変更...")
+        change_button = QPushButton(tr("変更..."))
         change_button.clicked.connect(self._on_change_dest)
         dest_row.addWidget(change_button)
         root.addLayout(dest_row)
@@ -174,10 +177,10 @@ class VerticalProjectDialog(QDialog):
         # ── ボタン
         button_row = QHBoxLayout()
         button_row.addStretch(1)
-        cancel_button = QPushButton("キャンセル")
+        cancel_button = QPushButton(tr("キャンセル"))
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
-        self.create_button = QPushButton("作成")
+        self.create_button = QPushButton(tr("作成"))
         theme.mark_primary(self.create_button, solid=True)
         self.create_button.clicked.connect(self._on_create)
         button_row.addWidget(self.create_button)
@@ -289,8 +292,8 @@ class VerticalProjectDialog(QDialog):
 
         if self.canvas.mode() == crop.MODE_SINGLE and self._background() == crop.BG_BLUR:
             self.preview_note.setText(
-                "上下の余りは、書き出しでソースをぼかした背景で埋まります "
-                "(ここでは黒で表示しています)。")
+                tr("上下の余りは、書き出しでソースをぼかした背景で埋まります "
+                "(ここでは黒で表示しています)。"))
         else:
             self.preview_note.setText("")
 
@@ -322,21 +325,23 @@ class VerticalProjectDialog(QDialog):
         suffix = (self._settings.get("timeline", {}) or {}).get(
             "project_suffix", ".timeline.json") or ".timeline.json"
         path, _filter = QFileDialog.getSaveFileName(
-            self, "縦動画プロジェクトの保存先", self._dest_path,
-            f"Timeline プロジェクト (*{suffix});;すべてのファイル (*)")
+            self, tr("縦動画プロジェクトの保存先"), self._dest_path,
+            tr("Timeline プロジェクト (*{suffix});;すべてのファイル (*)",
+               suffix=suffix))
         if path:
             self._dest_path = path
             self.dest_label.setText(path)
 
     def _on_create(self):
         if self._media is None:
-            QMessageBox.warning(self, "作成できません",
-                                "対象クリップの素材が見つかりません。")
+            QMessageBox.warning(self, tr("作成できません"),
+                                tr("対象クリップの素材が見つかりません。"))
             return
         if os.path.exists(self._dest_path):
             answer = QMessageBox.question(
-                self, "上書きしますか",
-                f"すでにファイルがあります。上書きしますか？\n{self._dest_path}",
+                self, tr("上書きしますか"),
+                tr("すでにファイルがあります。上書きしますか？\n{path}",
+                   path=self._dest_path),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer != QMessageBox.Yes:
                 return
@@ -352,16 +357,18 @@ class VerticalProjectDialog(QDialog):
                             project_path=self._dest_path)
         except Exception as e:            # noqa: BLE001 (画面へ集約通知)
             _logger.exception("縦動画プロジェクトの作成に失敗")
-            QMessageBox.critical(self, "作成できません",
-                                 f"縦動画プロジェクトを作成できませんでした。\n{e}")
+            QMessageBox.critical(self, tr("作成できません"),
+                                 tr("縦動画プロジェクトを作成できませんでした。\n{error}",
+                                    error=e))
             return
 
         self._saved_path = self._dest_path
-        message = f"縦動画プロジェクトを作成しました。\n{self._dest_path}"
+        message = tr("縦動画プロジェクトを作成しました。\n{path}",
+                     path=self._dest_path)
         if warnings:
             message += "\n\n" + "\n".join(f"・{text}" for text in warnings)
-        message += "\n\n「クリップ用」タブの「続きから」で開けます。"
-        QMessageBox.information(self, "作成しました", message)
+        message += tr("\n\n「クリップ用」タブの「続きから」で開けます。")
+        QMessageBox.information(self, tr("作成しました"), message)
         self.accept()
 
     def done(self, code):

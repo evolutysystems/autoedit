@@ -3,6 +3,7 @@
 import os
 
 from ..exceptions import AutoEditError, InputError, PipelineCancelled
+from ..i18n import tr
 from ..modules import (
     concat_processor,
     ffmpeg_runner,
@@ -53,7 +54,7 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
     _logger.info("パイプライン開始: %s", input_path)
 
     if not input_path or not os.path.exists(input_path):
-        raise InputError(f"入力動画が見つかりません: {input_path}")
+        raise InputError(tr("入力動画が見つかりません: {path}", path=input_path))
 
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
@@ -70,7 +71,7 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
     # 透かしが入るなら開始前に確認する (R12)。やめるなら消費せず中断する。
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
-        raise PipelineCancelled("透かし入りでの出力を取りやめました")
+        raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         if use_timeline:
             # ver3: 編集点方式 + Timeline 編集画面 + Timeline レンダリング
@@ -120,7 +121,8 @@ def run_from_project(project_path, settings, progress_cb=None,
     _logger.info("保存済みプロジェクトから再開: %s", project_path)
 
     if not project_path or not os.path.exists(project_path):
-        raise InputError(f"プロジェクトファイルが見つかりません: {project_path}")
+        raise InputError(
+            tr("プロジェクトファイルが見つかりません: {path}", path=project_path))
 
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
@@ -136,13 +138,14 @@ def run_from_project(project_path, settings, progress_cb=None,
 
     input_path = str((timeline.source or {}).get("input_path", "") or "")
     if not input_path:
-        raise InputError("プロジェクトに元動画のパスが記録されていないため開けません")
+        raise InputError(
+            tr("プロジェクトに元動画のパスが記録されていないため開けません"))
     # 種別違いをここで弾く (ver3 resolve9 §3-4)。アーカイブ切り抜き用は素材の復旧も
     # 書き出し方も違うため、この経路へ通すと空の Timeline を書き出してしまう。
     if project_io.project_kind(timeline) == project_io.KIND_ARCHIVE:
         raise InputError(
-            "アーカイブ切り抜き用のプロジェクトです。"
-            "「アーカイブ切り抜き用」タブの「編集の続き」から開いてください。")
+            tr("アーカイブ切り抜き用のプロジェクトです。"
+               "「アーカイブ切り抜き用」タブの「編集の続き」から開いてください。"))
 
     # 工程は「素材の復旧」と「Timeline レンダリング」の 2 つ
     context = PipelineContext(
@@ -169,7 +172,7 @@ def run_from_project(project_path, settings, progress_cb=None,
     reservation = _reserve(points, context)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
-        raise PipelineCancelled("透かし入りでの出力を取りやめました")
+        raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         # ① 素材の復旧 (足りなければ元動画から作り直す / 再リンクを求める)
         context.begin_step("素材の復旧")
@@ -251,7 +254,7 @@ def _run_legacy(context):
 
     # 音量解析・カット閾値の確認 (無音カットの前。正規化後の音声に対して実施) ── resolve7
     context.progress_callback(
-        context.current_step / max(context.total_steps, 1), "音量解析中…")
+        context.current_step / max(context.total_steps, 1), tr("音量解析中…"))
     _apply_volume_analysis(context)
 
     # ① 無音カット
@@ -292,7 +295,7 @@ def _run_timeline(context):
 
     # 音量解析・カット閾値の確認 (従来と同一)
     context.progress_callback(
-        context.current_step / max(context.total_steps, 1), "音量解析中…")
+        context.current_step / max(context.total_steps, 1), tr("音量解析中…"))
     _apply_volume_analysis(context)
 
     # ① 無音検出 (実カットせず編集点だけを求める / §7.2)
@@ -364,7 +367,8 @@ def _review_timeline(context, timeline, mode="pipeline"):
         context.project_path = edited.get("project_path") or context.project_path
         edited = edited.get("timeline")
     if edited is None:
-        raise PipelineCancelled("Timeline 編集がキャンセルされたためパイプラインを中断します")
+        raise PipelineCancelled(
+            tr("Timeline 編集がキャンセルされたためパイプラインを中断します"))
 
     # 確定後の状態を上書き保存する (記録用 / §6.2.1)
     if context.project_path:

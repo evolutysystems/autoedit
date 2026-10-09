@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..exceptions import AutoEditError
 from ..export import resolve_export
+from ..i18n import tr
 from ..services import config as services_config
 from . import theme
 from .points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
@@ -88,8 +89,8 @@ RESOLVE_EXPORT_BUTTON_TEXT = "DaVinci Resolve ファイル出力"
 def run_resolve_export(parent, export_call):
     def _confirm_overwrite(path):
         answer = QMessageBox.question(
-            parent, "上書き確認",
-            f"既に同名のファイルがあります。上書きしますか?\n{path}",
+            parent, tr("上書き確認"),
+            tr("既に同名のファイルがあります。上書きしますか?\n{path}", path=path),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         return answer == QMessageBox.Yes
@@ -97,12 +98,13 @@ def run_resolve_export(parent, export_call):
     try:
         result = export_call(_confirm_overwrite)
     except AutoEditError as e:
-        QMessageBox.critical(parent, "DaVinci Resolve 出力", str(e))
+        QMessageBox.critical(parent, tr("DaVinci Resolve 出力"), str(e))
         return None
     except Exception as e:  # noqa: BLE001 (GUI へ集約通知するため広く捕捉)
         _logger.exception("DaVinci Resolve 出力に失敗")
         QMessageBox.critical(
-            parent, "DaVinci Resolve 出力", f"出力に失敗しました:\n{e}")
+            parent, tr("DaVinci Resolve 出力"),
+            tr("出力に失敗しました:\n{error}", error=e))
         return None
 
     if result is None:
@@ -110,17 +112,18 @@ def run_resolve_export(parent, export_call):
     # 戻り値は出力パスの list ([fcpxml] または [fcpxml, srt] / resolve21 §5.7)
     paths = result if isinstance(result, list) else [result]
     message = (
-        "プロジェクトファイルを出力しました。\n"
+        tr("プロジェクトファイルを出力しました。\n")
         + "\n".join(paths)
-        + "\n\nDaVinci Resolve の File > Import > Timeline から取り込んでください。"
+        + tr("\n\nDaVinci Resolve の File > Import > Timeline から"
+             "取り込んでください。")
     )
     if any(str(p).lower().endswith(".srt") for p in paths):
-        message += (
+        message += tr(
             "\n字幕(.srt) はメディアプール右クリック > 字幕の読み込み (Import Subtitle) "
             "からも取り込めます。\n字幕のフォント等はタイムラインの字幕トラックヘッダー選択 "
             "→ インスペクタ → トラックスタイルで一括設定できます。"
         )
-    QMessageBox.information(parent, "DaVinci Resolve 出力", message)
+    QMessageBox.information(parent, tr("DaVinci Resolve 出力"), message)
     return paths
 
 
@@ -248,19 +251,19 @@ class SubtitleEditorWidget(QWidget):
 
     # 「Blank=デフォルト」時の実効値を説明文用に整形する (resolve16 §4.4)
     def _default_desc(self):
-        font = self._default_font or "(設定のフォント)"
+        font = self._default_font or tr("(設定のフォント)")
         if self._default_size in (None, ""):
             return font
         return f"{font} / {self._default_size}"
 
     # 説明文 (埋め込み側が説明ラベルに使えるよう公開する)
     def description_text(self):
-        return (
+        return tr(
             "誤訳の修正と使用可否を選択します。\n"
             "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
             "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
-            f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self._default_desc()})。"
-        )
+            "「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {default})。",
+            default=self._default_desc())
 
     # 画面構築 (テーマ欄 + テーブル + 全選択ボタン。説明/決定ボタンは埋め込み側が付ける)
     def _build_ui(self):
@@ -270,7 +273,7 @@ class SubtitleEditorWidget(QWidget):
         # テーマ入力欄 (resolve19 / アーカイブ切り抜き経路のみ)。
         if self._show_theme_field:
             theme_row = QHBoxLayout()
-            theme_row.addWidget(QLabel("テーマ:"))
+            theme_row.addWidget(QLabel(tr("テーマ:")))
             self.theme_edit = QLineEdit()
             self.theme_edit.setPlaceholderText(self._theme_placeholder)
             self.theme_edit.setText(self._theme_text)
@@ -280,7 +283,7 @@ class SubtitleEditorWidget(QWidget):
         # 一覧テーブル
         self.table = QTableWidget(self)
         self.table.setColumnCount(len(_COLUMN_HEADERS))
-        self.table.setHorizontalHeaderLabels(_COLUMN_HEADERS)
+        self.table.setHorizontalHeaderLabels([tr(h) for h in _COLUMN_HEADERS])
         # 字幕列を広く取り、他列は内容に合わせる
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(_COL_TIME, QHeaderView.ResizeToContents)
@@ -304,9 +307,9 @@ class SubtitleEditorWidget(QWidget):
 
         # 全選択 / 全解除 (利便用)
         select_row = QHBoxLayout()
-        self.select_all_button = QPushButton("全て使用")
+        self.select_all_button = QPushButton(tr("全て使用"))
         self.select_all_button.clicked.connect(lambda: self._set_all_use(True))
-        self.deselect_all_button = QPushButton("全て不使用")
+        self.deselect_all_button = QPushButton(tr("全て不使用"))
         self.deselect_all_button.clicked.connect(lambda: self._set_all_use(False))
         select_row.addWidget(self.select_all_button)
         select_row.addWidget(self.deselect_all_button)
@@ -486,7 +489,7 @@ class SubtitleEditorDialog(QDialog):
                  font_families=None, show_theme_field=False, theme_placeholder="",
                  theme_text="", export_context=None, preview_context=None):
         super().__init__(parent)
-        self.setWindowTitle("字幕編集")
+        self.setWindowTitle(tr("字幕編集"))
         # ガラスモーフィズムの背景を敷く (resolve3 §3-2)
         theme.install_window_background(self)
 
@@ -507,12 +510,12 @@ class SubtitleEditorDialog(QDialog):
         )
 
         # 説明ラベル (従来ダイアログの文言。「字幕決定」で焼き込みに進む旨)
-        description = QLabel(
+        description = QLabel(tr(
             "誤訳の修正と使用可否を選択し、「字幕決定」で焼き込みに進みます。\n"
             "「時間」は編集できません。チェックを外した字幕は焼き込まれません。\n"
             "各行の「配信者/サブ/コメント」で色を選べます(1行につき1つ)。\n"
-            f"「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {self.editor._default_desc()})。"
-        )
+            "「フォント」「サイズ」は行ごとに上書きできます(空欄=デフォルト: {default})。",
+            default=self.editor._default_desc()))
 
         if is_preview_enabled(self._preview_context):
             # プレビューあり: 左=説明+テーブル / 右=プレビュー の横分割 (resolve23 §5.3)
@@ -548,20 +551,20 @@ class SubtitleEditorDialog(QDialog):
         # 出力ボタン (材料が揃い、かつ設定で有効なときだけ追加する / resolve20 §5.3)
         self.export_button = None
         if self._can_export():
-            self.export_button = QPushButton(RESOLVE_EXPORT_BUTTON_TEXT)
-            self.export_button.setToolTip(
+            self.export_button = QPushButton(tr(RESOLVE_EXPORT_BUTTON_TEXT))
+            self.export_button.setToolTip(tr(
                 "現在の字幕とカット編集点を DaVinci Resolve 用プロジェクトファイル"
                 "(.fcpxml) として出力します。"
-            )
+            ))
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
         # 「字幕決定」は主要動作 (アクセント塗り)、「キャンセル」は処理を中断する
         # 破壊的動作として輪郭ボタンにする (resolve3 §5.2-2 / §5.2-3)
-        self.decide_button = QPushButton("字幕決定")
+        self.decide_button = QPushButton(tr("字幕決定"))
         self.decide_button.setDefault(True)
         self.decide_button.clicked.connect(self.accept)
         theme.mark_primary(self.decide_button)
-        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button = QPushButton(tr("キャンセル"))
         self.cancel_button.clicked.connect(self.reject)
         theme.mark_danger(self.cancel_button)
         button_row.addWidget(self.decide_button)

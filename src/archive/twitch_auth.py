@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 
 from ..exceptions import TwitchError
+from ..i18n import tr
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -187,8 +188,8 @@ class TwitchAuth:
     def login(self, timeout=180, open_browser=True):
         if not self._client_id:
             raise TwitchError(
-                "Twitch の Client-ID が未設定です。"
-                "設定(setting.json)の archive.auth.client_id に登録してください。")
+                tr("Twitch の Client-ID が未設定です。"
+                "設定(setting.json)の archive.auth.client_id に登録してください。"))
 
         from http.server import HTTPServer
         import webbrowser
@@ -197,7 +198,9 @@ class TwitchAuth:
         try:
             httpd = HTTPServer(("localhost", self._redirect_port), _make_handler())
         except OSError as e:
-            raise TwitchError(f"ローカル受信ポート {self._redirect_port} を開けません: {e}")
+            raise TwitchError(
+                tr("ローカル受信ポート {port} を開けません: {error}",
+                   port=self._redirect_port, error=e))
         httpd.auth_token = None
         httpd.auth_scope = ""
         httpd.auth_error = None
@@ -229,9 +232,10 @@ class TwitchAuth:
             pass
 
         if httpd.auth_error:
-            raise TwitchError(f"Twitch 認可に失敗しました: {httpd.auth_error}")
+            raise TwitchError(
+                tr("Twitch 認可に失敗しました: {error}", error=httpd.auth_error))
         if not httpd.auth_token:
-            raise TwitchError("Twitch 認可がタイムアウトしました (ブラウザで許可されませんでした)。")
+            raise TwitchError(tr("Twitch 認可がタイムアウトしました (ブラウザで許可されませんでした)。"))
 
         # 4) トークンを保存 (インプリシットフローは refresh_token 無し)
         self._token = {
@@ -248,7 +252,7 @@ class TwitchAuth:
     # (インプリシットフローは refresh_token を持たないため自動更新はできない)。
     def _helix_get(self, path, query=None):
         if not self.is_logged_in():
-            raise TwitchError("Twitch にログインしていません。")
+            raise TwitchError(tr("Twitch にログインしていません。"))
         url = f"{_HELIX_BASE}/{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query, doseq=True)
@@ -261,22 +265,24 @@ class TwitchAuth:
         except urllib.error.HTTPError as e:
             if e.code == 401:
                 self.logout()
-                raise TwitchError("Twitch トークンが失効しました。再度ログインしてください。")
+                raise TwitchError(tr("Twitch トークンが失効しました。再度ログインしてください。"))
             # 403 はスコープ不足か、自分の配信ではない対象を引いたとき (ver3 resolve16 §5.3)。
             # 何を直せばよいか分かるよう、素の HTTP コードではなく手順を返す。
             if e.code == 403:
                 raise TwitchError(
-                    "Twitch API の権限が不足しています。"
-                    "一度ログアウトして再ログインしてください。")
-            raise TwitchError(f"Twitch API 呼び出しに失敗しました (HTTP {e.code})。")
+                    tr("Twitch API の権限が不足しています。"
+                    "一度ログアウトして再ログインしてください。"))
+            raise TwitchError(
+                tr("Twitch API 呼び出しに失敗しました (HTTP {code})。", code=e.code))
         except (urllib.error.URLError, ValueError) as e:
-            raise TwitchError(f"Twitch API 呼び出しに失敗しました: {e}")
+            raise TwitchError(
+                tr("Twitch API 呼び出しに失敗しました: {error}", error=e))
 
     # ログイン中ユーザー情報 {id, login, display_name} を返す
     def get_self(self):
         data = self._helix_get("users").get("data", [])
         if not data:
-            raise TwitchError("ログインユーザー情報を取得できませんでした。")
+            raise TwitchError(tr("ログインユーザー情報を取得できませんでした。"))
         u = data[0]
         return {"id": u.get("id"), "login": u.get("login"),
                 "display_name": u.get("display_name")}

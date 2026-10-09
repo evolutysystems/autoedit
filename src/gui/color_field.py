@@ -11,6 +11,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QWidget
 
+from ..i18n import tr
 from . import theme
 
 # 解釈できない値のときに使う色 (呼び出し側が fallback を渡さなかった場合)
@@ -106,19 +107,19 @@ class ColorField(QWidget):
 
         self._swatch = QPushButton()
         self._swatch.setFixedWidth(self._swatch_width)
-        self._swatch.setToolTip("色を選ぶ")
+        self._swatch.setToolTip(tr("色を選ぶ"))
         self._swatch.clicked.connect(self._choose_color)
         layout.addWidget(self._swatch)
 
         self._edit = QLineEdit()
-        self._edit.setPlaceholderText(placeholder or EMPTY_LABEL)
+        self._edit.setPlaceholderText(placeholder or tr(EMPTY_LABEL))
         # 手入力にも色見本を追従させる (確定は editingFinished のときだけ)
         self._edit.textChanged.connect(self._refresh_swatch)
         self._edit.editingFinished.connect(self._commit_from_edit)
         layout.addWidget(self._edit, 1)
 
-        self._clear_button = QPushButton(EMPTY_LABEL + "へ")
-        self._clear_button.setToolTip("個別指定をやめて既定の色に戻します")
+        self._clear_button = QPushButton(tr("既定へ"))
+        self._clear_button.setToolTip(tr("個別指定をやめて既定の色に戻します"))
         self._clear_button.clicked.connect(self._clear)
         layout.addWidget(self._clear_button)
 
@@ -156,7 +157,7 @@ class ColorField(QWidget):
             options = QColorDialog.ColorDialogOption.ShowAlphaChannel
         else:
             options = QColorDialog.ColorDialogOption(0)
-        color = QColorDialog.getColor(initial, self, "色を選択", options)
+        color = QColorDialog.getColor(initial, self, tr("色を選択"), options)
         if color.isValid():
             self._commit(format_color(color, self._with_alpha))
 

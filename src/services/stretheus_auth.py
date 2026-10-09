@@ -25,6 +25,7 @@ import urllib.parse
 import webbrowser
 
 from ..exceptions import ApiError, AutoEditError, ReauthRequiredError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from .api_client import ApiClient, CODE_INVALID_TOKEN
 from .auth_store import AuthStore
@@ -251,7 +252,7 @@ class StretheusAuth:
     def login_anonymously(self):
         identifier = self._device_id_provider()
         if not identifier:
-            raise AutoEditError("端末 ID を決定できませんでした。")
+            raise AutoEditError(tr("端末 ID を決定できませんでした。"))
 
         response = self._client.request(
             "POST", _DEVICE_LOGIN_PATH, body={"deviceId": identifier},
@@ -265,13 +266,13 @@ class StretheusAuth:
     # timeout 秒以内にブラウザで許可されなければ AutoEditError。
     def login(self, timeout=180, open_browser=True):
         if not _LOGIN_LOCK.acquire(blocking=False):
-            raise AutoEditError("別のログインが進行中です。完了してから実行してください。")
+            raise AutoEditError(tr("別のログインが進行中です。完了してから実行してください。"))
         try:
             params = self._client.request("GET", _AUTHORIZE_PARAMS_PATH, authenticated=False)
             redirect_uri = str((params or {}).get("redirectUri") or "")
             client_id = str((params or {}).get("clientId") or "")
             if not redirect_uri or not client_id:
-                raise AutoEditError("API から認可パラメーターを取得できませんでした。")
+                raise AutoEditError(tr("API から認可パラメーターを取得できませんでした。"))
 
             code = self._receive_code(params, redirect_uri, timeout, open_browser)
             response = self._client.request(
@@ -309,7 +310,9 @@ class StretheusAuth:
             httpd = HTTPServer(("localhost", port), _make_handler())
         except OSError as e:
             # implicit flow のログインが動いている場合もここに来る (§6.3)。
-            raise AutoEditError(f"ローカル受信ポート {port} を開けません: {e}")
+            raise AutoEditError(
+                tr("ローカル受信ポート {port} を開けません: {error}",
+                   port=port, error=e))
 
         httpd.auth_code = None
         httpd.auth_error = None
@@ -338,9 +341,10 @@ class StretheusAuth:
             pass
 
         if httpd.auth_error:
-            raise AutoEditError(f"Stretheus の認可に失敗しました: {httpd.auth_error}")
+            raise AutoEditError(
+                tr("Stretheus の認可に失敗しました: {error}", error=httpd.auth_error))
         if not httpd.auth_code:
-            raise AutoEditError("Stretheus の認可がタイムアウトしました (ブラウザで許可されませんでした)。")
+            raise AutoEditError(tr("Stretheus の認可がタイムアウトしました (ブラウザで許可されませんでした)。"))
 
         return httpd.auth_code
 
@@ -363,7 +367,7 @@ class StretheusAuth:
     def _apply(self, response):
         response = response or {}
         if not response.get("accessToken"):
-            raise ApiError("API から JWT を取得できませんでした。")
+            raise ApiError(tr("API から JWT を取得できませんでした。"))
 
         user = response.get("user") or {}
         self._data = {

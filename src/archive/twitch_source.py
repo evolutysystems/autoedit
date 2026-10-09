@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from ..exceptions import InputError, TwitchError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 
@@ -36,12 +37,13 @@ _DEFAULT_FPS = 30
 def extract_video_id(url_or_id):
     text = (url_or_id or "").strip()
     if not text:
-        raise InputError("Twitch VOD の URL または動画IDを入力してください。")
+        raise InputError(tr("Twitch VOD の URL または動画IDを入力してください。"))
     if _BARE_ID_RE.match(text):
         return text
     m = _VIDEO_URL_RE.search(text)
     if not m:
-        raise InputError(f"Twitch VOD の URL 形式が不正です: {text}")
+        raise InputError(
+            tr("Twitch VOD の URL 形式が不正です: {url}", url=text))
     return m.group(1)
 
 
@@ -118,8 +120,8 @@ def _run(argv, progress_cb=None, label="取得中…", env=None):
         )
     except FileNotFoundError:
         raise TwitchError(
-            "twitch-dl が見つかりません。導入(pip install twitch-dl)するか、"
-            "setting.json の archive.download.twitch_dl_path を設定してください。")
+            tr("twitch-dl が見つかりません。導入(pip install twitch-dl)するか、"
+            "setting.json の archive.download.twitch_dl_path を設定してください。"))
     tail = []
     for line in proc.stdout:
         line = line.rstrip()
@@ -277,9 +279,11 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
         # 画質が原因のときに何を直せばよいか分かるよう、候補を添えて包み直す
         names = ", ".join(p["name"] for p in playlists) if playlists else "取得できませんでした"
         raise TwitchError(
-            f"VOD の取得に失敗しました (指定画質: {chosen} / 利用可能: {names})。\n{e}") from e
+            tr("VOD の取得に失敗しました (指定画質: {quality} / 利用可能: {available})。\n"
+               "{error}", quality=chosen, available=names, error=e)) from e
     if not os.path.isfile(expected):
-        raise TwitchError(f"VOD の取得後にファイルが見つかりません: {expected}")
+        raise TwitchError(
+            tr("VOD の取得後にファイルが見つかりません: {path}", path=expected))
     _logger.info("VOD 取得完了: %s (画質 %s)", expected, chosen)
     return expected
 
@@ -297,6 +301,7 @@ def download_chat(video_id, work_dir, twitch_dl_path="twitch-dl", progress_cb=No
 
     _run(argv, progress_cb, label="コメント取得中…", env=_twitchdl_env(ffmpeg_dir))
     if not os.path.isfile(expected):
-        raise TwitchError(f"コメントの取得後にファイルが見つかりません: {expected}")
+        raise TwitchError(
+            tr("コメントの取得後にファイルが見つかりません: {path}", path=expected))
     _logger.info("コメント取得完了: %s", expected)
     return expected

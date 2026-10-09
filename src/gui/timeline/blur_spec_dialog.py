@@ -39,6 +39,7 @@ from ...blur import decisions as blur_decisions
 from ...blur import preview as blur_preview
 from ...blur.config import config as blur_config
 from ...blur.plan import STATUS_FAILED, STATUS_LOST
+from ...i18n import tr
 from ...timeline import commands
 from ...timeline.frame_source import create_frame_source
 from ...timeline.model import SubtitleClip
@@ -98,7 +99,7 @@ class BlurSpecDialog(QDialog):
     def __init__(self, controller, tracks=None, parent=None, cache_path=None,
                  settings=None, clip=None):
         super().__init__(parent)
-        self.setWindowTitle("ぼかし")
+        self.setWindowTitle(tr("ぼかし"))
         self._controller = controller
         self._cache_path = cache_path
         self._timeline = controller.timeline
@@ -175,19 +176,19 @@ class BlurSpecDialog(QDialog):
         side = QVBoxLayout()
 
         # 指定の一覧 (重ね順)
-        side.addWidget(QLabel("指定 (下にあるものが優先)"))
+        side.addWidget(QLabel(tr("指定 (下にあるものが優先)")))
         self.spec_list = QListWidget()
         self.spec_list.itemClicked.connect(self._on_spec_clicked)
         self.spec_list.setToolTip(
-            "上から順に重なります。下にあるものほど優先されます。\n"
-            "「画面全体をぼかす」の上に「ボカさない」を置くと、そこだけ素で見えます。")
+            tr("上から順に重なります。下にあるものほど優先されます。\n"
+            "「画面全体をぼかす」の上に「ボカさない」を置くと、そこだけ素で見えます。"))
         side.addWidget(self.spec_list, 3)
 
         spec_row = QHBoxLayout()
-        self.spec_up_button = QPushButton("上へ")
-        self.spec_down_button = QPushButton("下へ")
-        self.spec_rename_button = QPushButton("名前")
-        self.spec_delete_button = QPushButton("削除")
+        self.spec_up_button = QPushButton(tr("上へ"))
+        self.spec_down_button = QPushButton(tr("下へ"))
+        self.spec_rename_button = QPushButton(tr("名前"))
+        self.spec_delete_button = QPushButton(tr("削除"))
         for button in (self.spec_up_button, self.spec_down_button,
                        self.spec_rename_button, self.spec_delete_button):
             button.setAutoDefault(False)
@@ -199,18 +200,18 @@ class BlurSpecDialog(QDialog):
         side.addLayout(spec_row)
 
         # キーフレームの一覧
-        self.key_label = QLabel("キーフレーム")
+        self.key_label = QLabel(tr("キーフレーム"))
         side.addWidget(self.key_label)
         self.key_list = QListWidget()
         self.key_list.itemClicked.connect(self._on_key_clicked)
         self.key_list.setToolTip(
-            "クリックでその時刻へ移動します。\n"
-            "枠を掴んで動かすと、そのコマにキーフレームが打たれます。")
+            tr("クリックでその時刻へ移動します。\n"
+            "枠を掴んで動かすと、そのコマにキーフレームが打たれます。"))
         side.addWidget(self.key_list, 2)
 
         key_row = QHBoxLayout()
-        self.key_add_button = QPushButton("ここに打つ")
-        self.key_delete_button = QPushButton("キーを削除")
+        self.key_add_button = QPushButton(tr("ここに打つ"))
+        self.key_delete_button = QPushButton(tr("キーを削除"))
         for button in (self.key_add_button, self.key_delete_button):
             button.setAutoDefault(False)
             key_row.addWidget(button)
@@ -226,7 +227,7 @@ class BlurSpecDialog(QDialog):
         # スクラバ (1 目盛 = 1 コマ)
         seek_row = QHBoxLayout()
         self.prev_button = QPushButton("◀")
-        self.prev_button.setToolTip("1 コマ戻る (←)")
+        self.prev_button.setToolTip(tr("1 コマ戻る (←)"))
         self.prev_button.clicked.connect(lambda: self._navigate("prev"))
         seek_row.addWidget(self.prev_button)
         self.slider = QSlider(Qt.Horizontal)
@@ -236,7 +237,7 @@ class BlurSpecDialog(QDialog):
         self.slider.valueChanged.connect(self._on_slider_changed)
         seek_row.addWidget(self.slider, 1)
         self.next_button = QPushButton("▶")
-        self.next_button.setToolTip("1 コマ進む (→)")
+        self.next_button.setToolTip(tr("1 コマ進む (→)"))
         self.next_button.clicked.connect(lambda: self._navigate("next"))
         seek_row.addWidget(self.next_button)
         for button in (self.prev_button, self.next_button):
@@ -247,40 +248,40 @@ class BlurSpecDialog(QDialog):
 
         # 対象クリップと「これから」の指定
         clip_row = QHBoxLayout()
-        self.clip_label = QLabel("対象: -")
+        self.clip_label = QLabel(tr("対象: -"))
         clip_row.addWidget(self.clip_label, 1)
-        clip_row.addWidget(QLabel("これから:"))
+        clip_row.addWidget(QLabel(tr("これから:")))
         self._mode_group = QButtonGroup(self)
-        self.blur_radio = QRadioButton("ボカす")
-        self.keep_radio = QRadioButton("ボカさない")
+        self.blur_radio = QRadioButton(tr("ボカす"))
+        self.keep_radio = QRadioButton(tr("ボカさない"))
         self.blur_radio.setChecked(True)
-        self.blur_radio.setToolTip("囲んだ場所をぼかします。")
+        self.blur_radio.setToolTip(tr("囲んだ場所をぼかします。"))
         self.keep_radio.setToolTip(
-            "画面全体をぼかし、囲んだ場所だけを素で見せます。\n"
-            "画面全体のぼかしが無ければ一緒に足します。")
+            tr("画面全体をぼかし、囲んだ場所だけを素で見せます。\n"
+            "画面全体のぼかしが無ければ一緒に足します。"))
         for radio in (self.blur_radio, self.keep_radio):
             self._mode_group.addButton(radio)
             clip_row.addWidget(radio)
         clip_row.addSpacing(16)
-        clip_row.addWidget(QLabel("表示:"))
+        clip_row.addWidget(QLabel(tr("表示:")))
         self.preview_combo = QComboBox()
-        self.preview_combo.addItem("実際のぼかし", blur_config_module.PREVIEW_BLUR)
-        self.preview_combo.addItem("ボカさない範囲 (緑)", blur_config_module.PREVIEW_KEEP)
-        self.preview_combo.addItem("枠だけ", blur_config_module.PREVIEW_NONE)
+        self.preview_combo.addItem(tr("実際のぼかし"), blur_config_module.PREVIEW_BLUR)
+        self.preview_combo.addItem(tr("ボカさない範囲 (緑)"), blur_config_module.PREVIEW_KEEP)
+        self.preview_combo.addItem(tr("枠だけ"), blur_config_module.PREVIEW_NONE)
         self.preview_combo.setToolTip(
-            "実際のぼかし … 書き出しと同じ計算で、本当にぼけた絵を表示します。\n"
+            tr("実際のぼかし … 書き出しと同じ計算で、本当にぼけた絵を表示します。\n"
             "ボカさない範囲 (緑) … ぼかしを外した範囲を緑で塗ります。\n"
-            "枠だけ … 何も重ねません (コマ送りが一番速い)。")
+            "枠だけ … 何も重ねません (コマ送りが一番速い)。"))
         if not blur_preview.is_available():
             self.preview_combo.model().item(0).setEnabled(False)
         self.preview_combo.setCurrentIndex(
             max(self.preview_combo.findData(self._preview_mode), 0))
         self.preview_combo.currentIndexChanged.connect(self._on_preview_mode_changed)
         clip_row.addWidget(self.preview_combo)
-        self.overlay_check = QCheckBox("画像・字幕も表示")
+        self.overlay_check = QCheckBox(tr("画像・字幕も表示"))
         self.overlay_check.setToolTip(
-            "その時刻に重なる画像・動画・字幕を、出力と同じ重ね順で表示します。\n"
-            "書き出しではぼかしが先に掛かるため、これらはぼけません。")
+            tr("その時刻に重なる画像・動画・字幕を、出力と同じ重ね順で表示します。\n"
+            "書き出しではぼかしが先に掛かるため、これらはぼけません。"))
         self.overlay_check.setChecked(bool(self._cfg["editor"]["show_overlays"]))
         self.overlay_check.toggled.connect(lambda _c: self._seek(self._index))
         clip_row.addWidget(self.overlay_check)
@@ -288,26 +289,26 @@ class BlurSpecDialog(QDialog):
 
         # 選択中の指定への操作
         selection_row = QHBoxLayout()
-        self.selection_label = QLabel("選択中: なし")
+        self.selection_label = QLabel(tr("選択中: なし"))
         selection_row.addWidget(self.selection_label, 1)
         self.warning_label = QLabel("")
         selection_row.addWidget(self.warning_label)
-        self.goto_lost_button = QPushButton("ここへ移動")
-        self.follow_button = QPushButton("動かさない")
-        self.retrack_button = QPushButton("追う")
+        self.goto_lost_button = QPushButton(tr("ここへ移動"))
+        self.follow_button = QPushButton(tr("動かさない"))
+        self.retrack_button = QPushButton(tr("追う"))
         for button in (self.goto_lost_button, self.follow_button, self.retrack_button):
             button.setAutoDefault(False)
             selection_row.addWidget(button)
         self.goto_lost_button.clicked.connect(self._goto_lost)
         self.follow_button.clicked.connect(self._toggle_follow)
-        self.retrack_button.setToolTip("囲んだ場所をもう一度追いかけます。")
+        self.retrack_button.setToolTip(tr("囲んだ場所をもう一度追いかけます。"))
         self.retrack_button.clicked.connect(lambda: self._retrack(force=True))
         root.addLayout(selection_row)
 
         bottom_row = QHBoxLayout()
         self.summary_label = QLabel("")
         bottom_row.addWidget(self.summary_label, 1)
-        close_button = QPushButton("閉じる")
+        close_button = QPushButton(tr("閉じる"))
         close_button.setAutoDefault(False)
         close_button.clicked.connect(self.accept)
         theme.mark_primary(close_button)
@@ -315,8 +316,8 @@ class BlurSpecDialog(QDialog):
         root.addLayout(bottom_row)
 
         self.status_label = QLabel(
-            "ぼかしたい場所・見せたい場所をドラッグで囲んでください。"
-            "枠は掴んで移動、角で大きさ、← → でコマ送りです。")
+            tr("ぼかしたい場所・見せたい場所をドラッグで囲んでください。"
+            "枠は掴んで移動、角で大きさ、← → でコマ送りです。"))
         self.status_label.setWordWrap(True)
         root.addWidget(self.status_label)
 
@@ -440,11 +441,12 @@ class BlurSpecDialog(QDialog):
         if not dropped:
             return
         QMessageBox.information(
-            self, "ぼかしの指定",
-            f"以前のぼかしの指定のうち、人物の枠を選んで指定したもの ({dropped} 件) は\n"
-            "新しい方式へ移せませんでした。\n\n"
-            "ぼかしたい場所・見せたい場所をマウスで囲み直してください。\n"
-            f"手で囲んで足した枠と全面のぼかし ({kept} 件) は引き継いでいます。")
+            self, tr("ぼかしの指定"),
+            tr("以前のぼかしの指定のうち、人物の枠を選んで指定したもの ({dropped} 件) は\n"
+               "新しい方式へ移せませんでした。\n\n"
+               "ぼかしたい場所・見せたい場所をマウスで囲み直してください。\n"
+               "手で囲んで足した枠と全面のぼかし ({kept} 件) は引き継いでいます。",
+               dropped=dropped, kept=kept))
 
     # 指定が変わったら呼ぶ: 判定を作り直し、一覧とフレームを描き直す
     def _refresh(self):
@@ -460,13 +462,14 @@ class BlurSpecDialog(QDialog):
 
     def _refresh_clip_label(self):
         if self._clip is None:
-            self.clip_label.setText("対象: クリップが選ばれていません")
+            self.clip_label.setText(tr("対象: クリップが選ばれていません"))
             return
         number = blur_decisions.clip_number(self._timeline, self._clip)
         self.clip_label.setText(
-            f"対象: クリップ {number} "
-            f"({_format_time(self._clip.timeline_start)}〜"
-            f"{_format_time(self._clip.timeline_end)})")
+            tr("対象: クリップ {number} ({start}〜{end})",
+               number=number,
+               start=_format_time(self._clip.timeline_start),
+               end=_format_time(self._clip.timeline_end)))
 
     # 現在のコマのフレームと枠を出す
     def _seek(self, index):
@@ -475,9 +478,10 @@ class BlurSpecDialog(QDialog):
         self.slider.blockSignals(True)
         self.slider.setValue(index)
         self.slider.blockSignals(False)
-        self.time_label.setText(
-            f"{_format_time(self._timeline_sec(), frames=True, fps=self._fps)}"
-            f"  (コマ {index + 1} / {self._frames})")
+        self.time_label.setText(tr(
+            "{time}  (コマ {frame} / {frames})",
+            time=_format_time(self._timeline_sec(), frames=True, fps=self._fps),
+            frame=index + 1, frames=self._frames))
 
         media_id = str(self._clip.media_id)
         source_sec = self._source_sec()
@@ -598,26 +602,28 @@ class BlurSpecDialog(QDialog):
             item.setData(Qt.UserRole, str(spec.get("id")))
             status = self._plan.status_of(spec)
             if status["status"] == STATUS_LOST:
-                item.setText(item.text()
-                             + f"  ⚠ {_format_time(status['lost_sec'], frames=True, fps=self._fps)}"
-                               " で見失いました")
+                item.setText(item.text() + tr(
+                    "  ⚠ {time} で見失いました",
+                    time=_format_time(status["lost_sec"], frames=True,
+                                      fps=self._fps)))
             elif status["status"] == STATUS_FAILED:
-                item.setText(item.text() + "  ⚠ 追いかけられませんでした")
+                item.setText(item.text() + tr("  ⚠ 追いかけられませんでした"))
             elif not self._is_effective(spec):
-                item.setToolTip("ぼかしが掛かっていないため効いていません。")
-                item.setText(item.text() + "  (効いていません)")
+                item.setToolTip(tr("ぼかしが掛かっていないため効いていません。"))
+                item.setText(item.text() + tr("  (効いていません)"))
             self.spec_list.addItem(item)
             if str(spec.get("id")) == self._selected:
                 item.setSelected(True)
         if not specs:
             self.spec_list.addItem(QListWidgetItem(
-                "まだ指定がありません。ドラッグで囲んでください。"))
+                tr("まだ指定がありません。ドラッグで囲んでください。")))
 
         self._refresh_keys()
 
         blur_count = sum(1 for s in specs if s.get("mode") == blur_decisions.BLUR)
         self.summary_label.setText(
-            f"指定 {len(specs)} 件 (ボカす {blur_count} / ボカさない {len(specs) - blur_count})")
+            tr("指定 {total} 件 (ボカす {blur} / ボカさない {keep})",
+               total=len(specs), blur=blur_count, keep=len(specs) - blur_count))
 
     def _refresh_keys(self):
         spec = self._spec_by_id(self._selected)
@@ -625,15 +631,18 @@ class BlurSpecDialog(QDialog):
         keys = blur_decisions.keys_of(spec) if spec is not None else []
         for key in keys:
             index = self._index_of(key["t"])
-            item = QListWidgetItem(
-                f"◆ {_format_time(self._clip.timeline_start + index / float(self._fps), frames=True, fps=self._fps)}"
-                f"  (コマ {index + 1})")
+            item = QListWidgetItem(tr(
+                "◆ {time}  (コマ {frame})",
+                time=_format_time(
+                    self._clip.timeline_start + index / float(self._fps),
+                    frames=True, fps=self._fps),
+                frame=index + 1))
             item.setData(Qt.UserRole, float(key["t"]))
             self.key_list.addItem(item)
             if self._selected_key is not None and abs(
                     float(key["t"]) - self._selected_key) <= self._epsilon:
                 item.setSelected(True)
-        self.key_label.setText(f"キーフレーム ({len(keys)})")
+        self.key_label.setText(tr("キーフレーム ({count})", count=len(keys)))
 
     # その指定が実際に効いているか (下にぼかしが無い「ボカさない」指定は効かない)
     def _is_effective(self, spec):
@@ -652,7 +661,7 @@ class BlurSpecDialog(QDialog):
     def _update_selection_controls(self):
         spec = self._spec_by_id(self._selected)
         if spec is None:
-            self.selection_label.setText("選択中: なし")
+            self.selection_label.setText(tr("選択中: なし"))
             self.warning_label.setText("")
             self.goto_lost_button.setVisible(False)
             self.follow_button.setEnabled(False)
@@ -663,14 +672,16 @@ class BlurSpecDialog(QDialog):
             return
 
         is_area = spec.get("kind") == blur_decisions.KIND_AREA
-        self.selection_label.setText(f"選択中: {self._plan.describe(spec)}")
+        self.selection_label.setText(
+            tr("選択中: {label}", label=self._plan.describe(spec)))
         status = self._plan.status_of(spec)
         if status["status"] == STATUS_LOST:
-            self.warning_label.setText(
-                f"⚠ {_format_time(status['lost_sec'], frames=True, fps=self._fps)} で見失いました")
+            self.warning_label.setText(tr(
+                "⚠ {time} で見失いました",
+                time=_format_time(status["lost_sec"], frames=True, fps=self._fps)))
             self.goto_lost_button.setVisible(True)
         elif status["status"] == STATUS_FAILED:
-            self.warning_label.setText("⚠ 追いかけられませんでした")
+            self.warning_label.setText(tr("⚠ 追いかけられませんでした"))
             self.goto_lost_button.setVisible(False)
         else:
             self.warning_label.setText("")
@@ -685,7 +696,8 @@ class BlurSpecDialog(QDialog):
             is_area and len(blur_decisions.keys_of(spec)) > 1 and self._selected_key is not None)
         self.follow_button.setEnabled(is_area)
         following = spec.get("follow", blur_decisions.FOLLOW_TRACK) == blur_decisions.FOLLOW_TRACK
-        self.follow_button.setText("動かさない" if following else "追いかける")
+        self.follow_button.setText(
+            tr("動かさない") if following else tr("追いかける"))
 
     # ------------------------------------------------------------------
     # 囲む (§5.10.3 / §5.10.4)
@@ -698,7 +710,7 @@ class BlurSpecDialog(QDialog):
         first = not self._plan.specs_in_clip(self._clip)
         mode = self._ask_first_mode() if first else self._current_mode()
         if mode is None:
-            self.status_label.setText("囲みを取り消しました。")
+            self.status_label.setText(tr("囲みを取り消しました。"))
             self._seek(self._index)
             return
 
@@ -706,7 +718,7 @@ class BlurSpecDialog(QDialog):
         spec = blur_decisions.make_area_spec(
             "", mode, str(self._clip.media_id), span, self._source_sec(), rect)
         if spec is None:
-            self.status_label.setText("囲みが小さすぎます。もう少し大きく囲んでください。")
+            self.status_label.setText(tr("囲みが小さすぎます。もう少し大きく囲んでください。"))
             return
 
         specs = []
@@ -720,22 +732,23 @@ class BlurSpecDialog(QDialog):
         self._selected = self._latest_spec_id()
         self._selected_key = self._source_sec()
         self.status_label.setText(
-            "画面全体をぼかし、囲んだ場所を残します。" if mode == blur_decisions.KEEP
-            else "囲んだ場所をぼかします。")
+            tr("画面全体をぼかし、囲んだ場所を残します。")
+            if mode == blur_decisions.KEEP
+            else tr("囲んだ場所をぼかします。"))
         self._refresh()
         self._retrack()
 
     # 1 件目の囲みで「ボカす / ボカさない」を聞く (要望④)
     def _ask_first_mode(self):
         box = QMessageBox(self)
-        box.setWindowTitle("ぼかし")
-        box.setText("指定した場所をどうしますか？")
+        box.setWindowTitle(tr("ぼかし"))
+        box.setText(tr("指定した場所をどうしますか？"))
         box.setInformativeText(
-            "ボカす … 囲んだ場所だけをぼかします\n"
-            "ボカさない … 画面全体をぼかし、囲んだ場所だけを残します")
-        blur_button = box.addButton("ボカす", QMessageBox.AcceptRole)
-        keep_button = box.addButton("ボカさない", QMessageBox.AcceptRole)
-        box.addButton("取り消す", QMessageBox.RejectRole)
+            tr("ボカす … 囲んだ場所だけをぼかします\n"
+            "ボカさない … 画面全体をぼかし、囲んだ場所だけを残します"))
+        blur_button = box.addButton(tr("ボカす"), QMessageBox.AcceptRole)
+        keep_button = box.addButton(tr("ボカさない"), QMessageBox.AcceptRole)
+        box.addButton(tr("取り消す"), QMessageBox.RejectRole)
         box.exec()
         if box.clickedButton() is blur_button:
             self.blur_radio.setChecked(True)
@@ -774,8 +787,9 @@ class BlurSpecDialog(QDialog):
             self._selected = str(spec_id)
             self._selected_key = source_sec
             self.status_label.setText(
-                f"{_format_time(self._timeline_sec(), frames=True, fps=self._fps)} に"
-                "キーフレームを打ちました。")
+                tr("{time} にキーフレームを打ちました。",
+                   time=_format_time(self._timeline_sec(), frames=True,
+                                     fps=self._fps)))
         self._refresh()
         self._retrack()
 
@@ -785,7 +799,7 @@ class BlurSpecDialog(QDialog):
             return
         rect = self._plan.rect_at(spec, self._source_sec())
         if rect is None:
-            self.status_label.setText("この位置には枠がありません。")
+            self.status_label.setText(tr("この位置には枠がありません。"))
             return
         self._on_rect_committed(self._selected, rect)
 
@@ -795,14 +809,14 @@ class BlurSpecDialog(QDialog):
             return
         if len(blur_decisions.keys_of(spec)) <= 1:
             QMessageBox.information(
-                self, "キーフレーム",
-                "キーフレームが 1 つだけのため消せません。\n"
-                "指定そのものを消す場合は「削除」を押してください。")
+                self, tr("キーフレーム"),
+                tr("キーフレームが 1 つだけのため消せません。\n"
+                "指定そのものを消す場合は「削除」を押してください。"))
             return
         if self._controller.execute(
                 commands.RemoveBlurKey(self._selected, self._selected_key,
                                        epsilon=self._epsilon)):
-            self.status_label.setText("キーフレームを消しました。")
+            self.status_label.setText(tr("キーフレームを消しました。"))
         self._selected_key = None
         self._refresh()
         self._retrack()
@@ -845,8 +859,9 @@ class BlurSpecDialog(QDialog):
             self._controller.execute(commands.AddBlurSpecs(specs))
         if self._controller.execute(commands.SetBlurSpecMode(spec_id, mode)):
             self.status_label.setText(
-                "この囲みを残します (画面全体をぼかします)。" if mode == blur_decisions.KEEP
-                else "この囲みをぼかします。")
+                tr("この囲みを残します (画面全体をぼかします)。")
+                if mode == blur_decisions.KEEP
+                else tr("この囲みをぼかします。"))
         self._selected = str(spec_id)
         self._refresh()
 
@@ -857,29 +872,30 @@ class BlurSpecDialog(QDialog):
             return
         menu = QMenu(self)
         if spec.get("kind") == blur_decisions.KIND_AREA:
-            menu.addAction("ボカす / ボカさない を入れ替える",
+            menu.addAction(tr("ボカす / ボカさない を入れ替える"),
                            lambda: self._on_spec_activated(spec_id))
-            menu.addAction("ここにキーフレームを打つ", self._add_key_here)
-            menu.addAction("名前を変更", self._rename_selected)
-            menu.addAction("動かさない" if spec.get("follow", blur_decisions.FOLLOW_TRACK)
-                           == blur_decisions.FOLLOW_TRACK else "追いかける",
-                           self._toggle_follow)
+            menu.addAction(tr("ここにキーフレームを打つ"), self._add_key_here)
+            menu.addAction(tr("名前を変更"), self._rename_selected)
+            menu.addAction(
+                tr("動かさない") if spec.get("follow", blur_decisions.FOLLOW_TRACK)
+                == blur_decisions.FOLLOW_TRACK else tr("追いかける"),
+                self._toggle_follow)
             menu.addSeparator()
-        menu.addAction("削除", self._delete_selected)
+        menu.addAction(tr("削除"), self._delete_selected)
         menu.exec(global_pos)
 
     def _move_spec(self, delta):
         if not self._selected:
             return
         if self._controller.execute(commands.MoveBlurSpec(self._selected, delta)):
-            self.status_label.setText("指定の重ね順を変えました。")
+            self.status_label.setText(tr("指定の重ね順を変えました。"))
         self._refresh()
 
     def _delete_selected(self):
         if not self._selected:
             return
         if self._controller.execute(commands.RemoveBlurSpecs(self._selected)):
-            self.status_label.setText("指定を消しました。")
+            self.status_label.setText(tr("指定を消しました。"))
         self._selected = ""
         self._selected_key = None
         self._refresh()
@@ -891,7 +907,7 @@ class BlurSpecDialog(QDialog):
         if spec is None:
             return
         current = self._plan.label_of(spec)
-        text, accepted = QInputDialog.getText(self, "指定の名前", "名前:", text=current)
+        text, accepted = QInputDialog.getText(self, tr("指定の名前"), tr("名前:"), text=current)
         if not accepted:
             return
         name = blur_decisions.clean_label(text, int(self._cfg["editor"]["name_max_len"]))
@@ -899,7 +915,8 @@ class BlurSpecDialog(QDialog):
             name = ""
         if self._controller.execute(commands.RenameBlurSpec(self._selected, name)):
             self.status_label.setText(
-                f"「{name}」という名前にしました。" if name else "名前を消しました。")
+                tr("「{name}」という名前にしました。", name=name) if name
+                else tr("名前を消しました。"))
         self._refresh()
 
     # 追う ⇔ 動かさない
@@ -911,8 +928,8 @@ class BlurSpecDialog(QDialog):
         follow = blur_decisions.FOLLOW_FIXED if following else blur_decisions.FOLLOW_TRACK
         if self._controller.execute(commands.SetBlurSpecFollow(self._selected, follow)):
             self.status_label.setText(
-                "この囲みは動かしません (キーフレームの間は直線で結びます)。" if following
-                else "この囲みを追いかけます。")
+                tr("この囲みは動かしません (キーフレームの間は直線で結びます)。")
+                if following else tr("この囲みを追いかけます。"))
         self._refresh()
         if not following:
             self._retrack()
@@ -927,7 +944,7 @@ class BlurSpecDialog(QDialog):
             return
         self._seek(self._index_of(float(lost)))
         self.status_label.setText(
-            "ここから追えていません。枠を掴んで正しい位置へ動かすとキーフレームが打たれます。")
+            tr("ここから追えていません。枠を掴んで正しい位置へ動かすとキーフレームが打たれます。"))
 
     # ------------------------------------------------------------------
     # 追従 (§5.10.7)
@@ -942,13 +959,13 @@ class BlurSpecDialog(QDialog):
         if not blur_decisions.needs_tracking(decisions):
             return
         if not force and not self._cfg["track"]["auto_start"]:
-            self.status_label.setText("「追う」を押すと囲んだ場所を追いかけます。")
+            self.status_label.setText(tr("「追う」を押すと囲んだ場所を追いかけます。"))
             return
         if not self._models_ready(force):
             return
         self._ensure_tracks_holder(decisions)
 
-        progress = QProgressDialog("囲んだ場所を追いかけています…", "キャンセル", 0, 100, self)
+        progress = QProgressDialog(tr("囲んだ場所を追いかけています…"), tr("キャンセル"), 0, 100, self)
         progress.setWindowModality(Qt.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
@@ -970,9 +987,10 @@ class BlurSpecDialog(QDialog):
         count = holder[0] if holder else -1
         if count < 0:
             self.status_label.setText(
-                "追いかけられませんでした。枠はキーフレームの位置に置かれます。")
+                tr("追いかけられませんでした。枠はキーフレームの位置に置かれます。"))
         elif count:
-            self.status_label.setText(f"{count} か所を追いかけました。")
+            self.status_label.setText(
+                tr("{count} か所を追いかけました。", count=count))
         if self._cache_path:
             store.save(self._cache_path, self._tracks)
         self._refresh()
@@ -994,7 +1012,7 @@ class BlurSpecDialog(QDialog):
         if not available:
             self.status_label.setText(reason)
             if notify:
-                QMessageBox.information(self, "ぼかし", reason)
+                QMessageBox.information(self, tr("ぼかし"), reason)
         return True
 
     # ------------------------------------------------------------------

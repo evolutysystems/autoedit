@@ -4,6 +4,7 @@ import os
 import shutil
 
 from ..exceptions import InputError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from . import ffmpeg_runner, watermark_overlay
 
@@ -35,7 +36,8 @@ def resolve_output_path(input_path, output_dir, suffix=_DEFAULT_SUFFIX):
 # 中間ファイルを最終位置へ配置する
 def finalize(intermediate_path, output_path):
     if not os.path.exists(intermediate_path):
-        raise InputError(f"中間ファイルが存在しません: {intermediate_path}")
+        raise InputError(
+            tr("中間ファイルが存在しません: {path}", path=intermediate_path))
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 

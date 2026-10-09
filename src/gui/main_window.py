@@ -41,7 +41,10 @@ if __package__ is None or __package__ == "":
         load_settings,
         register_fonts_in_dir,
         resolve_fonts_dir,
+        save_settings,
     )
+    from src import i18n
+    from src.i18n import tr
     from src.timeline import project_io
     from src.timeline.builder import timeline_config
     from src.gui import theme
@@ -61,7 +64,10 @@ else:
         load_settings,
         register_fonts_in_dir,
         resolve_fonts_dir,
+        save_settings,
     )
+    from .. import i18n
+    from ..i18n import tr
     from ..timeline import project_io
     from ..timeline.builder import timeline_config
     from ..utils import updater
@@ -83,6 +89,7 @@ from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -118,6 +125,21 @@ _DROP_PLACEHOLDER = "ドラッグ＆ドロップでファイルを選択"
 _DROP_HINT = "動画ファイル / 保存した Timeline プロジェクト"
 _DROP_HINT_VIDEO = "実行すると無音カットからはじまります"
 _DROP_HINT_PROJECT = "実行すると編集の続きから書き出します"
+
+
+# 文言の貼り替えを子画面へ伝える (ver8 resolve §5)。
+# retranslate を持たない画面・まだ開いていない画面 (None) は黙って飛ばす。
+# 1 画面の失敗でほかの画面の貼り替えを止めない。
+def _retranslate_widget(widget):
+    if widget is None:
+        return
+    handler = getattr(widget, "retranslate", None)
+    if handler is None:
+        return
+    try:
+        handler()
+    except Exception:  # noqa: BLE001 (文言の貼り替え失敗で操作を止めない)
+        _logger.exception("文言の貼り替えに失敗しました: %s", type(widget).__name__)
 
 
 # ボタン 1 個を画面中央に置く行を作る (ver3 resolve15 §5.6-1)。
@@ -260,7 +282,7 @@ class BlurFailureBridge(QObject):
     def _on_confirm_requested(self, reason):
         try:
             answer = QMessageBox.question(
-                self._parent_window, "ぼかしを掛けられません",
+                self._parent_window, tr("ぼかしを掛けられません"),
                 reason, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             # 既定は「中止」。取りこぼしの損害の方が大きいため安全側へ倒す。
             self._result = answer == QMessageBox.Yes
@@ -379,7 +401,8 @@ def _format_failure_message(error):
         tail_lines = [ln for ln in str(stderr_tail).splitlines() if ln.strip()]
         excerpt = "\n".join(tail_lines[-6:])  # 末尾の実エラー行のみ抜粋
         if excerpt:
-            message = f"{message}\n\nFFmpeg エラー詳細:\n{excerpt}"
+            message = tr("{message}\n\nFFmpeg エラー詳細:\n{excerpt}",
+                         message=message, excerpt=excerpt)
     return message
 
 
@@ -576,7 +599,7 @@ class ClipTabWidget(QWidget):
 
         # ① ドラッグ&ドロップ領域 (resolve15 C1 / C4)。
         # 画面の主役。落としたファイル名をここへ出し、× で取り消す。
-        self.drop_area = FileDropArea(_DROP_PLACEHOLDER, _DROP_HINT)
+        self.drop_area = FileDropArea(tr(_DROP_PLACEHOLDER), tr(_DROP_HINT))
         self.drop_area.cleared.connect(self._clear_selection)
         root.addWidget(self.drop_area)
 
@@ -586,10 +609,11 @@ class ClipTabWidget(QWidget):
         input_row = QHBoxLayout()
         self.input_edit = QLineEdit()
         # 動画ファイルを直接ドラッグ&ドロップできる旨を案内する (resolve12)
-        self.input_edit.setPlaceholderText("動画ファイルをここにドラッグ&ドロップ、または「参照...」")
+        self.input_edit.setPlaceholderText(
+            tr("動画ファイルをここにドラッグ&ドロップ、または「参照...」"))
         self.input_edit.editingFinished.connect(self._on_input_edited)
         input_row.addWidget(self.input_edit)
-        self.browse_button = QPushButton("参照...")
+        self.browse_button = QPushButton(tr("参照..."))
         self.browse_button.clicked.connect(self._on_browse)
         input_row.addWidget(self.browse_button)
         root.addLayout(input_row)
@@ -600,9 +624,9 @@ class ClipTabWidget(QWidget):
         # ② 続きから (resolve15 C6)。押すと一覧を開く = 従来の「一覧...」と同じ動作。
         # 幅は実行ボタンと同じにする (C8)。中央に縦へ 2 つ積むため、幅が違うと
         # 左右の端が揃わない。塗りは付けない (主要動作は実行ボタンだけ)。
-        self.resume_button = QPushButton("続きから")
+        self.resume_button = QPushButton(tr("続きから"))
         self.resume_button.setToolTip(
-            "保存した Timeline プロジェクトを一覧から選びます")
+            tr("保存した Timeline プロジェクトを一覧から選びます"))
         self.resume_button.setFixedWidth(theme.PRIMARY_ACTION_BUTTON_WIDTH_PX)
         self.resume_button.clicked.connect(self._open_library)
         root.addLayout(_centered(self.resume_button))
@@ -612,14 +636,14 @@ class ClipTabWidget(QWidget):
         # デザインは従来のままで、位置だけ画面中央へ移した (resolve15 C7)。
         self.run_button = QPushButton()
         self.run_button.clicked.connect(self._on_run)
-        theme.setup_primary_action_button(self.run_button, theme.RUN_GLYPH, "実行")
+        theme.setup_primary_action_button(self.run_button, theme.RUN_GLYPH, tr("実行"))
         root.addLayout(_centered(self.run_button))
 
         # ④ 進捗バー + ⑤ ステータス (デザインは従来のまま / resolve15 C7)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         root.addWidget(self.progress_bar)
-        self.status_label = QLabel("待機中")
+        self.status_label = QLabel(tr("待機中"))
         root.addWidget(self.status_label)
         # 余った縦の空きは最後にまとめて捨てる (ver3 resolve15 §5.6-1)。
         # これが無いと空きが部品の間へ均等に配られ、ラベルが宙に浮いて見える。
@@ -629,7 +653,7 @@ class ClipTabWidget(QWidget):
         # 稼働証明スピナー: 実行中のみ status_label 先頭で回転させる
         # 進捗率が出ない工程 (音声認識等) でも「動いている」ことを示す
         self._spinner_index = 0
-        self._spinner_message = "待機中"
+        self._spinner_message = tr("待機中")
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(_SPINNER_INTERVAL_MS)
         self._spinner_timer.timeout.connect(self._tick_spinner)
@@ -640,6 +664,29 @@ class ClipTabWidget(QWidget):
         theme.refresh_primary_action_icon(self.run_button, theme.RUN_GLYPH)
         # D&D 領域のアイコン (⬇ / ✕) も同じ理由で描き直す (ver3 resolve15)
         self.drop_area.refresh_theme()
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # 画面を作り直さないため、選択中のファイルも進捗も失われない。
+    # 実行中のステータス表示はワーカーが次の進捗で上書きするため触らない
+    # (訳したそばから元の文言へ戻るのを避ける)。
+    def retranslate(self):
+        self.drop_area.set_texts(tr(_DROP_PLACEHOLDER), tr(_DROP_HINT))
+        # 選択中なら種別ごとの補足を出し直す (set_texts は未選択時しか貼り替えない)
+        kind, _path = self._selection
+        if kind == _KIND_VIDEO:
+            self.drop_area.set_hint(tr(_DROP_HINT_VIDEO))
+        elif kind == _KIND_PROJECT:
+            self.drop_area.set_hint(tr(_DROP_HINT_PROJECT))
+        self.input_edit.setPlaceholderText(
+            tr("動画ファイルをここにドラッグ&ドロップ、または「参照...」"))
+        self.browse_button.setText(tr("参照..."))
+        self.resume_button.setText(tr("続きから"))
+        self.resume_button.setToolTip(
+            tr("保存した Timeline プロジェクトを一覧から選びます"))
+        self.run_button.setToolTip(tr("実行"))
+        if not self._spinner_timer.isActive():
+            self._spinner_message = tr("待機中")
+            self.status_label.setText(tr("待機中"))
 
     # ===== 上部 40% の追従 (ver3 resolve15 §5.6-2) =====
 
@@ -671,7 +718,7 @@ class ClipTabWidget(QWidget):
         self._selection = (_KIND_VIDEO, path)
         self.input_edit.setText(path)
         self.drop_area.set_selection(
-            os.path.basename(path), path, _DROP_HINT_VIDEO)
+            os.path.basename(path), path, tr(_DROP_HINT_VIDEO))
 
     # 保存済みプロジェクトを選択状態にする (種別を確かめてから / resolve15 §5.6-5)。
     # MainWindow からも呼ぶため公開名にしている (種別違いの受け渡し / §5.7)。
@@ -687,14 +734,14 @@ class ClipTabWidget(QWidget):
         self._selection = (_KIND_PROJECT, path)
         self.input_edit.clear()
         self.drop_area.set_selection(
-            os.path.basename(path), path, _DROP_HINT_PROJECT)
+            os.path.basename(path), path, tr(_DROP_HINT_PROJECT))
 
     # 選択を取り消して案内文へ戻す (× ボタン / resolve15 C4)
     def _clear_selection(self):
         self._selection = (None, "")
         self.input_edit.clear()
         self.drop_area.clear()
-        self.status_label.setText("待機中")
+        self.status_label.setText(tr("待機中"))
 
     # 隠した入力欄が直接編集されたとき (show_file_row = true のときだけ起きる)
     def _on_input_edited(self):
@@ -714,7 +761,7 @@ class ClipTabWidget(QWidget):
     def _on_browse(self):
         start_dir = self._settings.get("general", {}).get("video_directory", "")
         path, _ = QFileDialog.getOpenFileName(
-            self, "入力動画を選択", start_dir, _VIDEO_FILE_FILTER
+            self, tr("入力動画を選択"), start_dir, tr(_VIDEO_FILE_FILTER)
         )
         if path:
             self._select_video(path)
@@ -803,7 +850,7 @@ class ClipTabWidget(QWidget):
                      or (self._settings.get("general", {}) or {}).get(
                          "output_directory", ""))
         path, _ = QFileDialog.getOpenFileName(
-            self, "Timeline プロジェクトを選択", start_dir, PROJECT_FILE_FILTER)
+            self, tr("Timeline プロジェクトを選択"), start_dir, PROJECT_FILE_FILTER)
         return path
 
     # 自動保存が本体より新しければ、そちらから復元するか尋ねる (ver3 resolve7 §5.9)
@@ -821,11 +868,11 @@ class ClipTabWidget(QWidget):
         except OSError:
             return None
         answer = QMessageBox.question(
-            self, "自動保存が見つかりました",
-            f"保存されていない編集が自動保存に残っています（{stamp}）。\n"
-            "こちらから編集を再開しますか?\n\n"
-            "「いいえ」を選ぶと、最後に保存した内容を開きます"
-            "（自動保存はそのまま残ります）。",
+            self, tr("自動保存が見つかりました"),
+            tr("保存されていない編集が自動保存に残っています（{stamp}）。\n"
+               "こちらから編集を再開しますか?\n\n"
+               "「いいえ」を選ぶと、最後に保存した内容を開きます"
+               "（自動保存はそのまま残ります）。", stamp=stamp),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         )
         return autosave if answer == QMessageBox.Yes else None
@@ -857,7 +904,7 @@ class ClipTabWidget(QWidget):
         self._worker.cancelled.connect(self._on_cancelled)
         self._worker.failed.connect(self._on_failed)
 
-        self._spinner_message = "プロジェクトを読み込み中..."
+        self._spinner_message = tr("プロジェクトを読み込み中...")
         self._set_running(True)
         self._worker.start()
 
@@ -880,20 +927,21 @@ class ClipTabWidget(QWidget):
         kind, path = self._selection
         if kind is None:
             QMessageBox.warning(
-                self, "入力エラー",
-                "動画ファイルをドラッグ&ドロップするか、"
-                "「続きから」でプロジェクトを選んでください。")
+                self, tr("入力エラー"),
+                tr("動画ファイルをドラッグ&ドロップするか、"
+                   "「続きから」でプロジェクトを選んでください。"))
             return
         if kind == _KIND_PROJECT:
             if not os.path.exists(path):
                 QMessageBox.warning(
-                    self, "開けません",
-                    f"プロジェクトファイルが見つかりません。\n{path}")
+                    self, tr("開けません"),
+                    tr("プロジェクトファイルが見つかりません。\n{path}", path=path))
                 return
             self._start_resume(path)
             return
         if not os.path.exists(path):
-            QMessageBox.warning(self, "入力エラー", "存在する入力動画を指定してください。")
+            QMessageBox.warning(self, tr("入力エラー"),
+                                tr("存在する入力動画を指定してください。"))
             return
         self._run_pipeline(path)
 
@@ -943,7 +991,7 @@ class ClipTabWidget(QWidget):
         self._worker.cancelled.connect(self._on_cancelled)
         self._worker.failed.connect(self._on_failed)
 
-        self._spinner_message = "処理開始..."
+        self._spinner_message = tr("処理開始...")
         self._set_running(True)
         self._worker.start()
 
@@ -977,20 +1025,23 @@ class ClipTabWidget(QWidget):
     def _on_finished_ok(self, output_path):
         self._set_running(False)
         self.progress_bar.setValue(100)
-        self.status_label.setText(f"完了: {output_path}")
-        QMessageBox.information(self, "完了", f"処理が完了しました。\n{output_path}")
+        self.status_label.setText(tr("完了: {path}", path=output_path))
+        QMessageBox.information(self, tr("完了"),
+                                tr("処理が完了しました。\n{path}", path=output_path))
 
     # ユーザーキャンセルによる中断 (異常終了ではない)
     def _on_cancelled(self):
         self._set_running(False)
-        self.status_label.setText("中断しました (字幕編集をキャンセル)")
-        QMessageBox.information(self, "中断", "字幕編集がキャンセルされたため処理を中断しました。")
+        self.status_label.setText(tr("中断しました (字幕編集をキャンセル)"))
+        QMessageBox.information(self, tr("中断"),
+                                tr("字幕編集がキャンセルされたため処理を中断しました。"))
 
     # 異常終了
     def _on_failed(self, message):
         self._set_running(False)
-        self.status_label.setText("エラーで停止しました")
-        QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
+        self.status_label.setText(tr("エラーで停止しました"))
+        QMessageBox.critical(self, tr("エラー"),
+                             tr("処理に失敗しました。\n{message}", message=message))
 
 
 # GUI ランチャ本体 (タブホスト)
@@ -1022,6 +1073,9 @@ class MainWindow(QWidget):
         # 出力処理・残高表示・アカウントタブで共有する (§6.4 のリフレッシュ直列化)。
         self._points = services_config.shared_points(self._settings)
         self._build_ui()
+        # 言語切替の通知を購読する (ver8 resolve §5)。
+        # メイン画面は起動中ずっと生きているため解除は要らない。
+        i18n.subscribe(self._retranslate)
         # 初期サイズ (ver3 resolve15 §5.7)。
         # 従来は中身に合わせて開いていたが、クリップ用タブの D&D 領域を
         # 「タブページの高さの 40%」にするには基準になる高さが要る。
@@ -1055,6 +1109,7 @@ class MainWindow(QWidget):
         self.clip_tab.refresh_theme()
         self.archive_tab.refresh_theme()
         self._refresh_settings_icon()
+        self._sync_language_combo_height()
         # 加入済みの印も QPixmap へ焼き込むため描き直す (ver6 resolve2 §4.2)。
         # Twitch のブランド色は変わらないが、Stripe の success はテーマに追随する。
         if self._subscription_kind:
@@ -1067,6 +1122,15 @@ class MainWindow(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._apply_native_backdrop()
+        self._sync_language_combo_height()
+
+    # 言語ドロップダウンの高さを設定ボタンへ揃える (ver8 resolve §5)。
+    # QSS が当たる前 (_build_ui の時点) はボタンの sizeHint が本来より大きいため、
+    # 表示後に測り直す。テーマ貼り替えで余白が変わったときも呼び直す。
+    def _sync_language_combo_height(self):
+        height = self.settings_button.height() or self.settings_button.sizeHint().height()
+        if height > 0:
+            self.language_combo.setFixedHeight(height)
 
     # ネイティブ背景効果を 1 度だけ要求する (失敗してもグラデーション背景で成立する)
     def _apply_native_backdrop(self):
@@ -1081,10 +1145,10 @@ class MainWindow(QWidget):
         self.tabs = QTabWidget()
         # クリップ用タブ (現行機能を無改変移設)
         self.clip_tab = ClipTabWidget(points=self._points)
-        self.tabs.addTab(self.clip_tab, "クリップ用")
+        self.tabs.addTab(self.clip_tab, tr("クリップ用"))
         # アーカイブ切り抜き用タブ (R0: 準備中)
         self.archive_tab = ArchiveTabWidget(points=self._points)
-        self.tabs.addTab(self.archive_tab, "アーカイブ切り抜き用")
+        self.tabs.addTab(self.archive_tab, tr("アーカイブ切り抜き用"))
         # 先頭 (クリップ用) タブ選択時のみペイン左上を四角にする (resolve4 M1)
         theme.bind_tab_pane_corner(self.tabs)
 
@@ -1093,15 +1157,15 @@ class MainWindow(QWidget):
         # どのタブを選んでいても開けるようコーナーウィジェットにする。
         self.settings_button = QPushButton()
         self.settings_button.setIconSize(QSize(theme.BUTTON_ICON_PX, theme.BUTTON_ICON_PX))
-        self.settings_button.setToolTip("設定")
+        self.settings_button.setToolTip(tr("設定"))
         theme.mark_icon_button(self.settings_button)
         self.settings_button.clicked.connect(self._on_open_settings)
         # サブスクリプション画面を開くボタン (ver6 resolve2 §2.1 / 要望 A)。
         # 設定ボタンの左へ置く。加入済みなら押せなくし、文言の左へチェックマークを出す。
-        self.subscription_button = QPushButton("サブスクリプション")
+        self.subscription_button = QPushButton(tr("サブスクリプション"))
         self.subscription_button.setIconSize(
             QSize(theme.BUTTON_ICON_PX, theme.BUTTON_ICON_PX))
-        self.subscription_button.setToolTip("サブスクリプションの登録")
+        self.subscription_button.setToolTip(tr("サブスクリプションの登録"))
         self.subscription_button.clicked.connect(self._on_open_subscription)
         # 残高インジケータ (ver5 resolve §5.6 R11)。設定ボタンの左へ並べる。
         self.points_indicator = PointsIndicator(self._points, self._settings)
@@ -1109,11 +1173,29 @@ class MainWindow(QWidget):
         # インジケータが取った値を購読する (ver6 resolve2 §4.2)。
         self.points_indicator.balance_changed.connect(self._refresh_subscription_button)
 
+        # 表示言語の切替 (ver8 resolve §5)。設定ボタンと同じ帯の左端へ置く。
+        # タブバーと同じ高さの左コーナーへ入れるため、設定ボタンと高さが揃う。
+        self.language_combo = QComboBox()
+        self.language_combo.setToolTip(tr("表示言語"))
+        for code in i18n.SUPPORTED_LANGUAGES:
+            self.language_combo.addItem(i18n.LANGUAGE_NAMES[code], code)
+        self.language_combo.setCurrentIndex(
+            self.language_combo.findData(i18n.language()))
+        # 選んだ項目で幅が動かないよう、最も長い表示名に合わせた幅を確保する。
+        # 高さは QSS が当たってから設定ボタンへ揃える (_sync_language_combo_height)。
+        self.language_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+
         # コーナーへ直接置くとボタンの下辺がペインへ接するため、
         # 余白付きの入れ物で包んでから渡す (ver3 resolve15 D1)。
         theme.install_tab_corner(
             self.tabs,
             [self.points_indicator, self.subscription_button, self.settings_button],
+            spacing=theme.BUTTON_ICON_PX // 2)
+        # 左コーナー (タブバーの左) へ言語ドロップダウンを置く。
+        # 右コーナーと同じ入れ物で包むので、下辺の余白も揃う。
+        theme.install_tab_corner(
+            self.tabs, self.language_combo, corner=Qt.TopLeftCorner,
             spacing=theme.BUTTON_ICON_PX // 2)
         self._refresh_settings_icon()
         # インジケータの生成中に流れた 1 回目は購読前のため取りこぼす。
@@ -1212,8 +1294,8 @@ class MainWindow(QWidget):
             if subscribed else QIcon())
         self.subscription_button.setEnabled(not subscribed and not self._running_tabs)
         self.subscription_button.setToolTip(
-            "サブスクリプションに加入済みです" if subscribed
-            else "サブスクリプションの登録")
+            tr("サブスクリプションに加入済みです") if subscribed
+            else tr("サブスクリプションの登録"))
 
     # タブの実行状態が変わったときに設定ボタンの可否を更新する (resolve4 §5.7-4)
     # 実行中のタブを集合で持つのは、一方が終わってももう一方が実行中なら
@@ -1231,6 +1313,44 @@ class MainWindow(QWidget):
         # 途中で加入されると画面の表示と実際の出力が食い違う。
         self.subscription_button.setEnabled(
             not self._running_tabs and not self._subscription_kind)
+
+    # ===== 表示言語の切替 (ver8 resolve §5) =====
+
+    # ドロップダウンで言語が変わったとき。
+    # setting.json へ保存してから i18n へ反映し、開いている画面の文言を貼り替える。
+    # テーマ貼り替え (_on_theme_changed) と同じ方針で、編集中の状態は失わない。
+    def _on_language_changed(self, index):
+        code = self.language_combo.itemData(index)
+        if not code or code == i18n.language():
+            return
+        # 保存に失敗しても表示だけは切り替える (次回起動で戻るだけで操作は妨げない)
+        try:
+            self._settings.setdefault("ui", {})["language"] = code
+            save_settings(self._settings)
+        except OSError:
+            _logger.exception("表示言語の保存に失敗しました: %s", code)
+        # theme の設定キャッシュも言語を持っているため作り直す
+        theme.invalidate_cache()
+        # i18n.set_language が購読者 (各画面の retranslate) へ通知する
+        i18n.set_language(code)
+
+    # 文言を現在の言語へ貼り替える (i18n.subscribe で呼ばれる)。
+    # 画面を作り直さないため、選択中のファイル・Timeline の内容・Undo 履歴は保たれる。
+    # その場で開いていないダイアログは、次に開いたときに新しい言語で作られる。
+    def _retranslate(self):
+        self.tabs.setTabText(0, tr("クリップ用"))
+        self.tabs.setTabText(1, tr("アーカイブ切り抜き用"))
+        self.settings_button.setToolTip(tr("設定"))
+        self.subscription_button.setText(tr("サブスクリプション"))
+        self.language_combo.setToolTip(tr("表示言語"))
+        # 加入状態によって文言が変わるため、専用の更新経路へ任せる
+        self._refresh_subscription_button(self._points.last_balance())
+        _retranslate_widget(self.clip_tab)
+        _retranslate_widget(self.archive_tab)
+        _retranslate_widget(self.points_indicator)
+        # 開いたままの別ウィンドウも追従させる
+        _retranslate_widget(self._settings_window)
+        _retranslate_widget(self._subscription_window)
 
     # 設定ボタンのアイコンを現在のテーマ色で描き直す (resolve3 §5.10-2)
     def _refresh_settings_icon(self):
@@ -1255,9 +1375,9 @@ class MainWindow(QWidget):
     def _on_update_available(self, latest):
         tag = latest.get("tag", "")
         answer = QMessageBox.question(
-            self, "更新の確認",
-            f"新しいバージョン {tag} が公開されています。\n"
-            "今すぐ更新しますか？（更新中はアプリが再起動されます）",
+            self, tr("更新の確認"),
+            tr("新しいバージョン {tag} が公開されています。\n"
+               "今すぐ更新しますか？（更新中はアプリが再起動されます）", tag=tag),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -1266,9 +1386,9 @@ class MainWindow(QWidget):
 
         # ダウンロード進捗ダイアログ (キャンセル不可: 途中中断で不整合を避ける)
         self._update_progress = QProgressDialog(
-            "更新プログラムをダウンロードしています...", None, 0, 100, self
+            tr("更新プログラムをダウンロードしています..."), None, 0, 100, self
         )
-        self._update_progress.setWindowTitle("更新")
+        self._update_progress.setWindowTitle(tr("更新"))
         self._update_progress.setWindowModality(Qt.WindowModal)
         self._update_progress.setAutoClose(False)
         self._update_progress.setValue(0)
@@ -1297,14 +1417,16 @@ class MainWindow(QWidget):
         if self._update_progress is not None:
             self._update_progress.close()
         QMessageBox.information(
-            self, "更新",
-            "更新プログラムを起動します。アプリを終了します。",
+            self, tr("更新"),
+            tr("更新プログラムを起動します。アプリを終了します。"),
         )
         try:
             updater.launch_installer(installer_path)
         except Exception as e:  # noqa: BLE001 (起動失敗も GUI へ通知)
             _logger.exception("更新プログラムの起動に失敗")
-            QMessageBox.warning(self, "更新", f"更新プログラムの起動に失敗しました。\n{e}")
+            QMessageBox.warning(
+                self, tr("更新"),
+                tr("更新プログラムの起動に失敗しました。\n{error}", error=e))
             return
         # インストーラが本体を上書きできるよう、アプリを終了する
         QApplication.quit()
@@ -1314,8 +1436,9 @@ class MainWindow(QWidget):
         if self._update_progress is not None:
             self._update_progress.close()
         QMessageBox.warning(
-            self, "更新",
-            f"更新のダウンロードに失敗しました。次回起動時に再試行します。\n{message}",
+            self, tr("更新"),
+            tr("更新のダウンロードに失敗しました。次回起動時に再試行します。\n{message}",
+               message=message),
         )
 
 
@@ -1350,10 +1473,14 @@ def main():
     icon_path = _resolve_app_icon_path()
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))
+    # 表示言語を反映する (ver8 resolve §4)。
+    # 画面を 1 つも作る前に当てることで、起動時から選ばれている言語で表示される。
+    settings = load_settings()
+    i18n.apply(settings)
     # ガラスモーフィズムのテーマを適用する (ver3 resolve3 §5.9)。
     # QApplication へ 1 回当てるだけで、以後に作られるダイアログにも自動で効く。
     # ui.theme = "system" のときは何も当てず従来の Qt 既定で起動する。
-    theme.apply(app, load_settings())
+    theme.apply(app, settings)
     window = MainWindow()
     window.show()
     # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)

@@ -17,6 +17,7 @@
 import os
 import tempfile
 
+from ..i18n import tr
 from ..modules import loudness_normalizer
 from ..utils.logger import get_logger
 from .builder import timeline_config
@@ -160,7 +161,7 @@ def _recover_body(source, settings, cfg, context):
 
     output_path = _work_path(context)
     _logger.info("本編素材を元動画から作り直します: %s", input_path)
-    on_progress = (context.progress_subcallback("素材の復旧 実行中…")
+    on_progress = (context.progress_subcallback(tr("素材の復旧 実行中…"))
                    if context is not None else None)
     # 失敗・スキップ時は normalize_file が input_path を返す (処理は止めない / §7)
     result = loudness_normalizer.normalize_file(

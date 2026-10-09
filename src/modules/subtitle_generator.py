@@ -6,6 +6,7 @@
 import os
 
 from ..exceptions import AutoEditError, FFmpegError, PipelineCancelled, SubtitleError
+from ..i18n import tr
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
@@ -372,8 +373,8 @@ class WhisperTextSource(TextSource):
             from faster_whisper import WhisperModel
         except ImportError as e:
             raise SubtitleError(
-                "faster-whisper が未導入のため音声認識を実行できません "
-                "(pip install faster-whisper)。subtitle.engine を 'none' にするとスキップできます。"
+                tr("faster-whisper が未導入のため音声認識を実行できません "
+                "(pip install faster-whisper)。subtitle.engine を 'none' にするとスキップできます。")
             ) from e
 
         # CUDA 不使用方針 (docs/request/resolve8.md) により常に CPU で実行する
@@ -1128,7 +1129,7 @@ def _review_timeline(context, timeline, subtitle_cfg):
 
     # キャンセル (None) 時はパイプライン全体を中断する (§10-2)
     if edited is None:
-        raise PipelineCancelled("字幕編集がキャンセルされたためパイプラインを中断します")
+        raise PipelineCancelled(tr("字幕編集がキャンセルされたためパイプラインを中断します"))
 
     # 使用チェックされたエントリのみを残す (use キーは焼き込み前に除去)
     # 確定時に改行を再適用する (手動改行 \\N は尊重しつつ長い行を折る)。
@@ -1195,7 +1196,8 @@ def run(context):
     try:
         timeline = text_source.extract(input_path, subtitle_cfg.get("language", "ja"))
     except Exception as e:
-        raise SubtitleError(f"テキストソース抽出に失敗: {e}") from e
+        raise SubtitleError(
+            tr("テキストソース抽出に失敗: {error}", error=e)) from e
 
     if not timeline:
         _logger.warning("テロップタイムラインが空のためスキップ")

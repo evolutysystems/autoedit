@@ -11,6 +11,7 @@ import os
 import tempfile
 
 from ..exceptions import InputError, PipelineCancelled
+from ..i18n import tr
 from ..modules import ffmpeg_runner, loudness_normalizer
 from ..services import points as points_service
 from ..timeline import media_recovery, media_sidecar, project_io
@@ -79,7 +80,9 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
 
         # ① 映像を切り直す (ストリームコピーのため数秒)
         if progress_cb:
-            progress_cb(position, f"素材 {done[0]}/{total} を復元中…（切り出し）")
+            progress_cb(position,
+                        tr("素材 {done}/{total} を復元中…（切り出し）",
+                           done=done[0], total=total))
         raw = os.path.join(clip_dir, "raw.mp4")
         clip_writer.cut_region(vod, float(entry.get("vod_start", 0.0)),
                                float(entry.get("vod_end", 0.0)), raw, ffmpeg_cfg)
@@ -192,7 +195,7 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
     # 透かしが入るなら開始前に確認する (R12)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
-        raise PipelineCancelled("透かし入りでの出力を取りやめました")
+        raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         outputs = _run_from_archive_project(
             project_path, settings, progress_cb, result_callback, relink_callback,
@@ -216,7 +219,8 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
     _logger.info("保存済みアーカイブプロジェクトから再開: %s", project_path)
 
     if not project_path or not os.path.exists(project_path):
-        raise InputError(f"プロジェクトファイルが見つかりません: {project_path}")
+        raise InputError(
+            tr("プロジェクトファイルが見つかりません: {path}", path=project_path))
 
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
@@ -230,8 +234,8 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
         load_path, min_clip_sec=cfg["min_clip_sec"], validate_timeline=False)
     if not is_archive_project(timeline):
         raise InputError(
-            "アーカイブ切り抜き用のプロジェクトではありません。"
-            "クリップ用タブの「編集の続き」から開いてください。")
+            tr("アーカイブ切り抜き用のプロジェクトではありません。"
+            "クリップ用タブの「編集の続き」から開いてください。"))
 
     # 元 VOD が見つからなければ差し替えを尋ねる (無いと映像を復元できない)
     _ensure_vod(timeline, relink_callback)
@@ -255,7 +259,7 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
             _logger.info("素材の復元情報を %d 件補いました: %s",
                          len(repaired), ", ".join(repaired))
         if progress_cb:
-            progress_cb(0.0, "素材を復元中…")
+            progress_cb(0.0, tr("素材を復元中…"))
         recover_progress = None
         if progress_cb:
             def recover_progress(ratio, label):
@@ -269,12 +273,12 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
         project_io.validate(timeline, min_clip_sec=cfg["min_clip_sec"])
         _log_recovery(stats)
         if progress_cb:
-            progress_cb(0.55, "素材の復元が完了しました")
+            progress_cb(0.55, tr("素材の復元が完了しました"))
 
         # ② 編集画面 (未注入の CLI/テスト経路は全件そのまま採用)
         prepared = rebuild_prepared(timeline)
         if not prepared:
-            raise InputError("復元できたクリップがありません（元 VOD を確認してください）")
+            raise InputError(tr("復元できたクリップがありません（元 VOD を確認してください）"))
         curve = list(archive_section(timeline).get("curve") or [])
         if result_callback is not None:
             # workdir/clip_settings は編集画面でのセクション追加に要る (ver3 resolve13 §5.6)
@@ -283,7 +287,7 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
                                      created_at=meta.get("created_at"),
                                      workdir=workdir, clip_settings=clip_settings)
             if review is None:
-                raise PipelineCancelled("再編集がキャンセルされたため中断します")
+                raise PipelineCancelled(tr("再編集がキャンセルされたため中断します"))
             if isinstance(review, dict):
                 timeline = review.get("timeline") or timeline
                 edited = review.get("clips") or []
@@ -319,8 +323,8 @@ def _ensure_vod(timeline, relink_callback):
         })
     if not replaced or not os.path.exists(replaced):
         raise InputError(
-            f"元の配信アーカイブ（VOD）が見つかりません。\n{recorded}\n"
-            "素材を復元できないため開けません。")
+            tr("元の配信アーカイブ（VOD）が見つかりません。\n{path}\n"
+               "素材を復元できないため開けません。", path=recorded))
     source["input_path"] = replaced
     archive = dict(source.get("archive") or {})
     archive["vod_path"] = replaced

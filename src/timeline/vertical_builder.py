@@ -12,6 +12,7 @@
 # 元の Timeline は読むだけで、変更しない (§4-5)。
 import copy
 
+from ..i18n import tr
 from ..modules import output_profile
 from ..utils.logger import get_logger
 from . import crop
@@ -48,7 +49,7 @@ _MIN_SUBTITLE_SEC = 0.05
 def build(timeline, clip_ids, layout, settings, close_gaps=True, rebase=None):
     clips = _target_clips(timeline, clip_ids)
     if not clips:
-        raise ValueError("縦動画にするクリップが選ばれていません")
+        raise ValueError(tr("縦動画にするクリップが選ばれていません"))
 
     profile = output_profile._portrait_profile((settings or {}).get("vertical", {}))
     vertical = Timeline(

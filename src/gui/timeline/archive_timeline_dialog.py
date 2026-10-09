@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...archive import clip_writer, project_resume, vod_rebase
+from ...i18n import tr
 from ...modules import ffmpeg_runner
 from ...archive import config as archive_config
 from ...archive import timeline_builder as archive_timeline
@@ -89,7 +90,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._vod_duration = 0.0
         super().__init__(timeline, settings, work_dir, parent=parent,
                          project_path=project_path, created_at=created_at, mode=mode)
-        self.setWindowTitle("切り抜き編集 (採点結果)")
+        self.setWindowTitle(tr("切り抜き編集 (採点結果)"))
         # 再生ヘッドの移動でクリップバーの対象を切り替える (§3-4)
         self.controller.playhead_moved.connect(self._on_playhead_moved)
         self.controller.timeline_changed.connect(self._sync_clip_bar)
@@ -111,7 +112,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self.graph.set_data(self._curve, self._clips_meta())
         self.graph.clip_selected.connect(self.jump_to_clip)
 
-        self.graph_dock = QDockWidget("採点グラフ")
+        self.graph_dock = QDockWidget(tr("採点グラフ"))
         # saveState はドックを objectName で識別する (未設定だと復元できない)
         self.graph_dock.setObjectName("archiveScoreGraph")
         self.graph_dock.setWidget(self.graph)
@@ -129,7 +130,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         return host
 
     def _decide_button_text(self):
-        return "完了（切り抜き＋字幕焼き込み）"
+        return tr("完了（切り抜き＋字幕焼き込み）")
 
     # 保存まわりのフック (ver3 resolve9 §5.4)。
     # resolve7 §3-6 では保存 UI を出していなかったが、素材の復旧 (VOD からの
@@ -146,7 +147,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             name_suffix=self.controller.cfg["project"]["archive_suffix"])
 
     def _title_base(self):
-        return "切り抜き編集"
+        return tr("切り抜き編集")
 
     # ------------------------------------------------------------------
     # 縦動画プロジェクト (ver5 resolve10)
@@ -194,7 +195,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(6, 4, 6, 4)
 
-        layout.addWidget(QLabel("クリップ"))
+        layout.addWidget(QLabel(tr("クリップ")))
         self.clip_combo = QComboBox()
         self.clip_combo.setMinimumWidth(
             int(self.controller.cfg["ui"]["archive_clip_selector_width_px"]))
@@ -206,27 +207,27 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         # (従来画面からの流用・CLI) では出さない。
         self.add_section_button = None
         if self._section_add_available():
-            self.add_section_button = QPushButton("セクション追加...")
+            self.add_section_button = QPushButton(tr("セクション追加..."))
             self.add_section_button.setAutoDefault(False)
             self.add_section_button.setToolTip(
-                "元動画の区間を指定してセクションを追加します。\n"
+                tr("元動画の区間を指定してセクションを追加します。\n"
                 "元動画の時系列に合わせた位置へ挿入され、"
-                "既存セクションと重なる場合は 1 つへ統合されます。")
+                "既存セクションと重なる場合は 1 つへ統合されます。"))
             self.add_section_button.clicked.connect(self._on_add_section)
             layout.addWidget(self.add_section_button)
 
-        self.use_check = QCheckBox("このクリップを使用する")
+        self.use_check = QCheckBox(tr("このクリップを使用する"))
         self.use_check.setToolTip(
-            "外すと Timeline 上で灰色になり、書き出しから外れます (戻せます)")
+            tr("外すと Timeline 上で灰色になり、書き出しから外れます (戻せます)"))
         self.use_check.setChecked(True)
         self.use_check.toggled.connect(self._on_use_toggled)
         layout.addWidget(self.use_check)
 
-        layout.addWidget(QLabel("テーマ"))
+        layout.addWidget(QLabel(tr("テーマ")))
         self.theme_edit = QLineEdit()
-        self.theme_edit.setPlaceholderText("空欄=テーマ演出なし")
+        self.theme_edit.setPlaceholderText(tr("空欄=テーマ演出なし"))
         self.theme_edit.setToolTip(
-            "入力するとクリップ先頭にイントロカード、本編に左上タグが付きます")
+            tr("入力するとクリップ先頭にイントロカード、本編に左上タグが付きます"))
         self.theme_edit.editingFinished.connect(self._on_theme_changed)
         layout.addWidget(self.theme_edit, 1)
         return bar
@@ -265,8 +266,10 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             self.clip_combo.clear()
             for row in rows:
                 self.clip_combo.addItem(
-                    f"clip{row['index']}  {_fmt(row['start'])}→{_fmt(row['end'])}"
-                    f"  点{row['score']:.1f}", row["index"])
+                    tr("clip{index}  {start}→{end}  点{score:.1f}",
+                       index=row["index"], start=_fmt(row["start"]),
+                       end=_fmt(row["end"]), score=row["score"]),
+                    row["index"])
         finally:
             self.clip_combo.blockSignals(False)
         # 選択中のセクションが消えていたら先頭へ寄せる
@@ -394,26 +397,28 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     def _preview_add(self, start, end):
         plan = self._plan_add(start, end)
         if plan is None:
-            return ("この区間はすべて Timeline で使われています。"
-                    "使われていない時間を指定してください。", False)
+            return (tr("この区間はすべて Timeline で使われています。"
+                       "使われていない時間を指定してください。"), False)
         if plan.get("too_many"):
-            return (f"用意する区間が {plan['too_many']} 個に分かれます"
-                    f"（上限 {self._section_cfg['max_ranges']} 個）。"
-                    "もっと狭い範囲を指定してください。", False)
+            return (tr("用意する区間が {count} 個に分かれます（上限 {limit} 個）。"
+                       "もっと狭い範囲を指定してください。",
+                       count=plan["too_many"],
+                       limit=self._section_cfg["max_ranges"]), False)
 
         lines = []
         covered = float(plan.get("covered_sec") or 0.0)
         ranges = plan.get("ranges") or []
         if covered > 0.5 or len(ranges) > 1:
             total = sum(e - s for s, e in ranges)
-            head = (f"うち {_fmt(covered)} は既に使われているため、"
+            head = (tr("うち {covered} は既に使われているため、", covered=_fmt(covered))
                     if covered > 0.5 else "")
-            lines.append(f"{head}{len(ranges)} 個の区間（合計 {_fmt(total)}）を用意します")
+            lines.append(tr("{head}{count} 個の区間（合計 {total}）を用意します",
+                            head=head, count=len(ranges), total=_fmt(total)))
         if plan["merge_indexes"]:
             names = "・".join(f"clip{i}" for i in plan["merge_indexes"])
             span = plan["span"]
-            lines.append(f"{names} と統合され、1 つのセクション "
-                         f"{_fmt(span[0])}→{_fmt(span[1])} になります")
+            lines.append(tr("{names} と統合され、1 つのセクション {start}→{end} になります",
+                            names=names, start=_fmt(span[0]), end=_fmt(span[1])))
         return "\n".join(lines), True
 
     # 「セクション追加...」
@@ -430,16 +435,17 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         plan = self._plan_add(start, end)
         if plan is None:
             QMessageBox.information(
-                self, "セクションの追加",
-                "指定した区間は、すべて Timeline で使われています。\n"
-                "まだ使っていない時間を指定してください。")
+                self, tr("セクションの追加"),
+                tr("指定した区間は、すべて Timeline で使われています。\n"
+                "まだ使っていない時間を指定してください。"))
             return
         if plan.get("too_many"):
             QMessageBox.information(
-                self, "セクションの追加",
-                f"用意する区間が {plan['too_many']} 個に分かれます"
-                f"（上限 {self._section_cfg['max_ranges']} 個）。\n"
-                "指定する範囲を狭くしてください。")
+                self, tr("セクションの追加"),
+                tr("用意する区間が {count} 個に分かれます（上限 {limit} 個）。\n"
+                   "指定する範囲を狭くしてください。",
+                   count=plan["too_many"],
+                   limit=self._section_cfg["max_ranges"]))
             return
 
         # 差分ごとに番号を振る (統合時は後で代表番号へ揃える / §3-4 ④)。
@@ -463,8 +469,8 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     def _start_section_worker(self, jobs, plan):
         total = sum(job["end"] - job["start"] for job in jobs)
         self._section_progress = QProgressDialog(
-            "セクションを準備中…", "キャンセル", 0, 100, self)
-        self._section_progress.setWindowTitle("セクションの追加")
+            tr("セクションを準備中…"), tr("キャンセル"), 0, 100, self)
+        self._section_progress.setWindowTitle(tr("セクションの追加"))
         self._section_progress.setWindowModality(Qt.WindowModal)
         self._section_progress.setAutoClose(False)
         self._section_progress.setAutoReset(False)
@@ -493,7 +499,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             self._section_worker.cancel()
         if self._section_progress is not None:
             self._section_progress.setLabelText(
-                "現在の工程が終わり次第、中止します…")
+                tr("現在の工程が終わり次第、中止します…"))
 
     def _close_section_progress(self):
         if self._section_progress is not None:
@@ -506,7 +512,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     def _on_section_ready(self, entries, plan):
         self._close_section_progress()
         if not entries:
-            self.preview.set_status("セクションの追加を中止しました")
+            self.preview.set_status(tr("セクションの追加を中止しました"))
             return
         # キャンセルで一部しか用意できていない場合は、用意できた区間だけを入れる
         prepared_ranges = {(round(e["start"], 3), round(e["end"], 3)) for e in entries}
@@ -519,7 +525,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             entries, self._clip_settings, plan,
             min_clip_sec=self.controller.cfg["min_clip_sec"])
         if not self.controller.execute(command):
-            self.preview.set_status("セクションを追加できませんでした")
+            self.preview.set_status(tr("セクションを追加できませんでした"))
             return
 
         # 書き出しが使う準備済みデータを更新する (統合時は代表へ畳む / §3-6)
@@ -537,15 +543,15 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self.jump_to_clip(target)
         span = plan["span"]
         self.preview.set_status(
-            f"セクションを追加しました（clip{target} / "
-            f"{_fmt(span[0])}→{_fmt(span[1])}）")
+            tr("セクションを追加しました（clip{index} / {start}→{end}）",
+               index=target, start=_fmt(span[0]), end=_fmt(span[1])))
 
     def _on_section_failed(self, message):
         self._close_section_progress()
         _logger.warning("セクションの準備に失敗しました: %s", message)
         QMessageBox.warning(
-            self, "セクションの追加",
-            f"セクションを準備できませんでした。\n\n{message}")
+            self, tr("セクションの追加"),
+            tr("セクションを準備できませんでした。\n\n{message}", message=message))
 
     # ------------------------------------------------------------------
     # ドック配置の保存・復元 (§7)
@@ -612,7 +618,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
                 clip_index, sub_timeline, prepared,
                 archive_timeline.clip_theme(self.controller.timeline, clip_index)))
         if not entries:
-            self.preview.set_status("出力できるクリップがありません")
+            self.preview.set_status(tr("出力できるクリップがありません"))
             return
         run_resolve_export(
             self,
@@ -626,7 +632,7 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     # 「完了」時は映像クリップの有無だけ見る (基底は Timeline 用の文言で警告する)
     def accept(self):
         if not self.controller.timeline.base_clips():
-            self.preview.set_status("使用するクリップがありません")
+            self.preview.set_status(tr("使用するクリップがありません"))
             return
         # 決定後は書き出し側が本体を上書き保存するため自動保存は要らなくなる
         # (基底 accept と同じ後始末 / ver3 resolve9 §5.4)
@@ -681,16 +687,18 @@ class _SectionPrepareWorker(QThread):
                     break
 
                 def phase(label, _pos=pos, _job=job):
-                    head = f"区間 {_pos + 1}/{total}" if total > 1 else "セクション"
+                    head = (tr("区間 {pos}/{total}", pos=_pos + 1, total=total)
+                            if total > 1 else tr("セクション"))
                     self.progress.emit(
                         _pos / total,
-                        f"{head} {format_hms(_job['start'])}→{format_hms(_job['end'])}"
-                        f" を準備中…（{label}）")
+                        tr("{head} {start}→{end} を準備中…（{phase}）",
+                           head=head, start=format_hms(_job["start"]),
+                           end=format_hms(_job["end"]), phase=label))
 
                 entries.append(clip_writer.prepare_one_clip(
                     self._source_path, self._settings, self._clip_settings, job,
                     ffmpeg_cfg, self._workdir, use_timeline=True, progress_cb=phase))
-            self.progress.emit(1.0, "準備が完了しました")
+            self.progress.emit(1.0, tr("準備が完了しました"))
             self.finished_ok.emit(entries)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("セクションの準備に失敗しました")

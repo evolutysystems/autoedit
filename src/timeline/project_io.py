@@ -10,6 +10,7 @@ import shutil
 from datetime import datetime
 
 from ..exceptions import TimelineError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from .model import (
     BASE_AUDIO_TRACK_ID,
@@ -251,7 +252,8 @@ def save(timeline, dest_path, generator="", created_at=None, project_path=None,
                 os.remove(temp_path)
         except OSError:
             pass
-        raise TimelineError(f"プロジェクトファイルの書き出しに失敗しました: {e}") from e
+        raise TimelineError(
+            tr("プロジェクトファイルの書き出しに失敗しました: {error}", error=e)) from e
     _logger.info("プロジェクト保存: %s", dest_path)
     return dest_path
 
@@ -271,7 +273,8 @@ def _parse(text):
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
-        raise TimelineError(f"プロジェクトファイルの形式が不正です: {e}") from e
+        raise TimelineError(
+            tr("プロジェクトファイルの形式が不正です: {error}", error=e)) from e
 
 
 # dict から Timeline を復元する (検証・マイグレーション込み)
@@ -280,7 +283,7 @@ def _parse(text):
 # 復旧より先に走らせてはならない (resolve7 §5.8)。既定は True で従来どおり。
 def from_dict(data, min_clip_sec=_DEFAULT_MIN_CLIP_SEC, validate_timeline=True):
     if not isinstance(data, dict):
-        raise TimelineError("プロジェクトファイルの形式が不正です (辞書ではありません)")
+        raise TimelineError(tr("プロジェクトファイルの形式が不正です (辞書ではありません)"))
 
     version = data.get("schema_version")
     data = migrate(data, version)
@@ -317,7 +320,7 @@ def load(path, min_clip_sec=_DEFAULT_MIN_CLIP_SEC, validate_timeline=True):
 def load_project(path, min_clip_sec=_DEFAULT_MIN_CLIP_SEC, validate_timeline=True):
     data = _parse(_read(path))
     if not isinstance(data, dict):
-        raise TimelineError("プロジェクトファイルの形式が不正です (辞書ではありません)")
+        raise TimelineError(tr("プロジェクトファイルの形式が不正です (辞書ではありません)"))
     timeline = from_dict(data, min_clip_sec=min_clip_sec,
                          validate_timeline=validate_timeline)
     meta = {
@@ -337,7 +340,8 @@ def _read(path):
         with open(path, "r", encoding="utf-8-sig") as f:
             return f.read()
     except OSError as e:
-        raise TimelineError(f"プロジェクトファイルを読み込めません: {e}") from e
+        raise TimelineError(
+            tr("プロジェクトファイルを読み込めません: {error}", error=e)) from e
 
 
 # ------------------------------------------------------------------
@@ -347,23 +351,26 @@ def _read(path):
 # 版差を吸収する。未知の (より新しい) 版は明示して中止する。
 def migrate(data, version):
     if version is None:
-        raise TimelineError("プロジェクトファイルに schema_version がありません")
+        raise TimelineError(tr("プロジェクトファイルに schema_version がありません"))
     try:
         version = int(version)
     except (TypeError, ValueError) as e:
-        raise TimelineError(f"schema_version が不正です: {version}") from e
+        raise TimelineError(
+            tr("schema_version が不正です: {version}", version=version)) from e
 
     if version > SCHEMA_VERSION:
         raise TimelineError(
-            f"このバージョンでは開けないプロジェクトです "
-            f"(ファイル: v{version} / 対応: v{SCHEMA_VERSION})。アプリを更新してください。"
+            tr("このバージョンでは開けないプロジェクトです "
+               "(ファイル: v{version} / 対応: v{supported})。アプリを更新してください。",
+               version=version, supported=SCHEMA_VERSION)
         )
 
     # 旧版 → 現行版へ連鎖適用する (現時点では v1 のみのため何もしない)
     while version < SCHEMA_VERSION:
         migrator = _MIGRATIONS.get(version)
         if migrator is None:
-            raise TimelineError(f"v{version} からの移行方法が定義されていません")
+            raise TimelineError(
+                tr("v{version} からの移行方法が定義されていません", version=version))
         data = migrator(data)
         version += 1
     return data
@@ -759,18 +766,22 @@ def rename_project(path, new_stem, settings=None, timeline_cfg=None):
     stem = str(new_stem or "").strip()
 
     if not stem:
-        raise TimelineError("新しい名前を入力してください")
+        raise TimelineError(tr("新しい名前を入力してください"))
     if any(ch in stem for ch in _INVALID_NAME_CHARS):
-        raise TimelineError(f"名前に次の文字は使えません: {_INVALID_NAME_CHARS}")
+        raise TimelineError(
+            tr("名前に次の文字は使えません: {chars}", chars=_INVALID_NAME_CHARS))
     old_path = os.path.abspath(str(path))
     if not os.path.exists(old_path):
-        raise TimelineError(f"プロジェクトファイルが見つかりません: {old_path}")
+        raise TimelineError(
+            tr("プロジェクトファイルが見つかりません: {path}", path=old_path))
     folder = os.path.dirname(old_path)
     new_path = os.path.join(folder, f"{stem}{suffix}")
     if os.path.normcase(new_path) == os.path.normcase(old_path):
         return old_path
     if os.path.exists(new_path):
-        raise TimelineError(f"同じ名前のプロジェクトが既にあります: {os.path.basename(new_path)}")
+        raise TimelineError(
+            tr("同じ名前のプロジェクトが既にあります: {name}",
+               name=os.path.basename(new_path)))
 
     autosave_suffix = project_cfg.get("autosave_suffix", ".autosave.json")
     media_suffix = project_cfg.get("media_dir_suffix", ".media")
@@ -796,7 +807,8 @@ def rename_project(path, new_stem, settings=None, timeline_cfg=None):
         if old_media and os.path.isdir(old_media):
             if os.path.exists(new_media):
                 raise TimelineError(
-                    f"同じ名前の素材フォルダが既にあります: {os.path.basename(new_media)}")
+                    tr("同じ名前の素材フォルダが既にあります: {name}",
+                       name=os.path.basename(new_media)))
             os.rename(old_media, new_media)
             done.append((new_media, old_media))
             # 素材フォルダを動かしたら JSON 内の参照も張り替える (これを忘れると開けなくなる)

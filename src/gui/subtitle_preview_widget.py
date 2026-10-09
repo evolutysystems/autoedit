@@ -31,6 +31,7 @@ except Exception:  # noqa: BLE001 (import 失敗は静止画モードへフォ�
 
 # 確定時と同一の字幕整形 (使用チェック+wrap_lines) を再利用する (resolve23 §5.2-1)
 from ..archive.clip_writer import _finalize_timeline
+from ..i18n import tr
 from ..modules import ffmpeg_runner
 from ..modules import comment_decor
 from ..modules.subtitle_generator import build_font_profile, build_subtitle_file
@@ -160,12 +161,13 @@ class SubtitlePreviewWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
 
         # 見出し (テーマ演出はプレビュー対象外である旨を明示する / §4-8)
-        title = "プレビュー (字幕適用 / テーマ演出は含まれません)" if self._enabled else "プレビュー"
+        title = (tr("プレビュー (字幕適用 / テーマ演出は含まれません)")
+                 if self._enabled else tr("プレビュー"))
         root.addWidget(QLabel(title))
 
         # 映像エリア: 動画 (QVideoWidget) と静止画 (QLabel) を切り替える
         self._stack = QStackedWidget(self)
-        self._static_label = QLabel("プレビューを読み込み中…")
+        self._static_label = QLabel(tr("プレビューを読み込み中…"))
         self._static_label.setAlignment(Qt.AlignCenter)
         self._static_label.setMinimumSize(_DISPLAY_WIDTH, int(_DISPLAY_WIDTH * 9 / 16))
         # 映像領域はテーマで塗り替えない (常に黒 / resolve3 §5.6)
@@ -209,10 +211,10 @@ class SubtitlePreviewWidget(QWidget):
         # プレビュー更新 (編集内容を反映して再生成) と状態表示
         if self._enabled:
             update_row = QHBoxLayout()
-            self.update_button = QPushButton("プレビュー更新")
-            self.update_button.setToolTip(
+            self.update_button = QPushButton(tr("プレビュー更新"))
+            self.update_button.setToolTip(tr(
                 "現在の字幕編集内容を反映し、選択行の時刻からプレビューを生成し直します。"
-            )
+            ))
             self.update_button.clicked.connect(self._on_update_clicked)
             update_row.addWidget(self.update_button)
             self.status_label = QLabel("")
@@ -240,7 +242,7 @@ class SubtitlePreviewWidget(QWidget):
         self._seg_len = 0.0
         self._pending_anchor = 0.0
         if not self._video_path or not os.path.exists(self._video_path):
-            self._show_static_message("プレビューを表示できません")
+            self._show_static_message(tr("プレビューを表示できません"))
             return
         # 有効時は字幕適用済みフレーム、無効時は従来同等の素のフレームを自動表示する
         self._request_frame(0.0, with_subtitles=self._enabled)
@@ -279,7 +281,8 @@ class SubtitlePreviewWidget(QWidget):
             self._player.setPosition(int((sec - self._seg_start) * 1000))
             return
         if self._has_video:
-            self._set_status("選択行は生成済み区間外です。「プレビュー更新」で生成できます。")
+            self._set_status(
+                tr("選択行は生成済み区間外です。「プレビュー更新」で生成できます。"))
 
     # 再生停止・ソース解放・一時ファイル削除 (画面クローズ時に必ず呼ぶ / §5.2)
     def shutdown(self):
@@ -401,7 +404,7 @@ class SubtitlePreviewWidget(QWidget):
         # 生成完了時にシーク判定へ使う区間を控えておく (ジョブと同時に確定)
         self._seg_start = seg_start
         self._seg_len = seg_len
-        self._set_status("プレビュー生成中…")
+        self._set_status(tr("プレビュー生成中…"))
         self._spawn_worker("video", cmd, out_path)
 
     # 字幕適用済み (または素の) 静止画1フレームの生成を開始する
@@ -418,7 +421,7 @@ class SubtitlePreviewWidget(QWidget):
             "-vf", self._build_filter(ass_path),
             out_path,
         ]
-        self._set_status("プレビュー生成中…")
+        self._set_status(tr("プレビュー生成中…"))
         self._spawn_worker("frame", cmd, out_path)
 
     # ワーカーを起動する (完了済みワーカーの参照はここで回収する)
@@ -440,13 +443,13 @@ class SubtitlePreviewWidget(QWidget):
                     pass
             return
         if not path:
-            self._show_static_message("プレビュー生成に失敗しました")
-            self._set_status("プレビュー生成に失敗しました")
+            self._show_static_message(tr("プレビュー生成に失敗しました"))
+            self._set_status(tr("プレビュー生成に失敗しました"))
             return
         if kind == "frame":
             pixmap = QPixmap(path)
             if pixmap.isNull():
-                self._show_static_message("プレビューを表示できません")
+                self._show_static_message(tr("プレビューを表示できません"))
             else:
                 self._static_label.setPixmap(
                     pixmap.scaledToWidth(_DISPLAY_WIDTH, Qt.SmoothTransformation))
@@ -467,8 +470,9 @@ class SubtitlePreviewWidget(QWidget):
         self._stack.setCurrentWidget(self._video_widget)
         self._player.play()
         self.play_button.setText("⏸")
-        self._set_status(
-            f"{self._seg_start:.1f}s から {self._seg_len:.1f}s 区間を表示中")
+        self._set_status(tr(
+            "{start:.1f}s から {length:.1f}s 区間を表示中",
+            start=self._seg_start, length=self._seg_len))
 
     # ------------------------------------------------------------------
     # 再生コントロール・連動

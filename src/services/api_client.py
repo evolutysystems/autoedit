@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 
 from ..exceptions import ApiError, ApiOfflineError, ReauthRequiredError
+from ..i18n import tr
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -69,7 +70,7 @@ class ApiClient:
             # 呼び出し側が再ログインの必要性を判別できないため。
             if not token:
                 raise ReauthRequiredError(
-                    "ログインが必要です。", status=401, code=CODE_REAUTH_REQUIRED)
+                    tr("ログインが必要です。"), status=401, code=CODE_REAUTH_REQUIRED)
 
         try:
             return self._send(method, url, body, token)
@@ -104,7 +105,7 @@ class ApiClient:
 
     def _build_url(self, path):
         if not self._base_url:
-            raise ApiError("API のベース URL が未設定です。設定 (setting.json) の api.base_url を確認してください。")
+            raise ApiError(tr("API のベース URL が未設定です。設定 (setting.json) の api.base_url を確認してください。"))
         return self._base_url + "/" + str(path).lstrip("/")
 
     def _send(self, method, url, body, token):
@@ -124,7 +125,8 @@ class ApiClient:
             raise self._to_error(e) from e
         except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as e:
             # 接続できない・応答が無い。オフライン扱いとする (§6.5)。
-            raise ApiOfflineError(f"Stretheus API へ接続できません: {e}") from e
+            raise ApiOfflineError(
+                tr("Stretheus API へ接続できません: {error}", error=e)) from e
 
     @staticmethod
     def _read_json(response):
@@ -134,7 +136,7 @@ class ApiClient:
         try:
             return json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
-            raise ApiError("API の応答を解釈できませんでした。") from e
+            raise ApiError(tr("API の応答を解釈できませんでした。")) from e
 
     # HTTPError を ProblemDetails の code 付き例外へ変換する。
     def _to_error(self, http_error):

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import theme
+from ..i18n import tr
 
 
 class FileDropArea(QWidget):
@@ -66,7 +67,7 @@ class FileDropArea(QWidget):
         self.text_label.setFont(text_font)
         name_row.addWidget(self.text_label)
         self.clear_button = QPushButton()
-        self.clear_button.setToolTip("選択を取り消す")
+        self.clear_button.setToolTip(tr("選択を取り消す"))
         theme.mark_icon_button(self.clear_button)
         self.clear_button.clicked.connect(self.cleared.emit)
         name_row.addWidget(self.clear_button)
@@ -106,6 +107,19 @@ class FileDropArea(QWidget):
         self.text_label.setToolTip("")
         self.hint_label.setText(self._default_hint)
         self._update_text()
+
+    # 案内文と既定の補足を差し替える (ver8 resolve §5)。
+    # 言語切替で呼ぶ。選択中なら名前の表示は変わらないため、補足だけが入れ替わる。
+    def set_texts(self, placeholder, hint=""):
+        self._placeholder = placeholder
+        self._default_hint = hint
+        if not self.has_selection():
+            self.hint_label.setText(self._default_hint)
+        self._update_text()
+
+    # 選択中に出している補足を差し替える (種別ごとの文言を貼り替えるため)
+    def set_hint(self, hint):
+        self.hint_label.setText(hint or self._default_hint)
 
     def has_selection(self):
         return bool(self._name)

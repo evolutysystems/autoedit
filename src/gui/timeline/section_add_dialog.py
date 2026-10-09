@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...i18n import tr
 from ...utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -57,7 +58,7 @@ class SectionAddDialog(QDialog):
     #                (ver5 resolve6 §5.8)
     def __init__(self, vod_duration, default_start, cfg, preview_cb=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("セクションの追加")
+        self.setWindowTitle(tr("セクションの追加"))
         self._duration = float(vod_duration or 0.0)
         self._cfg = cfg
         self._preview_cb = preview_cb
@@ -76,20 +77,21 @@ class SectionAddDialog(QDialog):
         root = QVBoxLayout(self)
 
         if self._duration > 0:
-            head = f"元動画の区間を指定してください（全長 {format_hms(self._duration)}）"
+            head = tr("元動画の区間を指定してください（全長 {duration}）",
+                      duration=format_hms(self._duration))
         else:
-            head = "元動画の区間を指定してください"
+            head = tr("元動画の区間を指定してください")
         root.addWidget(QLabel(head))
 
         form = QFormLayout()
         self.start_edit = QLineEdit(format_hms(start))
-        self.start_edit.setToolTip("H:MM:SS / MM:SS / 秒数 のいずれでも入力できます")
+        self.start_edit.setToolTip(tr("H:MM:SS / MM:SS / 秒数 のいずれでも入力できます"))
         self.end_edit = QLineEdit(format_hms(end))
         self.end_edit.setToolTip(self.start_edit.toolTip())
         self.start_edit.textChanged.connect(self._on_changed)
         self.end_edit.textChanged.connect(self._on_changed)
-        form.addRow("開始", self.start_edit)
-        form.addRow("終了", self.end_edit)
+        form.addRow(tr("開始"), self.start_edit)
+        form.addRow(tr("終了"), self.end_edit)
         root.addLayout(form)
 
         # 長さと、統合が起きる場合の予告をここへ出す
@@ -99,8 +101,8 @@ class SectionAddDialog(QDialog):
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
-        self.buttons.button(QDialogButtonBox.Ok).setText("追加")
-        self.buttons.button(QDialogButtonBox.Cancel).setText("キャンセル")
+        self.buttons.button(QDialogButtonBox.Ok).setText(tr("追加"))
+        self.buttons.button(QDialogButtonBox.Cancel).setText(tr("キャンセル"))
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         root.addWidget(self.buttons)
@@ -127,15 +129,17 @@ class SectionAddDialog(QDialog):
     # 戻り値: (案内文字列, 追加できるか)
     def _validate(self, start, end):
         if start is None or end is None:
-            return "開始・終了は H:MM:SS / MM:SS / 秒数 で入力してください", False
+            return tr("開始・終了は H:MM:SS / MM:SS / 秒数 で入力してください"), False
         if end <= start:
-            return "終了は開始より後にしてください", False
+            return tr("終了は開始より後にしてください"), False
         minimum = float(self._cfg["min_length_sec"])
         if end - start < minimum:
-            return f"区間が短すぎます（{minimum:g} 秒以上にしてください）", False
+            return tr("区間が短すぎます（{min:g} 秒以上にしてください）",
+                      min=minimum), False
         if self._duration > 0 and end > self._duration:
-            return f"終了が元動画の全長（{format_hms(self._duration)}）を超えています", False
-        return f"長さ {format_hms(end - start)}", True
+            return tr("終了が元動画の全長（{duration}）を超えています",
+                      duration=format_hms(self._duration)), False
+        return tr("長さ {length}", length=format_hms(end - start)), True
 
     # 指定された区間 (開始, 終了) を秒で返す
     def selected_range(self):

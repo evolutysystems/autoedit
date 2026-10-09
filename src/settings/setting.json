@@ -518,6 +518,7 @@
         }
     },
     "ui": {
+        "language": "ja",
         "theme": "glass",
         "theme_mode": "auto",
         "native_backdrop": true,

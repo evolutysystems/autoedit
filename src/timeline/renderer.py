@@ -12,6 +12,7 @@ import math
 import os
 
 from ..exceptions import InputError, TimelineError
+from ..i18n import tr
 from ..modules import (
     blur_overlay,
     comment_decor,
@@ -47,7 +48,7 @@ def render(timeline, context):
 
     base_clips = timeline.base_clips()
     if not base_clips:
-        raise TimelineError("出力対象のクリップがありません (Timeline が空です)")
+        raise TimelineError(tr("出力対象のクリップがありません (Timeline が空です)"))
 
     # 無音カットのフェード設定を編集点モードでも尊重する (§8.2)
     silence_cfg = settings.get("silence_cut", {})
@@ -117,11 +118,11 @@ def _confirm_blur_failure(context):
     callback = getattr(context, "blur_failure_callback", None)
     if callback is None:
         raise TimelineError(
-            "ぼかしを掛けられないため出力を中止しました。"
-            "「ぼかし...」を開き、指定を確かめてください。")
+            tr("ぼかしを掛けられないため出力を中止しました。"
+            "「ぼかし...」を開き、指定を確かめてください。"))
 
     if not callback(reason):
-        raise TimelineError("ぼかしを掛けられないため、利用者の指示で出力を中止しました。")
+        raise TimelineError(tr("ぼかしを掛けられないため、利用者の指示で出力を中止しました。"))
     _logger.warning("利用者の指示により、ぼかしを入れずに出力します")
 
 
@@ -275,11 +276,14 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
                   duration=None, audio_codec=None, settings=None):
     media = timeline.media_by_id(clip.media_id)
     if media is None or not media.path or not os.path.exists(media.path):
-        raise TimelineError(f"素材が見つかりません: {clip.media_id}")
+        raise TimelineError(
+            tr("素材が見つかりません: {media_id}", media_id=clip.media_id))
 
     duration = clip.duration if duration is None else duration
     if duration <= _MIN_RENDER_SEC:
-        raise InputError(f"クリップ尺が不正です: {clip.id} ({duration:.3f}s)")
+        raise InputError(
+            tr("クリップ尺が不正です: {clip_id} ({sec:.3f}s)",
+               clip_id=clip.id, sec=duration))
 
     fps = ffmpeg_runner.get_output_fps(ffmpeg_cfg)
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)

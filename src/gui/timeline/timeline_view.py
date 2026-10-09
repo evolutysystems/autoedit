@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from .. import theme
 from .waveform import WaveformCache
+from ...i18n import tr
 from ...timeline import commands, media_probe
 from ...timeline.model import (
     DEFAULT_ROLE,
@@ -538,13 +539,13 @@ class TimelineView(QWidget):
             return clip.text.replace("\\N", " ")[:40]
         if isinstance(clip, AudioClip):
             video = self._controller.timeline.clip_by_id(clip.link_clip)
-            suffix = " (ミュート)" if clip.muted else ""
+            suffix = tr(" (ミュート)") if clip.muted else ""
             return (video.id if video else "") + suffix
         origin = clip.origin_type()
         if origin == ORIGIN_OPENING:
-            return "オープニング"
+            return tr("オープニング")
         if origin == ORIGIN_ENDING:
-            return "エンディング"
+            return tr("エンディング")
         media = self._controller.timeline.media_by_id(clip.media_id)
         if media is not None and origin not in ("silence_cut", ""):
             return os.path.basename(media.path)
@@ -778,14 +779,14 @@ class TimelineView(QWidget):
         menu = QMenu(self)
 
         if hit is None:
-            menu.addAction("ここへ再生ヘッドを移動",
+            menu.addAction(tr("ここへ再生ヘッドを移動"),
                            lambda: self._controller.set_playhead(
                                self._playhead_sec_at(pos.x())))
             # 字幕トラックの空き領域なら、その位置へ新しい字幕を足せる
             row = self._row_at_pos(pos)
             track = row["track"] if row is not None else None
             # 貼り付け先はあくまで再生ヘッド (右クリックした位置ではない / resolve10 §5.6)
-            paste = menu.addAction("再生ヘッドへ貼り付け\tCtrl+V", self._paste)
+            paste = menu.addAction(tr("再生ヘッドへ貼り付け\tCtrl+V"), self._paste)
             paste.setEnabled(self._controller.can_paste())
             # 字幕トラックの空き領域なら、その位置へ新しい字幕を足せる
             row = self._row_at_pos(pos)
@@ -793,7 +794,7 @@ class TimelineView(QWidget):
             if track is not None and track.is_subtitle():
                 menu.addSeparator()
                 action = menu.addAction(
-                    "字幕追加", lambda: self._add_subtitle(pos, track))
+                    tr("字幕追加"), lambda: self._add_subtitle(pos, track))
                 action.setEnabled(not track.locked)
             menu.exec(event.globalPos())
             return
@@ -808,20 +809,20 @@ class TimelineView(QWidget):
             self._controller.select([clip.id])
 
         at_sec = self.x_to_sec(pos.x())
-        menu.addAction("ここで分割", lambda: self._controller.split_at_playhead(
+        menu.addAction(tr("ここで分割"), lambda: self._controller.split_at_playhead(
             clip.id, at_sec))
         menu.addSeparator()
         # コピー＆ペースト (ver3 resolve10 §5.6)。貼り付け先は再生ヘッド。
-        menu.addAction("コピー\tCtrl+C", self._copy)
-        paste = menu.addAction("再生ヘッドへ貼り付け\tCtrl+V", self._paste)
+        menu.addAction(tr("コピー\tCtrl+C"), self._copy)
+        paste = menu.addAction(tr("再生ヘッドへ貼り付け\tCtrl+V"), self._paste)
         paste.setEnabled(self._controller.can_paste())
         menu.addSeparator()
         # 再生ヘッドを境にしたリップル削除 (A / D / resolve2 R4・R6)
         before = menu.addAction(
-            "再生ヘッドより前をリップル削除\tA",
+            tr("再生ヘッドより前をリップル削除\tA"),
             lambda: self._controller.ripple_trim_to_playhead("before"))
         after = menu.addAction(
-            "再生ヘッドより後ろをリップル削除\tD",
+            tr("再生ヘッドより後ろをリップル削除\tD"),
             lambda: self._controller.ripple_trim_to_playhead("after"))
         # 再生ヘッドがクリップの中に無ければ実行できない
         on_playhead = clip.timeline_start < self._controller.playhead() < clip.timeline_end
@@ -829,24 +830,25 @@ class TimelineView(QWidget):
         after.setEnabled(on_playhead)
         menu.addSeparator()
         # 削除は 2 種類を常に並べて出す (回答 Q5 / R17)
-        menu.addAction("リップル削除\tDelete",
+        menu.addAction(tr("リップル削除\tDelete"),
                        lambda: self._controller.delete_selected(ripple=True))
-        menu.addAction("削除のみ (空白を残す)\tBackSpace",
+        menu.addAction(tr("削除のみ (空白を残す)\tBackSpace"),
                        lambda: self._controller.delete_selected(ripple=False))
         menu.addSeparator()
-        layer = menu.addMenu("レイヤー")
+        layer = menu.addMenu(tr("レイヤー"))
         base = self._controller.timeline.base_video_track()
         is_base_clip = base is not None and track.id == base.id
-        for label, direction in (("最前面", commands.LAYER_TOP), ("前面", commands.LAYER_UP),
-                                 ("背面", commands.LAYER_DOWN),
-                                 ("最背面", commands.LAYER_BOTTOM)):
+        for label, direction in ((tr("最前面"), commands.LAYER_TOP),
+                                 (tr("前面"), commands.LAYER_UP),
+                                 (tr("背面"), commands.LAYER_DOWN),
+                                 (tr("最背面"), commands.LAYER_BOTTOM)):
             action = layer.addAction(
                 label, lambda d=direction: self._controller.change_layer(clip.id, d))
             # ベース (V1) のクリップは常に最背面固定のため対象外
             action.setEnabled(not is_base_clip)
         menu.addSeparator()
         used = clip.use if isinstance(clip, SubtitleClip) else clip.enabled
-        menu.addAction("使用しない" if used else "使用する",
+        menu.addAction(tr("使用しない") if used else tr("使用する"),
                        lambda: self._controller.set_clip_enabled(clip.id, not used))
         # クリップ単位のぼかし (ver5 resolve7 §5.9)。機能 OFF なら何も足さない。
         self._add_blur_actions(menu, clip, track)
@@ -892,9 +894,9 @@ class TimelineView(QWidget):
         start = max(self._snap(self.x_to_sec(pos.x())), 0.0)
         role = self._role_for_track(track)
         clip_id = self._controller.add_subtitle(
-            start, track_id=track.id, text=NEW_SUBTITLE_TEXT, role=role)
+            start, track_id=track.id, text=tr(NEW_SUBTITLE_TEXT), role=role)
         if clip_id is None:
-            self.status_message.emit("この位置には字幕を追加できません")
+            self.status_message.emit(tr("この位置には字幕を追加できません"))
 
     # 字幕トラックに対応する役割を返す (コメント用トラックならコメント)
     def _role_for_track(self, track):
@@ -910,31 +912,32 @@ class TimelineView(QWidget):
     def _copy(self):
         count = self._controller.copy_selected()
         self.status_message.emit(
-            f"{count} 件のノードをコピーしました" if count
-            else "コピーするノードが選択されていません")
+            tr("{count} 件のノードをコピーしました", count=count) if count
+            else tr("コピーするノードが選択されていません"))
 
     # 右クリックメニューからの貼り付け。位置は再生ヘッド (ver3 resolve10 §5.6)
     def _paste(self):
         result = self._controller.paste()
         if result["empty"]:
-            self.status_message.emit("コピーされたノードがありません")
+            self.status_message.emit(tr("コピーされたノードがありません"))
             return
         if result["pasted"] == 0:
-            self.status_message.emit(
-                "貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)")
+            self.status_message.emit(tr(
+                "貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)"))
             return
-        message = f"{result['pasted']} 件を貼り付けました"
+        message = tr("{count} 件を貼り付けました", count=result["pasted"])
         if result["shifted"] > 0:
-            message += f" (既存ノードを {result['shifted']:.2f} 秒ぶん右へ移動)"
+            message += tr(" (既存ノードを {sec:.2f} 秒ぶん右へ移動)",
+                          sec=result["shifted"])
         if result["skipped"]:
-            message += f" ({result['skipped']} 件は貼れませんでした)"
+            message += tr(" ({count} 件は貼れませんでした)", count=result["skipped"])
         self.status_message.emit(message)
 
     # 音声クリップのメニュー: 削除は出さない (V1 側から消す / §6.3.4)
     def _build_audio_menu(self, menu, clip):
-        menu.addAction("ミュート解除" if clip.muted else "ミュート",
+        menu.addAction(tr("ミュート解除") if clip.muted else tr("ミュート"),
                        lambda: self._controller.set_audio_muted(clip.id, not clip.muted))
-        gain = menu.addMenu("音量")
+        gain = menu.addMenu(tr("音量"))
         for label, value in (("+6 dB", 6.0), ("+3 dB", 3.0), ("0 dB", 0.0),
                              ("-3 dB", -3.0), ("-6 dB", -6.0)):
             gain.addAction(label, lambda v=value: self._controller.set_audio_gain(clip.id, v))
@@ -1064,23 +1067,23 @@ class TimelinePanel(QWidget):
         minus = QPushButton("－")
         minus.setFixedWidth(zoom_button_width)
         theme.mark_icon_button(minus)
-        minus.setToolTip("Timeline を縮小 (Ctrl + ホイールでも操作できます)")
+        minus.setToolTip(tr("Timeline を縮小 (Ctrl + ホイールでも操作できます)"))
         minus.clicked.connect(lambda: self._controller.zoom_by(1 / 1.25))
         plus = QPushButton("＋")
         plus.setFixedWidth(zoom_button_width)
         theme.mark_icon_button(plus)
-        plus.setToolTip("Timeline を拡大 (Ctrl + ホイールでも操作できます)")
+        plus.setToolTip(tr("Timeline を拡大 (Ctrl + ホイールでも操作できます)"))
         plus.clicked.connect(lambda: self._controller.zoom_by(1.25))
-        fit = QPushButton("全体")
-        fit.setToolTip("Timeline 全体が収まるまで縮小します")
+        fit = QPushButton(tr("全体"))
+        fit.setToolTip(tr("Timeline 全体が収まるまで縮小します"))
         fit.clicked.connect(self.zoom_to_fit)
         zoom_row.addWidget(minus)
         zoom_row.addWidget(plus)
         zoom_row.addWidget(fit)
         self.hint_label = QLabel(
-            "W 分割 / A 前をリップル削除 / D 後ろをリップル削除 / "
+            tr("W 分割 / A 前をリップル削除 / D 後ろをリップル削除 / "
             "Delete リップル削除・BackSpace 削除のみ / "
-            "Space 再生・Q 倍速逆再生・E 倍速再生 / Alt で吸着オフ")
+            "Space 再生・Q 倍速逆再生・E 倍速再生 / Alt で吸着オフ"))
         theme.mark_note(self.hint_label)
         zoom_row.addWidget(self.hint_label, 1)
         root.addLayout(zoom_row)

@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 
 from ..exceptions import FFmpegError, InputError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from . import ffmpeg_runner
@@ -22,7 +23,7 @@ _RE_SILENCE_END = re.compile(r"silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:
 # 戻り値: [(start_sec, end_sec), ...]
 def detect_silence(input_path, noise_threshold_db, min_duration_sec, ffmpeg_settings):
     if not os.path.exists(input_path):
-        raise InputError(f"入力動画が見つかりません: {input_path}")
+        raise InputError(tr("入力動画が見つかりません: {path}", path=input_path))
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
     cmd = [
@@ -41,11 +42,11 @@ def detect_silence(input_path, noise_threshold_db, min_duration_sec, ffmpeg_sett
             creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
-        raise FFmpegError(f"FFmpeg 実行失敗: {e}") from e
+        raise FFmpegError(tr("FFmpeg 実行失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
         raise FFmpegError(
-            "silencedetect 失敗",
+            tr("silencedetect 失敗"),
             command=cmd,
             stderr_tail="\n".join(result.stderr.splitlines()[-30:]),
             returncode=result.returncode,
@@ -92,7 +93,7 @@ def cut_and_concat(input_path, keep_segments, output_path, ffmpeg_settings,
                    fade_enabled=False, fade_duration_sec=0.05,
                    total_duration=0.0, on_progress=None):
     if not keep_segments:
-        raise InputError("残すべき有音区間が存在しません (全区間が無音判定)")
+        raise InputError(tr("残すべき有音区間が存在しません (全区間が無音判定)"))
 
     filter_parts = []
     concat_inputs_v = []
@@ -177,7 +178,8 @@ def extract_segment(input_path, start, end, seg_path, ffmpeg_settings,
                     on_progress=None):
     seg_duration = end - start
     if seg_duration <= 0:
-        raise InputError(f"区間長が不正です: start={start}, end={end}")
+        raise InputError(
+            tr("区間長が不正です: start={start}, end={end}", start=start, end=end))
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
     # -ss を -i の前に置き、対象区間付近のみをデコードする (高速シーク)
@@ -224,7 +226,7 @@ def cut_and_concat_seek(input_path, keep_segments, output_path, ffmpeg_settings,
                         fade_enabled=False, fade_duration_sec=0.05,
                         on_progress=None, concat_reencode=False):
     if not keep_segments:
-        raise InputError("残すべき有音区間が存在しません (全区間が無音判定)")
+        raise InputError(tr("残すべき有音区間が存在しません (全区間が無音判定)"))
 
     out_dir = os.path.dirname(output_path) or "."
     kept_total = sum((e - s) for s, e in keep_segments) or 1.0
@@ -272,7 +274,7 @@ def cut_and_concat_batched(input_path, keep_segments, output_path, ffmpeg_settin
                            total_duration=0.0, on_progress=None,
                            batch_size=0, concat_reencode=False):
     if not keep_segments:
-        raise InputError("残すべき有音区間が存在しません (全区間が無音判定)")
+        raise InputError(tr("残すべき有音区間が存在しません (全区間が無音判定)"))
 
     # 分割不要 (小規模 or 無効) なら従来経路へフォールバックする
     if batch_size <= 0 or len(keep_segments) <= batch_size:
@@ -337,7 +339,7 @@ def cut_and_concat_batched(input_path, keep_segments, output_path, ffmpeg_settin
 # reencode=False のときはストリームコピー (高速・劣化なし) で結合する。
 def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False):
     if not batch_paths:
-        raise InputError("結合対象のバッチが存在しません")
+        raise InputError(tr("結合対象のバッチが存在しません"))
 
     out_dir = os.path.dirname(output_path) or "."
     # concat デマルチプレクサ用のファイルリストを書き出す
@@ -448,7 +450,7 @@ def run(context):
 
     keep_segments = build_keep_segments(silence_ranges, total_duration)
     if not keep_segments:
-        raise InputError("有音区間が抽出できませんでした")
+        raise InputError(tr("有音区間が抽出できませんでした"))
 
     # 算出した編集点 (元入力相対) を context へ保持する (Resolve 出力用 / resolve20 §5.3)。
     # カット処理そのものには影響しない追加のみの保持。context 実装差に備えて存在確認する。
@@ -539,7 +541,7 @@ def detect_edit_points(context):
 def extract_audio_segments(input_path, keep_segments, output_path, ffmpeg_settings,
                            on_progress=None):
     if not keep_segments:
-        raise InputError("音声抽出の対象区間がありません")
+        raise InputError(tr("音声抽出の対象区間がありません"))
 
     out_dir = os.path.dirname(output_path) or "."
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)

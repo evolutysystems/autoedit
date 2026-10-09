@@ -5,6 +5,7 @@
 import os
 
 from ..exceptions import InputError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from . import ffmpeg_runner
 
@@ -24,7 +25,7 @@ def is_available(path):
 # 複数動画を concat filter で結合する
 def concat(parts, output_path, ffmpeg_settings, total_duration=0.0, on_progress=None):
     if len(parts) < 2:
-        raise InputError("結合対象が2つ未満です")
+        raise InputError(tr("結合対象が2つ未満です"))
 
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_settings)
 
@@ -91,7 +92,7 @@ def run(context, position):
         enabled = general_cfg.get("ending_enabled", True)
         label = "エンディング結合"
     else:
-        raise InputError(f"未知の結合位置: {position}")
+        raise InputError(tr("未知の結合位置: {position}", position=position))
 
     # 縦動画では OP/ED を付けない (request14 §8-2)。素材/フラグに関わらずスキップする。
     profile = getattr(context, "output_profile", None)

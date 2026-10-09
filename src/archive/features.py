@@ -5,6 +5,7 @@
 # セル = slide_sec 秒の連続区間。窓積分の最小単位。
 import math
 
+from ..i18n import tr
 from ..modules import ffmpeg_runner, silence_cutter, volume_analyzer
 from ..utils.logger import get_logger
 
@@ -64,6 +65,8 @@ def extract_cells(input_path, settings, cell_sec, progress_cb=None):
             "comment_count": 0,
         })
         if progress_cb is not None:
-            progress_cb((i + 1) / n_cells, f"特徴抽出中… ({i + 1}/{n_cells})")
+            progress_cb((i + 1) / n_cells,
+                        tr("特徴抽出中… ({done}/{total})",
+                           done=i + 1, total=n_cells))
 
     return duration, cells

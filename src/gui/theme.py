@@ -42,6 +42,16 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
 
+# 表示文言の訳 (ver8 resolve §3)。i18n はプロジェクト内の他モジュールへ依存しないため
+# theme から import しても循環しない。
+if __package__ is None or __package__ == "":
+    import os.path as _os_path
+    sys.path.insert(0, _os_path.dirname(_os_path.dirname(_os_path.dirname(
+        _os_path.abspath(__file__)))))
+    from src import i18n
+else:
+    from .. import i18n
+
 # モジュールロガー (標準ライブラリのみ使用。アプリ実行時は上位ハンドラへ伝播する)
 _logger = logging.getLogger(__name__)
 
@@ -125,6 +135,10 @@ DROP_TEXT_POINT_DELTA = 1
 # ==================================================================
 
 DEFAULT_UI_SETTINGS = {
+    # 表示言語 (ver8 resolve §4)。"ja" = 日本語 (既定) / "en" = 英語。
+    # メイン画面左上のドロップダウンから切り替え、ここへ保存する。
+    # 実体の判定は src/i18n が持つ (未対応の綴りは日本語へ倒す)。
+    "language": i18n.LANG_JA,
     # "glass" = ガラスモーフィズム (既定) / "system" = 従来の Qt 既定へ完全に戻す
     "theme": "glass",
     # 明暗 (R8 / §5.10)。"auto" = Windows の設定に追従 (既定) / "dark" / "light"
@@ -455,6 +469,9 @@ def _resolve_config(settings=None):
     ui = source.get("ui") if isinstance(source, dict) else None
     cfg = _merge_defaults(ui if isinstance(ui, dict) else {}, DEFAULT_UI_SETTINGS)
 
+    # 表示言語 (ver8 resolve §4)。未対応の綴りは日本語へ倒す
+    cfg["language"] = i18n.normalize(cfg["language"])
+
     # 色
     cfg["accent_color"] = _validated_color(
         cfg["accent_color"], DEFAULT_UI_SETTINGS["accent_color"], "accent_color")
@@ -529,6 +546,12 @@ def _validated_timeline_opacity(value):
 # ガラステーマが有効か (ui.theme = "system" のときは従来の Qt 既定へ完全に戻す / §7)
 def is_enabled(settings=None):
     return _config(settings)["theme"] != "system"
+
+
+# setting.json で選ばれている表示言語を返す ("ja" | "en" / ver8 resolve §4)。
+# 実際の切替は i18n.set_language が行う。ここは「保存されている値」の出どころ。
+def language(settings=None):
+    return _config(settings)["language"]
 
 
 # メイン画面の寸法設定を返す (ver3 resolve15 §7)。

@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from ..exceptions import FFmpegError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from ..utils.progress import run_ffmpeg_progress
@@ -94,7 +95,8 @@ def get_output_fps(ffmpeg_settings):
 def ensure_available(ffmpeg_settings):
     for exe in (get_ffmpeg_exe(ffmpeg_settings), get_ffprobe_exe(ffmpeg_settings)):
         if not (os.path.isfile(exe) or shutil.which(exe)):
-            raise FFmpegError(f"FFmpeg 実行ファイルが見つかりません: {exe}")
+            raise FFmpegError(
+                tr("FFmpeg 実行ファイルが見つかりません: {path}", path=exe))
 
 
 # 動画の総再生時間を ffprobe で取得する
@@ -115,11 +117,11 @@ def probe_duration(input_path, ffmpeg_settings):
             creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
-        raise FFmpegError(f"ffprobe 実行に失敗: {e}") from e
+        raise FFmpegError(tr("ffprobe 実行に失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
         raise FFmpegError(
-            "ffprobe が失敗",
+            tr("ffprobe が失敗"),
             command=cmd,
             stderr_tail=result.stderr,
             returncode=result.returncode,
@@ -129,7 +131,7 @@ def probe_duration(input_path, ffmpeg_settings):
         data = json.loads(result.stdout)
         return float(data["format"]["duration"])
     except (json.JSONDecodeError, KeyError, ValueError) as e:
-        raise FFmpegError(f"ffprobe 出力解析に失敗: {e}") from e
+        raise FFmpegError(tr("ffprobe 出力解析に失敗: {error}", error=e)) from e
 
 
 # 映像ストリームの回転量(度)を取得する (縦横判定の表示寸法補正用 / request14)
@@ -174,23 +176,23 @@ def probe_dimensions(input_path, ffmpeg_settings):
             creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
-        raise FFmpegError(f"ffprobe 実行に失敗: {e}") from e
+        raise FFmpegError(tr("ffprobe 実行に失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
         raise FFmpegError(
-            "ffprobe が失敗", command=cmd,
+            tr("ffprobe が失敗"), command=cmd,
             stderr_tail=result.stderr, returncode=result.returncode,
         )
 
     try:
         streams = json.loads(result.stdout).get("streams", [])
         if not streams:
-            raise FFmpegError("映像ストリームが見つかりません")
+            raise FFmpegError(tr("映像ストリームが見つかりません"))
         stream = streams[0]
         width = int(stream["width"])
         height = int(stream["height"])
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-        raise FFmpegError(f"ffprobe 出力解析に失敗: {e}") from e
+        raise FFmpegError(tr("ffprobe 出力解析に失敗: {error}", error=e)) from e
 
     # 回転(±90/±270)がある場合は表示寸法として幅・高さを入れ替える
     rotation = _extract_rotation(stream)
@@ -212,7 +214,7 @@ def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=
     if returncode != 0:
         _logger.error("FFmpeg 失敗 (code=%s): %s", returncode, stderr_tail)
         raise FFmpegError(
-            f"FFmpeg 実行失敗 (returncode={returncode})",
+            tr("FFmpeg 実行失敗 (returncode={code})", code=returncode),
             command=command,
             stderr_tail=stderr_tail,
             returncode=returncode,

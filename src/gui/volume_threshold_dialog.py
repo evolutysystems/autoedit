@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import tr
 from . import theme
 
 # ウィンドウ既定幅
@@ -28,7 +29,7 @@ class VolumeThresholdDialog(QDialog):
     # 初期化
     def __init__(self, initial_db, measured_db=None, region_count=0, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("音量解析 — カット閾値の確認")
+        self.setWindowTitle(tr("音量解析 — カット閾値の確認"))
         self.setMinimumWidth(_DIALOG_MIN_WIDTH)
         self._initial_db = int(initial_db)
         # ガラスダイアログ化 (resolve3 §5.1)。QSS はアプリ全体へ適用済み。
@@ -40,14 +41,14 @@ class VolumeThresholdDialog(QDialog):
         root = QVBoxLayout(self)
 
         # 説明
-        root.addWidget(QLabel(
+        root.addWidget(QLabel(tr(
             "入力動画を解析しました。この dB 以下をカット、\n"
             "以上を動画として使用します。値は手修正できます。"
-        ))
+        )))
 
         # 閾値入力欄 (整数のみ・負値可)
         row = QHBoxLayout()
-        row.addWidget(QLabel("発話区間の最低dB:"))
+        row.addWidget(QLabel(tr("発話区間の最低dB:")))
         self.db_edit = QLineEdit(str(self._initial_db))
         self.db_edit.setValidator(QIntValidator())
         row.addWidget(self.db_edit)
@@ -56,9 +57,10 @@ class VolumeThresholdDialog(QDialog):
 
         # 補助情報 (測定値・対象区間数)
         if measured_db is not None:
-            info = f"（測定値: {int(measured_db)} dB / 対象区間: {region_count}）"
+            info = tr("（測定値: {db} dB / 対象区間: {count}）",
+                      db=int(measured_db), count=region_count)
         else:
-            info = "（自動測定できませんでした。既定値を表示しています）"
+            info = tr("（自動測定できませんでした。既定値を表示しています）")
         root.addWidget(QLabel(info))
 
         # ボタン (OK=確定保存 / 変更しない=既定で続行)
@@ -69,7 +71,7 @@ class VolumeThresholdDialog(QDialog):
         self.ok_button.clicked.connect(self.accept)
         # 確定は主要動作 (アクセント塗り / resolve3 §5.2-2)
         theme.mark_primary(self.ok_button)
-        self.keep_button = QPushButton("変更しない")
+        self.keep_button = QPushButton(tr("変更しない"))
         self.keep_button.clicked.connect(self.reject)
         button_row.addWidget(self.ok_button)
         button_row.addWidget(self.keep_button)

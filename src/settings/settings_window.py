@@ -37,10 +37,12 @@ from PySide6.QtWidgets import (
 # ための小部品 (resolve6 §5.4)。theme と同じ経路で読み込む。
 try:
     from src.gui import color_field, theme
+    from src.i18n import tr
 except ImportError:
     sys.path.insert(
         0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.gui import color_field, theme
+    from src.i18n import tr
 
 DEFAULT_UI_SETTINGS = theme.DEFAULT_UI_SETTINGS
 
@@ -1241,7 +1243,7 @@ class SettingsWindow(QWidget):
     # 初期化処理
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle(tr(WINDOW_TITLE))
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
         # ガラスモーフィズムの背景を敷く (resolve3 §3-2)。QSS はアプリ全体へ
         # 適用済みのため、ここでは背景グラデーションを描くだけでよい。
@@ -1348,25 +1350,59 @@ class SettingsWindow(QWidget):
     def _build_ui(self):
         root_layout = QVBoxLayout(self)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_general_tab(), "一般")
-        tabs.addTab(self._build_subtitle_tab(), "字幕")
-        tabs.addTab(self._build_vertical_tab(), "縦動画")
-        tabs.addTab(self._build_archive_tab(), "アーカイブ")
-        tabs.addTab(self._build_blur_tab(), "ぼかし")
-        tabs.addTab(self._build_account_tab(), "アカウント")
+        self.tabs = QTabWidget()
+        self._add_setting_tabs()
         # 先頭 (「一般」) タブ選択時のみペイン左上を四角にする (resolve4 S1)
-        theme.bind_tab_pane_corner(tabs)
-        root_layout.addWidget(tabs)
+        theme.bind_tab_pane_corner(self.tabs)
+        root_layout.addWidget(self.tabs)
 
         # 保存ボタン (全タブ共通・タブ外に配置)
-        save_button = QPushButton("保存")
-        save_button.setMinimumHeight(32)
-        save_button.clicked.connect(self._on_save)
+        self.save_button = QPushButton(tr("保存"))
+        self.save_button.setMinimumHeight(32)
+        self.save_button.clicked.connect(self._on_save)
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
-        button_layout.addWidget(save_button)
+        button_layout.addWidget(self.save_button)
         root_layout.addLayout(button_layout)
+
+    # タブを並べる (構築と言語切替の双方から使う / ver8 resolve §5)
+    def _add_setting_tabs(self):
+        self.tabs.addTab(self._build_general_tab(), tr("一般"))
+        self.tabs.addTab(self._build_subtitle_tab(), tr("字幕"))
+        self.tabs.addTab(self._build_vertical_tab(), tr("縦動画"))
+        self.tabs.addTab(self._build_archive_tab(), tr("アーカイブ"))
+        self.tabs.addTab(self._build_blur_tab(), tr("ぼかし"))
+        self.tabs.addTab(self._build_account_tab(), tr("アカウント"))
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    #
+    # 項目名・注記・ドロップダウンの選択肢が画面じゅうに散っているため、
+    # 1 つずつ setText し直すのではなくタブを作り直す。入力途中の値は
+    # _collect_settings で控えて _load_to_ui で戻すため失われない
+    # (保存していない編集もそのまま残る)。
+    #
+    # アカウントタブだけは作り直さない。作り直すと残高と履歴を取り直す
+    # (= 通信が走る) ため、文言の貼り替えだけを頼む。
+    def retranslate(self):
+        pending = self._collect_settings()
+        current = self.tabs.currentIndex()
+        self.setWindowTitle(tr(WINDOW_TITLE))
+        self.save_button.setText(tr("保存"))
+
+        account_tab = self.account_tab
+        index = self.tabs.indexOf(account_tab)
+        if index >= 0:
+            self.tabs.removeTab(index)
+            account_tab.setParent(None)   # 作り直しに巻き込まれないよう外す
+        while self.tabs.count():
+            page = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            page.deleteLater()
+
+        self._add_setting_tabs()
+        account_tab.retranslate()
+        self.tabs.setCurrentIndex(max(0, min(current, self.tabs.count() - 1)))
+        self._load_to_ui(pending)
 
     # 「アカウント」タブを構築する (ver5 resolve §5.6 R13)
     # ログイン状態・残高・履歴・サブスク導線。ポイントの実体はメイン画面が作った
@@ -1376,7 +1412,9 @@ class SettingsWindow(QWidget):
         from ..gui.account_tab import AccountTab      # noqa: PLC0415 (循環を避けるため遅延)
         from ..services.config import current_points  # noqa: PLC0415
 
-        self.account_tab = AccountTab(current_points(), load_settings())
+        # 既に作ってあれば使い回す (言語切替のたびに残高・履歴を取り直さない)
+        if getattr(self, "account_tab", None) is None:
+            self.account_tab = AccountTab(current_points(), load_settings())
         return self.account_tab
 
     # 「一般」タブを構築する
@@ -1396,7 +1434,7 @@ class SettingsWindow(QWidget):
 
         # オープニング動画 (チェックON時のみ本編へ結合する)
         self.opening_edit = QLineEdit()
-        self.opening_enabled_check = QCheckBox("結合する")
+        self.opening_enabled_check = QCheckBox(tr("結合する"))
         opening_layout = self._make_file_picker(self.opening_edit)
         opening_layout.addWidget(self.opening_enabled_check)
         grid.addWidget(self._make_column_label("オープニング動画"), row, 0)
@@ -1405,7 +1443,7 @@ class SettingsWindow(QWidget):
 
         # エンディング動画 (チェックON時のみ本編へ結合する)
         self.ending_edit = QLineEdit()
-        self.ending_enabled_check = QCheckBox("結合する")
+        self.ending_enabled_check = QCheckBox(tr("結合する"))
         ending_layout = self._make_file_picker(self.ending_edit)
         ending_layout.addWidget(self.ending_enabled_check)
         grid.addWidget(self._make_column_label("エンディング動画"), row, 0)
@@ -1419,7 +1457,7 @@ class SettingsWindow(QWidget):
         row += 1
 
         # 自動更新チェック ON/OFF (request_autoupdate.md §7)
-        self.auto_update_check_check = QCheckBox("起動時に更新を確認する")
+        self.auto_update_check_check = QCheckBox(tr("起動時に更新を確認する"))
         grid.addWidget(self._make_column_label("自動更新"), row, 0)
         grid.addWidget(self.auto_update_check_check, row, 1)
         row += 1
@@ -1429,20 +1467,20 @@ class SettingsWindow(QWidget):
         # 無音判定の閾値は音量解析で確定する単一値 (volume_analysis.last_cut_db) を使用する。
 
         # 無音カット ON/OFF (resolve12)
-        self.silence_enabled_check = QCheckBox("無音カットを有効にする")
+        self.silence_enabled_check = QCheckBox(tr("無音カットを有効にする"))
         grid.addWidget(self._make_column_label("無音カット"), row, 0)
         grid.addWidget(self.silence_enabled_check, row, 1)
         row += 1
 
         # 境界フェード ON/OFF
-        self.fade_enabled_check = QCheckBox("セグメント境界にフェードを付与する")
+        self.fade_enabled_check = QCheckBox(tr("セグメント境界にフェードを付与する"))
         grid.addWidget(self._make_column_label("フェード"), row, 0)
         grid.addWidget(self.fade_enabled_check, row, 1)
         row += 1
 
         # フェード秒数 (float)
         self.fade_duration_edit = QLineEdit()
-        self.fade_duration_edit.setPlaceholderText(PLACEHOLDER_FADE_DURATION)
+        self.fade_duration_edit.setPlaceholderText(tr(PLACEHOLDER_FADE_DURATION))
         self.fade_duration_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
         grid.addWidget(self._make_column_label("フェード時間(秒)"), row, 0)
         grid.addWidget(self.fade_duration_edit, row, 1)
@@ -1462,13 +1500,13 @@ class SettingsWindow(QWidget):
         row = 0
 
         # テロップ生成 ON/OFF (要件②)
-        self.subtitle_enabled_check = QCheckBox("テロップ生成を有効にする")
+        self.subtitle_enabled_check = QCheckBox(tr("テロップ生成を有効にする"))
         grid.addWidget(self._make_column_label("テロップ生成"), row, 0)
         grid.addWidget(self.subtitle_enabled_check, row, 1)
         row += 1
 
         # 字幕編集画面 ON/OFF (GUI ランチャ実行時のみ有効。CLI 実行では画面は出ない)
-        self.review_enabled_check = QCheckBox("焼き込み前に字幕編集画面を開く")
+        self.review_enabled_check = QCheckBox(tr("焼き込み前に字幕編集画面を開く"))
         grid.addWidget(self._make_column_label("字幕編集"), row, 0)
         grid.addWidget(self.review_enabled_check, row, 1)
         row += 1
@@ -1476,7 +1514,7 @@ class SettingsWindow(QWidget):
         # ===== 発話検出 (テロップ表示の絞り込み) =====
         # 無音カット閾値とは別に、テロップを表示する発話区間を判定する閾値群
         # 発話検出 ON/OFF
-        self.speech_gate_enabled_check = QCheckBox("発話区間のみテロップを表示する")
+        self.speech_gate_enabled_check = QCheckBox(tr("発話区間のみテロップを表示する"))
         grid.addWidget(self._make_column_label("発話検出"), row, 0)
         grid.addWidget(self.speech_gate_enabled_check, row, 1)
         row += 1
@@ -1486,7 +1524,7 @@ class SettingsWindow(QWidget):
 
         # 発話区間検出の最小無音長 (float)
         self.speech_min_duration_edit = QLineEdit()
-        self.speech_min_duration_edit.setPlaceholderText(PLACEHOLDER_SPEECH_MIN_DURATION)
+        self.speech_min_duration_edit.setPlaceholderText(tr(PLACEHOLDER_SPEECH_MIN_DURATION))
         self.speech_min_duration_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
         grid.addWidget(self._make_column_label("発話最小無音長(秒)"), row, 0)
         grid.addWidget(self.speech_min_duration_edit, row, 1)
@@ -1500,7 +1538,7 @@ class SettingsWindow(QWidget):
 
         # 表示区間の前後パディング (float)
         self.speech_pad_edit = QLineEdit()
-        self.speech_pad_edit.setPlaceholderText(PLACEHOLDER_SPEECH_PAD)
+        self.speech_pad_edit.setPlaceholderText(tr(PLACEHOLDER_SPEECH_PAD))
         self.speech_pad_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
         grid.addWidget(self._make_column_label("前後パディング(秒)"), row, 0)
         grid.addWidget(self.speech_pad_edit, row, 1)
@@ -1551,8 +1589,8 @@ class SettingsWindow(QWidget):
         # フォント種類 (インストール済 + 追加フォント一覧から選択) + フォント追加ボタン
         # 各項目はそのフォント自身で描画され、プレビュー代わりになる (resolve16 §4.1)
         self.font_family_combo = self._make_font_family_combo()
-        add_font_button = QPushButton("追加…")
-        add_font_button.setToolTip("フォントファイル(.ttf/.otf/.ttc)を追加する")
+        add_font_button = QPushButton(tr("追加…"))
+        add_font_button.setToolTip(tr("フォントファイル(.ttf/.otf/.ttc)を追加する"))
         add_font_button.clicked.connect(self._on_add_font)
         font_row_layout = QHBoxLayout()
         font_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -1569,7 +1607,7 @@ class SettingsWindow(QWidget):
         row += 1
 
         # 追加可能フォントの注意書き (同カラムに小さく記載 / resolve16 §4.2)
-        font_note_label = QLabel(FONT_ADD_NOTE)
+        font_note_label = QLabel(tr(FONT_ADD_NOTE))
         theme.mark_note(font_note_label)
         # 文字サイズは QSS ではなくフォントで指定する (インライン指定の撤去 / resolve3 §5.3)
         note_font = QFont(font_note_label.font())
@@ -1630,10 +1668,10 @@ class SettingsWindow(QWidget):
         row += 1
 
         # 装飾 (太字/斜体/下線/打消し線) を横並びで配置
-        self.bold_check = QCheckBox("太字")
-        self.italic_check = QCheckBox("斜体")
-        self.underline_check = QCheckBox("下線")
-        self.strikeout_check = QCheckBox("打消し線")
+        self.bold_check = QCheckBox(tr("太字"))
+        self.italic_check = QCheckBox(tr("斜体"))
+        self.underline_check = QCheckBox(tr("下線"))
+        self.strikeout_check = QCheckBox(tr("打消し線"))
         decoration_layout = QHBoxLayout()
         decoration_layout.setContentsMargins(0, 0, 0, 0)
         decoration_layout.addWidget(self.bold_check)
@@ -1675,11 +1713,11 @@ class SettingsWindow(QWidget):
         self.margin_v_edit = self._make_int_edit()
         margin_layout = QHBoxLayout()
         margin_layout.setContentsMargins(0, 0, 0, 0)
-        margin_layout.addWidget(QLabel("左"))
+        margin_layout.addWidget(QLabel(tr("左")))
         margin_layout.addWidget(self.margin_l_edit)
-        margin_layout.addWidget(QLabel("右"))
+        margin_layout.addWidget(QLabel(tr("右")))
         margin_layout.addWidget(self.margin_r_edit)
-        margin_layout.addWidget(QLabel("下"))
+        margin_layout.addWidget(QLabel(tr("下")))
         margin_layout.addWidget(self.margin_v_edit)
         grid.addWidget(self._make_column_label("余白"), row, 0)
         grid.addLayout(margin_layout, row, 1)
@@ -1701,7 +1739,7 @@ class SettingsWindow(QWidget):
         row = 0
 
         # 縦動画対応 ON/OFF (OFF 時は縦動画も横として処理する)
-        self.vertical_enabled_check = QCheckBox("縦動画を自動判定して縦仕様で出力する")
+        self.vertical_enabled_check = QCheckBox(tr("縦動画を自動判定して縦仕様で出力する"))
         grid.addWidget(self._make_column_label("縦動画対応"), row, 0)
         grid.addWidget(self.vertical_enabled_check, row, 1)
         row += 1
@@ -1711,9 +1749,9 @@ class SettingsWindow(QWidget):
         self.vertical_output_height_edit = self._make_int_edit()
         size_layout = QHBoxLayout()
         size_layout.setContentsMargins(0, 0, 0, 0)
-        size_layout.addWidget(QLabel("幅"))
+        size_layout.addWidget(QLabel(tr("幅")))
         size_layout.addWidget(self.vertical_output_width_edit)
-        size_layout.addWidget(QLabel("高"))
+        size_layout.addWidget(QLabel(tr("高")))
         size_layout.addWidget(self.vertical_output_height_edit)
         grid.addWidget(self._make_column_label("出力サイズ"), row, 0)
         grid.addLayout(size_layout, row, 1)
@@ -1749,11 +1787,11 @@ class SettingsWindow(QWidget):
         self.vertical_margin_v_edit = self._make_int_edit()
         margin_layout = QHBoxLayout()
         margin_layout.setContentsMargins(0, 0, 0, 0)
-        margin_layout.addWidget(QLabel("左"))
+        margin_layout.addWidget(QLabel(tr("左")))
         margin_layout.addWidget(self.vertical_margin_l_edit)
-        margin_layout.addWidget(QLabel("右"))
+        margin_layout.addWidget(QLabel(tr("右")))
         margin_layout.addWidget(self.vertical_margin_r_edit)
-        margin_layout.addWidget(QLabel("下"))
+        margin_layout.addWidget(QLabel(tr("下")))
         margin_layout.addWidget(self.vertical_margin_v_edit)
         grid.addWidget(self._make_column_label("余白"), row, 0)
         grid.addLayout(margin_layout, row, 1)
@@ -1775,10 +1813,10 @@ class SettingsWindow(QWidget):
         row = 0
 
         # 機能の有効化 (R1)。外すと解析もボタン表示も行わない (R9)
-        self.blur_enabled_check = QCheckBox("トラッキングぼかしを使用する")
-        self.blur_enabled_check.setToolTip(
+        self.blur_enabled_check = QCheckBox(tr("トラッキングぼかしを使用する"))
+        self.blur_enabled_check.setToolTip(tr(
             "マウスで囲んだ場所を追いかけて、出力へぼかしを焼き込みます。"
-            "使用しない場合、追従もぼかしボタンも一切出ません。")
+            "使用しない場合、追従もぼかしボタンも一切出ません。"))
         grid.addWidget(self._make_column_label("トラッキングぼかし"), row, 0)
         grid.addWidget(self.blur_enabled_check, row, 1)
         row += 1
@@ -1791,43 +1829,44 @@ class SettingsWindow(QWidget):
 
         # ぼかしの強さ (1〜100)。実際の sigma はキャンバス幅に対する比率で決まる
         self.blur_strength_edit = self._make_int_edit()
-        self.blur_strength_edit.setToolTip(
+        self.blur_strength_edit.setToolTip(tr(
             "1〜100。数字が大きいほど強くぼけます。"
             "実際の強さはキャンバス幅に対する比率で決まるため、横動画と縦動画で"
-            "同じ見え方になります。")
+            "同じ見え方になります。"))
         grid.addWidget(self._make_column_label("ぼかしの強さ"), row, 0)
         grid.addWidget(self.blur_strength_edit, row, 1)
         row += 1
 
         # 囲みの塗り方 (ver5 resolve8 §3.6)
         self.blur_shape_combo = self._make_value_combo(BLUR_SHAPE_OPTIONS)
-        self.blur_shape_combo.setToolTip(
+        self.blur_shape_combo.setToolTip(tr(
             "マウスで囲んだ形をどう塗るかです。\n"
-            "「囲んだとおりの四角」が一番分かりやすく、角丸・楕円は縁が目立ちにくくなります。")
+            "「囲んだとおりの四角」が一番分かりやすく、"
+            "角丸・楕円は縁が目立ちにくくなります。"))
         grid.addWidget(self._make_column_label("囲みの塗り方"), row, 0)
         grid.addWidget(self.blur_shape_combo, row, 1)
         row += 1
 
         # 縁をなじませるか (フェザー)
-        self.blur_feather_check = QCheckBox("縁をなじませる")
-        self.blur_feather_check.setToolTip(
-            "ぼかした範囲の縁をなじませて、切り抜いたような境目を目立たなくします。")
+        self.blur_feather_check = QCheckBox(tr("縁をなじませる"))
+        self.blur_feather_check.setToolTip(tr(
+            "ぼかした範囲の縁をなじませて、切り抜いたような境目を目立たなくします。"))
         grid.addWidget(self._make_column_label(""), row, 0)
         grid.addWidget(self.blur_feather_check, row, 1)
         row += 1
 
         # 追従の細かさ (1 秒あたり何枚を追うか)
         self.blur_sample_fps_combo = self._make_value_combo(BLUR_SAMPLE_FPS_OPTIONS)
-        self.blur_sample_fps_combo.setToolTip(
-            "細かくするほど追従が良くなりますが、囲んだあとの待ち時間が長くなります。")
+        self.blur_sample_fps_combo.setToolTip(tr(
+            "細かくするほど追従が良くなりますが、囲んだあとの待ち時間が長くなります。"))
         grid.addWidget(self._make_column_label("追従の細かさ"), row, 0)
         grid.addWidget(self.blur_sample_fps_combo, row, 1)
         row += 1
 
         # コマ送りの飛び幅 (Shift + ← →)
         self.blur_step_frames_combo = self._make_value_combo(BLUR_STEP_FRAMES_OPTIONS)
-        self.blur_step_frames_combo.setToolTip(
-            "ぼかしの画面で Shift + ← → を押したときに送るコマ数です。")
+        self.blur_step_frames_combo.setToolTip(tr(
+            "ぼかしの画面で Shift + ← → を押したときに送るコマ数です。"))
         grid.addWidget(self._make_column_label("コマ送りの飛び幅"), row, 0)
         grid.addWidget(self.blur_step_frames_combo, row, 1)
         row += 1
@@ -1840,16 +1879,16 @@ class SettingsWindow(QWidget):
         row += 1
 
         # 同梱物のライセンス表記 (§5.10.3)
-        self.blur_license_button = QPushButton("ライセンス表記を開く")
+        self.blur_license_button = QPushButton(tr("ライセンス表記を開く"))
         self.blur_license_button.clicked.connect(self._open_licenses_dir)
         grid.addWidget(self._make_column_label("ライセンス"), row, 0)
         grid.addWidget(self.blur_license_button, row, 1)
         row += 1
 
         layout.addLayout(grid)
-        note = QLabel(
+        note = QLabel(tr(
             "ぼかす場所は Timeline 編集画面でクリップを選び、「ぼかし...」で囲んで決めます。"
-            "指定はそのクリップの中だけに効きます。")
+            "指定はそのクリップの中だけに効きます。"))
         note.setWordWrap(True)
         theme.mark_note(note)
         note_font = QFont(note.font())
@@ -1865,8 +1904,8 @@ class SettingsWindow(QWidget):
         path = resolve_licenses_dir()
         if not path:
             QMessageBox.information(
-                self, "ライセンス表記",
-                "ライセンス表記のフォルダが見つかりませんでした。")
+                self, tr("ライセンス表記"),
+                tr("ライセンス表記のフォルダが見つかりませんでした。"))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
@@ -1888,14 +1927,14 @@ class SettingsWindow(QWidget):
         # タイトル/説明/チェックは (末尾で追加される grid とは別に) layout へ直接足し、
         # 「テーマ・イントロカード」節より前に来るよう表示順を保つ。
         layout.addWidget(self._make_title("アーカイブ切り抜き"))
-        archive_note = QLabel(
+        archive_note = QLabel(tr(
             "メイン画面の「アーカイブ切り抜き」タブを使えるようにします。\n"
             "変更はアプリの再起動後に反映されます。"
-        )
+        ))
         theme.mark_note(archive_note)
         layout.addWidget(archive_note)
 
-        self.archive_enabled_check = QCheckBox("アーカイブ切り抜きを有効にする")
+        self.archive_enabled_check = QCheckBox(tr("アーカイブ切り抜きを有効にする"))
         archive_enable_layout = QHBoxLayout()
         archive_enable_layout.setContentsMargins(0, 0, 0, 0)
         archive_enable_layout.addWidget(self._make_column_label("機能"))
@@ -1905,15 +1944,15 @@ class SettingsWindow(QWidget):
 
         # 見出し (テーマ・イントロカード)
         layout.addWidget(self._make_title("テーマ・イントロカード"))
-        note = QLabel(
+        note = QLabel(tr(
             "字幕一覧画面でテーマを入力したクリップに、開始前バッファを復元して\n"
             "ブラー+黒帯+中央テーマのイントロを付け、本編には左上へテーマを焼きます。"
-        )
+        ))
         theme.mark_note(note)
         layout.addWidget(note)
 
         # 機能 ON/OFF (OFF 時はテーマ欄自体を出さない)
-        self.intro_enabled_check = QCheckBox("テーマ・イントロカードを有効にする")
+        self.intro_enabled_check = QCheckBox(tr("テーマ・イントロカードを有効にする"))
         grid.addWidget(self._make_column_label("機能"), row, 0)
         grid.addWidget(self.intro_enabled_check, row, 1)
         row += 1
@@ -1935,9 +1974,9 @@ class SettingsWindow(QWidget):
         self.intro_margin_bottom_edit = self._make_int_edit()
         margin_layout = QHBoxLayout()
         margin_layout.setContentsMargins(0, 0, 0, 0)
-        margin_layout.addWidget(QLabel("上"))
+        margin_layout.addWidget(QLabel(tr("上")))
         margin_layout.addWidget(self.intro_margin_top_edit)
-        margin_layout.addWidget(QLabel("下"))
+        margin_layout.addWidget(QLabel(tr("下")))
         margin_layout.addWidget(self.intro_margin_bottom_edit)
         grid.addWidget(self._make_column_label("黒帯の余白(px)"), row, 0)
         grid.addLayout(margin_layout, row, 1)
@@ -1950,9 +1989,9 @@ class SettingsWindow(QWidget):
         self.intro_box_opacity_edit = self._make_float_edit()
         box_layout = QHBoxLayout()
         box_layout.setContentsMargins(0, 0, 0, 0)
-        box_layout.addWidget(QLabel("色"))
+        box_layout.addWidget(QLabel(tr("色")))
         box_layout.addWidget(self.intro_box_color_edit)
-        box_layout.addWidget(QLabel("不透明度"))
+        box_layout.addWidget(QLabel(tr("不透明度")))
         box_layout.addWidget(self.intro_box_opacity_edit)
         grid.addWidget(self._make_column_label("黒帯"), row, 0)
         grid.addLayout(box_layout, row, 1)
@@ -2005,16 +2044,16 @@ class SettingsWindow(QWidget):
         self.intro_tag_margin_v_edit = self._make_int_edit()
         tag_margin_layout = QHBoxLayout()
         tag_margin_layout.setContentsMargins(0, 0, 0, 0)
-        tag_margin_layout.addWidget(QLabel("左"))
+        tag_margin_layout.addWidget(QLabel(tr("左")))
         tag_margin_layout.addWidget(self.intro_tag_margin_l_edit)
-        tag_margin_layout.addWidget(QLabel("上"))
+        tag_margin_layout.addWidget(QLabel(tr("上")))
         tag_margin_layout.addWidget(self.intro_tag_margin_v_edit)
         grid.addWidget(self._make_column_label("左上タグ 余白(px)"), row, 0)
         grid.addLayout(tag_margin_layout, row, 1)
         row += 1
 
         # イントロ音声の無音化
-        self.intro_mute_check = QCheckBox("イントロの音声を無音化する")
+        self.intro_mute_check = QCheckBox(tr("イントロの音声を無音化する"))
         grid.addWidget(self._make_column_label("イントロ音声"), row, 0)
         grid.addWidget(self.intro_mute_check, row, 1)
         row += 1
@@ -2025,7 +2064,7 @@ class SettingsWindow(QWidget):
 
     # タイトル用ラベルを生成する
     def _make_title(self, text):
-        label = QLabel(text)
+        label = QLabel(tr(text))
         font = QFont()
         font.setBold(True)
         font.setPointSize(TITLE_FONT_SIZE)
@@ -2036,8 +2075,13 @@ class SettingsWindow(QWidget):
 
     # 項目名ラベルを生成する
     def _make_column_label(self, text):
-        label = QLabel(text)
-        label.setMinimumWidth(COLUMN_LABEL_WIDTH)
+        label = QLabel(tr(text))
+        # 下限は「設定の最小幅」と「文言そのものの幅」の大きいほう (ver8 resolve §6)。
+        # 画面の幅が足りないと列は下限まで縮むため、最小幅だけだと日本語より長い
+        # 英語の項目名が途中で切れる。文言ぶんを下限に含めて切れないようにする。
+        label.setMinimumWidth(max(
+            COLUMN_LABEL_WIDTH,
+            label.fontMetrics().horizontalAdvance(label.text())))
         label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         return label
 
@@ -2063,7 +2107,7 @@ class SettingsWindow(QWidget):
         combo = QComboBox()
         combo.setEditable(False)
         combo.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
-        combo.addItem("(字幕フォントに従う)", "")  # 既定 = 空文字
+        combo.addItem(tr("(字幕フォントに従う)"), "")  # 既定 = 空文字
         for family in QFontDatabase.families():
             combo.addItem(family, family)
             combo.setItemData(combo.count() - 1, QFont(family, FONT_PREVIEW_POINT_SIZE), Qt.FontRole)
@@ -2074,14 +2118,15 @@ class SettingsWindow(QWidget):
     def _make_value_combo(self, options):
         combo = QComboBox()
         combo.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        # 表示だけ訳す。保存されるのは value のため設定値は言語に左右されない
         for value, text in options:
-            combo.addItem(text, value)
+            combo.addItem(tr(text), value)
         return combo
 
     # ディレクトリ選択用の入力欄+ボタンを生成する
     def _make_dir_picker(self, line_edit):
         line_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
-        button = QPushButton("参照…")
+        button = QPushButton(tr("参照…"))
         button.clicked.connect(lambda: self._choose_directory(line_edit))
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -2092,7 +2137,7 @@ class SettingsWindow(QWidget):
     # ファイル選択用の入力欄+ボタンを生成する
     def _make_file_picker(self, line_edit):
         line_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
-        button = QPushButton("参照…")
+        button = QPushButton(tr("参照…"))
         button.clicked.connect(lambda: self._choose_file(line_edit))
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -2127,7 +2172,8 @@ class SettingsWindow(QWidget):
     def _make_color_role_row(self, line_edits, with_alpha, field_width):
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        for label_text, line_edit in zip(COLOR_ROLE_LABELS, line_edits):
+        for label_text, line_edit in zip(
+                (tr(t) for t in COLOR_ROLE_LABELS), line_edits):
             column = QVBoxLayout()
             column.setContentsMargins(0, 0, 0, 0)
             column.setSpacing(2)
@@ -2149,7 +2195,7 @@ class SettingsWindow(QWidget):
             options = QColorDialog.ColorDialogOption.ShowAlphaChannel
         else:
             options = QColorDialog.ColorDialogOption(0)
-        color = QColorDialog.getColor(initial, self, "色を選択", options)
+        color = QColorDialog.getColor(initial, self, tr("色を選択"), options)
         if color.isValid():
             line_edit.setText(self._format_color(color, with_alpha))
 
@@ -2177,7 +2223,8 @@ class SettingsWindow(QWidget):
     # ディレクトリ選択ダイアログを開く
     def _choose_directory(self, line_edit):
         start_dir = line_edit.text() or SETTINGS_DIR
-        path = QFileDialog.getExistingDirectory(self, "ディレクトリを選択", start_dir)
+        path = QFileDialog.getExistingDirectory(
+            self, tr("ディレクトリを選択"), start_dir)
         if path:
             line_edit.setText(path)
 
@@ -2185,15 +2232,17 @@ class SettingsWindow(QWidget):
     def _choose_file(self, line_edit):
         start_dir = os.path.dirname(line_edit.text()) if line_edit.text() else SETTINGS_DIR
         path, _ = QFileDialog.getOpenFileName(
-            self, "ファイルを選択", start_dir, VIDEO_FILE_FILTER
+            self, tr("ファイルを選択"), start_dir, tr(VIDEO_FILE_FILTER)
         )
         if path:
             line_edit.setText(path)
 
     # 既存設定をUIへ反映する
-    def _load_to_ui(self):
+    # source を渡すと、保存済みの setting.json ではなくその内容で画面を作る。
+    # 言語切替で画面を作り直すときに、入力途中の値を戻すために使う (ver8 resolve §5)。
+    def _load_to_ui(self, source=None):
         # 表示用と保存マージ用に元設定を保持する
-        self._loaded_settings = load_settings()
+        self._loaded_settings = source if source is not None else load_settings()
         general = self._loaded_settings.get("general", {})
         subtitle = self._loaded_settings.get("subtitle", {})
         silence_cut = self._loaded_settings.get("silence_cut", {})
@@ -2394,14 +2443,15 @@ class SettingsWindow(QWidget):
     # 対応拡張子(.ttf/.otf/.ttc)のみ受理し、settings/fonts へコピー→Qt 登録→一覧/プレビュー反映する。
     def _on_add_font(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "フォントファイルを選択", SETTINGS_DIR, FONT_ADD_FILTER
+            self, tr("フォントファイルを選択"), SETTINGS_DIR, tr(FONT_ADD_FILTER)
         )
         if not path:
             return
         # 対応拡張子以外は弾く (焼き込みで解決できない形式を防ぐ)
         if os.path.splitext(path)[1].lower() not in FONT_FILE_EXTENSIONS:
             _logger.warning("非対応フォントを拒否: %s", path)
-            QMessageBox.warning(self, "非対応フォント", f"{FONT_ADD_NOTE}。")
+            QMessageBox.warning(self, tr("非対応フォント"),
+                                tr("{note}。", note=tr(FONT_ADD_NOTE)))
             return
         # 格納ディレクトリ(settings/fonts)へコピーする
         try:
@@ -2411,13 +2461,16 @@ class SettingsWindow(QWidget):
                 shutil.copy2(path, dest)
         except OSError as e:
             _logger.warning("フォントのコピーに失敗: %s -> %s (%s)", path, self._fonts_dir, e)
-            QMessageBox.warning(self, "追加失敗", f"フォントの追加に失敗しました。\n{e}")
+            QMessageBox.warning(
+                self, tr("追加失敗"),
+                tr("フォントの追加に失敗しました。\n{error}", error=e))
             return
         # Qt へ登録し、追加フォントのファミリ名を取得する
         font_id = QFontDatabase.addApplicationFont(dest)
         if font_id < 0:
             _logger.warning("フォントの Qt 登録に失敗: %s", dest)
-            QMessageBox.warning(self, "追加失敗", "フォントの読み込みに失敗しました。")
+            QMessageBox.warning(self, tr("追加失敗"),
+                                tr("フォントの読み込みに失敗しました。"))
             return
         families = QFontDatabase.applicationFontFamilies(font_id)
         # 一覧を再構築し、追加フォントを選択状態にする
@@ -2428,7 +2481,9 @@ class SettingsWindow(QWidget):
         shown = "、".join(families) if families else os.path.basename(dest)
         # 追加ファイル名・登録ファミリ名・格納先を INFO 出力する (resolve16 §6)
         _logger.info("フォント追加: %s -> %s (ファミリ: %s)", os.path.basename(path), dest, shown)
-        QMessageBox.information(self, "追加完了", f"フォントを追加しました:\n{shown}")
+        QMessageBox.information(
+            self, tr("追加完了"),
+            tr("フォントを追加しました:\n{families}", families=shown))
 
     # 文字列を整数化する (空・非数値時は既定値を返す)
     def _to_int(self, text, default):
@@ -2573,7 +2628,7 @@ class SettingsWindow(QWidget):
             # 検出モデルは「囲みを追う助け」なので、無くても機能は動く (resolve8 §5.13)
             _available, reason = models.availability(cfg)
         except Exception as error:                   # noqa: BLE001 (設定画面を落とさない)
-            reason = f"ぼかし機能の状態を確認できません: {error}"
+            reason = tr("ぼかし機能の状態を確認できません: {error}", error=error)
         self.blur_status_label.setText(reason)
         self.blur_license_button.setEnabled(resolve_licenses_dir() is not None)
 
@@ -2586,10 +2641,12 @@ class SettingsWindow(QWidget):
             # 保存後の状態を loaded として保持しておく
             self._loaded_settings = settings
             if show_message:
-                QMessageBox.information(self, "保存完了", "設定を保存しました。")
+                QMessageBox.information(self, tr("保存完了"),
+                                        tr("設定を保存しました。"))
             return True
         except OSError as e:
-            QMessageBox.critical(self, "保存エラー", f"保存に失敗しました。\n{e}")
+            QMessageBox.critical(self, tr("保存エラー"),
+                                 tr("保存に失敗しました。\n{error}", error=e))
             return False
 
     # 保存ボタン押下処理

@@ -17,6 +17,7 @@ import datetime
 import time
 
 from ..exceptions import ApiError, AutoEditError
+from ..i18n import tr
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -176,7 +177,7 @@ class BillingService:
         response = self._points.auth.client.post(_CHECKOUT_PATH)
         url = str((response or {}).get("url") or "")
         if not url:
-            raise ApiError("決済ページの URL を取得できませんでした。")
+            raise ApiError(tr("決済ページの URL を取得できませんでした。"))
         _logger.info("Stripe の決済ページを取得しました。")
         return url
 
@@ -186,7 +187,7 @@ class BillingService:
         response = self._points.auth.client.post(_PORTAL_PATH)
         url = str((response or {}).get("url") or "")
         if not url:
-            raise ApiError("サブスクリプション管理ページの URL を取得できませんでした。")
+            raise ApiError(tr("サブスクリプション管理ページの URL を取得できませんでした。"))
         _logger.info("Stripe のカスタマーポータルを取得しました。")
         return url
 

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..services.billing import BillingService, TYPE_NONE, TYPE_STRIPE, TYPE_TWITCH
 from ..services.stretheus_auth import parse_timestamp
 from ..utils.logger import get_logger
@@ -134,27 +135,27 @@ class AccountTab(QWidget):
         layout.addWidget(self.balance_label)
 
         self.note_label = QLabel(
-            "ログインしていないあいだは、この端末のポイントを消費します"
-            "(残高が足りない出力には透かしが入ります)。"
-            "ログインするとアカウントのポイントに切り替わります。")
+            tr("ログインしていないあいだは、この端末のポイントを消費します"
+               "(残高が足りない出力には透かしが入ります)。"
+               "ログインするとアカウントのポイントに切り替わります。"))
         self.note_label.setWordWrap(True)
         theme.mark_note(self.note_label)
         layout.addWidget(self.note_label)
 
         button_row = QHBoxLayout()
-        self.login_button = QPushButton("ログイン")
+        self.login_button = QPushButton(tr("ログイン"))
         self.login_button.clicked.connect(self._on_login)
         button_row.addWidget(self.login_button)
-        self.logout_button = QPushButton("ログアウト")
+        self.logout_button = QPushButton(tr("ログアウト"))
         self.logout_button.clicked.connect(self._on_logout)
         button_row.addWidget(self.logout_button)
-        self.refresh_button = QPushButton("更新")
+        self.refresh_button = QPushButton(tr("更新"))
         self.refresh_button.clicked.connect(self.reload)
         button_row.addWidget(self.refresh_button)
         button_row.addStretch(1)
         layout.addLayout(button_row)
 
-        self.subscribe_button = QPushButton("Twitch のサブスクページを開く")
+        self.subscribe_button = QPushButton(tr("Twitch のサブスクページを開く"))
         self.subscribe_button.clicked.connect(self._on_subscribe)
         layout.addWidget(self.subscribe_button)
 
@@ -163,7 +164,7 @@ class AccountTab(QWidget):
         #   種別    … GET /api/points の subscriptionType (権威)
         #   期間/履歴 … GET /api/billing/subscription (新設。取れなければ出さない)
         # 登録の導線はここには置かない (メイン画面へ移した)。
-        self.billing_title = QLabel("サブスクリプション状態")
+        self.billing_title = QLabel(tr("サブスクリプション状態"))
         theme.mark_title(self.billing_title)
         layout.addWidget(self.billing_title)
 
@@ -177,18 +178,19 @@ class AccountTab(QWidget):
         layout.addWidget(self.billing_note_label)
 
         billing_row = QHBoxLayout()
-        self.portal_button = QPushButton("サブスクリプションを管理")
+        self.portal_button = QPushButton(tr("サブスクリプションを管理"))
         self.portal_button.clicked.connect(self._on_portal)
         billing_row.addWidget(self.portal_button)
         billing_row.addStretch(1)
         layout.addLayout(billing_row)
 
-        self.subscription_history_title = QLabel("サブスクリプション履歴")
+        self.subscription_history_title = QLabel(tr("サブスクリプション履歴"))
         theme.mark_title(self.subscription_history_title)
         layout.addWidget(self.subscription_history_title)
 
         self.subscription_history_table = QTableWidget(0, 3)
-        self.subscription_history_table.setHorizontalHeaderLabels(["日時", "種別", "内容"])
+        self.subscription_history_table.setHorizontalHeaderLabels(
+            [tr("日時"), tr("種別"), tr("内容")])
         self.subscription_history_table.verticalHeader().setVisible(False)
         self.subscription_history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.subscription_history_table.setSelectionMode(QTableWidget.NoSelection)
@@ -200,12 +202,13 @@ class AccountTab(QWidget):
         self._show_billing(False)
 
         # ポイントの履歴。サブスクの履歴と見分けられるよう見出しを分ける。
-        history_label = QLabel("ポイント履歴")
-        theme.mark_title(history_label)
-        layout.addWidget(history_label)
+        self.history_title = QLabel(tr("ポイント履歴"))
+        theme.mark_title(self.history_title)
+        layout.addWidget(self.history_title)
 
         self.history_table = QTableWidget(0, 4)
-        self.history_table.setHorizontalHeaderLabels(["日時", "内容", "増減", "残高"])
+        self.history_table.setHorizontalHeaderLabels(
+            [tr("日時"), tr("内容"), tr("増減"), tr("残高")])
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.history_table.setSelectionMode(QTableWidget.NoSelection)
@@ -230,7 +233,7 @@ class AccountTab(QWidget):
         if not logged_in:
             # 未ログインでも端末の残高と履歴は出す。サブスクの節だけ出さない
             # (匿名では加入できず、状態の照会先も無い)。
-            self.status_label.setText("ログインしていません (この端末のポイント)")
+            self.status_label.setText(tr("ログインしていません (この端末のポイント)"))
             self._subscription_type = None
             self._subscription_state = None
             self._show_billing(False)
@@ -240,19 +243,42 @@ class AccountTab(QWidget):
                 self.history_table.setRowCount(0)
                 return
 
-            self.balance_label.setText("残高を取得しています…")
+            self.balance_label.setText(tr("残高を取得しています…"))
             self._start_balance()
             self._start_history()
             return
 
         user = self._points.auth.user() or {}
         name = user.get("displayName") or user.get("twitchUserId") or ""
-        self.status_label.setText(f"ログイン中: {name}" if name else "ログイン中")
-        self.balance_label.setText("残高を取得しています…")
+        self.status_label.setText(
+            tr("ログイン中: {name}", name=name) if name else tr("ログイン中"))
+        self.balance_label.setText(tr("残高を取得しています…"))
         self._start_balance()
         self._start_history()
         self._start_billing_config()
         self._start_subscription()
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # 状態・残高・履歴は reload が組み立て直すが、通信を伴うため呼ばない。
+    # 静的な見出しとボタンだけ入れ替え、動的な表示は次の「更新」に任せる。
+    def retranslate(self):
+        self.note_label.setText(
+            tr("ログインしていないあいだは、この端末のポイントを消費します"
+               "(残高が足りない出力には透かしが入ります)。"
+               "ログインするとアカウントのポイントに切り替わります。"))
+        if self.login_button.isEnabled():
+            self.login_button.setText(tr("ログイン"))
+        self.logout_button.setText(tr("ログアウト"))
+        self.refresh_button.setText(tr("更新"))
+        self.subscribe_button.setText(tr("Twitch のサブスクページを開く"))
+        self.billing_title.setText(tr("サブスクリプション状態"))
+        self.portal_button.setText(tr("サブスクリプションを管理"))
+        self.subscription_history_title.setText(tr("サブスクリプション履歴"))
+        self.subscription_history_table.setHorizontalHeaderLabels(
+            [tr("日時"), tr("種別"), tr("内容")])
+        self.history_title.setText(tr("ポイント履歴"))
+        self.history_table.setHorizontalHeaderLabels(
+            [tr("日時"), tr("内容"), tr("増減"), tr("残高")])
 
     def _is_logged_in(self):
         return bool(self._points is not None and self._points.auth.is_logged_in())
@@ -272,7 +298,8 @@ class AccountTab(QWidget):
     def _on_balance(self, balance):
         balance = balance or self._points.last_balance()
         if not balance:
-            self.balance_label.setText("残高を取得できません (オフラインの可能性があります)")
+            self.balance_label.setText(
+                tr("残高を取得できません (オフラインの可能性があります)"))
             # 加入しているかどうか分からない状態で「未加入」とは書かない。
             self._subscription_type = None
             self._show_billing(False)
@@ -284,13 +311,14 @@ class AccountTab(QWidget):
             clip = costs.get("clip")
             archive = costs.get("archive")
             if clip is not None and archive is not None:
-                lines.append(f"単価: クリップ {int(clip)} pt / アーカイブ {int(archive)} pt")
+                lines.append(tr("単価: クリップ {clip} pt / アーカイブ {archive} pt",
+                                clip=int(clip), archive=int(archive)))
         reset = format_reset(balance)
         subscription = str(balance.get("subscriptionType") or "None")
         if subscription != "None":
-            lines.append(f"サブスク: {subscription}")
+            lines.append(tr("サブスク: {subscription}", subscription=subscription))
         elif reset:
-            lines.append(f"次回リセット: {reset}")
+            lines.append(tr("次回リセット: {reset}", reset=reset))
         self.balance_label.setText("\n".join(lines))
 
         # 残高の応答で初めて subscriptionType が分かるため、ここで節を作り直す。
@@ -329,26 +357,27 @@ class AccountTab(QWidget):
     # 履歴 1 件の内容 (種別 + ジョブ種別 + 透かしの有無)
     @staticmethod
     def _describe(item):
-        kind = _KIND_LABELS.get(str(item.get("kind") or ""), str(item.get("kind") or ""))
-        job = _JOB_LABELS.get(str(item.get("jobType") or ""), "")
-        text = f"{kind} ({job})" if job else kind
+        kind = tr(_KIND_LABELS.get(str(item.get("kind") or ""),
+                                   str(item.get("kind") or "")))
+        job = tr(_JOB_LABELS.get(str(item.get("jobType") or ""), ""))
+        text = tr("{kind} ({job})", kind=kind, job=job) if job else kind
         if item.get("unlimited"):
-            return f"{text} / サブスク"
+            return tr("{text} / サブスク", text=text)
         if item.get("watermarked"):
-            return f"{text} / 透かし入り"
+            return tr("{text} / 透かし入り", text=text)
         return text
 
     def _on_login(self):
         if self._points is None:
             QMessageBox.information(
-                self, "ログインできません",
-                "メイン画面から起動した場合のみログインできます。")
+                self, tr("ログインできません"),
+                tr("メイン画面から起動した場合のみログインできます。"))
             return
         if self._login_worker is not None and self._login_worker.isRunning():
             return
 
         self.login_button.setEnabled(False)
-        self.login_button.setText("ブラウザで許可してください…")
+        self.login_button.setText(tr("ブラウザで許可してください…"))
         self._login_worker = LoginWorker(self._points.auth, parent=self)
         self._login_worker.logged_in.connect(lambda _user: self.reload())
         self._login_worker.failed.connect(self._on_login_failed)
@@ -356,18 +385,18 @@ class AccountTab(QWidget):
         self._login_worker.start()
 
     def _on_login_failed(self, message):
-        QMessageBox.warning(self, "ログインできません",
-                            f"ログインに失敗しました。\n{message}")
+        QMessageBox.warning(self, tr("ログインできません"),
+                            tr("ログインに失敗しました。\n{message}", message=message))
 
     def _reset_login_button(self):
         self.login_button.setEnabled(True)
-        self.login_button.setText("ログイン")
+        self.login_button.setText(tr("ログイン"))
 
     def _on_logout(self):
         answer = QMessageBox.question(
-            self, "ログアウト",
-            "ログアウトすると、この端末のポイント (匿名) に切り替わります。"
-            "ポイントの消費と透かしはそのまま続きます。\nログアウトしますか？",
+            self, tr("ログアウト"),
+            tr("ログアウトすると、この端末のポイント (匿名) に切り替わります。"
+               "ポイントの消費と透かしはそのまま続きます。\nログアウトしますか？"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
@@ -376,7 +405,7 @@ class AccountTab(QWidget):
             self._points.auth.logout()
         except Exception as e:  # noqa: BLE001 (失敗しても画面は開いたままにする)
             _logger.exception("ログアウトに失敗")
-            QMessageBox.warning(self, "ログアウトできません", str(e))
+            QMessageBox.warning(self, tr("ログアウトできません"), str(e))
         self.reload()
 
     def _on_subscribe(self):
@@ -489,33 +518,36 @@ class AccountTab(QWidget):
 
         if subscription_type == TYPE_STRIPE:
             self.billing_note_label.setText(
-                "解約・カードの変更・請求書の確認は「サブスクリプションを管理」から行えます。")
+                tr("解約・カードの変更・請求書の確認は"
+                   "「サブスクリプションを管理」から行えます。"))
         elif subscription_type == TYPE_TWITCH:
             self.billing_note_label.setText(
-                "Twitch のサブスクリプションが切れると、ポイント制に戻ります"
-                "(残高が足りない出力には透かしが入ります)。")
+                tr("Twitch のサブスクリプションが切れると、ポイント制に戻ります"
+                   "(残高が足りない出力には透かしが入ります)。"))
         else:
             self.billing_note_label.setText(
-                "登録はメイン画面の「サブスクリプション」から行えます。")
+                tr("登録はメイン画面の「サブスクリプション」から行えます。"))
 
     # 状態の表示行を組み立てる (種別 / 状態 / 次回更新日)
     def _state_lines(self, subscription_type):
         state = self._subscription_state if isinstance(self._subscription_state, dict) else {}
 
-        kind = _SUBSCRIPTION_LABELS.get(subscription_type, subscription_type)
+        kind = tr(_SUBSCRIPTION_LABELS.get(subscription_type, subscription_type))
         channel = str(state.get("twitchChannel") or "").strip()
         if subscription_type == TYPE_TWITCH and channel:
-            kind = f"{kind} ({channel})"
-        lines = [f"種別: {kind}"]
+            kind = tr("{kind} ({channel})", kind=kind, channel=channel)
+        lines = [tr("種別: {kind}", kind=kind)]
 
         status = str(state.get("status") or "")
         if status:
-            lines.append("状態: " + _STATUS_LABELS.get(status, status))
+            lines.append(tr("状態: {status}",
+                            status=tr(_STATUS_LABELS.get(status, status))))
 
         period_end = parse_timestamp(state.get("currentPeriodEnd"))
         if period_end is not None:
-            label = "終了" if state.get("cancelAtPeriodEnd") else "次回更新"
-            lines.append(f"{label}: " + period_end.astimezone().strftime("%Y/%m/%d"))
+            label = tr("終了") if state.get("cancelAtPeriodEnd") else tr("次回更新")
+            lines.append(tr("{label}: {date}", label=label,
+                            date=period_end.astimezone().strftime("%Y/%m/%d")))
         return lines
 
     # 管理ページ (解約・カード変更・請求書) を開く。
@@ -526,7 +558,7 @@ class AccountTab(QWidget):
             return
 
         self.portal_button.setEnabled(False)
-        self.billing_note_label.setText("ブラウザで手続きしてください…")
+        self.billing_note_label.setText(tr("ブラウザで手続きしてください…"))
 
         self._billing_worker = BillingUrlWorker(self._billing, "portal", parent=self)
         self._billing_worker.ready.connect(self._on_portal_url)
@@ -539,13 +571,14 @@ class AccountTab(QWidget):
     def _on_portal_url(self, url):
         QDesktopServices.openUrl(QUrl(url))
         self.billing_note_label.setText(
-            "ブラウザで手続きしてください。変更後は「更新」で反映されます。")
+            tr("ブラウザで手続きしてください。変更後は「更新」で反映されます。"))
 
     def _on_billing_failed(self, message):
         self.billing_note_label.setText("")
         QMessageBox.warning(
-            self, "手続きを開始できません",
-            f"サブスクリプションの手続きを開始できませんでした。\n{message}")
+            self, tr("手続きを開始できません"),
+            tr("サブスクリプションの手続きを開始できませんでした。\n{message}",
+               message=message))
         self.reload()
 
     def _reset_billing_buttons(self):

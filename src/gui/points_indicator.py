@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..services.stretheus_auth import parse_timestamp
 from ..utils.logger import get_logger
 from . import theme
@@ -51,7 +52,7 @@ ANONYMOUS_NOTE = (
 def watermark_confirm(parent=None, message=WATERMARK_MESSAGE):
     def _confirm():
         answer = QMessageBox.question(
-            parent, "ポイントが不足しています", message,
+            parent, tr("ポイントが不足しています"), tr(message),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         return answer == QMessageBox.Yes
 
@@ -111,16 +112,17 @@ def format_reset(balance):
 # 残高の表示文を組み立てる (アカウントタブでも使う)
 def format_balance(balance):
     if not balance:
-        return "残高を取得できません"
+        return tr("残高を取得できません")
     if balance.get("unlimited"):
-        return "サブスク特典で無制限"
+        return tr("サブスク特典で無制限")
 
     available = balance.get("available")
     if available is None:
         available = balance.get("balance", 0)
     reset = format_reset(balance)
-    text = f"残り {int(available)} pt"
-    return f"{text} / 次回リセット {reset}" if reset else text
+    text = tr("残り {points} pt", points=int(available))
+    return (tr("{text} / 次回リセット {reset}", text=text, reset=reset)
+            if reset else text)
 
 
 class PointsIndicator(QWidget):
@@ -147,8 +149,8 @@ class PointsIndicator(QWidget):
         theme.mark_note(self.label)
         layout.addWidget(self.label)
 
-        self.login_button = QPushButton("ログイン")
-        self.login_button.setToolTip("Stretheus アカウントへログインします")
+        self.login_button = QPushButton(tr("ログイン"))
+        self.login_button.setToolTip(tr("Stretheus アカウントへログインします"))
         self.login_button.clicked.connect(self._on_login)
         layout.addWidget(self.login_button)
 
@@ -186,6 +188,8 @@ class PointsIndicator(QWidget):
         self.balance_changed.emit(shown)
 
     def _apply_state(self, balance=None, offline=False):
+        # 言語切替で表示を組み立て直すため控える (ver8 resolve §5)
+        self._offline = bool(offline)
         logged_in = self._points.auth.is_logged_in()
         self.login_button.setVisible(not logged_in)
         # 未ログインでもポイント制の対象のため、残高は常に出す (ver7 resolve §4)。
@@ -195,16 +199,28 @@ class PointsIndicator(QWidget):
         # オフライン表示は薄字にする (無効化で灰色になる)
         self.label.setEnabled(not offline)
         if offline:
-            self.label.setToolTip("サーバーへ接続できないため、最後に取得した残高です")
+            self.label.setToolTip(
+                tr("サーバーへ接続できないため、最後に取得した残高です"))
         else:
-            self.label.setToolTip("" if logged_in else ANONYMOUS_NOTE)
+            self.label.setToolTip("" if logged_in else tr(ANONYMOUS_NOTE))
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # 残高ラベルは format_balance が組み立てるため、最後に表示した状態で作り直す。
+    # 通信はしない (切り替えのたびに GET /api/points を叩かない)。
+    def retranslate(self):
+        self.login_button.setToolTip(tr("Stretheus アカウントへログインします"))
+        # ログイン手続き中はボタンの文言を奪わない (進行中の案内を保つ)
+        if self.login_button.isEnabled():
+            self.login_button.setText(tr("ログイン"))
+        self._apply_state(self._points.last_balance(),
+                          offline=getattr(self, "_offline", False))
 
     def _on_login(self):
         if self._login_worker is not None and self._login_worker.isRunning():
             return
 
         self.login_button.setEnabled(False)
-        self.login_button.setText("ブラウザで許可してください…")
+        self.login_button.setText(tr("ブラウザで許可してください…"))
         self._login_worker = LoginWorker(self._points.auth, parent=self)
         self._login_worker.logged_in.connect(self._on_logged_in)
         self._login_worker.failed.connect(self._on_login_failed)
@@ -217,12 +233,12 @@ class PointsIndicator(QWidget):
         self.reload()
 
     def _on_login_failed(self, message):
-        QMessageBox.warning(self, "ログインできません",
-                            f"ログインに失敗しました。\n{message}")
+        QMessageBox.warning(self, tr("ログインできません"),
+                            tr("ログインに失敗しました。\n{message}", message=message))
 
     def _reset_login_button(self):
         self.login_button.setEnabled(True)
-        self.login_button.setText("ログイン")
+        self.login_button.setText(tr("ログイン"))
 
 
 # 透かし入りでの出力を利用者へ確認する (ver5 resolve §5.6 R12)
@@ -252,8 +268,9 @@ class WatermarkConfirmBridge(QObject):
     def _on_confirm_requested(self):
         try:
             answer = QMessageBox.question(
-                self._parent_window, "ポイントが不足しています",
-                WATERMARK_MESSAGE, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                self._parent_window, tr("ポイントが不足しています"),
+                tr(WATERMARK_MESSAGE), QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No)
             self._result = answer == QMessageBox.Yes
         finally:
             self._event.set()

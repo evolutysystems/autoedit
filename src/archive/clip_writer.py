@@ -11,6 +11,7 @@ import os
 import shutil
 import tempfile
 
+from ..i18n import tr
 from ..modules import (
     comment_decor,
     concat_processor,
@@ -417,7 +418,7 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
 
     if progress_cb:
-        progress_cb("音声正規化")
+        progress_cb(tr("音声正規化"))
     # クリップ専用の作業サブフォルダ (無音カット出力名の衝突を防ぐ)
     clip_dir = os.path.join(workdir, f"clip{clip['index']}")
     os.makedirs(clip_dir, exist_ok=True)
@@ -429,12 +430,12 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         raw, os.path.join(clip_dir, "normalized.mp4"), settings)
     # 音量解析: 正規化後のクリップからカット閾値を確定する (ダイアログ無し)
     if progress_cb:
-        progress_cb("音量解析")
+        progress_cb(tr("音量解析"))
     _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
     if use_timeline:
         # Timeline 経路: 実カットしない。字幕の時間軸を Timeline の軸へ一致させる (§4-2)
         if progress_cb:
-            progress_cb("編集点検出・文字起こし")
+            progress_cb(tr("編集点検出・文字起こし"))
         # 出力プロファイルは寸法しか見ないため、実カット前の normalized で判定できる
         # (extract_segment はスケーリングしないため実カット後と同値)。
         profile = output_profile.resolve_output_profile(normalized, settings)
@@ -447,7 +448,7 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
     else:
         # 従来画面経路: 実カット後クリップをプレビュー・焼き込みに使う
         if progress_cb:
-            progress_cb("文字起こし")
+            progress_cb(tr("文字起こし"))
         prepared_path, keep_segments = _silence_cut(normalized, clip_settings, clip_dir)
         profile = output_profile.resolve_output_profile(prepared_path, settings)
         eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
@@ -806,7 +807,7 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
 
     # ③ burn: 各クリップを 焼き込み(またはレンダリング)→テーマ演出→パーツ化
     if progress_cb:
-        progress_cb(0.6, "字幕焼き込み中…")
+        progress_cb(0.6, tr("字幕焼き込み中…"))
     prepared_by_index = {p["index"]: p for p in prepared}
     if timeline is not None:
         burned = _render_clips(
@@ -839,12 +840,12 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
                 outputs.append(_write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg))
         _logger.info("個別クリップ %d 件を出力 (結合なし)", len(outputs))
         if progress_cb:
-            progress_cb(1.0, "完了")
+            progress_cb(1.0, tr("完了"))
         return outputs
 
     # 結合: [Opening?] + (intro?+本編)群 + [Ending?] を 1 本へ (OP/ED を1回だけ)
     if progress_cb:
-        progress_cb(0.92, "結合中…")
+        progress_cb(0.92, tr("結合中…"))
     parts = _build_combine_parts(settings, combine_cfg, clip_parts)
 
     suffix = combine_cfg.get("combined_suffix", "combined") or "combined"
@@ -853,7 +854,7 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
 
     _logger.info("結合出力: %s (使用%d)", final, len(burned))
     if progress_cb:
-        progress_cb(1.0, "完了")
+        progress_cb(1.0, tr("完了"))
     return outputs + [final]
 
 

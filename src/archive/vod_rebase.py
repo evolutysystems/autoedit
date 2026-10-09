@@ -18,6 +18,7 @@ import os
 import subprocess
 
 from ..exceptions import InputError
+from ..i18n import tr
 from ..modules import ffmpeg_runner
 from ..timeline import crop, media_probe, project_io
 from ..timeline.builder import timeline_config
@@ -51,9 +52,9 @@ def plan(timeline, settings, clips=None):
     vod = project_resume.recorded_vod_path(timeline)
     if not vod or not os.path.exists(vod):
         raise InputError(
-            "元の配信アーカイブ（VOD）が見つかりません。\n"
-            f"{vod}\n"
-            "縦動画プロジェクトは元 VOD を参照するため、先に VOD を戻してください。")
+            tr("元の配信アーカイブ（VOD）が見つかりません。\n{path}\n"
+               "縦動画プロジェクトは元 VOD を参照するため、"
+               "先に VOD を戻してください。", path=vod))
 
     ffmpeg_cfg = (settings or {}).get("ffmpeg", {})
     window_sec = crop.config(settings or {})["keyframe_window_sec"]

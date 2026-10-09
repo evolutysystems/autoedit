@@ -9,6 +9,7 @@
 import copy
 import os
 
+from ..i18n import tr
 from ..utils.logger import get_logger
 from . import clipboard
 from .model import (
@@ -1373,8 +1374,11 @@ class EditSubtitles(Command):
         self._clip_ids = [i for i in (clip_ids or []) if i]
         self._fields = fields
         # 何件に効く操作なのかを履歴ボタンへ出す (「元に戻す: 字幕の編集（3 件）」)
-        self.label = ("字幕の編集" if len(self._clip_ids) <= 1
-                      else f"字幕の編集（{len(self._clip_ids)} 件）")
+        # 件数が入るため、ここで現在の言語に組み立てる
+        # (静的な label は表示するときに tr() を通す)
+        self.label = (tr("字幕の編集") if len(self._clip_ids) <= 1
+                      else tr("字幕の編集（{count} 件）",
+                              count=len(self._clip_ids)))
 
     def apply(self, timeline):
         changed = False

@@ -3,6 +3,7 @@
 import os
 import tempfile
 
+from ..i18n import tr
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -127,12 +128,16 @@ class PipelineContext:
     def begin_step(self, label):
         self.current_step += 1
         ratio = (self.current_step - 1) / max(self.total_steps, 1)
-        self.progress_callback(ratio, f"[{self.current_step}/{self.total_steps}] {label} 開始")
+        self.progress_callback(ratio, tr(
+            "[{step}/{total}] {label} 開始",
+            step=self.current_step, total=self.total_steps, label=tr(label)))
 
     # 工程完了通知
     def end_step(self, label):
         ratio = self.current_step / max(self.total_steps, 1)
-        self.progress_callback(ratio, f"[{self.current_step}/{self.total_steps}] {label} 完了")
+        self.progress_callback(ratio, tr(
+            "[{step}/{total}] {label} 完了",
+            step=self.current_step, total=self.total_steps, label=tr(label)))
 
     # 工程内 FFmpeg 進捗を 0-1 に正規化して全体進捗へ伝える
     def progress_subcallback(self, label):

@@ -8,6 +8,7 @@ import re
 import subprocess
 
 from ..exceptions import FFmpegError, InputError
+from ..i18n import tr
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from . import ffmpeg_runner, silence_cutter
@@ -43,7 +44,7 @@ def measure_region_volume(input_path, start, end, ffmpeg_settings):
             creationflags=no_window_creationflags(),
         )
     except FileNotFoundError as e:
-        raise FFmpegError(f"FFmpeg 実行失敗: {e}") from e
+        raise FFmpegError(tr("FFmpeg 実行失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
         _logger.warning("volumedetect 失敗 (区間 %.3f-%.3f)", start, end)
@@ -69,7 +70,7 @@ def _parse_volumedetect(stderr_text):
 #   min_db   : 発話候補区間の代表音量の最小値 (整数化)。算出不能時は None
 def analyze_min_speech_db(input_path, settings):
     if not os.path.exists(input_path):
-        raise InputError(f"入力動画が見つかりません: {input_path}")
+        raise InputError(tr("入力動画が見つかりません: {path}", path=input_path))
 
     va_cfg = settings.get("volume_analysis", {})
     ffmpeg_cfg = settings.get("ffmpeg", {})

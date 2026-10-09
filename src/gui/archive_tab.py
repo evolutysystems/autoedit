@@ -33,6 +33,7 @@ from ..archive import (
 )
 from ..archive.twitch_auth import MARKER_SCOPE, TwitchAuth
 from ..exceptions import PipelineCancelled, TwitchError
+from ..i18n import tr
 from ..timeline import project_io
 from ..timeline.builder import timeline_config
 from ..settings.settings_window import (
@@ -162,13 +163,16 @@ class ArchiveAnalyzeWorker(QThread):
         # 所有判定 (owner_only): 自分の VOD のみ許可 (resolve17 §8-1)
         if auth_cfg["owner_only"]:
             if not (self._auth and self._auth.is_logged_in()):
-                raise TwitchError("Twitch にログインしてください (自分のVOD判定に必要です)。")
+                raise TwitchError(
+                    tr("Twitch にログインしてください (自分のVOD判定に必要です)。"))
             if not self._auth.is_own_video(video_id):
-                raise TwitchError("自分が所有する VOD のみ切り抜けます。他者の VOD は実行できません。")
+                raise TwitchError(
+                    tr("自分が所有する VOD のみ切り抜けます。"
+                       "他者の VOD は実行できません。"))
 
         # VOD 取得。注: twitch-dl の --auth-token は Web クッキー系で Helix トークンとは別物のため、
         # ここでは付与しない (公開VODは不要)。sub-only 自VODはトークン貼付で補完 (resolve17 §4.3.0/§8-3b)。
-        self.progress.emit(0.0, "VOD取得中…")
+        self.progress.emit(0.0, tr("VOD取得中…"))
         input_path = twitch_source.download_vod(
             video_id, work_dir, dl["twitch_dl_path"], dl["vod_format"],
             progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir,
@@ -203,7 +207,7 @@ class ArchiveAnalyzeWorker(QThread):
                 "ストリームマーカーの権限がありません。一度ログアウトして"
                 "再ログインすると使えるようになります (%s)", MARKER_SCOPE)
             return None
-        self.progress.emit(0.0, "マーカー取得中…")
+        self.progress.emit(0.0, tr("マーカー取得中…"))
         try:
             markers = self._auth.get_video_markers(video_id)
         except TwitchError as e:
@@ -339,11 +343,45 @@ class ArchiveTabWidget(QWidget):
         if self.analyze_button is not None:
             theme.refresh_primary_action_icon(self.analyze_button, theme.RUN_GLYPH)
 
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # 機能無効時 (archive.enabled=false) は部品が無いため何もしない。
+    # ログイン状態・VOD 一覧・進捗は通信や実行の結果で決まるため触らず、
+    # 画面に固定で出している文言だけを入れ替える。
+    def retranslate(self):
+        if not self._enabled:
+            return
+        self.description_label.setText(tr(
+            "動画を採点し、上位の見どころを切り抜いて字幕を焼き込みます。\n"
+            "入力はローカル動画、または Twitch VOD "
+            "(ログインして自分のアーカイブを自動取得) が選べます。"
+        ))
+        self.mode_caption.setText(tr("入力ソース:"))
+        self.mode_combo.setItemText(0, tr("ローカル動画"))
+        self.input_edit.setPlaceholderText(
+            tr("採点する動画ファイルを選択、または「参照...」"))
+        self.browse_button.setText(tr("参照..."))
+        self.chat_edit.setPlaceholderText(
+            tr("(任意) コメントJSONを指定するとコメント採点が有効に"))
+        self.chat_browse_button.setText(tr("参照..."))
+        self.login_button.setText(tr("Twitch ログイン"))
+        self.silence_cut_check.setText(tr("無音カット"))
+        self.silence_cut_check.setToolTip(tr(
+            "各クリップから無音区間を除去します。"
+            "外すと切り抜き区間をそのまま使用します。"
+        ))
+        self.analyze_button.setToolTip(tr("採点開始"))
+        self.resume_row.retranslate()
+        # ログインボタンのツールチップは状態で文言が変わるため専用の経路へ任せる
+        self._refresh_login_button()
+        if not self._spinner_timer.isActive():
+            self._spinner_message = tr("待機中")
+            self.status_label.setText(tr("待機中"))
+
     # 無効時 (archive.enabled=false) は準備中表示にする
     def _build_disabled_ui(self):
         root = QVBoxLayout(self)
         root.addStretch(1)
-        note = QLabel("アーカイブ切り抜きは無効です (設定で有効化してください)。")
+        note = QLabel(tr("アーカイブ切り抜きは無効です (設定で有効化してください)。"))
         note.setAlignment(Qt.AlignCenter)
         theme.mark_note(note)
         root.addWidget(note)
@@ -353,16 +391,19 @@ class ArchiveTabWidget(QWidget):
     def _build_ui(self):
         root = QVBoxLayout(self)
 
-        root.addWidget(QLabel(
+        self.description_label = QLabel(tr(
             "動画を採点し、上位の見どころを切り抜いて字幕を焼き込みます。\n"
-            "入力はローカル動画、または Twitch VOD (ログインして自分のアーカイブを自動取得) が選べます。"
+            "入力はローカル動画、または Twitch VOD "
+            "(ログインして自分のアーカイブを自動取得) が選べます。"
         ))
+        root.addWidget(self.description_label)
 
         # 入力モード選択 (ローカル / Twitch)
         mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("入力ソース:"))
+        self.mode_caption = QLabel(tr("入力ソース:"))
+        mode_row.addWidget(self.mode_caption)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("ローカル動画", _MODE_LOCAL)
+        self.mode_combo.addItem(tr("ローカル動画"), _MODE_LOCAL)
         self.mode_combo.addItem("Twitch VOD", _MODE_TWITCH)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self.mode_combo)
@@ -375,18 +416,20 @@ class ArchiveTabWidget(QWidget):
         local_layout.setContentsMargins(0, 0, 0, 0)
         input_row = QHBoxLayout()
         self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText("採点する動画ファイルを選択、または「参照...」")
+        self.input_edit.setPlaceholderText(
+            tr("採点する動画ファイルを選択、または「参照...」"))
         input_row.addWidget(self.input_edit)
-        self.browse_button = QPushButton("参照...")
+        self.browse_button = QPushButton(tr("参照..."))
         self.browse_button.clicked.connect(self._on_browse)
         input_row.addWidget(self.browse_button)
         local_layout.addLayout(input_row)
         # 任意: ローカル chat json (コメント採点を Twitch 未連携でも試せる)
         chat_row = QHBoxLayout()
         self.chat_edit = QLineEdit()
-        self.chat_edit.setPlaceholderText("(任意) コメントJSONを指定するとコメント採点が有効に")
+        self.chat_edit.setPlaceholderText(
+            tr("(任意) コメントJSONを指定するとコメント採点が有効に"))
         chat_row.addWidget(self.chat_edit)
-        self.chat_browse_button = QPushButton("参照...")
+        self.chat_browse_button = QPushButton(tr("参照..."))
         self.chat_browse_button.clicked.connect(self._on_browse_chat)
         chat_row.addWidget(self.chat_browse_button)
         local_layout.addLayout(chat_row)
@@ -397,17 +440,17 @@ class ArchiveTabWidget(QWidget):
         twitch_layout = QVBoxLayout(self.twitch_group)
         twitch_layout.setContentsMargins(0, 0, 0, 0)
         login_row = QHBoxLayout()
-        self.login_button = QPushButton("Twitch ログイン")
+        self.login_button = QPushButton(tr("Twitch ログイン"))
         self.login_button.clicked.connect(self._on_login)
         self._refresh_login_button()
         login_row.addWidget(self.login_button)
-        self.login_status = QLabel("未ログイン")
+        self.login_status = QLabel(tr("未ログイン"))
         login_row.addWidget(self.login_status)
         login_row.addStretch(1)
         twitch_layout.addLayout(login_row)
         # 自分の VOD 一覧 (ログイン後に populate。選択で URL 自動入力)
         self.vod_combo = QComboBox()
-        self.vod_combo.addItem("(ログイン後に自分のVODを選択)", "")
+        self.vod_combo.addItem(tr("(ログイン後に自分のVODを選択)"), "")
         self.vod_combo.currentIndexChanged.connect(self._on_vod_selected)
         twitch_layout.addWidget(self.vod_combo)
         # VOD URL 入力
@@ -419,11 +462,11 @@ class ArchiveTabWidget(QWidget):
         # 実行オプション: 無音カットの可否 (resolve20 §5.8 / R7)
         # 初期値は setting.json (archive.clip_pipeline.silence_cut) に従う。
         option_row = QHBoxLayout()
-        self.silence_cut_check = QCheckBox("無音カット")
-        self.silence_cut_check.setToolTip(
+        self.silence_cut_check = QCheckBox(tr("無音カット"))
+        self.silence_cut_check.setToolTip(tr(
             "各クリップから無音区間を除去します。"
             "外すと切り抜き区間をそのまま使用します。"
-        )
+        ))
         self.silence_cut_check.setChecked(self._silence_cut_default())
         option_row.addWidget(self.silence_cut_check)
         option_row.addStretch(1)
@@ -436,7 +479,7 @@ class ArchiveTabWidget(QWidget):
         self.analyze_button = QPushButton()
         self.analyze_button.clicked.connect(self._on_analyze)
         theme.setup_primary_action_button(
-            self.analyze_button, theme.RUN_GLYPH, "採点開始")
+            self.analyze_button, theme.RUN_GLYPH, tr("採点開始"))
         button_row.addWidget(self.analyze_button)
         button_row.addStretch(1)
         root.addLayout(button_row)
@@ -454,12 +497,12 @@ class ArchiveTabWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         root.addWidget(self.progress_bar)
-        self.status_label = QLabel("待機中")
+        self.status_label = QLabel(tr("待機中"))
         root.addWidget(self.status_label)
 
         # 稼働スピナー
         self._spinner_index = 0
-        self._spinner_message = "待機中"
+        self._spinner_message = tr("待機中")
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(_SPINNER_INTERVAL_MS)
         self._spinner_timer.timeout.connect(self._tick_spinner)
@@ -516,7 +559,7 @@ class ArchiveTabWidget(QWidget):
         if self._restore_worker is not None and self._restore_worker.isRunning():
             return
 
-        self.login_status.setText("ログイン状態を確認中…")
+        self.login_status.setText(tr("ログイン状態を確認中…"))
         # 確認中に押されると二重にログインしてしまうため、ここでも押せなくする
         self._refresh_login_button(checking=True)
         self._restore_worker = TwitchRestoreWorker(self._auth, parent=self)
@@ -549,7 +592,7 @@ class ArchiveTabWidget(QWidget):
     def _on_restore_failed(self, message):
         _logger.info("Twitch のログイン状態を復元できませんでした: %s", message)
         self._session_ok = False
-        self.login_status.setText("未ログイン")
+        self.login_status.setText(tr("未ログイン"))
         self._refresh_login_button()
 
     def _current_mode(self):
@@ -567,13 +610,15 @@ class ArchiveTabWidget(QWidget):
 
     def _on_browse(self):
         start_dir = self._settings.get("general", {}).get("video_directory", "")
-        path, _ = QFileDialog.getOpenFileName(self, "採点する動画を選択", start_dir, _VIDEO_FILE_FILTER)
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("採点する動画を選択"), start_dir, tr(_VIDEO_FILE_FILTER))
         if path:
             self.input_edit.setText(path)
 
     def _on_browse_chat(self):
         start_dir = self._settings.get("general", {}).get("video_directory", "")
-        path, _ = QFileDialog.getOpenFileName(self, "コメントJSONを選択", start_dir, _CHAT_FILE_FILTER)
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("コメントJSONを選択"), start_dir, tr(_CHAT_FILE_FILTER))
         if path:
             self.chat_edit.setText(path)
 
@@ -591,7 +636,7 @@ class ArchiveTabWidget(QWidget):
 
         if checking:
             self.login_button.setEnabled(False)
-            self.login_button.setToolTip("ログイン状態を確認しています…")
+            self.login_button.setToolTip(tr("ログイン状態を確認しています…"))
             return
 
         # 「このセッションで疎通を確認できた」ときだけ押せなくする。
@@ -602,10 +647,11 @@ class ArchiveTabWidget(QWidget):
         has_marker = bool(alive and self._auth.has_scope(MARKER_SCOPE))
         self.login_button.setEnabled(not (alive and has_marker))
         if alive and has_marker:
-            self.login_button.setToolTip("ログイン済みです。ログインし直す必要はありません。")
+            self.login_button.setToolTip(
+                tr("ログイン済みです。ログインし直す必要はありません。"))
         elif alive:
             self.login_button.setToolTip(
-                "再ログインすると、ストリームマーカーを採点に使えるようになります。")
+                tr("再ログインすると、ストリームマーカーを採点に使えるようになります。"))
         else:
             self.login_button.setToolTip("")
 
@@ -614,15 +660,17 @@ class ArchiveTabWidget(QWidget):
         auth_cfg = config.auth_config(self._settings)
         if not auth_cfg["client_id"]:
             QMessageBox.warning(
-                self, "設定が必要",
-                "Twitch の Client-ID が未設定です。\n"
-                "dev.twitch.tv でアプリを登録し、setting.json の archive.auth.client_id に\n"
-                "設定してください (Client-Secret は不要です)。\n"
-                f"リダイレクトURL には http://localhost:{auth_cfg['redirect_port']} を登録します。")
+                self, tr("設定が必要"),
+                tr("Twitch の Client-ID が未設定です。\n"
+                   "dev.twitch.tv でアプリを登録し、setting.json の "
+                   "archive.auth.client_id に\n"
+                   "設定してください (Client-Secret は不要です)。\n"
+                   "リダイレクトURL には http://localhost:{port} を登録します。",
+                   port=auth_cfg["redirect_port"]))
             return
         # ログイン前に最新設定で auth を作り直す (復元は走らせない)
         self._build_auth()
-        self.login_status.setText("ブラウザで認可してください…")
+        self.login_status.setText(tr("ブラウザで認可してください…"))
         self.login_button.setEnabled(False)
         self._login_worker = TwitchLoginWorker(self._auth, parent=self)
         self._login_worker.finished_ok.connect(self._on_login_ok)
@@ -638,19 +686,23 @@ class ArchiveTabWidget(QWidget):
     def _on_login_failed(self, message):
         self._session_ok = False
         self._refresh_login_button()
-        self.login_status.setText("ログイン失敗")
-        QMessageBox.critical(self, "ログイン失敗", f"Twitch ログインに失敗しました。\n{message}")
+        self.login_status.setText(tr("ログイン失敗"))
+        QMessageBox.critical(
+            self, tr("ログイン失敗"),
+            tr("Twitch ログインに失敗しました。\n{message}", message=message))
 
     def _set_logged_in(self, me):
         name = (me or {}).get("display_name") or (me or {}).get("login") or "?"
         # 旧トークンはスコープが空でストリームマーカーを取れない (ver3 resolve16 §5.6)。
         # ログアウトはさせず、再ログインで直せることを表示とヒントで伝える。
         has_marker = bool(self._auth and self._auth.has_scope(MARKER_SCOPE))
-        suffix = "" if has_marker else "（マーカー未許可）"
-        self.login_status.setText(f"ログイン中: {name}{suffix}")
+        suffix = "" if has_marker else tr("（マーカー未許可）")
+        self.login_status.setText(
+            tr("ログイン中: {name}{suffix}", name=name, suffix=suffix))
         self.login_status.setToolTip(
             "" if has_marker
-            else "一度ログアウトして再ログインすると、ストリームマーカーを採点に使えます。")
+            else tr("一度ログアウトして再ログインすると、"
+                    "ストリームマーカーを採点に使えます。"))
 
     def _populate_own_vods(self):
         try:
@@ -666,7 +718,7 @@ class ArchiveTabWidget(QWidget):
             return
         self.vod_combo.blockSignals(True)
         self.vod_combo.clear()
-        self.vod_combo.addItem("(自分のVODを選択)", "")
+        self.vod_combo.addItem(tr("(自分のVODを選択)"), "")
         for v in videos:
             label = f"{v.get('created_at', '')[:10]}  {v.get('title', '')}".strip()
             self.vod_combo.addItem(label or v.get("url", ""), v.get("url", ""))
@@ -687,22 +739,25 @@ class ArchiveTabWidget(QWidget):
         if mode == _MODE_TWITCH:
             url = self.url_edit.text().strip()
             if not url:
-                QMessageBox.warning(self, "入力エラー", "Twitch VOD の URL を入力してください。")
+                QMessageBox.warning(self, tr("入力エラー"),
+                                    tr("Twitch VOD の URL を入力してください。"))
                 return
             job = {"mode": _MODE_TWITCH, "url": url}
-            self._spinner_message = "VOD取得中…"
+            self._spinner_message = tr("VOD取得中…")
         else:
             input_path = self.input_edit.text().strip()
             if not input_path or not os.path.exists(input_path):
-                QMessageBox.warning(self, "入力エラー", "存在する動画ファイルを指定してください。")
+                QMessageBox.warning(self, tr("入力エラー"),
+                                    tr("存在する動画ファイルを指定してください。"))
                 return
             chat_path = self.chat_edit.text().strip() or None
             if chat_path and not os.path.exists(chat_path):
-                QMessageBox.warning(self, "入力エラー", "指定したコメントJSONが見つかりません。")
+                QMessageBox.warning(self, tr("入力エラー"),
+                                    tr("指定したコメントJSONが見つかりません。"))
                 return
             job = {"mode": _MODE_LOCAL, "input_path": input_path, "chat_path": chat_path}
             self._pending_input = input_path
-            self._spinner_message = "採点準備中…"
+            self._spinner_message = tr("採点準備中…")
 
         self._analyze_worker = ArchiveAnalyzeWorker(job, self._settings, auth=self._auth, parent=self)
         self._analyze_worker.progress.connect(self._on_progress)
@@ -721,8 +776,9 @@ class ArchiveTabWidget(QWidget):
         clips = result.get("clips", []) if isinstance(result, dict) else []
         curve = result.get("curve", []) if isinstance(result, dict) else []
         if not clips:
-            QMessageBox.information(self, "採点結果", "切り抜き候補が見つかりませんでした。")
-            self.status_label.setText("候補なし")
+            QMessageBox.information(self, tr("採点結果"),
+                                    tr("切り抜き候補が見つかりませんでした。"))
+            self.status_label.setText(tr("候補なし"))
             return
 
         # 追加フォント(settings/fonts)を Qt へ登録し編集画面の一覧へ反映する (resolve16 §4.2)
@@ -737,7 +793,7 @@ class ArchiveTabWidget(QWidget):
             default_font=subtitle_cfg.get("font_family", ""),
             default_size=subtitle_cfg.get("font_size", None),
             font_families=list(QFontDatabase.families()),
-            theme_placeholder=_THEME_PLACEHOLDER,
+            theme_placeholder=tr(_THEME_PLACEHOLDER),
             # Timeline 編集画面のプレビュー一時ファイル置き場 (ver3 resolve5)
             work_dir=config.resolve_work_dir(self._settings),
         )
@@ -751,7 +807,7 @@ class ArchiveTabWidget(QWidget):
         self._clip_worker.progress.connect(self._on_progress)
         self._clip_worker.finished_ok.connect(self._on_clip_done)
         self._clip_worker.failed.connect(self._on_failed)
-        self._spinner_message = "文字起こし中…"
+        self._spinner_message = tr("文字起こし中…")
         self._set_running(True)
         self._clip_worker.start()
 
@@ -760,18 +816,22 @@ class ArchiveTabWidget(QWidget):
         self._set_running(False)
         self.progress_bar.setValue(100)
         if not outputs:
-            self.status_label.setText("出力なし (全てスキップ)")
-            QMessageBox.information(self, "完了", "出力するクリップがありませんでした。")
+            self.status_label.setText(tr("出力なし (全てスキップ)"))
+            QMessageBox.information(self, tr("完了"),
+                                    tr("出力するクリップがありませんでした。"))
             return
-        self.status_label.setText(f"完了: {outputs[-1]}")
+        self.status_label.setText(tr("完了: {path}", path=outputs[-1]))
         joined = "\n".join(outputs)
-        QMessageBox.information(self, "完了", f"動画を出力しました。\n{joined}")
+        QMessageBox.information(
+            self, tr("完了"),
+            tr("動画を出力しました。\n{paths}", paths=joined))
 
     # 異常終了
     def _on_failed(self, message):
         self._set_running(False)
-        self.status_label.setText("エラーで停止しました")
-        QMessageBox.critical(self, "エラー", f"処理に失敗しました。\n{message}")
+        self.status_label.setText(tr("エラーで停止しました"))
+        QMessageBox.critical(self, tr("エラー"),
+                             tr("処理に失敗しました。\n{message}", message=message))
 
     # ===== 編集の続き (保存済みプロジェクトの再編集 / ver3 resolve9 §5.8) =====
 
@@ -810,11 +870,11 @@ class ArchiveTabWidget(QWidget):
         except OSError:
             return None
         answer = QMessageBox.question(
-            self, "自動保存が見つかりました",
-            f"保存されていない編集が自動保存に残っています（{stamp}）。\n"
-            "こちらから編集を再開しますか?\n\n"
-            "「いいえ」を選ぶと、最後に保存した内容を開きます"
-            "（自動保存はそのまま残ります）。",
+            self, tr("自動保存が見つかりました"),
+            tr("保存されていない編集が自動保存に残っています（{stamp}）。\n"
+               "こちらから編集を再開しますか?\n\n"
+               "「いいえ」を選ぶと、最後に保存した内容を開きます"
+               "（自動保存はそのまま残ります）。", stamp=stamp),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         )
         return autosave if answer == QMessageBox.Yes else None
@@ -846,7 +906,7 @@ class ArchiveTabWidget(QWidget):
             default_font=subtitle_cfg.get("font_family", ""),
             default_size=subtitle_cfg.get("font_size", None),
             font_families=list(QFontDatabase.families()),
-            theme_placeholder=_THEME_PLACEHOLDER,
+            theme_placeholder=tr(_THEME_PLACEHOLDER),
             work_dir=config.resolve_work_dir(self._settings),
         )
         self._relink_bridge = MediaRelinkBridge(self._settings, parent_window=self)
@@ -861,7 +921,7 @@ class ArchiveTabWidget(QWidget):
         self._resume_worker.finished_ok.connect(self._on_clip_done)
         self._resume_worker.cancelled.connect(self._on_resume_cancelled)
         self._resume_worker.failed.connect(self._on_failed)
-        self._spinner_message = "プロジェクトを読み込み中..."
+        self._spinner_message = tr("プロジェクトを読み込み中...")
         self._set_running(True)
         self._resume_worker.start()
 
@@ -869,7 +929,7 @@ class ArchiveTabWidget(QWidget):
     def _on_resume_cancelled(self):
         self._set_running(False)
         self.progress_bar.setValue(0)
-        self.status_label.setText("中断しました")
+        self.status_label.setText(tr("中断しました"))
 
     def _on_progress(self, ratio, label):
         self.progress_bar.setValue(int(ratio * 100))

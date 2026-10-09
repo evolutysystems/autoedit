@@ -1,6 +1,7 @@
 # アーカイブ採点オーケストレーション (request17 §4.1 / flow17 R1)
 # 入力(ローカル mp4) → 特徴抽出 → 方式A採点 → 窓積分 → TOP5 選択。
 # 字幕焼き込みは行わない (TOP5 確定後に clip_writer が担当する)。
+from ..i18n import tr
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 from . import comment_source, config, features, marker_source, scoring
@@ -46,7 +47,7 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
                      len(comments), cfg["avg_comments_per_min"])
 
     if progress_cb:
-        progress_cb(0.92, "採点中…")
+        progress_cb(0.92, tr("採点中…"))
 
     # 方式A 採点 → 窓積分
     norm = scoring.loudness_norm(cells)
@@ -77,5 +78,5 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
                      f" [マーカー: {'/'.join(c['marker_labels'])}]" if c.get("marker") else "")
 
     if progress_cb:
-        progress_cb(1.0, "採点完了")
+        progress_cb(1.0, tr("採点完了"))
     return {"duration": duration, "curve": curve, "clips": clips}

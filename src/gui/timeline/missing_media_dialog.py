@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...i18n import tr
 from ...timeline import media_probe
 from ...timeline.model import MEDIA_IMAGE
 from ...utils.logger import get_logger
@@ -34,7 +35,7 @@ class MissingMediaDialog(QDialog):
     # settings : setting.json (ファイル選択のフィルタに使う)
     def __init__(self, info, settings, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("素材が見つかりません")
+        self.setWindowTitle(tr("素材が見つかりません"))
         theme.install_window_background(self)
         self._info = dict(info or {})
         self._settings = settings or {}
@@ -44,40 +45,43 @@ class MissingMediaDialog(QDialog):
     def _build_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("素材が見つかりません")
+        title = QLabel(tr("素材が見つかりません"))
         theme.mark_title(title)
         root.addWidget(title)
 
         missing = str(self._info.get("path", "") or "")
-        kind_label = "画像" if self._info.get("kind") == MEDIA_IMAGE else "動画"
-        message = QLabel(
-            f"このプロジェクトが使っている{kind_label}素材が元の場所にありません。\n"
-            f"差し替える素材を選ぶか、この素材を使わずに続けることができます。")
+        kind_label = (tr("画像") if self._info.get("kind") == MEDIA_IMAGE
+                      else tr("動画"))
+        message = QLabel(tr(
+            "このプロジェクトが使っている{kind}素材が元の場所にありません。\n"
+            "差し替える素材を選ぶか、この素材を使わずに続けることができます。",
+            kind=kind_label))
         message.setWordWrap(True)
         root.addWidget(message)
 
-        detail = QLabel(f"素材 {self._info.get('media_id', '')}\n{missing}")
+        detail = QLabel(tr("素材 {media_id}\n{path}",
+                           media_id=self._info.get("media_id", ""), path=missing))
         detail.setWordWrap(True)
         theme.mark_note(detail)
         root.addWidget(detail)
 
         note = QLabel(
-            "※ 使わない場合、この素材を参照しているクリップは無効になります"
-            "（映像には出ません）。")
+            tr("※ 使わない場合、この素材を参照しているクリップは無効になります"
+            "（映像には出ません）。"))
         note.setWordWrap(True)
         theme.mark_note(note)
         root.addWidget(note)
 
         row = QHBoxLayout()
         row.addStretch(1)
-        browse = QPushButton("参照...")
+        browse = QPushButton(tr("参照..."))
         browse.setAutoDefault(False)
-        browse.setToolTip("差し替える素材ファイルを選びます")
+        browse.setToolTip(tr("差し替える素材ファイルを選びます"))
         browse.clicked.connect(self._on_browse)
         theme.mark_primary(browse)
         row.addWidget(browse)
 
-        skip = QPushButton("この素材を使わない")
+        skip = QPushButton(tr("この素材を使わない"))
         skip.setAutoDefault(False)
         skip.clicked.connect(self.reject)
         theme.mark_danger(skip)
@@ -94,8 +98,8 @@ class MissingMediaDialog(QDialog):
         if not os.path.isdir(start_dir):
             start_dir = ""
         path, _ = QFileDialog.getOpenFileName(
-            self, "差し替える素材を選択", start_dir,
-            f"素材ファイル ({pattern});;すべてのファイル (*)")
+            self, tr("差し替える素材を選択"), start_dir,
+            tr("素材ファイル ({pattern});;すべてのファイル (*)", pattern=pattern))
         if not path:
             return          # 選ばなかった = 画面はそのまま (もう一度選び直せる)
         self._path = path

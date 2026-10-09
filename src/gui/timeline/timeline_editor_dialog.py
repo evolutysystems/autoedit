@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from ...exceptions import TimelineError
 from ...export import resolve_export
+from ...i18n import tr
 from ...services import config as services_config
 from ...settings.settings_window import save_settings
 from ...timeline import commands, media_sidecar, project_io
@@ -70,7 +71,7 @@ class TimelineEditorDialog(QDialog):
     def __init__(self, timeline, settings, work_dir, asr_audio_path=None, parent=None,
                  project_path=None, created_at=None, mode="pipeline"):
         super().__init__(parent)
-        self.setWindowTitle("Timeline 編集")
+        self.setWindowTitle(tr("Timeline 編集"))
         self._timeline = timeline
         self._settings = settings
         self._project_path = project_path or None
@@ -154,10 +155,10 @@ class TimelineEditorDialog(QDialog):
 
         # 下部ボタン
         button_row = QHBoxLayout()
-        self.undo_button = QPushButton("元に戻す")
+        self.undo_button = QPushButton(tr("元に戻す"))
         self.undo_button.setToolTip("Ctrl+Z")
         self.undo_button.clicked.connect(self._undo)
-        self.redo_button = QPushButton("やり直す")
+        self.redo_button = QPushButton(tr("やり直す"))
         self.redo_button.setToolTip("Ctrl+Y")
         self.redo_button.clicked.connect(self._redo)
         button_row.addWidget(self.undo_button)
@@ -168,17 +169,17 @@ class TimelineEditorDialog(QDialog):
         self.save_button = None
         self.save_as_button = None
         if self._save_enabled:
-            self.save_button = QPushButton("保存")
+            self.save_button = QPushButton(tr("保存"))
             self.save_button.setAutoDefault(False)
             self.save_button.setToolTip(
-                "現在の Timeline をプロジェクトファイルへ保存します (Ctrl+S)\n"
-                "保存したものは main_window の「編集の続き」から開き直せます")
+                tr("現在の Timeline をプロジェクトファイルへ保存します (Ctrl+S)\n"
+                "保存したものは main_window の「編集の続き」から開き直せます"))
             self.save_button.clicked.connect(lambda: self.save_project())
             button_row.addWidget(self.save_button)
 
-            self.save_as_button = QPushButton("名前を付けて保存...")
+            self.save_as_button = QPushButton(tr("名前を付けて保存..."))
             self.save_as_button.setAutoDefault(False)
-            self.save_as_button.setToolTip("保存先を選んで保存します (Ctrl+Shift+S)")
+            self.save_as_button.setToolTip(tr("保存先を選んで保存します (Ctrl+Shift+S)"))
             self.save_as_button.clicked.connect(lambda: self.save_project(ask=True))
             button_row.addWidget(self.save_as_button)
 
@@ -186,11 +187,11 @@ class TimelineEditorDialog(QDialog):
         # blur.enabled が False のときは**ボタンを出さない** (R14)。
         self.blur_button = None
         if self._blur_enabled():
-            self.blur_button = QPushButton("ぼかし...")
+            self.blur_button = QPushButton(tr("ぼかし..."))
             self.blur_button.setAutoDefault(False)
             self.blur_button.setToolTip(
-                "選んだクリップのぼかしを編集します。\n"
-                "画面をドラッグで囲み、「ボカす / ボカさない」を選ぶだけです。")
+                tr("選んだクリップのぼかしを編集します。\n"
+                "画面をドラッグで囲み、「ボカす / ボカさない」を選ぶだけです。"))
             self.blur_button.clicked.connect(self._open_blur_spec)
             button_row.addWidget(self.blur_button)
 
@@ -199,8 +200,8 @@ class TimelineEditorDialog(QDialog):
         if resolve_export.is_enabled(self._settings):
             self.export_button = QPushButton(RESOLVE_EXPORT_BUTTON_TEXT)
             self.export_button.setToolTip(
-                "現在の Timeline を DaVinci Resolve 用プロジェクトファイル (.fcpxml) "
-                "として出力します。")
+                tr("現在の Timeline を DaVinci Resolve 用プロジェクトファイル (.fcpxml) "
+                "として出力します。"))
             self.export_button.clicked.connect(self._on_export_resolve)
             button_row.addWidget(self.export_button)
 
@@ -210,10 +211,10 @@ class TimelineEditorDialog(QDialog):
         # 既定ボタンにしない: Enter / Space の取りこぼしで書き出しが始まると
         # 長い処理が意図せず走ってしまうため、必ずクリックで実行させる。
         self.decide_button.setAutoDefault(False)
-        self.decide_button.setToolTip("Timeline の内容を反映した動画を書き出します")
+        self.decide_button.setToolTip(tr("Timeline の内容を反映した動画を書き出します"))
         self.decide_button.clicked.connect(self.accept)
         theme.mark_primary(self.decide_button)
-        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button = QPushButton(tr("キャンセル"))
         self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.reject)
         theme.mark_danger(self.cancel_button)
@@ -235,7 +236,7 @@ class TimelineEditorDialog(QDialog):
 
     # 決定ボタンの文言。アーカイブ用は「完了（切り抜き＋字幕焼き込み）」にする。
     def _decide_button_text(self):
-        return "決定"
+        return tr("決定")
 
     # プロジェクトの保存 UI を出すか。
     # resolve7 §3-6 ではアーカイブ用を False にしていたが、resolve9 で素材の復旧
@@ -257,7 +258,7 @@ class TimelineEditorDialog(QDialog):
 
     # ウィンドウタイトルの見出し (保存対応の画面はこの後ろへプロジェクト名を出す)
     def _title_base(self):
-        return "Timeline 編集"
+        return tr("Timeline 編集")
 
     # keep_media / keep_audio の対象になる素材を返す (resolve9 §5.4)。
     # 既定は本編素材 1 件。アーカイブ用は V1 が参照する全メディアを返す。
@@ -363,30 +364,31 @@ class TimelineEditorDialog(QDialog):
     # 対象が無ければ画面へ案内を出す (エラーにはしない / resolve2 §7)
     def _run_ripple_trim(self, side):
         if not self.controller.ripple_trim_to_playhead(side):
-            self.preview.set_status("再生ヘッド上にクリップがありません")
+            self.preview.set_status(tr("再生ヘッド上にクリップがありません"))
 
     # Ctrl+C: 選択中のノードをコピーする (ver3 resolve10 §5.5)
     def _copy(self):
         count = self.controller.copy_selected()
         self.preview.set_status(
-            f"{count} 件のノードをコピーしました" if count
-            else "コピーするノードが選択されていません")
+            tr("{count} 件のノードをコピーしました", count=count) if count
+            else tr("コピーするノードが選択されていません"))
 
     # Ctrl+V: 再生ヘッド位置へ貼り付ける (干渉した既存ノードは右へずれる)
     def _paste(self):
         result = self.controller.paste()
         if result["empty"]:
-            self.preview.set_status("コピーされたノードがありません")
+            self.preview.set_status(tr("コピーされたノードがありません"))
             return
         if result["pasted"] == 0:
             self.preview.set_status(
-                "貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)")
+                tr("貼り付けできませんでした (トラックのロックや素材の欠落を確認してください)"))
             return
-        message = f"{result['pasted']} 件を貼り付けました"
+        message = tr("{count} 件を貼り付けました", count=result["pasted"])
         if result["shifted"] > 0:
-            message += f" (既存ノードを {result['shifted']:.2f} 秒ぶん右へ移動)"
+            message += tr(" (既存ノードを {sec:.2f} 秒ぶん右へ移動)",
+                          sec=result["shifted"])
         if result["skipped"]:
-            message += f" ({result['skipped']} 件は貼れませんでした)"
+            message += tr(" ({count} 件は貼れませんでした)", count=result["skipped"])
         self.preview.set_status(message)
 
     # E: 倍速再生 (トグル)
@@ -410,8 +412,12 @@ class TimelineEditorDialog(QDialog):
         self.redo_button.setEnabled(self.controller.can_redo())
         undo_label = self.controller.undo_label()
         redo_label = self.controller.redo_label()
-        self.undo_button.setText(f"元に戻す: {undo_label}" if undo_label else "元に戻す")
-        self.redo_button.setText(f"やり直す: {redo_label}" if redo_label else "やり直す")
+        self.undo_button.setText(
+            tr("元に戻す: {label}", label=tr(undo_label)) if undo_label
+            else tr("元に戻す"))
+        self.redo_button.setText(
+            tr("やり直す: {label}", label=tr(redo_label)) if redo_label
+            else tr("やり直す"))
 
     # ------------------------------------------------------------------
     # 状態変化
@@ -467,7 +473,8 @@ class TimelineEditorDialog(QDialog):
 
         decisions = blur_decisions.load(self.controller.timeline)
         count = sum(1 for s in decisions["specs"] if s.get("mode") == blur_decisions.BLUR)
-        self.blur_button.setText(f"ぼかし... ({count})" if count else "ぼかし...")
+        self.blur_button.setText(
+            tr("ぼかし... ({count})", count=count) if count else tr("ぼかし..."))
 
     # 追従結果の置き場を決める。mask_builder._cache_candidates と同じ順で探す。
     #   1. 指定に書かれた相対パス (プロジェクトごと移しても効く)
@@ -515,7 +522,7 @@ class TimelineEditorDialog(QDialog):
 
         clips = self._blur_target_clips()
         if not clips:
-            self.preview.set_status("ぼかすクリップを選んでください。")
+            self.preview.set_status(tr("ぼかすクリップを選んでください。"))
             return
         timeline = self.controller.timeline
         specs = []
@@ -527,12 +534,13 @@ class TimelineEditorDialog(QDialog):
             specs.append(blur_decisions.make_frame_spec(
                 "", str(clip.media_id), blur_decisions.span_for(timeline, clip)))
         if not specs:
-            self.preview.set_status("このクリップにはすでにぼかしが掛かっています。")
+            self.preview.set_status(tr("このクリップにはすでにぼかしが掛かっています。"))
             return
         if self.controller.execute(commands.AddBlurSpecs(specs)):
             self.preview.set_status(
-                f"{len(specs)} 件のぼかしを追加しました。"
-                "見せたい場所があるときは「ぼかし...」から囲んでください。")
+                tr("{count} 件のぼかしを追加しました。"
+                   "見せたい場所があるときは「ぼかし...」から囲んでください。",
+                   count=len(specs)))
         self._after_blur_change()
 
     # 選んだクリップに掛かっているぼかしの指定をすべて消す
@@ -549,10 +557,11 @@ class TimelineEditorDialog(QDialog):
                 if str(spec.get("id")) not in targets:
                     targets.append(str(spec.get("id")))
         if not targets:
-            self.preview.set_status("このクリップにはぼかしが掛かっていません。")
+            self.preview.set_status(tr("このクリップにはぼかしが掛かっていません。"))
             return
         if self.controller.execute(commands.RemoveBlurSpecs(targets)):
-            self.preview.set_status(f"ぼかしの指定を {len(targets)} 件消しました。")
+            self.preview.set_status(
+                tr("ぼかしの指定を {count} 件消しました。", count=len(targets)))
         self._after_blur_change()
 
     # そのクリップにぼかしの指定があるか (メニューの出し分け用)
@@ -571,12 +580,12 @@ class TimelineEditorDialog(QDialog):
             return
         menu.addSeparator()
         count = len(clips)
-        label = ("このクリップを全部ぼかす" if count == 1
-                 else f"選んだ {count} クリップを全部ぼかす")
+        label = (tr("このクリップを全部ぼかす") if count == 1
+                 else tr("選んだ {count} クリップを全部ぼかす", count=count))
         menu.addAction(label, self._blur_selected_clips)
         if self._clips_have_blur(clips):
-            menu.addAction("このクリップのぼかしを消す", self._unblur_selected_clips)
-        menu.addAction("ぼかし...", self._open_blur_spec)
+            menu.addAction(tr("このクリップのぼかしを消す"), self._unblur_selected_clips)
+        menu.addAction(tr("ぼかし..."), self._open_blur_spec)
 
     # ------------------------------------------------------------------
     # 縦動画プロジェクト (ver5 resolve9 §5.9)
@@ -592,8 +601,9 @@ class TimelineEditorDialog(QDialog):
 
         menu.addSeparator()
         count = len(clips)
-        label = ("このクリップから縦動画プロジェクトを作成..." if count == 1
-                 else f"選んだ {count} クリップから縦動画プロジェクトを作成...")
+        label = (tr("このクリップから縦動画プロジェクトを作成...") if count == 1
+                 else tr("選んだ {count} クリップから縦動画プロジェクトを作成...",
+                         count=count))
         menu.addAction(label, self._open_vertical_project)
 
     # 縦動画にできる Timeline か。既に縦のものは対象外 (§10 #10)。
@@ -632,7 +642,7 @@ class TimelineEditorDialog(QDialog):
 
         clips = self._vertical_target_clips()
         if not clips:
-            self.preview.set_status("縦動画にするクリップを選んでください。")
+            self.preview.set_status(tr("縦動画にするクリップを選んでください。"))
             return
 
         dialog = VerticalProjectDialog(
@@ -641,7 +651,8 @@ class TimelineEditorDialog(QDialog):
         dialog.exec()
         if dialog.saved_path():
             self.preview.set_status(
-                f"縦動画プロジェクトを作成しました: {os.path.basename(dialog.saved_path())}")
+                tr("縦動画プロジェクトを作成しました: {name}",
+                   name=os.path.basename(dialog.saved_path())))
 
     # 指定が変わったあとの共通処理
     def _after_blur_change(self):
@@ -659,7 +670,7 @@ class TimelineEditorDialog(QDialog):
         clips = self._blur_target_clips()
         if not clips:
             # 対象が決まらないまま開くと「どのクリップを触っているか」が分からなくなる
-            self.preview.set_status("ぼかすクリップを選んでください。")
+            self.preview.set_status(tr("ぼかすクリップを選んでください。"))
             return
         dialog = BlurSpecDialog(
             self.controller, self._blur_tracks, parent=self,
@@ -761,7 +772,7 @@ class TimelineEditorDialog(QDialog):
         if not self._save_enabled:
             return
         name = (os.path.basename(self._project_path) if self._project_path
-                else "未保存のプロジェクト")
+                else tr("未保存のプロジェクト"))
         mark = "*" if self.controller.is_modified() else ""
         self.setWindowTitle(f"{self._title_base()} — {name}{mark}")
 
@@ -773,8 +784,9 @@ class TimelineEditorDialog(QDialog):
         if ask:
             suffix = self.controller.cfg["project_suffix"]
             target, _ = QFileDialog.getSaveFileName(
-                self, "Timeline を保存", target,
-                f"Timeline プロジェクト (*{suffix});;すべてのファイル (*)")
+                self, tr("Timeline を保存"), target,
+                tr("Timeline プロジェクト (*{suffix});;すべてのファイル (*)",
+                   suffix=suffix))
             if not target:
                 return False
         if self._created_at is None:
@@ -797,7 +809,7 @@ class TimelineEditorDialog(QDialog):
                             generator=f"Stretheus {__version__}",
                             created_at=self._created_at, project_path=target)
         except (TimelineError, OSError) as e:
-            QMessageBox.warning(self, "保存できません", str(e))
+            QMessageBox.warning(self, tr("保存できません"), str(e))
             return False
         self._project_path = target
         self.controller.mark_saved()
@@ -807,7 +819,8 @@ class TimelineEditorDialog(QDialog):
         self._discard_autosave()
         # 一覧に出すサムネイル (失敗しても保存は成功扱い / resolve9 §5.15)
         project_thumbnail.ensure(target, self._settings, timeline=self.controller.timeline)
-        self.preview.set_status(f"保存しました: {os.path.basename(target)}")
+        self.preview.set_status(
+            tr("保存しました: {name}", name=os.path.basename(target)))
         return True
 
     # ぼかしの解析結果をプロジェクトの隣へ置く (ver5 resolve4 §5.12.3)
@@ -865,7 +878,7 @@ class TimelineEditorDialog(QDialog):
             os.makedirs(folder, exist_ok=True)
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
-                self.preview.set_status("音声を保存しています…")
+                self.preview.set_status(tr("音声を保存しています…"))
                 for media in media_list:
                     dest = media_sidecar.sidecar_path(folder, media.id, ffmpeg_cfg)
                     # 既に同じ素材から作ったものがあれば作り直さない
@@ -909,7 +922,7 @@ class TimelineEditorDialog(QDialog):
                         and os.path.getsize(dest) == os.path.getsize(media.path)):
                     QApplication.setOverrideCursor(Qt.WaitCursor)
                     try:
-                        self.preview.set_status("素材を複製しています…")
+                        self.preview.set_status(tr("素材を複製しています…"))
                         shutil.copy2(media.path, dest)
                     finally:
                         QApplication.restoreOverrideCursor()
@@ -1026,8 +1039,8 @@ class TimelineEditorDialog(QDialog):
         timeline = self.controller.timeline
         if not timeline.base_clips():
             QMessageBox.warning(
-                self, "書き出せません",
-                "映像クリップが 1 つもありません。クリップを残してから決定してください。")
+                self, tr("書き出せません"),
+                tr("映像クリップが 1 つもありません。クリップを残してから決定してください。"))
             return
         _logger.info(
             "Timeline 編集確定: V %d クリップ / オーバーレイ %d 件 / 字幕 %d 件"
@@ -1058,8 +1071,8 @@ class TimelineEditorDialog(QDialog):
             if not self.controller.is_dirty():
                 return True
             answer = QMessageBox.question(
-                self, "編集を破棄しますか",
-                "Timeline の編集内容が破棄され、処理も中断されます。よろしいですか?",
+                self, tr("編集を破棄しますか"),
+                tr("Timeline の編集内容が破棄され、処理も中断されます。よろしいですか?"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             return answer == QMessageBox.Yes
@@ -1067,15 +1080,16 @@ class TimelineEditorDialog(QDialog):
             return True
 
         box = QMessageBox(self)
-        box.setWindowTitle("保存していない編集があります")
-        box.setText("Timeline に保存していない編集があります。")
+        box.setWindowTitle(tr("保存していない編集があります"))
+        box.setText(tr("Timeline に保存していない編集があります。"))
         # パイプライン実行中は閉じると処理も止まる。再編集中は保存済みファイルが残る。
         box.setInformativeText(
-            "閉じると編集内容は失われ、処理も中断されます。" if self._mode == "pipeline"
-            else "閉じると保存していない編集は失われます。")
-        save = box.addButton("保存して閉じる", QMessageBox.AcceptRole)
-        box.addButton("保存せずに閉じる", QMessageBox.DestructiveRole)
-        cancel = box.addButton("編集に戻る", QMessageBox.RejectRole)
+            tr("閉じると編集内容は失われ、処理も中断されます。")
+            if self._mode == "pipeline"
+            else tr("閉じると保存していない編集は失われます。"))
+        save = box.addButton(tr("保存して閉じる"), QMessageBox.AcceptRole)
+        box.addButton(tr("保存せずに閉じる"), QMessageBox.DestructiveRole)
+        cancel = box.addButton(tr("編集に戻る"), QMessageBox.RejectRole)
         box.setDefaultButton(cancel)      # 誤操作で消えないよう既定は「戻る」
         box.exec()
         clicked = box.clickedButton()
@@ -1169,7 +1183,7 @@ class _InspectorPanel(QWidget):
         # 分割ウィンドウの一区画として周囲と接するため角丸は付けない (resolve4 E1)。
         theme.mark_panel(self, strong=True, rounded=False)
 
-        self.title_label = QLabel("選択なし")
+        self.title_label = QLabel(tr("選択なし"))
         # 太字は QSS ではなくフォントで指定する (インライン指定の撤去 / §5.3)
         title_font = QFont(self.title_label.font())
         title_font.setBold(True)
@@ -1186,23 +1200,23 @@ class _InspectorPanel(QWidget):
         form = QFormLayout(self.subtitle_widget)
         form.setContentsMargins(0, 6, 0, 0)
         self.text_edit = _CommitOnFocusOutEdit()
-        self.text_edit.setPlaceholderText("字幕テキスト (改行できます)")
+        self.text_edit.setPlaceholderText(tr("字幕テキスト (改行できます)"))
         self.text_edit.setFixedHeight(80)
         # 1 文字ごとにコマンドを積むと Undo 履歴が使い物にならなくなるため、
         # 入力欄からフォーカスが外れたときにまとめて確定する。
         self.text_edit.editing_finished.connect(self._on_text_changed)
-        form.addRow("字幕", self.text_edit)
+        form.addRow(tr("字幕"), self.text_edit)
 
         self.role_combo = QComboBox()
-        for label, value in _ROLE_CHOICES:
+        for label, value in ((tr(t), v) for t, v in _ROLE_CHOICES):
             self.role_combo.addItem(label, value)
         self.role_combo.currentIndexChanged.connect(self._on_role_changed)
-        form.addRow("役割", self.role_combo)
+        form.addRow(tr("役割"), self.role_combo)
 
         # フォントは名前の直接入力ではなく一覧から選ぶ (設定画面・字幕編集画面と同じ形式)。
         # 先頭の空項目は「設定のフォントに従う」= font 未指定を表す。
         self.font_combo = QComboBox()
-        self.font_combo.addItem(_FONT_DEFAULT_LABEL, "")
+        self.font_combo.addItem(tr(_FONT_DEFAULT_LABEL), "")
         for family in QFontDatabase.families():
             self.font_combo.addItem(family, family)
             # 各項目を自フォントで描画してプレビュー代わりにする (resolve16 §4.1)
@@ -1212,14 +1226,14 @@ class _InspectorPanel(QWidget):
         # activated = 利用者が選び直したときだけ。currentIndexChanged だと
         # 一覧を矢印キーで見て回るだけで Undo 履歴が埋まってしまう。
         self.font_combo.activated.connect(self._on_font_changed)
-        form.addRow("フォント", self.font_combo)
+        form.addRow(tr("フォント"), self.font_combo)
 
         self.size_spin = QDoubleSpinBox()
         self.size_spin.setDecimals(0)
         self.size_spin.setRange(0, 999)
-        self.size_spin.setSpecialValueText("既定")
+        self.size_spin.setSpecialValueText(tr("既定"))
         self.size_spin.editingFinished.connect(self._on_size_changed)
-        form.addRow("サイズ", self.size_spin)
+        form.addRow(tr("サイズ"), self.size_spin)
 
         # 文字色・縁の色は「このクリップだけの上書き」(resolve6 §3-1)。
         # 空欄なら設定の役割色 (配信者/サブ/コメント) に従う。
@@ -1227,19 +1241,19 @@ class _InspectorPanel(QWidget):
         swatch_width = int(self._controller.cfg["ui"]["subtitle_color_swatch_width_px"])
         self.color_field = ColorField(with_alpha=False, swatch_width_px=swatch_width)
         self.color_field.setToolTip(
-            "選択中の字幕の文字色です。空欄にすると設定の役割色に戻ります\n"
-            "複数選択しているときは選択中すべてに適用されます")
+            tr("選択中の字幕の文字色です。空欄にすると設定の役割色に戻ります\n"
+            "複数選択しているときは選択中すべてに適用されます"))
         self.color_field.color_committed.connect(self._on_color_changed)
-        form.addRow("文字色", self.color_field)
+        form.addRow(tr("文字色"), self.color_field)
 
         # 縁は ASS 形式 (&HAABBGGRR) のため透明度も指定できる
         self.outline_color_field = ColorField(
             with_alpha=True, swatch_width_px=swatch_width)
         self.outline_color_field.setToolTip(
-            "選択中の字幕の縁 (アウトライン) の色です。空欄にすると設定の役割色に戻ります\n"
-            "複数選択しているときは選択中すべてに適用されます")
+            tr("選択中の字幕の縁 (アウトライン) の色です。空欄にすると設定の役割色に戻ります\n"
+            "複数選択しているときは選択中すべてに適用されます"))
         self.outline_color_field.color_committed.connect(self._on_outline_color_changed)
-        form.addRow("縁の色", self.outline_color_field)
+        form.addRow(tr("縁の色"), self.outline_color_field)
 
         # 複数選択のときだけ出す案内 (単一選択の見た目を変えないため既定は非表示)
         self.multi_note_label = QLabel("")
@@ -1263,11 +1277,11 @@ class _InspectorPanel(QWidget):
         self.scale_spin.setSingleStep(float(overlay_cfg["scale_step_percent"]))
         self.scale_spin.setSuffix(" %")
         self.scale_spin.setToolTip(
-            "キャンバス幅に対する大きさです (100% = 画面の横幅いっぱい)\n"
-            "縦横比は常に保たれます")
+            tr("キャンバス幅に対する大きさです (100% = 画面の横幅いっぱい)\n"
+            "縦横比は常に保たれます"))
         # 1 打鍵ごとにコマンドを積まないよう、確定したときだけ反映する
         self.scale_spin.editingFinished.connect(self._on_scale_changed)
-        overlay_form.addRow("大きさ", self.scale_spin)
+        overlay_form.addRow(tr("大きさ"), self.scale_spin)
 
         self.scale_note_label = QLabel("")
         theme.mark_note(self.scale_note_label)
@@ -1276,21 +1290,21 @@ class _InspectorPanel(QWidget):
         scale_buttons = QWidget()
         scale_row = QHBoxLayout(scale_buttons)
         scale_row.setContentsMargins(0, 0, 0, 0)
-        self.native_size_button = QPushButton("原寸")
-        self.native_size_button.setToolTip("素材のピクセル数どおりの大きさにします")
+        self.native_size_button = QPushButton(tr("原寸"))
+        self.native_size_button.setToolTip(tr("素材のピクセル数どおりの大きさにします"))
         self.native_size_button.clicked.connect(self._apply_native_scale)
         scale_row.addWidget(self.native_size_button)
-        self.fit_width_button = QPushButton("画面幅に合わせる")
-        self.fit_width_button.setToolTip("キャンバスの横幅いっぱい (100%) にします")
+        self.fit_width_button = QPushButton(tr("画面幅に合わせる"))
+        self.fit_width_button.setToolTip(tr("キャンバスの横幅いっぱい (100%) にします"))
         self.fit_width_button.clicked.connect(
             lambda: self._apply_scale(1.0))
         scale_row.addWidget(self.fit_width_button)
         overlay_form.addRow("", scale_buttons)
         root.addWidget(self.overlay_widget)
 
-        self.reset_position_button = QPushButton("位置を既定へ戻す")
+        self.reset_position_button = QPushButton(tr("位置を既定へ戻す"))
         self.reset_position_button.setToolTip(
-            "ドラッグで動かした位置を捨てて、設定の配置・余白に従わせます")
+            tr("ドラッグで動かした位置を捨てて、設定の配置・余白に従わせます"))
         self.reset_position_button.clicked.connect(self._reset_position)
         root.addWidget(self.reset_position_button)
 
@@ -1305,10 +1319,10 @@ class _InspectorPanel(QWidget):
         self._updating = True
         try:
             if clip is None:
-                self.title_label.setText("選択なし")
+                self.title_label.setText(tr("選択なし"))
                 self.info_label.setText(
-                    "Timeline のクリップ、またはプレビュー上の画像・字幕を選ぶと"
-                    "ここに詳細が出ます。")
+                    tr("Timeline のクリップ、またはプレビュー上の画像・字幕を選ぶと"
+                    "ここに詳細が出ます。"))
                 self.subtitle_widget.setVisible(False)
                 self.overlay_widget.setVisible(False)
                 self.reset_position_button.setVisible(False)
@@ -1371,37 +1385,42 @@ class _InspectorPanel(QWidget):
         self.multi_note_label.setVisible(count > 1)
         if count > 1:
             self.multi_note_label.setText(
-                f"※ 文字色・縁の色は選択中の {count} 件すべてに適用されます"
-                "（字幕・役割・フォント・サイズはこの 1 件のみ）")
+                tr("※ 文字色・縁の色は選択中の {count} 件すべてに適用されます"
+                   "（字幕・役割・フォント・サイズはこの 1 件のみ）", count=count))
 
     def _title_for(self, clip):
         if isinstance(clip, SubtitleClip):
             count = len(self._selected_subtitle_ids())
-            return "字幕クリップ" if count <= 1 else f"字幕クリップ（{count} 件選択）"
+            return (tr("字幕クリップ") if count <= 1
+                    else tr("字幕クリップ（{count} 件選択）", count=count))
         if isinstance(clip, AudioClip):
-            return "音声クリップ"
+            return tr("音声クリップ")
         origin = clip.origin_type()
-        return {"opening": "オープニング", "ending": "エンディング",
-                "silence_cut": "本編クリップ",
-                "user_media": "追加メディア"}.get(origin, "クリップ")
+        return tr({"opening": "オープニング", "ending": "エンディング",
+                   "silence_cut": "本編クリップ",
+                   "user_media": "追加メディア"}.get(origin, "クリップ"))
 
     def _info_for(self, clip):
         timeline = self._controller.timeline
         if isinstance(clip, AudioClip):
             start = clip.timeline_start(timeline)
-            return (f"{clip.id} / リンク: {clip.link_clip}\n"
-                    f"開始 {format_time_precise(start or 0)}\n"
-                    "※ 時刻は映像クリップから導出されます")
+            return tr("{id} / リンク: {link}\n"
+                      "開始 {start}\n"
+                      "※ 時刻は映像クリップから導出されます",
+                      id=clip.id, link=clip.link_clip,
+                      start=format_time_precise(start or 0))
         lines = [
             f"{clip.id}",
-            f"開始 {format_time_precise(clip.timeline_start)}",
-            f"尺 {clip.duration:.2f} 秒",
+            tr("開始 {start}", start=format_time_precise(clip.timeline_start)),
+            tr("尺 {sec:.2f} 秒", sec=clip.duration),
         ]
         if not isinstance(clip, SubtitleClip):
             media = timeline.media_by_id(clip.media_id)
             if media is not None:
-                lines.append(f"素材 {os.path.basename(media.path)}")
-            lines.append(f"素材内 {clip.source_in:.2f}〜{clip.source_out:.2f} 秒")
+                lines.append(tr("素材 {name}",
+                                name=os.path.basename(media.path)))
+            lines.append(tr("素材内 {start:.2f}〜{end:.2f} 秒",
+                            start=clip.source_in, end=clip.source_out))
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -1436,9 +1455,10 @@ class _InspectorPanel(QWidget):
         width_px = int(round(timeline.width * scale))
         if media is not None and media.width and media.height:
             height_px = int(round(width_px * float(media.height) / float(media.width)))
-            self.scale_note_label.setText(f"{width_px} × {height_px} px 相当")
+            self.scale_note_label.setText(
+                tr("{width} × {height} px 相当", width=width_px, height=height_px))
         else:
-            self.scale_note_label.setText(f"幅 {width_px} px 相当")
+            self.scale_note_label.setText(tr("幅 {width} px 相当", width=width_px))
         self.native_size_button.setEnabled(native_scale(timeline, clip) is not None)
 
     def _on_scale_changed(self):
@@ -1479,11 +1499,11 @@ class _InspectorPanel(QWidget):
         if result["moved"]:
             track = self._controller.timeline.track_of_clip(self._clip.id)
             self.status_message.emit(
-                f"コメントトラック({track.id})へ移しました" if track
-                else "コメントトラックへ移しました")
+                tr("コメントトラック({track})へ移しました", track=track.id) if track
+                else tr("コメントトラックへ移しました"))
         elif result["blocked"]:
             self.status_message.emit(
-                "同じ時間にコメントがあるため、役割だけ変更しました")
+                tr("同じ時間にコメントがあるため、役割だけ変更しました"))
 
     def _on_font_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):

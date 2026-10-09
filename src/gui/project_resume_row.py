@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..timeline import project_io
 from ..timeline.builder import timeline_config
 from ..utils.logger import get_logger
@@ -47,17 +48,17 @@ def confirm_project_kind(parent, path, kind):
         actual = project_io.project_kind(timeline)
     except Exception:  # noqa: BLE001 (壊れたファイルはここで弾いて案内する)
         QMessageBox.warning(
-            parent, "開けません",
-            f"プロジェクトファイルを読めませんでした。\n{path}")
+            parent, tr("開けません"),
+            tr("プロジェクトファイルを読めませんでした。\n{path}", path=path))
         return False, ""
     if actual == kind:
         return True, actual
-    other = ("アーカイブ切り抜き用" if actual == project_io.KIND_ARCHIVE
-             else "クリップ用")
+    other = (tr("アーカイブ切り抜き用") if actual == project_io.KIND_ARCHIVE
+             else tr("クリップ用"))
     QMessageBox.information(
-        parent, "種別が違います",
-        f"このプロジェクトは{other}です。\n"
-        f"{other}のタブへ切り替えます。そちらで再開してください。")
+        parent, tr("種別が違います"),
+        tr("このプロジェクトは{other}です。\n"
+           "{other}のタブへ切り替えます。そちらで再開してください。", other=other))
     return False, actual
 
 
@@ -82,22 +83,23 @@ class ProjectResumeRow(QWidget):
     def _build_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("編集の続き:"))
+        self.caption_label = QLabel(tr("編集の続き:"))
+        layout.addWidget(self.caption_label)
 
         self.project_combo = QComboBox()
         self.project_combo.setToolTip(
-            "保存した Timeline プロジェクトを開いて編集の続きから書き出します")
+            tr("保存した Timeline プロジェクトを開いて編集の続きから書き出します"))
         layout.addWidget(self.project_combo, 1)
 
-        self.resume_button = QPushButton("開く...")
+        self.resume_button = QPushButton(tr("開く..."))
         self.resume_button.clicked.connect(self._on_resume)
         layout.addWidget(self.resume_button)
 
         self.library_button = None
         if self._library_cfg()["enabled"]:
-            self.library_button = QPushButton("一覧...")
+            self.library_button = QPushButton(tr("一覧..."))
             self.library_button.setToolTip(
-                "保存したプロジェクトを一覧から開く・名前を変える・削除します")
+                tr("保存したプロジェクトを一覧から開く・名前を変える・削除します"))
             self.library_button.clicked.connect(self.library_requested.emit)
             layout.addWidget(self.library_button)
 
@@ -135,12 +137,26 @@ class ProjectResumeRow(QWidget):
                 self.project_combo.count() - 1, path, Qt.ToolTipRole)
         if not recent:
             # 一覧が空でも行ごと消さない (「開く...」だけ押せる状態にする)
-            self.project_combo.addItem(EMPTY_LABEL, "")
-        self.project_combo.addItem(BROWSE_LABEL, "")
+            self.project_combo.addItem(tr(EMPTY_LABEL), "")
+        self.project_combo.addItem(tr(BROWSE_LABEL), "")
         if current:
             index = self.project_combo.findData(current)
             if index >= 0:
                 self.project_combo.setCurrentIndex(index)
+
+    # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
+    # コンボの特殊項目 (空・ファイルから選ぶ) は refresh が作り直す。
+    # 選択中のプロジェクトは currentData で引き継がれるため失われない。
+    def retranslate(self):
+        self.caption_label.setText(tr("編集の続き:"))
+        self.project_combo.setToolTip(
+            tr("保存した Timeline プロジェクトを開いて編集の続きから書き出します"))
+        self.resume_button.setText(tr("開く..."))
+        if self.library_button is not None:
+            self.library_button.setText(tr("一覧..."))
+            self.library_button.setToolTip(
+                tr("保存したプロジェクトを一覧から開く・名前を変える・削除します"))
+        self.refresh()
 
     # D&D や一覧から渡されたものを選択状態にする
     def select(self, path):
@@ -148,7 +164,7 @@ class ProjectResumeRow(QWidget):
             return
         index = self.project_combo.findData(path)
         if index < 0:
-            if self.project_combo.itemText(0) == EMPTY_LABEL:
+            if self.project_combo.itemText(0) == tr(EMPTY_LABEL):
                 self.project_combo.removeItem(0)
             self.project_combo.insertItem(0, os.path.basename(path), path)
             self.project_combo.setItemData(0, path, Qt.ToolTipRole)
@@ -174,8 +190,8 @@ class ProjectResumeRow(QWidget):
             return
         if not os.path.exists(path):
             QMessageBox.warning(
-                self, "開けません",
-                f"プロジェクトファイルが見つかりません。\n{path}")
+                self, tr("開けません"),
+                tr("プロジェクトファイルが見つかりません。\n{path}", path=path))
             return
         if not self._check_kind(path):
             return
@@ -191,7 +207,7 @@ class ProjectResumeRow(QWidget):
         if not start_dir and recent:
             start_dir = os.path.dirname(recent[0])
         path, _ = QFileDialog.getOpenFileName(
-            self, "Timeline プロジェクトを選択", start_dir, PROJECT_FILE_FILTER)
+            self, tr("Timeline プロジェクトを選択"), start_dir, tr(PROJECT_FILE_FILTER))
         return path
 
     # 種別が違うプロジェクトを開こうとしていないか確かめる (ver3 resolve9 §3-4)

@@ -46,6 +46,7 @@ try:
 except Exception:  # noqa: BLE001
     _MULTIMEDIA_AVAILABLE = False
 
+from ...i18n import tr
 from ...modules import comment_decor, ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
 from ...timeline import commands, crop
@@ -261,7 +262,7 @@ class PreviewPanel(QWidget):
         prev_button = QPushButton("⏮")
         prev_button.setFixedWidth(icon_width)
         theme.mark_icon_button(prev_button)
-        prev_button.setToolTip("先頭へ (Home)")
+        prev_button.setToolTip(tr("先頭へ (Home)"))
         prev_button.clicked.connect(lambda: self._controller.set_playhead(0.0))
         row.addWidget(prev_button)
 
@@ -270,7 +271,8 @@ class PreviewPanel(QWidget):
         self.backward_button.setFixedWidth(wide_width)
         theme.mark_icon_button(self.backward_button)
         self.backward_button.setCheckable(True)
-        self.backward_button.setToolTip(f"{rate:g} 倍速逆再生 (Q) ※音声は出ません")
+        self.backward_button.setToolTip(
+            tr("{rate:g} 倍速逆再生 (Q) ※音声は出ません", rate=rate))
         self.backward_button.clicked.connect(lambda: self.toggle_rate(-rate))
         row.addWidget(self.backward_button)
 
@@ -278,7 +280,7 @@ class PreviewPanel(QWidget):
         self.play_button.setFixedWidth(icon_width)
         theme.mark_icon_button(self.play_button)
         self.play_button.setCheckable(True)
-        self.play_button.setToolTip("再生 / 停止 (Space)")
+        self.play_button.setToolTip(tr("再生 / 停止 (Space)"))
         self.play_button.clicked.connect(self.toggle_play)
         row.addWidget(self.play_button)
 
@@ -286,14 +288,14 @@ class PreviewPanel(QWidget):
         self.forward_button.setFixedWidth(wide_width)
         theme.mark_icon_button(self.forward_button)
         self.forward_button.setCheckable(True)
-        self.forward_button.setToolTip(f"{rate:g} 倍速再生 (E)")
+        self.forward_button.setToolTip(tr("{rate:g} 倍速再生 (E)", rate=rate))
         self.forward_button.clicked.connect(lambda: self.toggle_rate(+rate))
         row.addWidget(self.forward_button)
 
         next_button = QPushButton("⏭")
         next_button.setFixedWidth(icon_width)
         theme.mark_icon_button(next_button)
-        next_button.setToolTip("末尾へ (End)")
+        next_button.setToolTip(tr("末尾へ (End)"))
         next_button.clicked.connect(
             lambda: self._controller.set_playhead(
                 self._controller.timeline.duration_sec()))
@@ -319,7 +321,7 @@ class PreviewPanel(QWidget):
             self.mute_button = QPushButton("🔊" if self._cfg["audio_enabled"] else "🔇")
             self.mute_button.setFixedWidth(icon_width)
             theme.mark_icon_button(self.mute_button)
-            self.mute_button.setToolTip("ミュート切り替え")
+            self.mute_button.setToolTip(tr("ミュート切り替え"))
             self.mute_button.clicked.connect(self._toggle_mute)
             row.addWidget(self.mute_button)
 
@@ -341,10 +343,10 @@ class PreviewPanel(QWidget):
             _logger.info("QtMultimedia が利用できないため倍速再生を無効にします")
 
         if self._cfg["high_quality_button"]:
-            hq_button = QPushButton("高精度プレビュー")
+            hq_button = QPushButton(tr("高精度プレビュー"))
             hq_button.setToolTip(
-                "現在のフレームを本番と同じ ASS で描画し直して表示します "
-                "(画面上の字幕は Qt による近似表示です)")
+                tr("現在のフレームを本番と同じ ASS で描画し直して表示します "
+                "(画面上の字幕は Qt による近似表示です)"))
             hq_button.clicked.connect(self._show_high_quality)
             row.addWidget(hq_button)
         root.addLayout(row)
@@ -354,7 +356,7 @@ class PreviewPanel(QWidget):
         root.addWidget(self.status_label)
 
         if not is_pyav_available():
-            self.status_label.setText("PyAV が利用できないため ffmpeg でフレームを取得します")
+            self.status_label.setText(tr("PyAV が利用できないため ffmpeg でフレームを取得します"))
 
     # ------------------------------------------------------------------
     # 表示更新
@@ -438,7 +440,7 @@ class PreviewPanel(QWidget):
             self._scene.addItem(item)
             self._blur_marker_items.append(item)
 
-            label = QGraphicsSimpleTextItem(str(entry.get("label") or "ぼかし"))
+            label = QGraphicsSimpleTextItem(str(entry.get("label") or tr("ぼかし")))
             label.setBrush(QBrush(QColor(232, 80, 80)))
             font = label.font()
             font.setPointSizeF(max(self._canvas[0] / 90.0, 10.0))
@@ -613,29 +615,29 @@ class PreviewPanel(QWidget):
             self._controller.select([clip_id])
 
         menu = QMenu(self)
-        menu.addAction("削除", lambda: self._controller.delete_clips([clip_id]))
-        layer = menu.addMenu("レイヤー")
-        layer.addAction("最前面",
+        menu.addAction(tr("削除"), lambda: self._controller.delete_clips([clip_id]))
+        layer = menu.addMenu(tr("レイヤー"))
+        layer.addAction(tr("最前面"),
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_TOP))
-        layer.addAction("前面",
+        layer.addAction(tr("前面"),
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_UP))
-        layer.addAction("背面",
+        layer.addAction(tr("背面"),
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_DOWN))
-        layer.addAction("最背面",
+        layer.addAction(tr("最背面"),
                         lambda: self._controller.change_layer(clip_id, commands.LAYER_BOTTOM))
         # 大きさ (画像・動画オーバーレイのみ / resolve7 §5.4)。
         # 字幕の大きさはインスペクタの「サイズ」(フォントサイズ) で変えるため出さない。
         if hasattr(item, "set_resizable"):
-            size_menu = menu.addMenu("大きさ")
+            size_menu = menu.addMenu(tr("大きさ"))
             native = native_scale(self._controller.timeline,
                                   self._controller.timeline.clip_by_id(clip_id))
             action = size_menu.addAction(
-                "原寸", lambda: self._controller.resize_overlay(clip_id, native))
+                tr("原寸"), lambda: self._controller.resize_overlay(clip_id, native))
             action.setEnabled(native is not None)
             size_menu.addAction(
                 "50%", lambda: self._controller.resize_overlay(clip_id, 0.5))
             size_menu.addAction(
-                "100%（画面幅）", lambda: self._controller.resize_overlay(clip_id, 1.0))
+                tr("100%（画面幅）"), lambda: self._controller.resize_overlay(clip_id, 1.0))
         menu.exec(global_pos)
 
     # ------------------------------------------------------------------
@@ -675,7 +677,7 @@ class PreviewPanel(QWidget):
     # 前進再生 (通常・倍速とも。速度だけが違う)
     def _play_forward(self, rate):
         if self._player is None:
-            self.set_status("音声を再生できない環境のため再生できません")
+            self.set_status(tr("音声を再生できない環境のため再生できません"))
             return
         total = self._controller.timeline.duration_sec()
         if self._controller.playhead() >= total - 0.05:
@@ -691,7 +693,7 @@ class PreviewPanel(QWidget):
             self._start_playback(*hit)
             return
         # チャンクが無い → まず短いチャンクを作って鳴らし、続けて本チャンクを先読みする
-        self.set_status("音声を準備中…")
+        self.set_status(tr("音声を準備中…"))
         self._request_chunk(start, length_sec=startup, follow_full=True)
 
     # 倍速逆再生 (音声なし / resolve2 §5.6-3)
@@ -704,7 +706,7 @@ class PreviewPanel(QWidget):
             lambda: self._step_backward(rate, interval))
         self._reverse_timer.start()
         self._set_rate(-rate)
-        self.set_status(f"{rate:g} 倍速逆再生中 (音声なし)")
+        self.set_status(tr("{rate:g} 倍速逆再生中 (音声なし)", rate=rate))
         _logger.debug("再生速度: %.1f 倍 (逆再生・音声なし)", rate)
 
     # 1 ティックぶん再生ヘッドを戻す。先頭に達したら停止する。
@@ -760,7 +762,7 @@ class PreviewPanel(QWidget):
             return
         if not self._pending_rate:
             return
-        self.set_status("音声を再生できません (無音で再生します)")
+        self.set_status(tr("音声を再生できません (無音で再生します)"))
         self._start_silent_playback()
 
     def _start_playback(self, path, chunk_start):
@@ -904,9 +906,9 @@ class PreviewPanel(QWidget):
         # スクラブ中は「再生」ではないため、失敗しても無音タイマー再生を始めない
         # (再生ヘッドが勝手に進んでしまう / resolve7 §2.5.2)
         if self._controller.is_scrubbing():
-            self.set_status("この位置の音声を再生できません")
+            self.set_status(tr("この位置の音声を再生できません"))
             return
-        self.set_status("音声を再生できません (無音で再生します)")
+        self.set_status(tr("音声を再生できません (無音で再生します)"))
         self._start_silent_playback()
 
     def _toggle_mute(self):
@@ -1009,7 +1011,7 @@ class PreviewPanel(QWidget):
     def _scrub_prepare(self):
         if self._audio_worker is not None and self._audio_worker.isRunning():
             return
-        self.set_status("音声を準備中…")
+        self.set_status(tr("音声を準備中…"))
         self._request_chunk(self._controller.playhead(), autoplay=False,
                             length_sec=float(self._cfg["scrub_chunk_sec"]))
 
@@ -1021,7 +1023,7 @@ class PreviewPanel(QWidget):
     def _show_high_quality(self):
         resolved = self._controller.source_at_playhead()
         if resolved is None:
-            self.set_status("この位置には映像がありません")
+            self.set_status(tr("この位置には映像がありません"))
             return
         media, source_sec = resolved
         playhead = self._controller.playhead()
@@ -1089,10 +1091,10 @@ class PreviewPanel(QWidget):
             result = subprocess.run(
                 cmd, capture_output=True, creationflags=no_window_creationflags())
         except OSError as e:
-            self.set_status(f"高精度プレビューに失敗しました: {e}")
+            self.set_status(tr("高精度プレビューに失敗しました: {error}", error=e))
             return
         if result.returncode != 0 or not os.path.exists(out_path):
-            self.set_status("高精度プレビューに失敗しました")
+            self.set_status(tr("高精度プレビューに失敗しました"))
             return
         _HighQualityDialog(out_path, self).exec()
 
@@ -1206,7 +1208,7 @@ class _HighQualityDialog(QDialog):
 
     def __init__(self, image_path, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("高精度プレビュー (本番と同じ描画)")
+        self.setWindowTitle(tr("高精度プレビュー (本番と同じ描画)"))
         # 本番と同じ描画の確認窓のため、画像そのものには手を加えない (resolve3 §5.6)
         theme.install_window_background(self)
         layout = QVBoxLayout(self)
@@ -1217,11 +1219,11 @@ class _HighQualityDialog(QDialog):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
         note = QLabel(
-            "この画像は本番と同じ ASS 描画です。編集画面上の字幕は Qt による近似表示のため、"
-            "縁取りや影の見え方が異なります。")
+            tr("この画像は本番と同じ ASS 描画です。編集画面上の字幕は Qt による近似表示のため、"
+            "縁取りや影の見え方が異なります。"))
         note.setWordWrap(True)
         theme.mark_note(note)
         layout.addWidget(note)
-        close_button = QPushButton("閉じる")
+        close_button = QPushButton(tr("閉じる"))
         close_button.clicked.connect(self.accept)
         layout.addWidget(close_button)

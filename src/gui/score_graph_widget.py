@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from ..i18n import tr
 from . import theme
 
 
@@ -43,7 +44,7 @@ class ScoreGraphWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._chart = QChart()
-        self._chart.setTitle("採点グラフ (縦=スコア / 横=時間[秒]・マーカ=TOP5)")
+        self._chart.setTitle(tr("採点グラフ (縦=スコア / 横=時間[秒]・マーカ=TOP5)"))
         self._chart.legend().hide()
 
         self._view = QChartView(self._chart)
@@ -126,10 +127,10 @@ class ScoreGraphWidget(QWidget):
 
         # 軸 (時間 / スコア)。スコアは上下に少し余白を持たせる。
         axis_x = QValueAxis()
-        axis_x.setTitleText("時間[秒]")
+        axis_x.setTitleText(tr("時間[秒]"))
         axis_x.setRange(0.0, max_time * 1.02)
         axis_y = QValueAxis()
-        axis_y.setTitleText("スコア")
+        axis_y.setTitleText(tr("スコア"))
         margin = max(1.0, (max_score - min_score) * 0.1)
         axis_y.setRange(min_score - margin, max_score + margin)
 

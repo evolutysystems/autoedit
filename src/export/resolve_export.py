@@ -8,6 +8,7 @@ import os
 
 from ..archive import config as archive_config
 from ..exceptions import AutoEditError, ExportError
+from ..i18n import tr
 from ..modules import ffmpeg_runner, output_profile, subtitle_generator, watermark_overlay
 from ..services import points as points_service
 from ..timeline import project_io
@@ -349,9 +350,9 @@ def _probe_duration(source_path, settings):
 # ソースパスの妥当性を検証する (未特定/不在はエクスポート中止 / §7)
 def _validate_source(source_path):
     if not source_path:
-        raise ExportError("元動画のパスが特定できないため Resolve 出力を中止しました。")
+        raise ExportError(tr("元動画のパスが特定できないため Resolve 出力を中止しました。"))
     if not os.path.exists(source_path):
-        raise ExportError(f"元動画が見つかりません: {source_path}")
+        raise ExportError(tr("元動画が見つかりません: {path}", path=source_path))
 
 
 # spec の共通部 (諸元・ソース・イベント名) を作る
@@ -493,7 +494,7 @@ def build_timeline_spec(timeline, settings, profile=None):
             "元動画以外のクリップ %d 件 (オープニング/エンディング/追加メディア) は "
             "FCPXML に含めません。Resolve 側で追加してください。", skipped)
     if not body_clips:
-        raise ExportError("元動画のクリップが 1 つも残っていないため出力できません。")
+        raise ExportError(tr("元動画のクリップが 1 つも残っていないため出力できません。"))
 
     segments = [(c.source_in, c.source_out) for c in body_clips]
     spec["clips"] = _clips_from_segments(segments, "cut")
@@ -687,7 +688,8 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
             content = fcpxml_builder.build_fcpxml(spec)
         except Exception as e:  # noqa: BLE001 (想定外データは ExportError へ集約する)
             _logger.exception("FCPXML の生成に失敗")
-            raise ExportError(f"FCPXML の生成に失敗しました: {e}") from e
+            raise ExportError(
+                tr("FCPXML の生成に失敗しました: {error}", error=e)) from e
 
         _atomic_write(dest_path, content)
     except Exception:
@@ -741,7 +743,8 @@ def _atomic_write(dest_path, content):
                 os.remove(temp_path)
         except OSError:
             pass
-        raise ExportError(f"Resolve 出力ファイルの書き出しに失敗しました: {e}") from e
+        raise ExportError(
+            tr("Resolve 出力ファイルの書き出しに失敗しました: {error}", error=e)) from e
 
 
 # SRT サイドカーを FCPXML と同名 (拡張子違い) で書き出す (resolve21 §5.6)
@@ -791,7 +794,7 @@ def export_clip_review(export_context, items, overwrite_confirm=None, points=Non
 def export_archive_result(source_path, entries, settings, overwrite_confirm=None, points=None):
     spec = build_archive_spec(source_path, entries, settings)
     if not spec["clips"]:
-        raise ExportError("出力対象のクリップがありません (使用クリップを1つ以上選択してください)。")
+        raise ExportError(tr("出力対象のクリップがありません (使用クリップを1つ以上選択してください)。"))
     dest = default_output_path(settings, source_path, archive_config.clip_prefix(settings))
     return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
                        points=points, job_type=points_service.JOB_ARCHIVE)

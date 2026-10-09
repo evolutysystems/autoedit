@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 
+from ..i18n import tr
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -49,11 +50,13 @@ def resolve_path(configured):
 def availability(cfg):
     model_cfg = cfg["model"]
     if resolve_path(model_cfg["detector"]) is None:
-        return False, (f"人物検出モデルが見つかりません ({model_cfg['detector']})。"
-                       "模様の変化だけで囲みを追います")
+        return False, tr("人物検出モデルが見つかりません ({model})。"
+                         "模様の変化だけで囲みを追います",
+                         model=model_cfg["detector"])
     if not is_runtime_available():
-        return False, "onnxruntime が利用できないため、模様の変化だけで囲みを追います"
-    return True, "モデル: 準備完了"
+        return False, tr("onnxruntime が利用できないため、"
+                         "模様の変化だけで囲みを追います")
+    return True, tr("モデル: 準備完了")
 
 
 # onnxruntime を import できるか (遅延 import の可否確認)
