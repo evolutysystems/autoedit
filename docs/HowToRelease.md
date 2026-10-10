@@ -192,7 +192,9 @@ a = Analysis(
     pathex=['..'],                   # 'from src.xxx' 解決のためリポジトリルートを追加
     binaries=[],                     # CUDA 同梱は廃止 (CPU 実行のため不要 / resolve8.md)
     datas=[
-        ('settings/setting.json', 'src/settings'),   # 初期設定を実行時参照先へ同梱
+        # 初期設定を実行時参照先へ同梱。開発端末のローカルパスを空へ落とした
+        # 複製を作って入れる (spec 内の _build_shipped_settings / security.md F5)
+        (_build_shipped_settings(), 'src/settings'),
     ],
     hiddenimports=[
         'faster_whisper',            # 遅延 import のため明示
@@ -240,6 +242,7 @@ coll = COLLECT(
 - onedir（`exclude_binaries=True` + `COLLECT`）：§3.3 の理由で onefile より安定。
 - `pathex=['..']`：エントリ `gui/main_window.py` 内の `from src.xxx` を解決するためリポジトリルートを追加（§3.1）。
 - `datas` の `setting.json` 同梱先は **`src/settings`**：`settings_window.py` が `__file__` 基準で `_internal/src/settings/setting.json` を参照するため（`settings` 直下では実行時に見つからない）。FFmpeg は §5.3 で exe 隣へ手動配置。
+- 同梱するのは `settings/setting.json` そのものではなく、**`_build_shipped_settings()` が作る複製**：`settings/setting.json` は開発端末が実際に使っている（アプリが起動のたびに書き戻す）ファイルなので、そのまま入れると `D:/develop/...` のようなローカルパスが配布物へ載る（`StretheusPlan/security.md` F5）。`general` の `video_directory` / `opening_video` / `ending_video` / `output_directory` を空へ落とし、他の場所に絶対パスや `archive.auth.client_secret` が残っていればビルドを止める。
 - `binaries=[]`：**CUDA ランタイムの同梱は廃止（CUDA 不使用・CPU 版 / resolve8.md）**。`nvidia-*-cu12` は導入・同梱しない。音声認識は CPU で実行する。
 - `upx=False`：圧縮は SmartScreen/AV 誤検知を招きやすいため無効（§7）。
 - `icon='gui/app.ico'` を `EXE(...)` に指定し exe へアイコンを埋め込む。実行時のウィンドウ/タスクバー用に
@@ -354,6 +357,14 @@ Stretheus/                      ← これを zip 化して配布
 - [ ] **`setting.json` の `api.base_url` が配布先の接続先になっている**（ver5 resolve.md §9-5）。
       開発中は dev（`https://stretheusapi-dev.azurewebsites.net`）を指している。本番 API を
       デプロイするまでは dev のままで配る（prod は未デプロイ）。
+      接続先を切り替えるときは **3 か所セット**で直す（`StretheusPlan/plan.md` §7.8.4）。
+      `setting.json`（新規インストール）／`settings_window.DEFAULT_SETTINGS`（既定）／
+      `_normalize_legacy_values`（**既存の利用者**。更新インストールでは旧 `setting.json` が
+      復元され既存値が温存されるため、ここを足さないと旧接続先のまま残る）。
+- [ ] **同梱される `setting.json` に開発端末のローカルパスが載っていない**（`StretheusPlan/security.md` F5）。
+      `main_window.spec` が `general` の 4 つのパスを空へ落とした複製を同梱し、想定外の場所に
+      絶対パスが残っていればビルドを止める。ビルド後の確認:
+      `python -c "import json;print(json.load(open(r'src/dist/Stretheus/_internal/src/settings/setting.json',encoding='utf-8-sig'))['general'])"`
 - [ ] 未ログインのまま出力しても、従来どおりポイントを消費せず透かしも入らない（ver5 resolve.md §4-5）。
 - [ ] ログイン後、残高インジケータ（メイン画面右上）に残高と次回リセット日が出る。
 - [ ] 残高不足のアカウントで出力すると確認ダイアログが出て、続行すると透かしが入る（R4 / R12）。

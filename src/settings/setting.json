@@ -1,11 +1,11 @@
 {
     "general": {
-        "video_directory": "D:/develop/autoedit/input",
-        "opening_video": "D:/StreamPipeline/dev/assets/op.mp4",
+        "video_directory": "",
+        "opening_video": "",
         "opening_enabled": false,
-        "ending_video": "D:/StreamPipeline/dev/assets/ed.mp4",
+        "ending_video": "",
         "ending_enabled": false,
-        "output_directory": "D:/develop/autoedit/output",
+        "output_directory": "",
         "auto_update_check": true
     },
     "subtitle": {

@@ -10,16 +10,87 @@
 # CUDA ランタイム DLL (nvidia-*-cu12) の同梱は廃止した。これにより配布ペイロードを
 # 大幅に削減し、GitHub Releases の 1ファイル 2GiB 上限に収めやすくする。
 
+import json
+import os
+import re
+import tempfile
 from glob import glob
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+
+# 同梱する初期設定から開発端末のローカルパスを落とす (security.md F5)。
+#
+# settings/setting.json は **開発端末で実際に使っている設定ファイル**で、
+# アプリが起動のたびに書き戻す。そのまま datas へ入れると
+# `D:/develop/autoedit/input` のような開発者のディレクトリ構成が
+# 配布物 (_internal/src/settings/setting.json) に載って全利用者へ渡る。
+# 利用者側にも存在しないパスなので、設定として役に立つこともない。
+#
+# そこでビルドのたびに該当キーを空へ戻した**複製**を作り、それを同梱する。
+# 空 = settings_window.DEFAULT_SETTINGS と同じ状態で、
+# インストーラが output_directory を利用者の選択で上書きする (installer/AutoEdit.iss §6.2)。
+_BLANKED_GENERAL_KEYS = ('video_directory', 'opening_video', 'ending_video', 'output_directory')
+
+# ドライブレター付きの絶対パスと UNC パス
+_LOCAL_PATH_RE = re.compile(r'^(?:[A-Za-z]:[\\/]|\\\\)')
+
+
+# data (dict/list/str の入れ子) から絶対パスらしい値を "キー経路=値" で拾う
+def _find_local_paths(data, path='$'):
+    if isinstance(data, dict):
+        for key, value in data.items():
+            yield from _find_local_paths(value, f'{path}.{key}')
+    elif isinstance(data, list):
+        for index, value in enumerate(data):
+            yield from _find_local_paths(value, f'{path}[{index}]')
+    elif isinstance(data, str) and _LOCAL_PATH_RE.match(data):
+        yield f'{path} = {data}'
+
+
+def _build_shipped_settings(source='settings/setting.json'):
+    with open(source, encoding='utf-8-sig') as handle:
+        data = json.load(handle)
+
+    general = data.get('general')
+    if isinstance(general, dict):
+        for key in _BLANKED_GENERAL_KEYS:
+            if general.get(key):
+                general[key] = ''
+
+    # 空へ戻すキーは既知のものだけ。上で拾えない場所 (新しい設定項目や
+    # recent/extra_dirs のような一覧) に絶対パスが残っていたら、
+    # 何を空にすべきかはここでは決められないため**ビルドを止める**。
+    leaked = sorted(_find_local_paths(data))
+    if leaked:
+        raise SystemExit(
+            'setting.json にローカルの絶対パスが残っています。'
+            'このファイルは配布物へそのまま同梱されるため、'
+            '該当する設定を空にしてからビルドしてください (security.md F5):\n  '
+            + '\n  '.join(leaked))
+
+    # 認証情報は配布物へ入れない (client_id は公開前提なので対象外)
+    secret = data.get('archive', {}).get('auth', {}).get('client_secret')
+    if secret:
+        raise SystemExit(
+            'setting.json の archive.auth.client_secret が入っています。'
+            '配布物に同梱されるため空にしてからビルドしてください (security.md F5)。')
+
+    destination = os.path.join(tempfile.mkdtemp(prefix='stretheus-shipped-settings-'),
+                               'setting.json')
+    with open(destination, 'w', encoding='utf-8') as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=4)
+    return destination
+
 
 a = Analysis(
     ['gui/main_window.py'],          # GUI エントリポイント
     pathex=['..'],                   # 'from src.xxx' 解決のためリポジトリルートを追加
     binaries=[],                     # CUDA 同梱は廃止 (CPU 実行のため不要 / resolve8.md)
     datas=[
-        ('settings/setting.json', 'src/settings'),   # 初期設定を実行時参照先へ同梱
+        # 初期設定を実行時参照先へ同梱する。開発端末のローカルパスを落とした
+        # 複製を作って入れる (上の _build_shipped_settings / security.md F5)
+        (_build_shipped_settings(), 'src/settings'),
         # アプリアイコンを実行時のウィンドウ/タスクバー用に同梱する。
         # main_window._resolve_app_icon_path が _internal/src/gui/app.ico を解決する。
         ('gui/app.ico', 'src/gui'),
