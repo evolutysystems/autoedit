@@ -138,7 +138,25 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # ビルド時にだけ必要なもの。配布物へ入れない
+        # (StretheusPlan/security.md の F13)。
+        #
+        # tools/collect_licenses.py が _BUILD_ONLY として扱っているのに
+        # 凍結配布へ入っており、--scan-bundle が「manifest に載っていない同梱物」
+        # として報告していた。ライセンス表記の対象でもないため、
+        # 載せるのではなく外すのが正しい。
+        #
+        # 既知の脆弱性 (CVE-2025-47273 / PackageIndex のパストラバーサル) を
+        # 配布物から外す意味もある。アプリは PackageIndex を使わない。
+        #
+        # 検証: 3 つを sys.meta_path で遮断した状態でも
+        #   ・アプリの主要モジュール 8 本の import が成功する
+        #   ・tests 全件 (1115 件) が合格する
+        # ことを確認済み。
+        'setuptools',
+        'pkg_resources',
+    ],
     noarchive=False,
     optimize=0,
 )

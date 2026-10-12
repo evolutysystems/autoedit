@@ -16,7 +16,7 @@
   全文       : annotated-doc\LICENSE
 
 [anyio]
-  版         : 4.13.0
+  版         : 4.15.1
   配布元     : https://anyio.readthedocs.io/en/latest/
   ライセンス : MIT
   全文       : anyio\LICENSE
@@ -107,7 +107,7 @@
   全文       : flatbuffers\LICENSE.txt
 
 [fsspec]
-  版         : 2026.2.0
+  版         : 2026.9.0
   配布元     : https://filesystem-spec.readthedocs.io/en/latest/
   ライセンス : BSD-3-Clause
   全文       : fsspec\LICENSE
@@ -143,7 +143,7 @@
   全文       : huggingface_hub\LICENSE
 
 [idna]
-  版         : 3.11
+  版         : 3.20
   配布元     : https://github.com/kjd/idna
   ライセンス : BSD-3-Clause
   全文       : idna\LICENSE.md
@@ -209,7 +209,7 @@
   全文       : mpmath\LICENSE
 
 [msgpack]
-  版         : 1.1.2
+  版         : 1.2.3
   配布元     : https://msgpack.org/
   ライセンス : Apache-2.0
   全文       : msgpack\COPYING
@@ -439,13 +439,13 @@
   全文       : typer\LICENSE
 
 [typing_extensions]
-  版         : 4.15.0
+  版         : 4.16.0
   配布元     : https://typing-extensions.readthedocs.io/
   ライセンス : PSF-2.0
   全文       : typing_extensions\LICENSE
 
 [urllib3]
-  版         : 2.6.3
+  版         : 2.8.0
   配布元     : https://urllib3.readthedocs.io
   ライセンス : MIT
   全文       : urllib3\LICENSE.txt
