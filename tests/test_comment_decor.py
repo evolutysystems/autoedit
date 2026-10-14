@@ -189,5 +189,55 @@ class CommentBackgroundTest(unittest.TestCase):
         self.assertTrue(text.endswith("{\\p0}"))
 
 
+# プロキシ (低解像度プレビュー) 向けの換算 (ver6 resolve3 §3.3)
+#
+# 【重要】計算は必ず**本番キャンバス**で行い、結果へ比を掛ける。
+# font_size や comment_margin_l が絶対 px のため、プロキシ寸法で計算すると
+# 余白だけが相対的に広がり、プレビューと出力が一致しなくなる。
+class ScaleTest(unittest.TestCase):
+
+    def test_icon_box_scales(self):
+        item = _comment()
+        full = comment_decor.icon_box(item, _cfg(), 1920, 1080)
+        half = comment_decor.icon_box(item, _cfg(), 1920, 1080, 0.5)
+
+        self.assertAlmostEqual(half["x"], full["x"] / 2.0, delta=1.0)
+        self.assertAlmostEqual(half["y"], full["y"] / 2.0, delta=1.0)
+        self.assertAlmostEqual(half["size"], full["size"] / 2.0, delta=1.0)
+
+    def test_background_box_scales(self):
+        item = _comment()
+        full = comment_decor.background_box(item, _cfg(), 1920, 1080)
+        half = comment_decor.background_box(item, _cfg(), 1920, 1080, scale=0.5)
+
+        for key in ("x", "y", "w", "h", "radius"):
+            self.assertAlmostEqual(half[key], full[key] / 2.0, delta=1.0, msg=key)
+
+    # 既定 (scale=1.0) は従来と完全に同じ値を返す
+    def test_default_scale_is_unchanged(self):
+        item = _comment()
+
+        self.assertEqual(comment_decor.icon_box(item, _cfg(), 1920, 1080),
+                         comment_decor.icon_box(item, _cfg(), 1920, 1080, 1.0))
+        self.assertEqual(comment_decor.background_box(item, _cfg(), 1920, 1080),
+                         comment_decor.background_box(item, _cfg(), 1920, 1080,
+                                                      scale=1.0))
+
+    # チェーンの overlay 座標とアイコン寸法も比で縮む
+    def test_icon_chains_scale(self):
+        full_box = comment_decor.icon_box(_comment(), _cfg(), 1920, 1080)
+        chains, count, _groups = comment_decor.build_icon_chains(
+            [_comment()], _cfg(), 1920, 1080, "[v0]", "[v1]", scale=0.5)
+        if not count or full_box is None:
+            self.skipTest("アイコン素材が無い環境では確認できない")
+        text = ";".join(chains)
+        half = int(round(full_box["size"] / 2.0))
+
+        self.assertIn(f"scale=w={half}:h={half}", text)
+        self.assertIn(f"pad={half}:{half}", text)
+        self.assertIn(f"overlay={full_box['x'] / 2.0:.1f}:"
+                      f"{full_box['y'] / 2.0:.1f}", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -44,20 +44,10 @@
 インストーラーは、取得した本体 zip の **SHA-256 を自動で検証**します。
 検証に失敗した場合はインストールを中止します。
 
-<!--
-リリース担当へ: 下の <記入してください> を、公開する StretheusSetup.exe の
-実ハッシュに差し替えてから公開すること (StretheusPlan/security.md の F18)。
-
-  (Get-FileHash .\installer\Output\StretheusSetup.exe -Algorithm SHA256).Hash
-
-配布 exe はコード署名していないため、この併記が利用者にとって唯一の
-改ざん検知手段になる。差し替えないまま公開するなら、この節ごと削除すること。
--->
-
 `StretheusSetup.exe` の SHA-256 は次の値です。気になる場合は照合してください。
 
 ```
-<記入してください>
+AD40A2131D324B86B2427D404FB1985537F41B1A4D3B9B6C6B6BC7348055FD4E
 ```
 
 ```powershell

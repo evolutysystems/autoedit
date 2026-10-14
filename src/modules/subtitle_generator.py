@@ -37,6 +37,14 @@ _DEFAULT_OUTLINE_COLOR = "&H00000000"
 _DEFAULT_BACK_COLOR = "&H64000000"
 
 
+# ASS Style の影の深さ (px / PlayRes 基準) を返す (ver6 resolve3 §4.7-1)
+# プレビューの近似描画 (gui/timeline/preview_items.py) が同じ値で影を置くため、
+# 定義元をここ 1 箇所に保つ。ScaledBorderAndShadow: yes なので実フレーム寸法へ
+# libass が追従する = PlayRes 単位のまま扱ってよい。
+def ass_shadow_px():
+    return _ASS_SHADOW
+
+
 # bool を ASS のフラグ (-1=有効 / 0=無効) に変換する
 def _ass_flag(value):
     return -1 if value else 0

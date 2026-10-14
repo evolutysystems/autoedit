@@ -232,7 +232,12 @@ def is_valid(layout, media, canvas_width, canvas_height):
 
 # ベース抽出の映像フィルタを組み立てる (§5.5)。
 # 戻り値は 1 本の filtergraph 文字列。入力は 1 本のままで、分岐は split で作る。
-def filter_chain(layout, canvas_width, canvas_height, fps, cfg):
+#
+# scale : 本番キャンバスに対する比 (ver6 resolve3 §3.3)。
+#   crop 矩形はソース px なので影響を受けず、scale / pad / vstack はキャンバス寸法から
+#   導出されるため、**絶対 px を持つ boxblur の半径だけ**を換算する必要がある。
+#   1.0 (既定) なら文字列は従来と完全に同一。
+def filter_chain(layout, canvas_width, canvas_height, fps, cfg, scale=1.0):
     mode = str(layout.get("mode") or MODE_SINGLE)
     frames = layout.get("frames") or []
     canvas_width = int(canvas_width)
@@ -257,7 +262,7 @@ def filter_chain(layout, canvas_width, canvas_height, fps, cfg):
                 f"pad={canvas_width}:{canvas_height}:(ow-iw)/2:(oh-ih)/2,{tail}")
 
     # ぼかし背景: 同じ入力を split して、覆うまで拡大 → ぼかし → 前景を中央へ重ねる
-    radius = int(cfg.get("blur_radius") or _DEFAULTS["blur_radius"])
+    radius = _scaled_radius(cfg.get("blur_radius"), scale)
     power = int(cfg.get("blur_power") or _DEFAULTS["blur_power"])
     return (
         "split=2[cbg][cfg];"
@@ -289,6 +294,19 @@ def preview_rects(layout, canvas_width, canvas_height):
 # ------------------------------------------------------------------
 # 内部
 # ------------------------------------------------------------------
+
+# ぼかし半径をキャンバス比へ換算する (ver6 resolve3 §3.3)
+#
+# 設定値 vertical.crop.blur_radius の意味は「**本番キャンバス**に対する px」である。
+# 換算しないと、低解像度のプロキシでぼかしが本番より強く見え、
+# 「プレビューと出力が一致する」という前提が崩れる。
+# 1 px 未満へ潰すとぼかしが消えてしまうため下限は 1。
+def _scaled_radius(value, scale):
+    radius = int(value or _DEFAULTS["blur_radius"])
+    if abs(float(scale) - 1.0) < 1e-9:
+        return radius
+    return max(int(round(radius * float(scale))), 1)
+
 
 def _crop_filter(rect):
     x, y, width, height = _int_rect(rect)

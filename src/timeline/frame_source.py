@@ -24,9 +24,70 @@ _SEEK_TOLERANCE_SEC = 1.0
 # 1 フレーム取得のためにデコードを進める上限 (無限ループ防止)
 _MAX_DECODE_FRAMES = 240
 
+# FFmpeg の色空間タグ (AVColorSpace) のうち扱う値
+# 指定しないと swscale の既定 (BT.601) で RGB へ変換され、BT.709 素材の色が
+# わずかにずれる (ver6 resolve3 §1.2 / §4.7-4)。
+_COLORSPACE_RGB = 0
+_COLORSPACE_BT709 = 1
+_COLORSPACE_UNSPECIFIED = 2
+_COLORSPACE_FCC = 4
+_COLORSPACE_BT470BG = 5         # BT.601 625
+_COLORSPACE_SMPTE170M = 6       # BT.601 525 (係数は BT470BG と同じ)
+_COLORSPACE_SMPTE240M = 7
+# タグ → PyAV の Colorspace 名
+_COLORSPACE_NAMES = {
+    _COLORSPACE_BT709: "ITU709",
+    _COLORSPACE_FCC: "FCC",
+    _COLORSPACE_BT470BG: "ITU601",
+    _COLORSPACE_SMPTE170M: "ITU601",
+    _COLORSPACE_SMPTE240M: "SMPTE240M",
+}
+# タグが無い素材をどちらとみなすか決める高さの境目 (HD 以上は BT.709)
+_BT709_MIN_HEIGHT = 720
+
 # 設定値 "nonref"/"bidir" → PyAV (FFmpeg) の skip_frame 値
 # 再生中だけ「画質を落として速くする」ための指定 (ver3 resolve6 §3-6 R7)
 _SKIP_FRAME_VALUES = {"nonref": "NONREF", "bidir": "BIDIR"}
+
+
+# フレームの色空間タグを PyAV の Colorspace 名へ直す (ver6 resolve3 §4.7-4)
+# RGB 素材・不明な値はタグ無しとして扱い、高さから推定する (HD 以上は BT.709)。
+# 戻り値が空文字なら「指定しない」= 従来どおりの変換。
+def _source_colorspace(frame):
+    try:
+        tag = int(getattr(frame, "colorspace", _COLORSPACE_UNSPECIFIED) or 0)
+    except (TypeError, ValueError):
+        tag = _COLORSPACE_UNSPECIFIED
+    if tag == _COLORSPACE_RGB:
+        return ""                       # 変換が要らない素材
+    name = _COLORSPACE_NAMES.get(tag)
+    if name:
+        return name
+    height = int(getattr(frame, "height", 0) or 0)
+    return "ITU709" if height >= _BT709_MIN_HEIGHT else "ITU601"
+
+
+# rgb24 の ndarray へ直す (縮小する場合は 1 回の reformat で済ませる)
+def _convert_rgb(frame, scaled_width, options):
+    if scaled_width > 0:
+        height = int(frame.height * scaled_width / max(frame.width, 1))
+        # 偶数へ丸める (奇数高さを嫌う変換器があるため)
+        height = max(height - (height % 2), 2)
+        converted = frame.reformat(width=scaled_width, height=height,
+                                   format="rgb24", **options)
+        return converted.to_ndarray()
+    return frame.to_ndarray(format="rgb24", **options)
+
+
+# 色空間の指定が通らない環境であることを 1 回だけ記録する
+_warned_colorspace = []
+
+
+def _warn_colorspace_once(error):
+    if _warned_colorspace:
+        return
+    _warned_colorspace.append(True)
+    _logger.info("色空間を指定した変換が使えないため指定なしで変換します: %s", error)
 
 
 # フレーム取得の共通インタフェース
@@ -152,20 +213,27 @@ class PyAvFrameSource(FrameSource):
         return result
 
     # フレームを RGB のバイト列へ直す (必要なら縮小する)
+    #
+    # 色空間を明示して変換する (ver6 resolve3 §4.7-4)。指定しないと swscale の
+    # 既定 (BT.601) が使われ、BT.709 素材の色がプレビューだけわずかにずれる。
+    # 指定が通らない環境 (PyAV の版差) では指定なしで作り直し、従来どおり動かす。
     def _to_rgb(self, frame, scaled_width):
+        options = {}
+        colorspace = _source_colorspace(frame)
+        if colorspace:
+            options["src_colorspace"] = colorspace
         try:
-            if scaled_width > 0:
-                height = int(frame.height * scaled_width / max(frame.width, 1))
-                # 偶数へ丸める (奇数高さを嫌う変換器があるため)
-                height = max(height - (height % 2), 2)
-                frame = frame.reformat(width=scaled_width, height=height,
-                                       format="rgb24")
-                array = frame.to_ndarray()
-            else:
-                array = frame.to_ndarray(format="rgb24")
+            array = _convert_rgb(frame, scaled_width, options)
         except Exception as e:  # noqa: BLE001
-            _logger.warning("フレームの変換に失敗しました: %s", e)
-            return None
+            if not options:
+                _logger.warning("フレームの変換に失敗しました: %s", e)
+                return None
+            _warn_colorspace_once(e)
+            try:
+                array = _convert_rgb(frame, scaled_width, {})
+            except Exception as e2:  # noqa: BLE001
+                _logger.warning("フレームの変換に失敗しました: %s", e2)
+                return None
         return (array.shape[1], array.shape[0], array.tobytes())
 
     # 目的時刻のフレームを返す

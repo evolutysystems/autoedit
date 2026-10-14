@@ -4,8 +4,20 @@
 # レンダリング側の座標計算が一致する。
 #
 # 字幕の描画は Qt による近似であり libass と完全一致しない (§6.4-4 に明記した仕様)。
+# ただし ver6 resolve3 §4.7 で「影」「アウトラインの太さ」「行送り」の 3 点を
+# ASS (libass) 側へ寄せた。グリフの形そのもの (ヒンティング・字間) は依然として近似。
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QPainter,
+    QPainterPath,
+    QPainterPathStroker,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
@@ -14,7 +26,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
 )
 
-from ...modules import comment_decor
+from ...modules import comment_decor, subtitle_generator
 
 # ASS テンキー配置 → 水平/垂直の寄せ (resolve_export と同じ対応)
 _ALIGN_LEFT = (1, 4, 7)
@@ -145,6 +157,22 @@ class _OverlayMixin:
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setCursor(Qt.OpenHandCursor)
+        # 下書き (近似描画) を描くか (ver6 resolve3 §4.4)。
+        # プロキシの絵が出ているときは False にする。中身は二重描画になるため描かず、
+        # **選択枠とハンドル・当たり判定だけを残す**。こうすると位置の変更は
+        # 今までどおり行えて、見えている絵は出力と一致したプロキシのものになる。
+        self._draft_visible = True
+
+    # 下書きを描くかを切り替える (プロキシの絵が在るときは False)
+    def set_draft_visible(self, visible):
+        visible = bool(visible)
+        if visible == getattr(self, "_draft_visible", True):
+            return
+        self._draft_visible = visible
+        self.update()
+
+    def draft_visible(self):
+        return bool(getattr(self, "_draft_visible", True))
 
     # 位置として保存する基準点 (シーン座標)
     # 既定は外接矩形の中心。コメント字幕だけ「文字の左中央」を返す (ver3 resolve11 §3 D-7)。
@@ -311,7 +339,8 @@ class ImageOverlayItem(_OverlayMixin, QGraphicsPixmapItem):
         return max(scale_x, scale_y)
 
     def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
+        if self.draft_visible():
+            super().paint(painter, option, widget)
         self._paint_selection(painter)
 
 
@@ -330,7 +359,8 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
 
         font = QFont(clip.font or font_profile.family)
         # ASS の Fontsize は PlayRes 単位 = キャンバスのピクセル
-        font.setPixelSize(int(clip.font_size or font_profile.size or 48))
+        pixel_size = int(clip.font_size or font_profile.size or 48)
+        font.setPixelSize(pixel_size)
         font.setBold(bool(font_profile.bold))
         font.setItalic(bool(font_profile.italic))
         font.setUnderline(bool(font_profile.underline))
@@ -345,14 +375,27 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         outline = (clip.outline_color
                    or font_profile.role_outline_colors.get(
                        role, font_profile.outline_color))
-        width = max(int(font_profile.outline_width or 0), 0)
-        if width > 0:
-            pen = QPen(ass_color_to_qcolor(outline, "#000000"))
-            pen.setWidth(width)
-            pen.setJoinStyle(Qt.RoundJoin)
-            self.setPen(pen)
-        else:
-            self.setPen(QPen(Qt.NoPen))
+        # アウトラインと影は paint() で自前に描く (ver6 resolve3 §4.7-1 / §4.7-2)。
+        # Qt の pen は中心線ストロークのため、ASS の「字の外側に W px」より
+        # 細く・字が痩せて見えていた。pen は使わない。
+        self._outline_width = max(int(font_profile.outline_width or 0), 0)
+        self._outline_color = ass_color_to_qcolor(outline, "#000000")
+        self._shadow_px = max(float(subtitle_generator.ass_shadow_px()), 0.0)
+        self._shadow_color = ass_color_to_qcolor(font_profile.back_color, "#000000")
+        self.setPen(QPen(Qt.NoPen))
+
+        # 行送りは ASS 側と同じ値 (comment_bg_line_height_ratio) で決める (§4.7-3)。
+        # コメント背景の箱の高さも comment_decor.text_extent が同じ式で出すため、
+        # 箱と文字が食い違わない。
+        self._lines = str(self.text() or "").split("\n")
+        self._line_height = pixel_size * _line_height_ratio(eff_cfg)
+        metrics = QFontMetricsF(font)
+        self._line_widths = [metrics.horizontalAdvance(line) for line in self._lines]
+        self._text_width = max(self._line_widths) if self._line_widths else 0.0
+        self._text_height = len(self._lines) * self._line_height
+        # 行ごとの寄せ。libass は \an の水平成分に従って各行を寄せる。
+        self._line_align = _line_alignment(clip, eff_cfg, canvas_size, role)
+        self._text_path_cache = None
 
         self._place(clip, eff_cfg, canvas_size)
         # コメントは背景 (角丸の箱) とアイコンを子アイテムとして持たせる
@@ -364,10 +407,61 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
     # コメントは \an4 (左中央) を基準に位置を持つため、文字の矩形の左中央を返す。
     # boundingRect() は子アイテム (背景・アイコン) を含まないため、装飾を足しても基準は動かない。
     def anchor_scene_point(self):
-        rect = self.boundingRect()
+        # 影とアウトラインのぶん外へ広い boundingRect ではなく文字の矩形を使う
+        # (ver6 resolve3 §4.7)。基準が変わると保存される位置がずれるため。
+        rect = self.text_rect()
         if self._role == _ROLE_COMMENT:
             return self.mapToScene(rect.left(), rect.center().y())
         return self.mapToScene(rect.center())
+
+    # 文字そのものの外接矩形 (ASS の行送りで積んだ推定値 / ver6 resolve3 §4.7-3)
+    # 位置決め・選択枠・コメント装飾の基準はすべてこれを使う。
+    def text_rect(self):
+        return QRectF(0.0, 0.0, float(self._text_width), float(self._text_height))
+
+    # 描画範囲は影とアウトラインのぶんだけ外へ広い (はみ出すと描画が欠ける)
+    def boundingRect(self):
+        margin = float(self._outline_width) + float(self._shadow_px) + 1.0
+        return self.text_rect().adjusted(-margin, -margin, margin, margin)
+
+    # 掴める範囲は文字の矩形とする (行間の隙間でも掴めるほうが操作しやすい)
+    def shape(self):
+        path = QPainterPath()
+        path.addRect(self.text_rect())
+        return path
+
+    # 行ごとに ASS と同じ行送りで積んだ文字のパス (paint / 当たり判定の素)
+    # 文字と font は生成後に変わらないため 1 回だけ作って使い回す。
+    def _text_path(self):
+        if self._text_path_cache is not None:
+            return self._text_path_cache
+        font = self.font()
+        metrics = QFontMetricsF(font)
+        path = QPainterPath()
+        # 行ボックスの中央へ字を置く (行高 - 字の高さ) / 2 を上の余白とする
+        inner = (self._line_height - (metrics.ascent() + metrics.descent())) / 2.0
+        for index, line in enumerate(self._lines):
+            if not line:
+                continue
+            width = self._line_widths[index]
+            if self._line_align == "right":
+                left = self._text_width - width
+            elif self._line_align == "center":
+                left = (self._text_width - width) / 2.0
+            else:
+                left = 0.0
+            baseline = index * self._line_height + inner + metrics.ascent()
+            path.addText(left, baseline, font, line)
+        self._text_path_cache = path
+        return path
+
+    # 選択枠は文字の矩形に合わせる (boundingRect は影と縁のぶん外へ広い)
+    def _paint_selection(self, painter):
+        if not self.isSelected():
+            return
+        painter.setPen(QPen(_SELECTION_COLOR, 2, Qt.DashLine))
+        painter.setBrush(QBrush(Qt.NoBrush))
+        painter.drawRect(self.text_rect())
 
     # 背景 (角丸の箱) とアイコンを子アイテムとして足す (ver3 resolve11 §5.11-6)
     # 大きさは comment_decor の推定値をそのまま使う。Qt の実測 (QFontMetrics) は使わない:
@@ -410,7 +504,7 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
     # 位置指定があればその中心へ、無ければ設定の配置(alignment)+余白へ置く
     # コメントは中心ではなく「文字の左中央」を基準に置く (ver3 resolve11 §3 D-4)。
     def _place(self, clip, eff_cfg, canvas_size):
-        rect = self.boundingRect()
+        rect = self.text_rect()
         is_comment = str(clip.role or "") == _ROLE_COMMENT
         if clip.transform.is_positioned():
             cx, cy = normalized_to_pixel(clip.transform.x, clip.transform.y, *canvas_size)
@@ -433,9 +527,62 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
             top = y - rect.height() / 2.0
         self.setPos(left, top)
 
+    # ASS (libass) の見え方へ寄せて描く (ver6 resolve3 §4.7-1 / §4.7-2)
+    #   影 : 字 + アウトラインの形を右下へ ASS Shadow ぶんずらして置く
+    #   縁 : 幅 2W のストロークを字の**下**へ敷く = 字の外側に W px 出る
+    #   字 : 最後に塗りを乗せる (縁が字の内側を削らない)
+    # 基底クラス (QGraphicsSimpleTextItem) の描画は使わない。
     def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
+        if not self.draft_visible():
+            self._paint_selection(painter)
+            return
+        path = self._text_path()
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+
+        stroke = None
+        if self._outline_width > 0:
+            stroker = QPainterPathStroker()
+            # ASS の Outline=W は「字の外側に W px」。中心線ストロークで同じ太さを
+            # 出すには幅 2W にして、内側へ出たぶんを字の塗りで覆う。
+            stroker.setWidth(float(self._outline_width) * 2.0)
+            stroker.setJoinStyle(Qt.RoundJoin)
+            stroker.setCapStyle(Qt.RoundCap)
+            stroke = stroker.createStroke(path).united(path)
+
+        if self._shadow_px > 0:
+            silhouette = stroke if stroke is not None else path
+            painter.translate(self._shadow_px, self._shadow_px)
+            painter.fillPath(silhouette, QBrush(self._shadow_color))
+            painter.translate(-self._shadow_px, -self._shadow_px)
+
+        if stroke is not None:
+            painter.fillPath(stroke, QBrush(self._outline_color))
+        painter.fillPath(path, self.brush())
+        painter.restore()
         self._paint_selection(painter)
+
+
+# 行送りの比 (ASS 側と同じ値を使う / ver6 resolve3 §4.7-3)
+def _line_height_ratio(eff_cfg):
+    try:
+        ratio = float((eff_cfg or {}).get("comment_bg_line_height_ratio") or 1.2)
+    except (TypeError, ValueError):
+        ratio = 1.2
+    return ratio if ratio > 0 else 1.2
+
+
+# 行ごとの水平の寄せを決める (ver6 resolve3 §4.7-3)
+#   位置指定あり: コメントは \an4 (左) / それ以外は \an5 (中央) で焼かれる
+#                 (subtitle_generator の \an 決定と同じ規約)
+#   位置指定なし: Style の alignment に従う
+def _line_alignment(clip, eff_cfg, canvas_size, role):
+    if clip.transform.is_positioned():
+        return "left" if str(role or "") == _ROLE_COMMENT else "center"
+    _x, _y, h_anchor, _v_anchor = default_subtitle_anchor(
+        eff_cfg, canvas_size[0], canvas_size[1], role=role)
+    return h_anchor
 
 
 # ベース映像フレームのアイテム (選択・移動は不可)

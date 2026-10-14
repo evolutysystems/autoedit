@@ -8,6 +8,12 @@
 #
 # 区間抽出・連結・ASS 生成・焼き込みは既存資産をそのまま使う (§4-3)。
 # FFmpeg 実行はすべて ffmpeg_runner.execute (= run_ffmpeg_progress) を経由する。
+#
+# 【合成の計算は持たない】(ver6 resolve3 §3.1 / §4.8)
+#   クロップ・正規化・オーバーレイ・字幕・アイコン・ぼかし・透かしの
+#   「どこへどの大きさで置くか」は compositor が唯一の置き場である。
+#   ここはパス構成 (ベース連結 → 合成 → 最終化) と A/V 同期の実測対策だけを持つ。
+#   プレビューが同じ compositor を低い寸法で呼ぶことで、見え方が一致する。
 import math
 import os
 
@@ -15,7 +21,6 @@ from ..exceptions import InputError, TimelineError
 from ..i18n import tr
 from ..modules import (
     blur_overlay,
-    comment_decor,
     ffmpeg_runner,
     silence_cutter,
     subtitle_generator,
@@ -23,9 +28,8 @@ from ..modules import (
 )
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils.logger import get_logger
-from . import crop
+from . import compositor
 from .builder import timeline_config
-from .media_probe import needs_normalize
 from .model import SubtitleClip
 
 _logger = get_logger(__name__)
@@ -341,51 +345,14 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
 
 # クリップの映像フィルタを組み立てる (正規化 + フェード)
 # 正規化チェーンの内容は concat_processor.concat と同一にする (§8.2)。
-def _video_filters(timeline, media, clip, fps, fade_sec, duration=None, settings=None):
-    filters = []
-    # 縦動画の切り抜き (ver5 resolve9 §5.5)。指定が無ければ None が返り、
-    # 以降は従来どおりの正規化になる = コマンドが 1 文字も変わらない (R15)。
-    crop_chain = _crop_chain(timeline, media, fps, settings)
-    if crop_chain:
-        # 切り抜きが正規化を兼ねる (キャンバス寸法・fps・画素形式まで揃えて出す)
-        filters.append(crop_chain)
-    elif needs_normalize(media, timeline.width, timeline.height, fps):
-        filters.append(
-            f"scale={timeline.width}:{timeline.height}:force_original_aspect_ratio=decrease")
-        filters.append(
-            f"pad={timeline.width}:{timeline.height}:(ow-iw)/2:(oh-ih)/2")
-        filters.append("setsar=1")
-        filters.append(f"fps={fps}")
-        filters.append("format=yuv420p")
-        _warn_normalize_once(media, timeline, fps)
-
-    # 無音カットのフェード設定 (render() が settings から解決して渡す / §8.2)
-    # フェードアウトの開始位置は実際に書き出す尺を基準にする (resolve3 §5.3)
-    duration = clip.duration if duration is None else duration
-    if fade_sec > 0 and duration > fade_sec * 2:
-        fade_out_start = duration - fade_sec
-        filters.append(f"fade=t=in:st=0:d={fade_sec}")
-        filters.append(f"fade=t=out:st={fade_out_start:.3f}:d={fade_sec}")
-    return filters
-
-
-# 縦動画の切り抜きのフィルタを返す (ver5 resolve9 §5.5)
 #
-# 指定が無い / 別の素材に対する指定 / 枠が素材の外を指している場合は None を返し、
-# 従来の正規化へ落とす。開けない・書き出せないプロジェクトを作らないため (§4-4)。
-def _crop_chain(timeline, media, fps, settings=None):
-    layout = crop.load(timeline)
-    if layout is None:
-        return None
-    if not crop.is_valid(layout, media, timeline.width, timeline.height):
-        _logger.warning("切り抜きの指定が素材と噛み合わないため、従来の正規化で出力します")
-        return None
-
-    # 背景の種類は指定に入っている (作ったときの見え方を保つ)。
-    # ぼかしの強さだけは設定から読む。
-    cfg = crop.config(settings or {})
-    cfg["background"] = str(layout.get("background") or cfg["background"])
-    return crop.filter_chain(layout, timeline.width, timeline.height, fps, cfg)
+# 計算の実体は compositor.base_filters (ver6 resolve3 §4.8)。ここは呼び出し規約を
+# 保つための薄い包みで、本番プロファイル (scale=1.0) では出力が 1 文字も変わらない。
+def _video_filters(timeline, media, clip, fps, fade_sec, duration=None, settings=None):
+    profile = compositor.CanvasProfile(timeline.width, timeline.height, fps)
+    return compositor.base_filters(timeline, media, clip, profile,
+                                   fade_sec=fade_sec, duration=duration,
+                                   settings=settings)
 
 
 # クリップの音声フィルタを組み立てる (ゲイン)
@@ -394,21 +361,6 @@ def _audio_filters(audio_clip):
     if audio_clip is not None and abs(audio_clip.gain_db) > 1e-6:
         filters.append(f"volume={audio_clip.gain_db:g}dB")
     return filters
-
-
-# 正規化を適用した旨を 1 回だけ通知する (§11 ログ方針)
-_warned_normalize = set()
-
-
-def _warn_normalize_once(media, timeline, fps):
-    if media.id in _warned_normalize:
-        return
-    _warned_normalize.add(media.id)
-    _logger.info(
-        "素材を正規化: %s (%dx%d %.3gfps → %dx%d %dfps)",
-        os.path.basename(media.path), media.width, media.height, media.fps or 0,
-        timeline.width, timeline.height, fps,
-    )
 
 
 # ギャップ (削除で残した空白) を黒 + 無音のセグメントとして生成する (§8.2)
@@ -509,27 +461,12 @@ def _render_overlays_and_subtitles(timeline, context, base_path, cfg, ffmpeg_cfg
     return _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg)
 
 
-# 実効字幕設定と FontProfile を解決する (縦動画の上書きを反映する)
-def _subtitle_profile(context):
-    settings = context.settings
-    profile = getattr(context, "output_profile", None)
-    eff_cfg = subtitle_generator.build_effective_subtitle_cfg(
-        settings.get("subtitle", {}), settings.get("vertical", {}), profile)
-    return eff_cfg, subtitle_generator.build_font_profile(eff_cfg)
-
-
 # 字幕クリップ群から ASS を書き出す
 # 戻り値 (ass のパス, 書き出した item 配列)。item はアイコン合成でも使う (resolve11 §5.6)。
+# 実体は compositor.subtitle_chain (ass フィルタ断片はここでは使わない)。
 def _write_ass(timeline, context, clips, name):
-    eff_cfg, font_profile = _subtitle_profile(context)
-    ass_path = context.allocate_intermediate(name)
-    items = [clip.to_item() for clip in clips if clip.use]
-    subtitle_generator.build_subtitle_file(
-        items, font_profile, ass_path,
-        video_width=timeline.width, video_height=timeline.height,
-        # コメントの背景 (角丸の箱) を出すため実効字幕設定を渡す (resolve11 §5.11-5)
-        subtitle_cfg=eff_cfg,
-    )
+    ass_path, items, _option = compositor.subtitle_chain(
+        timeline, context, clips, name)
     return ass_path, items
 
 
@@ -546,12 +483,12 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
     _logger.info("字幕焼き込み: %d 件", len(used))
     # コメントアイコンを字幕の上へ重ねる (resolve11 §5.6-1)。
     # 対象が無ければ空リストが返り、コマンドは従来と完全に同一になる。
-    eff_cfg, _profile = _subtitle_profile(context)
-    chains, _count, _groups = comment_decor.build_icon_chains(
-        items, eff_cfg, timeline.width, timeline.height,
-        in_label="[vsub]", out_label="")
+    profile = compositor.CanvasProfile.production(timeline, ffmpeg_cfg)
+    eff_cfg, _font_profile = compositor.subtitle_profile(context)
+    chains, _count, _groups = compositor.icon_chains(
+        items, eff_cfg, profile, "[vsub]", "")
     # ぼかしは字幕より**前**へ入れる (字幕やアイコンはぼかさない / R8)
-    pre_chains, _label = _blur_chains(context, timeline, "", "[vpre]")
+    pre_chains, _label = _blur_chains(context, profile, "", "[vpre]")
     subtitle_generator.burn_subtitle(
         base_path, ass_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -571,30 +508,27 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
 
 # ぼかしのフィルタチェーンを組む (マスクが無ければ空リスト / §5.5.2)
 # 呼び出し側はチェーンの**先頭**へ足すこと。後ろへ足すと字幕までぼける (R8)。
-def _blur_chains(context, timeline, in_label, out_label, prefix="bl"):
-    mask_path = getattr(context, "blur_mask_path", None)
-    if not mask_path or getattr(context, "blur_applied", False):
+#
+# 「もう焼いたか」(blur_applied) の判定だけがここに残る。多パス構成で二重に
+# 焼かないための出力側の都合であり、毎回描き直すプレビューには無い概念のため
+# compositor へは持ち込まない (ver6 resolve3 §4.1)。
+def _blur_chains(context, profile, in_label, out_label, prefix="bl"):
+    if getattr(context, "blur_applied", False):
         return [], in_label
-
-    from ..blur.config import config            # noqa: PLC0415 (機能 OFF なら読まない)
-
-    return blur_overlay.build_chains(
-        mask_path, in_label, out_label, timeline.width, timeline.height,
-        config(context.settings), prefix=prefix)
+    return compositor.blur_chains(
+        context.settings, getattr(context, "blur_mask_path", None), profile,
+        in_label, out_label, prefix=prefix)
 
 
 # 透かしを合成チェーンの末尾へ足す (ver5 resolve §3.1 / §5.3)。
 # chains / inputs / input_args は破壊的に更新し、新しい出力ラベルを返す。
 # 不要なとき・素材が無いときは in_label をそのまま返す。
-def _watermark_chain(context, timeline, chains, inputs, input_args, in_label):
-    if not watermark_overlay.is_required(context):
-        return in_label
-
-    args, wm_chains, out_label = watermark_overlay.build_chain(
-        in_label, "[wmout]", timeline.width, timeline.height,
-        watermark_overlay.config(context.settings), len(inputs))
+def _watermark_chain(context, profile, chains, inputs, input_args, in_label):
+    args, wm_chains, out_label = compositor.watermark_chain(
+        context.settings, profile, in_label, "[wmout]", len(inputs),
+        required=watermark_overlay.is_required(context))
     if not wm_chains:
-        # 素材が無い。保険の単独パスでも同じ結果になるため、ここでは足さない。
+        # 要らない / 素材が無い。保険の単独パスでも同じ結果になるため足さない。
         return in_label
 
     input_args.extend(args)
@@ -602,11 +536,6 @@ def _watermark_chain(context, timeline, chains, inputs, input_args, in_label):
     chains.extend(wm_chains)
     context.watermark_applied = True
     return out_label
-
-
-# ass フィルタ用にパスをエスケープする (burn_subtitle と同一の 2 段階エスケープ)
-def _escape_filter_path(path):
-    return str(path).replace("\\", "/").replace(":", "\\:")
 
 
 # オーバーレイ + 字幕を 1 パスで合成する (§8.4)
@@ -618,7 +547,9 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
     fonts_dir = resolve_fonts_dir(context.settings)
     output_path = context.allocate_intermediate("timeline_composite.mp4")
     # コメントアイコンの配置に使う実効字幕設定 (縦動画の上書きを含む)
-    eff_cfg, _font_profile = _subtitle_profile(context)
+    eff_cfg, _font_profile = compositor.subtitle_profile(context)
+    # 合成先のキャンバス。プレビュー (プロキシ) は同じ関数へ低い寸法を渡す (§3.1)
+    profile = compositor.CanvasProfile.production(timeline, ffmpeg_cfg)
 
     inputs = [base_path]
     input_args = ["-i", base_path]
@@ -629,7 +560,7 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
 
     # ぼかしはチェーンの**先頭**へ足す (§5.5.2)。後ろへ足すと字幕・アイコン・
     # オーバーレイ素材までぼけてしまう (R8)。movie= で読むため入力は増えない。
-    blur_chains, blur_label = _blur_chains(context, timeline, current, "[blout]")
+    blur_chains, blur_label = _blur_chains(context, profile, current, "[blout]")
     if blur_chains:
         chains.extend(blur_chains)
         current = blur_label
@@ -640,11 +571,9 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
             used = [c for c in layer["clips"] if c.use]
             if not used:
                 continue
-            ass_path, items = _write_ass(
-                timeline, context, used, f"timeline_subtitle_{step}.ass")
-            option = f"ass='{_escape_filter_path(ass_path)}'"
-            if fonts_dir and os.path.isdir(fonts_dir):
-                option += f":fontsdir='{_escape_filter_path(fonts_dir)}'"
+            _ass_path, items, option = compositor.subtitle_chain(
+                timeline, context, used, f"timeline_subtitle_{step}.ass",
+                fonts_dir=fonts_dir)
             label = f"[v{step}]"
             chains.append(f"{current}{option}{label}")
             current = label
@@ -652,9 +581,8 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
             # コメントアイコンは、その字幕グループの直後へ重ねる (resolve11 §5.6-2)。
             # movie ソースで読むため入力本数 (inputs / index) は増えない。
             icon_out = f"[v{step}]"
-            icon_chains, _count, _groups = comment_decor.build_icon_chains(
-                items, eff_cfg, timeline.width, timeline.height,
-                in_label=current, out_label=icon_out,
+            icon_chains, _count, _groups = compositor.icon_chains(
+                items, eff_cfg, profile, current, icon_out,
                 # 1 つの filtergraph で複数回呼ぶためラベルを重複させない
                 prefix=f"cic{step}")
             if icon_chains:
@@ -669,39 +597,13 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
             _logger.warning("オーバーレイ素材が見つからないためスキップ: %s", clip.id)
             continue
 
+        # 置き方の計算は compositor に任せる (プレビューと共有する唯一の実装)
         index = len(inputs)
-        if media.is_image():
-            input_args += ["-loop", "1", "-framerate", str(fps),
-                           "-t", f"{clip.timeline_end:.3f}", "-i", media.path]
-        else:
-            input_args += ["-ss", f"{clip.source_in:.3f}",
-                           "-t", f"{clip.duration:.3f}", "-i", media.path]
+        args, overlay_chains, current, step = compositor.overlay_chain(
+            clip, media, profile, current, index, step)
+        input_args += args
         inputs.append(media.path)
-
-        overlay_label = f"[ov{step}]"
-        # 拡大率をキャンバス比で解決する (transform.scale = キャンバス幅に対する比率)
-        target_w = max(int(timeline.width * float(clip.transform.scale or 1.0)), 2)
-        scale_chain = f"scale={target_w}:-2"
-        if float(clip.transform.opacity or 1.0) < 1.0:
-            scale_chain += (f",format=rgba,colorchannelmixer="
-                            f"aa={float(clip.transform.opacity):.3f}")
-        if not media.is_image():
-            # 動画オーバーレイは Timeline 上の開始位置へ PTS をずらす
-            scale_chain += f",setpts=PTS+{clip.timeline_start:.3f}/TB"
-        chains.append(f"[{index}:v]{scale_chain}{overlay_label}")
-
-        # 正規化座標 (-1〜1・Y は上が正) を overlay の左上座標へ変換する
-        pos_x = (float(clip.transform.x or 0.0) + 1.0) * timeline.width / 2.0
-        pos_y = (1.0 - float(clip.transform.y or 0.0)) * timeline.height / 2.0
-        expr_x = f"{pos_x:.1f}-w/2"
-        expr_y = f"{pos_y:.1f}-h/2"
-        enable = (f"between(t,{clip.timeline_start:.3f},"
-                  f"{clip.timeline_end:.3f})")
-        label = f"[v{step}]"
-        chains.append(
-            f"{current}{overlay_label}overlay={expr_x}:{expr_y}:enable='{enable}'{label}")
-        current = label
-        step += 1
+        chains.extend(overlay_chains)
 
         # 音声付き動画オーバーレイはベース音声へ合成する
         if media.has_audio and not media.is_image():
@@ -719,7 +621,7 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
     # 透かしはチェーンの**最後**へ足す (ver5 resolve §3.1)。
     # ぼかしと逆で、字幕・アイコン・オーバーレイの**上**へ重ねる必要がある。
     # ここで混ぜ込めば再エンコードは増えない (合成が走る経路のみ)。
-    current = _watermark_chain(context, timeline, chains, inputs, input_args, current)
+    current = _watermark_chain(context, profile, chains, inputs, input_args, current)
 
     # 音声の合流 (複数あれば amix。1 本ならそのまま使う)
     if len(audio_labels) > 1:

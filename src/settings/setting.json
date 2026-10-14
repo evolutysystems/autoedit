@@ -95,7 +95,7 @@
         "max_regions": 100,
         "metric": "mean",
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -17
+        "last_cut_db": -20
     },
     "loudness": {
         "enabled": true,
@@ -207,7 +207,7 @@
             "audio_volume": 0.8,
             "audio_chunk_sec": 30,
             "audio_prefetch_sec": 8,
-            "play_fps": 15,
+            "play_fps": 30,
             "playback_rate": 2.0,
             "reverse_play_fps": 8,
             "transport_button_width_px": 40,
@@ -231,7 +231,20 @@
             "scrub_min_delta_sec": 0.01,
             "scrub_volume": 0.8,
             "scrub_rate_mode": "grain",
-            "scrub_low_quality_frames": true
+            "scrub_low_quality_frames": true,
+            "proxy": {
+                "mode": "tile",
+                "scale": 0.5,
+                "preset": "ultrafast",
+                "crf": 28,
+                "tile_sec": 4.0,
+                "lookahead_tiles": 3,
+                "workers": 1,
+                "cache_tiles": 64,
+                "audio_bitrate": "96k",
+                "coverage_bar": true,
+                "draft_overlay": true
+            }
         },
         "shortcuts": {
             "split": "W",

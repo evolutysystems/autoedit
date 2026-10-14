@@ -42,11 +42,13 @@ def has_failed(context):
 #   in_label  : 入力ラベル (例 "[0:v]")
 #   out_label : 出力ラベル (空文字なら -vf の最終出力として無ラベルにする)
 #   prefix    : 中間ラベルの接頭辞。1 つの filtergraph で複数回呼ぶときの衝突よけ
+#   seek_point: マスクの読み出し開始位置 (秒)。Timeline の途中だけを作る
+#               プロキシのタイルで使う (ver6 resolve3 §3.5)。0 なら従来と同じ文字列。
 # 戻り値: (チェーンの一覧, 出力ラベル)。マスクが無ければ ([], in_label)。
 #
 # **必ずチェーンの先頭へ足すこと。** 後ろへ足すと字幕やコメントアイコンまでぼける (R8)。
 def build_chains(mask_path, in_label, out_label, canvas_width, canvas_height, cfg,
-                 prefix="bl"):
+                 prefix="bl", seek_point=0.0):
     if not mask_path or not os.path.isfile(mask_path):
         _logger.warning("ぼかしマスクが見つからないため、ぼかしを省略します: %s", mask_path)
         return [], in_label
@@ -70,10 +72,16 @@ def build_chains(mask_path, in_label, out_label, canvas_width, canvas_height, cf
     # split を先頭に置く。-vf (簡易フィルタグラフ) では**最初のチェーンの
     # ラベル無し入力**が映像入力に結び付くため、movie= (入力を持たないソース) を
     # 先頭にすると in_label が空のときに結び付け先を失う。
+    # タイルの途中から作る場合はマスクも同じだけ進めて読む (ver6 resolve3 §3.5)。
+    # 進めないと、タイル 2 枚目以降でぼかす位置が先頭からずれる。
+    movie = f"movie='{_escape_filter_path(mask_path)}'"
+    if float(seek_point or 0.0) > 0.0:
+        movie += f":seek_point={float(seek_point):.3f}"
+
     chains = [
         f"{in_label}split=2{keep}{source}",
         # マスクはキャンバスより小さく作ってあるため、ここで戻す (§3.5)
-        f"movie='{_escape_filter_path(mask_path)}',format=gray,"
+        f"{movie},format=gray,"
         f"scale={int(canvas_width)}:{int(canvas_height)}{mask}",
         f"{source}{effect}{blurred}",
         f"{blurred}{mask}alphamerge{merged}",

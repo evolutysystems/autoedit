@@ -231,6 +231,52 @@ class CommentIconSizeMigrationTest(unittest.TestCase):
         self.assertTrue(sw._migrate_comment_icon_size(data))
         self.assertEqual(data["subtitle"]["comment_icon_size_px"], 150)
 
+# プレビューのプロキシ設定 (ver6 resolve3 §5)
+#
+# 更新インストールではインストーラが旧 setting.json を復元するため、
+# 配布 setting.json にしか無いセクションは新しい版へ更新しても届かない。
+# timeline の入れ子は _fill_timeline_nested_defaults が 1 段深く補完する。
+class ProxySettingsTest(unittest.TestCase):
+
+    def test_default_settings_has_the_proxy_section(self):
+        proxy = sw.DEFAULT_SETTINGS["timeline"]["preview"]["proxy"]
+
+        self.assertEqual(proxy["mode"], "tile")
+        self.assertEqual(proxy["scale"], 0.5)
+        self.assertEqual(proxy["tile_sec"], 4.0)
+
+    # proxy セクションが無い既存の setting.json でも、起動時に補完される
+    def test_missing_proxy_section_is_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"]["preview"] = copy.deepcopy(data["timeline"]["preview"])
+        del data["timeline"]["preview"]["proxy"]
+
+        merged = sw._merge_with_defaults(data)
+        self.assertNotIn("proxy", merged["timeline"]["preview"])
+        changed = sw._normalize_legacy_values(merged)
+
+        self.assertTrue(changed, "補完した場合は永続化のため True を返すこと")
+        self.assertIn("proxy", merged["timeline"]["preview"])
+        self.assertEqual(merged["timeline"]["preview"]["proxy"]["mode"], "tile")
+
+    # 利用者が変えた値は温存する (補完で上書きしない)
+    def test_user_values_are_kept(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"]["preview"] = copy.deepcopy(data["timeline"]["preview"])
+        data["timeline"]["preview"]["proxy"] = {"mode": "off", "scale": 0.25}
+
+        merged = sw._merge_with_defaults(data)
+        sw._normalize_legacy_values(merged)
+        proxy = merged["timeline"]["preview"]["proxy"]
+
+        self.assertEqual(proxy["mode"], "off")
+        self.assertEqual(proxy["scale"], 0.25)
+        # 足りないキーだけが既定で埋まる
+        self.assertEqual(proxy["tile_sec"], 4.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

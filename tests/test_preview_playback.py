@@ -6,6 +6,7 @@
 #   ・設定で従来動作へ戻せること
 import unittest
 
+from src.gui.timeline import preview_panel as preview_panel_module
 from src.gui.timeline.preview_panel import PreviewPanel
 from src.gui.timeline.timeline_controller import TimelineController
 from src.timeline import audio_source, frame_source
@@ -334,6 +335,10 @@ class _StubPanel:
         self._silent_timer = None
         self._reverse_timer = None
         self.paused = False
+        # プロキシ (ver6 resolve3 §4.4)。既定は「無し」= 従来の近似プレビュー経路。
+        self._proxy = None
+        self._proxy_playing = False
+        self.proxy_playing_calls = []
 
     def pause(self):
         self.paused = True
@@ -343,6 +348,14 @@ class _StubPanel:
 
     def _prefetch_next(self, _sec):
         pass
+
+    # プロキシ再生の入り / 出り (本物は映像の出力先と下書き表示も切り替える)
+    def _set_proxy_playing(self, playing):
+        self.proxy_playing_calls.append(bool(playing))
+        self._proxy_playing = bool(playing)
+
+    def _proxy_tile(self, sec):
+        return None if self._proxy is None else self._proxy.tile_at(sec)
 
 
 class ReplayAfterRewindTest(unittest.TestCase):
@@ -358,7 +371,7 @@ class ReplayAfterRewindTest(unittest.TestCase):
 
     def setUp(self):
         self.cfg = timeline_config({})["preview"]
-        # 既定 play_fps=15 → 映像更新の下限間隔は 1/15 秒
+        # 既定 play_fps (ver6 resolve3 §5 で 15 → 30) から下限間隔を出す
         self.min_interval = 1.0 / self.cfg["play_fps"]
         # 1 通知ぶん取りこぼしても許す幅 (固まり 5 秒とは桁が違うため判定は明確に付く)
         self.tolerance = self.min_interval * 2.0
@@ -426,6 +439,134 @@ class ReplayAfterRewindTest(unittest.TestCase):
         panel = self._panel(playhead=15.0, last_frame_at=20.0)
         PreviewPanel.pause(panel)
         self.assertIsNone(panel._last_frame_at)
+
+
+# プロキシ (事前レンダした確認用動画) の在る / 無いで再生経路が切り替わること
+# (ver6 resolve3 §3.4 / §4.4 / §6 の対応表)
+class ProxyPlaybackTest(unittest.TestCase):
+
+    # tile_at がタイルを返す ProxyManager の代用
+    class _StubProxy:
+
+        def __init__(self, tiles=None, tile_sec=4.0):
+            self.tiles = tiles or {}        # タイル番号 -> パス
+            self.tile_sec = tile_sec
+            self.focus = []
+
+        def is_enabled(self):
+            return True
+
+        def tile_at(self, sec):
+            index = int(max(sec, 0.0) / self.tile_sec)
+            path = self.tiles.get(index)
+            if path is None:
+                return None
+            return (path, index * self.tile_sec)
+
+        def set_focus(self, sec):
+            self.focus.append(sec)
+
+    def setUp(self):
+        if not preview_panel_module._MULTIMEDIA_AVAILABLE:
+            self.skipTest("QtMultimedia が無い環境では再生経路を検証できない")
+        self.cfg = timeline_config({})["preview"]
+
+    def _panel(self, playhead=0.0, tiles=None):
+        panel = _StubPanel(self.cfg, playhead=playhead)
+        panel._proxy = self._StubProxy(tiles)
+        panel.started = []
+        panel.chunks = []
+        panel.status = []
+        panel._audio_source = _StubAudioSource()
+        panel.set_status = panel.status.append
+        panel._startup_chunk_sec = lambda: 6.0
+        panel._start_playback = (
+            lambda path, start, from_proxy=False:
+            panel.started.append((path, start, from_proxy)))
+        panel._request_chunk = (
+            lambda start, autoplay=True, length_sec=None, follow_full=False:
+            panel.chunks.append(start))
+        return panel
+
+    # プロキシが在れば、そのタイルを QMediaPlayer へ渡して再生する
+    def test_play_uses_the_tile_when_available(self):
+        panel = self._panel(playhead=5.0, tiles={1: "tile1.mp4"})
+        PreviewPanel._play_forward(panel, 1.0)
+
+        self.assertEqual(panel.started, [("tile1.mp4", 4.0, True)])
+        self.assertEqual(panel.chunks, [], "音声チャンクを作る必要は無い")
+
+    # プロキシが無ければ従来の音声チャンク経路へ落ちる (縮退)
+    def test_play_falls_back_to_audio_chunks(self):
+        panel = self._panel(playhead=5.0, tiles={})
+        PreviewPanel._play_forward(panel, 1.0)
+
+        self.assertEqual(panel.started, [])
+        self.assertEqual(panel.chunks, [5.0])
+
+    # mode="off" 相当 (プロキシ無し) でも従来どおり動く
+    def test_without_a_proxy_manager(self):
+        panel = self._panel(playhead=5.0)
+        panel._proxy = None
+        PreviewPanel._play_forward(panel, 1.0)
+
+        self.assertEqual(panel.started, [])
+        self.assertEqual(panel.chunks, [5.0])
+
+    # プロキシ再生中は play_fps で間引かない (映像は QMediaPlayer が出すため)
+    def test_proxy_playback_does_not_thin_the_playhead(self):
+        panel = self._panel(playhead=0.0)
+        panel._proxy_playing = True
+        panel._chunk_start = 0.0
+        panel._last_frame_at = None
+        for position_ms in (10, 20, 30, 40):
+            PreviewPanel._on_audio_position(panel, position_ms)
+
+        self.assertEqual(len(panel.controller.moves), 4,
+                         "通知のたびに再生ヘッドが進むこと")
+
+    # プロキシ再生でないときは従来どおり間引く
+    def test_approximate_playback_still_thins(self):
+        panel = self._panel(playhead=0.0)
+        panel._proxy_playing = False
+        panel._chunk_start = 0.0
+        panel._last_frame_at = None
+        for position_ms in (10, 20, 30, 40):
+            PreviewPanel._on_audio_position(panel, position_ms)
+
+        self.assertLess(len(panel.controller.moves), 4)
+
+    # タイルの終端では次のタイルへ継ぐ
+    def test_end_of_tile_continues_with_the_next_tile(self):
+        panel = self._panel(playhead=3.9, tiles={1: "tile1.mp4"})
+        panel._proxy_playing = True
+        panel._rate = 1.0
+        panel._chunk_start = 0.0
+        panel.player._duration_ms = 4000
+        PreviewPanel._on_audio_status(panel, preview_panel_module.QMediaPlayer.EndOfMedia)
+
+        self.assertEqual(panel.started, [("tile1.mp4", 4.0, True)])
+
+    # 次のタイルが無ければプロキシ再生を畳んで音声チャンクへ落ちる
+    def test_end_of_tile_without_the_next_tile_degrades(self):
+        panel = self._panel(playhead=3.9, tiles={})
+        panel._proxy_playing = True
+        panel._rate = 1.0
+        panel._chunk_start = 0.0
+        panel.player._duration_ms = 4000
+        PreviewPanel._on_audio_status(panel, preview_panel_module.QMediaPlayer.EndOfMedia)
+
+        self.assertEqual(panel.started, [])
+        self.assertIn(False, panel.proxy_playing_calls)
+        self.assertEqual(panel.chunks, [4.0])
+
+
+# AudioChunkSource の代用 (手元に音が無い状態を表す)
+class _StubAudioSource:
+
+    def cached(self, _start, _length):
+        return None
+
 
 if __name__ == "__main__":
     unittest.main()

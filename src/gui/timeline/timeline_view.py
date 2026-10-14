@@ -7,7 +7,7 @@
 import math
 import os
 
-from PySide6.QtCore import QLine, QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QLine, QPoint, QRect, QTimer, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSlider,
@@ -42,6 +42,10 @@ _TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
 
 # ルーラの高さ
 RULER_HEIGHT = 26
+# プロキシのレンダ済みバーの高さ (ルーラーの下端に重ねる / ver6 resolve3 §3.5)
+COVERAGE_HEIGHT = 3
+# 生成中の点滅の周期 (ms)
+_COVERAGE_BLINK_MS = 500
 
 # 右クリック「字幕追加」で置く字幕の初期テキスト。
 # 空文字にすると Timeline でもプレビューでも何も見えず、追加できたか分からないため入れる。
@@ -64,6 +68,11 @@ _WAVE_MIN_PX = 4
 # 波形に RMS を重ねる最小の幅 (px)。これより細いと重なって見分けが付かない
 _WAVE_RMS_MIN_PX = 24
 _COLOR_PLAYHEAD = QColor(232, 84, 84)           # 再生ヘッド (位置を示す機能色)
+# プロキシのレンダ済みバー (ver6 resolve3 §3.5)。
+# 実線 = 出力と同じ絵が在る / 薄い点滅 = 生成中。
+# 再生ヘッド (赤) と紛れないよう緑系にし、映像の判断を邪魔しない細さに留める。
+_COLOR_COVERAGE = QColor(120, 200, 140, 210)
+_COLOR_COVERAGE_PENDING = QColor(120, 200, 140, 90)
 
 # 背景系の色 (ver3 resolve3 §5.7-1)。
 # 「Timeline の背景の黒色部分のみガラスにする」(R10) ため、下記だけをテーマから引く。
@@ -176,11 +185,56 @@ class TimelineRuler(QWidget):
         self._offset = 0.0
         self.setFixedHeight(RULER_HEIGHT)
         self.setMouseTracking(True)
+        # プロキシのレンダ済み区間 [(start, end), ...] と生成中の区間
+        # (ver6 resolve3 §3.5)。「どこが正解の絵か」を利用者が判断できるようにする。
+        self._coverage = []
+        self._rendering = None
+        self._blink_on = True
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(_COVERAGE_BLINK_MS)
+        self._blink_timer.timeout.connect(self._toggle_blink)
 
     # 横スクロール量 (秒) を受け取る
     def set_offset(self, offset_sec):
         self._offset = float(offset_sec)
         self.update()
+
+    # レンダ済み区間と生成中の区間を受け取る (ver6 resolve3 §3.5)
+    #   spans     : [(start, end), ...] 出力と同じ絵が在る区間 (実線)
+    #   rendering : (start, end) いま作っている区間 (点滅)。無ければ None
+    def set_coverage(self, spans, rendering=None):
+        self._coverage = [(float(s), float(e)) for s, e in (spans or [])]
+        self._rendering = rendering
+        if rendering is None:
+            self._blink_timer.stop()
+            self._blink_on = True
+        elif not self._blink_timer.isActive():
+            self._blink_timer.start()
+        self.update()
+
+    def _toggle_blink(self):
+        self._blink_on = not self._blink_on
+        self.update()
+
+    # レンダ済みバーを描く。ルーラーの下端 COVERAGE_HEIGHT px を使う。
+    def _paint_coverage(self, painter, zoom):
+        if not self._coverage and self._rendering is None:
+            return
+        top = RULER_HEIGHT - COVERAGE_HEIGHT
+        painter.setPen(Qt.NoPen)
+        for start, end in self._coverage:
+            x1 = int((start - self._offset) * zoom)
+            x2 = int((end - self._offset) * zoom)
+            if x2 < 0 or x1 > self.width():
+                continue
+            painter.setBrush(QBrush(_COLOR_COVERAGE))
+            painter.drawRect(x1, top, max(x2 - x1, 1), COVERAGE_HEIGHT)
+        if self._rendering is not None and self._blink_on:
+            start, end = self._rendering
+            x1 = int((start - self._offset) * zoom)
+            x2 = int((end - self._offset) * zoom)
+            painter.setBrush(QBrush(_COLOR_COVERAGE_PENDING))
+            painter.drawRect(x1, top, max(x2 - x1, 1), COVERAGE_HEIGHT)
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -210,6 +264,9 @@ class TimelineRuler(QWidget):
             painter.setPen(text_pen)
             painter.drawText(x + 3, RULER_HEIGHT - 10, format_time(value, with_hours))
             value += step
+
+        # レンダ済みバー (再生ヘッドより先に描く = 再生ヘッドを隠さない)
+        self._paint_coverage(painter, zoom)
 
         # 再生ヘッド
         head_x = int((self._controller.playhead() - self._offset) * zoom)

@@ -11,7 +11,8 @@ from ..modules import concat_processor
 from ..utils.logger import get_logger
 # commands は編集操作だが、役割別トラックの解決は構築時も同じ規則を使うため共有する
 # (commands は builder を import しないので循環しない / ver3 resolve11 §5.3)
-from . import commands, media_probe
+# (commands / compositor / proxy_render は builder を import しないので循環しない)
+from . import commands, compositor, media_probe, proxy_render
 from .model import (
     BASE_AUDIO_TRACK_ID,
     BASE_SUBTITLE_TRACK_ID,
@@ -87,6 +88,69 @@ def _shortcut_config(values):
 
 
 # 正の float を返す (0 以下・不正値は既定へ寄せて警告する)
+# x264 の preset。知らない値を渡すと ffmpeg が起動しないため既定へ落とす。
+_X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast",
+                 "medium", "slow", "slower", "veryslow", "placebo")
+
+
+# プレビューのプロキシ設定を検証して返す (ver6 resolve3 §5)
+#
+# プロキシは「あると嬉しいもの」であり、設定が壊れていても編集画面は開いて動く。
+# どの値も範囲外なら既定へ落とし、mode が未知なら "tile" とみなす。
+def _proxy_cfg(section):
+    section = section if isinstance(section, dict) else {}
+
+    mode = str(section.get("mode", "tile") or "tile").strip().lower()
+    if mode not in ("tile", "off"):
+        _logger.warning("未知の preview.proxy.mode のため既定を使用します: %s", mode)
+        mode = "tile"
+
+    preset = str(section.get("preset", "ultrafast") or "").strip().lower()
+    if preset not in _X264_PRESETS:
+        if preset:
+            _logger.warning("未知の preview.proxy.preset のため既定を使用します: %s", preset)
+        preset = "ultrafast"
+
+    bitrate = str(section.get("audio_bitrate", "96k") or "").strip()
+    if not bitrate:
+        bitrate = "96k"
+
+    return {
+        "mode": mode,
+        # 本番キャンバスに対する比。compositor が最終的にもう一度クランプする
+        "scale": _clamp_float(section.get("scale"), 0.5,
+                              compositor.PROXY_SCALE_MIN, compositor.PROXY_SCALE_MAX),
+        "preset": preset,
+        "crf": _clamp_int(section.get("crf"), 28, 0, 51),
+        "tile_sec": _clamp_float(section.get("tile_sec"), 4.0,
+                                 proxy_render.MIN_TILE_SEC, 60.0),
+        # 0 = 先読みしない (再生ヘッドのタイルだけ作る)
+        "lookahead_tiles": _clamp_int(section.get("lookahead_tiles"), 3, 0, 32),
+        "workers": _clamp_int(section.get("workers"), 1, 1, 4),
+        "cache_tiles": _clamp_int(section.get("cache_tiles"), 64, 1, 4096),
+        "audio_bitrate": bitrate,
+        "coverage_bar": bool(section.get("coverage_bar", True)),
+        "draft_overlay": bool(section.get("draft_overlay", True)),
+    }
+
+
+# 範囲へ収めて返す (不正値は既定へ)
+def _clamp_float(value, default, low, high):
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(result, low), high)
+
+
+def _clamp_int(value, default, low, high):
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(result, low), high)
+
+
 def _positive_float(value, default):
     try:
         result = float(value)
@@ -333,7 +397,7 @@ def timeline_config(settings):
             "audio_volume": float(preview.get("audio_volume", 0.8)),
             "audio_chunk_sec": float(preview.get("audio_chunk_sec", 30)),
             "audio_prefetch_sec": float(preview.get("audio_prefetch_sec", 8)),
-            "play_fps": int(preview.get("play_fps", 15)),
+            "play_fps": int(preview.get("play_fps", 30)),
             # 倍速再生・倍速逆再生 (resolve2 R10・R11)
             "playback_rate": _positive_float(preview.get("playback_rate"), 2.0),
             "reverse_play_fps": int(preview.get("reverse_play_fps", 8) or 8),
@@ -386,6 +450,8 @@ def timeline_config(settings):
                                 else "grain"),
             "scrub_low_quality_frames": bool(
                 preview.get("scrub_low_quality_frames", True)),
+            # ── プレビューのプロキシ (ver6 resolve3 §5) ──────────────
+            "proxy": _proxy_cfg(preview.get("proxy")),
         },
         "render": {
             "gap_policy": str(render.get("gap_policy", "black") or "black"),

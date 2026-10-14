@@ -163,7 +163,17 @@ def _text_anchor(item, eff_cfg, canvas_w, canvas_h, extent):
 
 # アイコン 1 件ぶんの配置を返す。表示しない場合は None。
 # 戻り値 {"x": 左端px, "y": 上端px, "size": 一辺px, "clamped": bool}
-def icon_box(item, eff_cfg, canvas_w, canvas_h):
+#
+# canvas_w / canvas_h には**本番キャンバス**の寸法を渡し、低解像度のプロキシへ
+# 当てるときは scale で縮める (ver6 resolve3 §3.3)。計算を本番寸法で行うのが要点で、
+# font_size や comment_margin_l が絶対 px のため、プロキシ寸法で計算すると
+# 余白だけが相対的に広がってプレビューと出力が一致しなくなる。
+def icon_box(item, eff_cfg, canvas_w, canvas_h, scale=1.0):
+    return _scale_icon_box(_icon_box_raw(item, eff_cfg, canvas_w, canvas_h), scale)
+
+
+# アイコンの配置を本番キャンバスの px で求める (換算前)
+def _icon_box_raw(item, eff_cfg, canvas_w, canvas_h):
     if not is_comment(item):
         return None
     if not (eff_cfg or {}).get("comment_icon_enabled", True):
@@ -193,7 +203,14 @@ def icon_box(item, eff_cfg, canvas_w, canvas_h):
 
 # 背景ボックス (アイコン + 文字 + 内側余白) を返す。出さない場合は None。
 # 戻り値 {"x", "y", "w", "h", "radius", "clamped"}
-def background_box(item, eff_cfg, canvas_w, canvas_h, text=None):
+# scale の扱いは icon_box と同じ (本番寸法で計算してから縮める / ver6 resolve3 §3.3)。
+def background_box(item, eff_cfg, canvas_w, canvas_h, text=None, scale=1.0):
+    return _scale_background_box(
+        _background_box_raw(item, eff_cfg, canvas_w, canvas_h, text=text), scale)
+
+
+# 背景ボックスを本番キャンバスの px で求める (換算前)
+def _background_box_raw(item, eff_cfg, canvas_w, canvas_h, text=None):
     if not is_comment(item):
         return None
     if not (eff_cfg or {}).get("comment_bg_enabled", True):
@@ -202,7 +219,7 @@ def background_box(item, eff_cfg, canvas_w, canvas_h, text=None):
     pad = max(_to_int((eff_cfg or {}).get("comment_bg_padding_px"), 24), 0)
     extent = text_extent(item, eff_cfg, text=text)
     text_left, text_mid = _text_anchor(item, eff_cfg, canvas_w, canvas_h, extent)
-    icon = icon_box(item, eff_cfg, canvas_w, canvas_h)
+    icon = _icon_box_raw(item, eff_cfg, canvas_w, canvas_h)
 
     # 中身 (アイコン + 文字) の外接矩形を求めてから内側余白を足す
     left = min(icon["x"], text_left) if icon else text_left
@@ -233,6 +250,35 @@ def background_box(item, eff_cfg, canvas_w, canvas_h, text=None):
     radius = int(min(radius, w / 2.0, h / 2.0))
     return {"x": cx, "y": cy, "w": w, "h": h,
             "radius": radius, "clamped": clamped}
+
+
+# 本番キャンバスで求めた配置へプロキシ比を掛ける (ver6 resolve3 §3.3)
+# 1.0 (既定) のときは何も触らない = 従来と完全に同じ値を返す。
+def _scale_icon_box(box, scale):
+    if box is None or abs(float(scale) - 1.0) < 1e-9:
+        return box
+    ratio = float(scale)
+    return {
+        "x": box["x"] * ratio,
+        "y": box["y"] * ratio,
+        # 一辺は overlay の scale= に入るため整数にする (2px 未満は潰れる)
+        "size": max(int(round(box["size"] * ratio)), 2),
+        "clamped": box["clamped"],
+    }
+
+
+def _scale_background_box(box, scale):
+    if box is None or abs(float(scale) - 1.0) < 1e-9:
+        return box
+    ratio = float(scale)
+    return {
+        "x": box["x"] * ratio,
+        "y": box["y"] * ratio,
+        "w": box["w"] * ratio,
+        "h": box["h"] * ratio,
+        "radius": int(round(box["radius"] * ratio)),
+        "clamped": box["clamped"],
+    }
 
 
 # 角丸矩形の ASS 描画コマンド (\p1 の中身) を組み立てる (§3 D-9)
@@ -303,6 +349,8 @@ def _escape_filter_path(path):
 #   out_label  : 出力ラベル (空文字なら -vf の最終出力として無ラベルにする)
 #   with_enable: False なら表示時間の指定を付けない (静止画プレビュー用)
 #   prefix     : 中間ラベルの接頭辞。1 つの filtergraph で複数回呼ぶときに衝突させないため
+#   scale      : 本番キャンバスに対する比 (プロキシ用 / ver6 resolve3 §3.3)。
+#                canvas_w / canvas_h には常に**本番寸法**を渡すこと。
 # 戻り値 (chains: list[str], count: 件数, groups: 位置の種類数)
 #
 # 【重要】アイコンは movie ソースフィルタで filtergraph の内側から読む。
@@ -310,12 +358,13 @@ def _escape_filter_path(path):
 #   表示位置が同じコメントは 1 つの overlay へまとめ、enable を論理和で連結する
 #   (既定運用では位置は 1 種類なので overlay も 1 本で済む)。
 def build_icon_chains(items, eff_cfg, canvas_w, canvas_h,
-                      in_label, out_label, with_enable=True, prefix="cic"):
+                      in_label, out_label, with_enable=True, prefix="cic",
+                      scale=1.0):
     groups = {}
     size = None
     count = 0
     for item in (items or []):
-        box = icon_box(item, eff_cfg, canvas_w, canvas_h)
+        box = icon_box(item, eff_cfg, canvas_w, canvas_h, scale)
         if box is None:
             continue
         size = box["size"]

@@ -738,3 +738,100 @@ class ProxyManager(QObject):
    効果を 1 つ足したら、その効果が `compositor` を通っているかをテストが落として教える。
 3. **「近似を見ている」ことを画面に出す** (§6)。
    利用者が正解と下書きを区別できる限り、混乱は事故にならない。
+
+---
+
+## 12. 実装記録 (2026-10-14)
+
+Phase 0 / 1 / 2 を実装した。**Phase 3 は入れていない** (下記)。
+テストは `python -m unittest discover -s tests` で **1,199 件すべて合格**
+(本作業の前は 1,115 件。新規 84 件)。
+
+### 12.1 作ったもの / 変えたもの
+
+| ファイル | 種別 | 内容 |
+| --- | --- | --- |
+| `src/timeline/compositor.py` | **新規** | 合成断片の唯一の置き場。`CanvasProfile` / `base_filters` / `still_filters` / `crop_chain` / `overlay_chain` / `subtitle_chain` / `subtitle_chain_for_items` / `icon_chains` / `blur_chains` / `watermark_chain` / `ass_option` |
+| `src/timeline/proxy_render.py` | **新規** | タイルの区切り (`tile_range` / `tile_count` / `tile_index_at`)、内容ハッシュ (`tile_key`)、コマンドの組み立て (`plan_tile`) と実行 (`run_tile`)、`ProxyEnvironment` |
+| `src/gui/timeline/proxy_manager.py` | **新規** | キャッシュ・優先順・ワーカー (`_TileWorker`)・縮退・後片付け |
+| `src/timeline/renderer.py` | 変更 | `_video_filters` は compositor への薄い包みへ。`_crop_chain` / `_warn_normalize_once` / `_subtitle_profile` / `_escape_filter_path` を撤去し compositor へ移設。`_composite` のオーバーレイ・字幕・アイコン・ぼかし・透かしをすべて compositor 経由へ |
+| `src/gui/timeline/preview_panel.py` | 変更 | プロキシ再生 (`_play_forward` / `_start_playback` / `_on_audio_status`)、停止中はタイルから 1 フレーム、下書きの表示切り替え、準備中の案内、高精度プレビューの作り直し、`_apply_crop` の二重バッファ、`QImage.copy()` の撤去 |
+| `src/gui/timeline/preview_items.py` | 変更 | 字幕の影・外側アウトライン・ASS の行送り (§4.7-1〜3)、`set_draft_visible` |
+| `src/gui/timeline/timeline_editor_dialog.py` | 変更 | `ProxyManager` の生成・破棄、レンダ済みバーの受け渡し、透かしの先読み (`_watermark_hint`) |
+| `src/gui/timeline/timeline_view.py` | 変更 | ルーラー下のレンダ済みバー (`set_coverage` / 点滅) |
+| `src/modules/comment_decor.py` | 変更 | `icon_box` / `background_box` / `build_icon_chains` へ `scale` を追加 |
+| `src/modules/blur_overlay.py` | 変更 | `build_chains` へ `seek_point` を追加 |
+| `src/modules/subtitle_generator.py` | 変更 | `ass_shadow_px()` を公開 (影の深さの定義元を 1 つにする) |
+| `src/timeline/crop.py` | 変更 | `filter_chain` へ `scale` を追加し `boxblur` 半径を換算 |
+| `src/timeline/frame_source.py` | 変更 | `reformat` へ色空間を明示 (§4.7-4) |
+| `src/timeline/builder.py` | 変更 | `preview.proxy` の読み出しとクランプ |
+| `src/settings/setting.json` / `settings_window.py` | 変更 | `timeline.preview.proxy` を追加 / `play_fps` 15 → 30 |
+| `tests/test_compositor.py` | **新規** | 37 件。相似・ASS 非換算・回帰 (§8.1 の 1〜7) |
+| `tests/test_proxy_render.py` | **新規** | 32 件。タイル境界・内容ハッシュ・Undo・オフセット・区間 (§8.1 proxy 1〜7) |
+| `tests/test_preview_playback.py` | 変更 | プロキシ在り / 無しの再生経路、終端での継ぎ、間引きの有無 |
+| `tests/test_comment_decor.py` / `test_crop_layout.py` / `test_settings_migration.py` | 変更 | `scale` の相似、`boxblur` の比、`preview.proxy` の補完 |
+
+### 12.2 設計から踏み込んだ点 (実装中の判断)
+
+1. **`blur_chains` / `watermark_chain` は `context` ではなく `settings` を受け取る。**
+   プレビューは `PipelineContext` を持たないため、`context` を要求すると結局
+   プレビュー側に別実装が生えてしまう (§1.1 で否定した構造)。
+   「もう焼いたか」(`blur_applied`) と「透かしが要るか」の判定は出力側の都合なので
+   呼び出し側に残した。
+2. **`subtitle_chain` は `CanvasProfile` を受け取らない。** ASS を換算してはならない
+   (§3.2) ことを、引数として受け取れないようにして型で固定した。
+3. **`overlay_chain` に `window` / `time_offset` / `still_sec` を足した。**
+   タイル (時間窓) と 1 枚絵の両方を 1 つの実装で賄うため。省略時は従来と完全に同じ文字列。
+4. **ワーカーは「組み立て済みのコマンドを実行するだけ」にした。**
+   設計書は `render_tile` をワーカーで呼ぶ形だったが、Timeline を読むのを
+   GUI スレッド (`plan_tile`) に限定するため組み立てと実行を分けた。
+   生成中に利用者が編集しても、別スレッドから中途半端な Timeline を読む余地が無い。
+5. **生成中のタイルは `.part` で書き、完成時に名前を付け替える。**
+   「その名前のファイルが在る = 完成している」を保ち、異常終了で残った
+   中途半端なタイルを拾わないため。
+6. **フェードはクリップ全体を基準に判定する** (`base_filters(window=…)`)。
+   断片の尺で判定すると**タイルの継ぎ目ごとに暗転が入り**、出力と食い違う。
+   設計書に記述が無かった点で、実装中に実物を見て気づいた。
+   残差は「クリップの端がタイル境界から `fade_duration_sec` (既定 50ms) 以内に
+   ある場合」だけで、そのときは 1 フレーム単位の判定で入り / 出を決めている。
+7. **透かしの先読み (§4.5) は「残高 0 なら透かし」までとした。**
+   1 回ぶんの消費量はサーバーが予約時に決めるためクライアントは知らない。
+   `services/points.py` の規約 (R9: 残高から推測しない) を崩さないよう、
+   判定結果はプレビューの表示にだけ使い、予約は一切行わない。
+   **「残高はあるが 1 件ぶんには足りない」場合だけ先読みを外す** (残高 0 で必ず出る)。
+
+### 12.3 残っているもの
+
+| # | 内容 | 理由 |
+| --- | --- | --- |
+| 1 | **A-4 (再生中もぼかしが出る) はマスクが在るときだけ** | プロキシへぼかしを通す配線 (`seek_point` 込み) は入れたが、**タイルごとのマスク生成は入れていない**。マスクはトラッカーを走らせて作るもので (`blur/mask_builder`)、編集中に作るには別の設計 (タイル単位の追従とキャッシュ) が要る。`context.blur_mask_path` 相当が既に在る場合は `ProxyManager.set_blur_mask()` で渡せば出る |
+| 2 | **Phase 3 (近似描画の縮退)** | §7 の「`mode="off"` で従来どおり動く」と両立しない。下書きの表示を切る `set_draft_visible` までで止め、近似描画の実装は縮退経路のために残した |
+| 3 | **§8.2 の手動確認 1〜12** | 実素材・実アカウント・実画面での確認。自動テストと煙テスト (下記) では代替できない |
+| 4 | **論点 1 の実測** | 既定 `scale` は提案どおり 0.5 にした。4K / 1080p での生成時間の実測は未実施 |
+| 5 | **論点 4 / 5 の確認** | アーカイブ切り抜き画面は同じ `PreviewPanel` を使うため自動的に効くが未検証。ぼかしマスクの寸法 (残り 1 と同根) も未検証 |
+
+### 12.4 実装中に実物を通して見つけ、直した不具合
+
+機械的なテストだけでは出ず、**実 ffmpeg と実画面に通して**初めて出たもの。
+
+| # | 症状 | 原因 |
+| --- | --- | --- |
+| 1 | タイルの filtergraph でラベルが重複 | 断片のラベル (`[pv0]`) と `overlay_chain` の出力ラベル (`[pv0]`) が衝突していた。断片側を `[pcv*]` / `[pca*]` へ改名 |
+| 2 | 断片が 1 本のタイルで ffmpeg が起動しない | `-map [0:a]` と括弧付きで渡していた。入力ストリームの指定は括弧を外す必要がある (`-map 0:a`) |
+| 3 | `.part` 名の出力で muxer を決められず失敗 | 拡張子からの推測に任せていた。`-f mp4` を明示 |
+| 4 | 画面を閉じたあとにタイルが 1 枚残る | ワーカー停止後に届いた完了通知で公開していた。`_closed` の印で捨てる |
+| 5 | プロキシの絵の上に近似描画が二重に出る | `_rebuild_overlays` が作り直したアイテムへ下書きの表示状態を引き継いでいなかった |
+| 6 | タイルの継ぎ目で暗転 | §12.2-6 のフェード判定 |
+
+### 12.5 検証
+
+* `python -m unittest discover -s tests` → **1,199 件すべて合格** (FFmpeg は起動しない)
+* 実 ffmpeg でのタイル生成 (横 1280x720 / 縦 1080x1920 クロップ + 背景ぼかし):
+  タイル境界を跨ぐクリップ・動画オーバーレイ・画像オーバーレイ・字幕・コメント
+  アイコン・透かし・音声の合流を含むグラフで `returncode 0`。
+  出力は 640x360 / 540x960、尺はタイル範囲と一致 (4.000s / 3.000s)。
+  `boxblur` は本番 20 → プロキシ 10 で相似。
+* 編集画面を実際に開いた確認 (offscreen): タイルの生成 → `coverage` の伸び →
+  停止中のフレーム要求がタイルから来ること → `_play_forward` でプロキシ再生に
+  入ること → 編集で鍵が変わり作り直しになること → レンダ済みバーへ渡ること →
+  `shutdown` で一時ファイルが残らないこと。

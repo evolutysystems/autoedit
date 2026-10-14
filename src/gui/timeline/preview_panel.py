@@ -46,10 +46,20 @@ try:
 except Exception:  # noqa: BLE001
     _MULTIMEDIA_AVAILABLE = False
 
+# プロキシ (事前にレンダした確認用動画) の映像をシーンへ出すためのアイテム。
+# QtMultimediaWidgets も環境により無いことがあるため、無ければ
+# 「プロキシの音声 + 近似描画の映像」へ縮退する (ver6 resolve3 §7)。
+try:
+    from PySide6.QtCore import QSizeF
+    from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
+    _VIDEO_ITEM_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _VIDEO_ITEM_AVAILABLE = False
+
 from ...i18n import tr
-from ...modules import comment_decor, ffmpeg_runner, subtitle_generator
+from ...modules import ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
-from ...timeline import commands, crop
+from ...timeline import commands, compositor, crop
 from ...timeline.audio_source import AudioChunkSource
 from ...timeline.frame_source import create_frame_source, is_pyav_available
 from ...timeline.model import SubtitleClip
@@ -216,6 +226,18 @@ class PreviewPanel(QWidget):
         self._overlay_ids = []
         # 書き出しと同じぼかしをフレームへ当てる道具 (停止中だけ / ver5 resolve4 §5.8)
         self._blur_preview = None
+
+        # ── プロキシ (ver6 resolve3 §4.4) ──────────────────────────
+        # 事前にレンダした確認用動画。在れば「出力と同じ絵」を再生・表示できる。
+        # 無い / 作れない間は従来の近似描画を下書きとして出す (§6 の対応表)。
+        self._proxy = None              # ProxyManager (画面側が差し込む)
+        self._proxy_playing = False     # いまプロキシを再生しているか
+        self._proxy_tile_media = {}     # タイルから 1 フレーム取るための擬似 MediaRef
+        self._video_item = None         # プロキシ映像の出力先
+        self._preparing_status = False  # 「準備中」を出しているか
+        # 近似描画 (下書き) を描くか。プロキシの絵が出ている間は False。
+        self._draft_visible = True
+
         self._build_ui()
 
         controller.timeline_changed.connect(self._on_timeline_changed)
@@ -345,8 +367,8 @@ class PreviewPanel(QWidget):
         if self._cfg["high_quality_button"]:
             hq_button = QPushButton(tr("高精度プレビュー"))
             hq_button.setToolTip(
-                tr("現在のフレームを本番と同じ ASS で描画し直して表示します "
-                "(画面上の字幕は Qt による近似表示です)"))
+                tr("現在のフレームを原寸・本番設定で描き直して表示します "
+                "(切り抜き・ぼかし・透かしも反映します)"))
             hq_button.clicked.connect(self._show_high_quality)
             row.addWidget(hq_button)
         root.addLayout(row)
@@ -365,9 +387,14 @@ class PreviewPanel(QWidget):
     def _on_timeline_changed(self):
         # 編集が入ったら再生用に生成済みの音声を捨てる (§6.4-5)
         self._audio_source.invalidate()
+        # プロキシは鍵が変わったタイルだけを捨てて作り直す (ver6 resolve3 §3.5)
+        if self._proxy is not None:
+            self._proxy.invalidate()
         self._refresh_all()
 
-    def _on_playhead_moved(self, _sec):
+    def _on_playhead_moved(self, sec):
+        if self._proxy is not None:
+            self._proxy.set_focus(sec)
         self._request_frame()
         self._rebuild_overlays()
         self._update_time_label()
@@ -376,6 +403,102 @@ class PreviewPanel(QWidget):
         self._request_frame()
         self._rebuild_overlays()
         self._update_time_label()
+
+    # ------------------------------------------------------------------
+    # プロキシ (ver6 resolve3 §4.4)
+    # ------------------------------------------------------------------
+
+    # プロキシの管理役を差し込む (画面側が作って渡す)。None で従来動作のまま。
+    def set_proxy_manager(self, manager):
+        self._proxy = manager
+        if manager is None or not manager.is_enabled():
+            return
+        manager.tile_ready.connect(self._on_tile_ready)
+        manager.gave_up.connect(self._on_proxy_gave_up)
+        manager.set_focus(self._controller.playhead())
+        self._refresh_all()
+
+    # その時刻のプロキシ (パス, タイル開始秒)。無ければ None
+    def _proxy_tile(self, sec):
+        if self._proxy is None or not self._proxy.is_enabled():
+            return None
+        return self._proxy.tile_at(sec)
+
+    # タイルが 1 枚できた → いまの再生ヘッドに関わるなら表示を差し替える
+    def _on_tile_ready(self, _tile_index):
+        if self.is_playing():
+            return                      # 再生中の差し替えはしない (継ぎ目で行う)
+        self._refresh_all()
+
+    # プロキシを諦めた (ffmpeg が無い / 繰り返し失敗)。近似表示へ戻る (§7)
+    def _on_proxy_gave_up(self, message):
+        self._proxy_playing = False
+        self._show_video_item(False)
+        self.set_status(message)
+        self._refresh_all()
+
+    # プロキシ映像の出力先アイテム (必要になったときだけ作る)
+    def _ensure_video_item(self):
+        if self._video_item is not None or not _VIDEO_ITEM_AVAILABLE:
+            return self._video_item
+        item = QGraphicsVideoItem()
+        item.setSize(QSizeF(float(self._canvas[0]), float(self._canvas[1])))
+        item.setPos(0.0, 0.0)
+        item.setAspectRatioMode(Qt.IgnoreAspectRatio)
+        # ベースフレーム (-1000) の上・オーバーレイの下に置く
+        item.setZValue(-999)
+        item.setVisible(False)
+        self._scene.addItem(item)
+        self._video_item = item
+        return item
+
+    # プロキシ映像の表示を切り替える (表示中はベースフレームを隠す)
+    def _show_video_item(self, visible):
+        item = self._ensure_video_item() if visible else self._video_item
+        if item is None:
+            return False
+        item.setVisible(bool(visible))
+        self._base_item.setVisible(not visible)
+        return True
+
+    # 下書き (近似描画) を描くかを全オーバーレイへ伝える。
+    # 状態を覚えておき、アイテムを作り直したときも同じ状態を保つ。
+    def _set_draft_visible(self, visible):
+        self._draft_visible = bool(visible)
+        for item in self._overlay_items.values():
+            if hasattr(item, "set_draft_visible"):
+                item.set_draft_visible(visible)
+
+    # 「準備中」の案内を出す / 消す (§6: 近似を見ているのか正解を見ているのかを必ず示す)
+    def _update_proxy_status(self):
+        if self._proxy is None or not self._proxy.is_enabled() or self.is_playing():
+            if self._preparing_status:
+                self._preparing_status = False
+                self.set_status("")
+            return
+        pending = self._proxy.is_pending(self._controller.playhead())
+        if pending and not self._preparing_status:
+            self._preparing_status = True
+            self.set_status(tr("プレビューを準備中… (表示は近似です)"))
+        elif not pending and self._preparing_status:
+            self._preparing_status = False
+            self.set_status("")
+
+    # タイルから 1 フレーム取るための擬似 MediaRef
+    # FrameSource は (id, path, width) だけを見るため、これで足りる。
+    # id にファイル名を使うのが要点: 作り直されたタイルは名前が変わるため、
+    # 前のタイルを開いたままのコンテナを使い回してしまう事故が起きない。
+    def _tile_media(self, path):
+        key = os.path.basename(path)
+        media = self._proxy_tile_media.get(key)
+        if media is None:
+            profile = self._proxy.profile()
+            media = _TileMedia(key, path, profile.width, profile.height)
+            # 置き換わった古いタイルの分は持ち続けない
+            if len(self._proxy_tile_media) > 8:
+                self._proxy_tile_media.clear()
+            self._proxy_tile_media[key] = media
+        return media
 
     # 状態表示を更新する (再生状態・失敗の案内など。画面側からも呼ぶ)
     def set_status(self, text):
@@ -388,7 +511,27 @@ class PreviewPanel(QWidget):
             f"{format_time_precise(total)}")
 
     # 再生ヘッド位置のフレームを要求する (常駐ワーカーが最新だけを処理する)
+    #
+    # プロキシが在ればそこから 1 フレーム取る = 停止中の絵も出力と一致する (§6)。
+    # 無い間は従来どおり素材から取り、近似描画を下書きとして重ねる。
     def _request_frame(self):
+        self._update_proxy_status()
+        if self._proxy_playing:
+            return          # 再生中の映像はプロキシ側が出している
+
+        playhead = self._controller.playhead()
+        tile = self._proxy_tile(playhead)
+        if tile is not None:
+            path, tile_start = tile
+            self._show_video_item(False)
+            self._set_draft_visible(False)
+            self._frame_job += 1
+            self._frame_worker.request(
+                self._frame_job, self._tile_media(path),
+                max(playhead - tile_start, 0.0))
+            return
+
+        self._set_draft_visible(True)
         resolved = self._controller.source_at_playhead()
         if resolved is None:
             # 空白 (ギャップ) は黒フレーム
@@ -401,6 +544,15 @@ class PreviewPanel(QWidget):
     # ------------------------------------------------------------------
     # ぼかし対象の目印 (ver5 resolve2 §5.7)
     # ------------------------------------------------------------------
+
+    # 「今出力したら透かしが入るか」を受け取る (ver6 resolve3 §4.5)
+    #
+    # 出力時の判定はサーバーの予約応答で決まる (ver5 resolve §5.4) が、編集画面の
+    # 時点ではまだ予約していない。そのためプレビューは残高からの先読みで決める。
+    # **分からないときは True (透かしあり)** に倒すこと。「入らないと思っていたら
+    # 入っていた」が最も損害の大きい失敗だからである。
+    def set_watermark_required(self, required):
+        self._watermark_required = bool(required)
 
     # 書き出しと同じぼかしをフレームへ当てる道具を受け取る (ver5 resolve4 §5.8)
     #
@@ -455,9 +607,21 @@ class PreviewPanel(QWidget):
     def _on_frame_ready(self, job_id, width, height, data):
         if job_id != self._frame_job:
             return  # 差し替え済みの古い結果は捨てる
-        data = self._apply_blur_preview(width, height, data)
-        image = QImage(data, width, height, width * 3, QImage.Format_RGB888).copy()
-        pixmap = self._apply_crop(QPixmap.fromImage(image))
+        # タイルから取った絵は、切り抜き・ぼかし・透かしまで**すでに焼かれている**。
+        # ここで重ねると二重になるため、プロキシ由来のときは何も足さない。
+        from_proxy = self._proxy_tile(self._controller.playhead()) is not None
+        if not from_proxy:
+            data = self._apply_blur_preview(width, height, data)
+        # QImage の .copy() をやめる (ver6 resolve3 §4.4)。
+        # ワーカーが渡すバイト列は不変で、直後の QPixmap.fromImage が画素を
+        # 自前の領域へ移すため、ここで全画素を複製する必要はない。
+        # QImage が参照している間だけバッファを生かしておけばよいので、
+        # 次のフレームが来るまでパネル側で 1 本だけ参照を持つ。
+        self._frame_buffer = data
+        image = QImage(data, width, height, width * 3, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(image)
+        if not from_proxy:
+            pixmap = self._apply_crop(pixmap)
         # 拡縮はアイテムの scale で行い、QPixmap.scaled は使わない (resolve6 §5.8)。
         # 再生中は縮小フレームが届くため、ここで拡大し直すと 1 枚あたり 4.5ms かかり
         # 縮小で浮いたぶんを食い潰す。scale なら描画時に処理され、費用はほぼゼロ。
@@ -486,7 +650,7 @@ class PreviewPanel(QWidget):
         if not crop.is_valid(layout, media, timeline.width, timeline.height):
             return pixmap
 
-        canvas = QPixmap(timeline.width, timeline.height)
+        canvas = self._canvas_buffer(timeline.width, timeline.height)
         canvas.fill(Qt.black)
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
@@ -496,6 +660,22 @@ class PreviewPanel(QWidget):
             painter.drawPixmap(dx, dy, dw, dh, pixmap.copy(sx, sy, sw, sh))
         painter.end()
         return canvas
+
+    # 切り抜きを描き込むキャンバス寸法の QPixmap を使い回す (ver6 resolve3 §4.4)。
+    #
+    # 毎フレーム QPixmap(1080, 1920) を確保すると、再生中ずっと GUI スレッドで
+    # 確保と解放が走る。ただし **2 枚で交互に使う** ことが要点である:
+    # QPixmap は暗黙の共有で、表示中のアイテムが握っている 1 枚へ fill / QPainter を
+    # 当てると detach (= 新しい領域の確保) が起きて、使い回した意味が無くなる。
+    # 直前のフレームをアイテムへ渡したら、次は別の 1 枚へ描く。
+    def _canvas_buffer(self, width, height):
+        size = (int(width), int(height))
+        if getattr(self, "_canvas_buffer_size", None) != size:
+            self._canvas_buffer_size = size
+            self._canvas_buffers = [QPixmap(*size), QPixmap(*size)]
+            self._canvas_buffer_index = 0
+        self._canvas_buffer_index = 1 - int(getattr(self, "_canvas_buffer_index", 0))
+        return self._canvas_buffers[self._canvas_buffer_index]
 
     # 停止中だけ、書き出しと同じぼかしをフレームへ当てる (ver5 resolve4 §5.8)。
     # 反映器が無い・再生中・素材が分からない場合は素通し。
@@ -548,6 +728,9 @@ class PreviewPanel(QWidget):
             self._overlay_items[element.id] = item
             if element.id in selected:
                 item.setSelected(True)
+        # 作り直したアイテムへ現在の下書き表示を引き継ぐ (ver6 resolve3 §4.4)。
+        # 引き継がないと、プロキシの絵が出ているのに近似描画が重なって二重になる。
+        self._set_draft_visible(self._draft_visible)
 
     def _make_item(self, element):
         try:
@@ -685,6 +868,15 @@ class PreviewPanel(QWidget):
 
         self._pending_rate = rate
         start = self._controller.playhead()
+
+        # プロキシが在れば、それを QMediaPlayer へ渡して再生する (§3.4)。
+        # 映像と音声が同じファイルに入っているため A/V 同期の自前調整が不要で、
+        # 毎コマの PyAV デコードと GUI スレッド合成が再生経路から外れる。
+        tile = self._proxy_tile(start)
+        if tile is not None:
+            self._start_playback(tile[0], tile[1], from_proxy=True)
+            return
+
         # 手元の音声で「すぐ鳴らせるか」だけを見る。チャンク長ぶんの被覆を求めると
         # 終わり際で毎回作り直しになるため (resolve6 §2.2(b))。続きは終端で継ぐ。
         startup = self._startup_chunk_sec()
@@ -765,13 +957,16 @@ class PreviewPanel(QWidget):
         self.set_status(tr("音声を再生できません (無音で再生します)"))
         self._start_silent_playback()
 
-    def _start_playback(self, path, chunk_start):
+    # path を QMediaPlayer へ載せて再生する。
+    # from_proxy=True ならプロキシのタイル (映像 + 音声) で、映像もここから出す。
+    def _start_playback(self, path, chunk_start, from_proxy=False):
         rate = self._pending_rate or 1.0
         self._chunk_start = float(chunk_start)
         # 間引き用の到達点を捨てる。持ち越すと、前回より手前から再生を始めたときに
         # 前回の到達点を越えるまで再生ヘッドが動かない (resolve12 §2.3)
         self._last_frame_at = None
         offset_ms = int(max(self._controller.playhead() - self._chunk_start, 0.0) * 1000)
+        self._set_proxy_playing(from_proxy)
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.setPosition(offset_ms)
         self._player.setPlaybackRate(rate)   # 倍速再生はこの 1 行が本体 (resolve2 §3-6-1)
@@ -779,6 +974,24 @@ class PreviewPanel(QWidget):
         self._set_rate(rate)
         if abs(rate - 1.0) > 1e-6:
             _logger.debug("再生速度: %.1f 倍 (前進)", rate)
+
+    # プロキシ再生の入り / 出り。映像の出力先と下書きの表示をまとめて切り替える。
+    def _set_proxy_playing(self, playing):
+        playing = bool(playing)
+        if playing:
+            # 映像を出せない環境 (QtMultimediaWidgets 無し) では音声だけ使い、
+            # 映像は従来の近似描画のままにする (§7)
+            playing = self._show_video_item(True)
+            if not playing:
+                self._player.setVideoOutput(None)
+        elif self._proxy_playing:
+            self._show_video_item(False)
+            self._player.setVideoOutput(None)
+        if playing and self._video_item is not None:
+            self._player.setVideoOutput(self._video_item)
+        # プロキシの絵が出ている間は近似描画の中身を描かない (二重描画になる)
+        self._set_draft_visible(not playing)
+        self._proxy_playing = playing
 
     # 音声が使えないときはタイマーで再生ヘッドだけを進める (§6.4-5 利用不可時)
     def _start_silent_playback(self):
@@ -795,6 +1008,8 @@ class PreviewPanel(QWidget):
     def pause(self):
         if self._player is not None:
             self._player.pause()
+        if self._proxy_playing:
+            self._set_proxy_playing(False)
         for name in ("_silent_timer", "_reverse_timer"):
             timer = getattr(self, name, None)
             if timer is not None:
@@ -857,6 +1072,12 @@ class PreviewPanel(QWidget):
             self.pause()
             self._controller.set_playhead(total)
             return
+        if self._proxy_playing:
+            # 映像はプロキシ (QMediaPlayer) が出しているため間引く理由が無い。
+            # 再生ヘッドは通知のたびに進めるだけでよい (§4.4)。
+            self._controller.set_playhead(sec)
+            return
+
         # 映像の更新は play_fps で頭打ちにする (音声を優先し、間に合わなければ間引く)
         min_interval = 1.0 / max(int(self._cfg["play_fps"]), 1)
         # 再生開始直後の 1 通知は間引かずに通す (戻して再生したときの固まり防止)
@@ -891,6 +1112,14 @@ class PreviewPanel(QWidget):
             rate = self._rate
             self._controller.set_playhead(next_start)
             self._pending_rate = rate
+            # プロキシ再生中は次のタイルへ継ぐ。無ければ従来の音声チャンクへ落ちる
+            # (映像は近似描画に戻るが、再生そのものは途切れない / §6 の対応表)。
+            if self._proxy_playing:
+                tile = self._proxy_tile(next_start)
+                if tile is not None:
+                    self._start_playback(tile[0], tile[1], from_proxy=True)
+                    return
+                self._set_proxy_playing(False)
             # 先読み済みの本チャンクへ継ぐ (被覆判定は起動用の長さで足りる / resolve6 §5.6)
             hit = self._audio_source.cached(next_start, self._startup_chunk_sec())
             if hit is not None:
@@ -1027,66 +1256,86 @@ class PreviewPanel(QWidget):
             return
         media, source_sec = resolved
         playhead = self._controller.playhead()
+        timeline = self._controller.timeline
+        ffmpeg_cfg = self._settings.get("ffmpeg", {})
+        # 原寸・本番設定のプロファイル。断片はすべて compositor が組む (§4.6)
+        profile = compositor.CanvasProfile.production(timeline, ffmpeg_cfg)
+        fonts_dir = resolve_fonts_dir(self._settings)
 
         # 現在時刻を 0 とみなす 1 件ぶんの ASS を書き出す
         items = []
-        for clip in self._controller.timeline.subtitle_clips():
+        for clip in timeline.subtitle_clips():
             if not clip.contains(playhead):
                 continue
             item = clip.to_item()
             item["start"], item["end"] = 0.0, 1.0
             items.append(item)
-        ass_path = os.path.join(self._work_dir, "preview_hq.ass")
-        subtitle_generator.build_subtitle_file(
-            items, self._font_profile, ass_path,
-            video_width=self._canvas[0], video_height=self._canvas[1],
-            # コメントの背景 (角丸の箱) を本番と同じ経路で出す (ver3 resolve11 §5.6-5)
-            subtitle_cfg=self._eff_cfg)
+        _ass_path, ass_chain = compositor.subtitle_chain_for_items(
+            timeline, items, self._eff_cfg, self._font_profile,
+            os.path.join(self._work_dir, "preview_hq.ass"), fonts_dir)
 
         out_path = os.path.join(self._work_dir, "preview_hq.png")
-        ffmpeg_cfg = self._settings.get("ffmpeg", {})
-        safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
+        chains = []
+        current = "[0:v]"
+        input_args = []
+        input_count = 1                 # 入力 0 はベース映像
 
-        chains = [f"[0:v]scale={self._canvas[0]}:{self._canvas[1]}:"
-                  f"force_original_aspect_ratio=decrease,"
-                  f"pad={self._canvas[0]}:{self._canvas[1]}:(ow-iw)/2:(oh-ih)/2,setsar=1[hqbase]"]
-        current = "[hqbase]"
-        extra_inputs = []
+        # ① ソース → キャンバス段。**切り抜きを通す** (縦動画プロジェクトで
+        # 枠と背景のぼかしが出力と一致する / 旧実装の欠落 §1.1 A-6)
+        base_filters = compositor.still_filters(timeline, media, profile, self._settings)
+        if base_filters:
+            chains.append(f"{current}{','.join(base_filters)}[hqbase]")
+            current = "[hqbase]"
 
-        # ぼかしを**一番先に**当てる (ver5 resolve4 §5.9)。
+        # ② ぼかしを**一番先に**当てる (ver5 resolve4 §5.9)。
         # 後ろへ足すと字幕・コメントアイコン・画像までぼける (resolve2 R8)。
-        blur_chains, current = self._hq_blur_chains(media, source_sec, current)
+        mask_path = self._hq_blur_mask(media, source_sec)
+        blur_chains, current = compositor.blur_chains(
+            self._settings, mask_path, profile, current, "[hqblur]", prefix="hqbl")
         chains.extend(blur_chains)
 
-        # 画像・動画オーバーレイ (ぼかしの後・字幕の前 / ver5 resolve4 §5.9)
-        overlay_chains, current, extra_inputs = self._hq_overlay_chains(current, playhead)
-        chains.extend(overlay_chains)
+        # ③ 画像・動画オーバーレイ (ぼかしの後・字幕の前 / ver5 resolve4 §5.9)
+        step = 0
+        for clip in timeline.overlay_elements():
+            if isinstance(clip, SubtitleClip) or not clip.contains(playhead):
+                continue
+            overlay_media = timeline.media_by_id(clip.media_id)
+            if overlay_media is None or not os.path.exists(overlay_media.path or ""):
+                continue
+            args, overlay_chains, current, step = compositor.overlay_chain(
+                clip, overlay_media, profile, current, input_count, step,
+                with_enable=False, still_sec=playhead, prefix="hq")
+            input_args += args
+            input_count += 1
+            chains.extend(overlay_chains)
 
-        ass_chain = f"ass='{safe_ass}'"
-        fonts_dir = resolve_fonts_dir(self._settings)
-        if fonts_dir and os.path.isdir(fonts_dir):
-            safe_dir = fonts_dir.replace("\\", "/").replace(":", "\\:")
-            ass_chain = f"ass='{safe_ass}':fontsdir='{safe_dir}'"
-
-        # コメントアイコンを重ねる (ver3 resolve11 §5.6-5)。
-        # 現在フレームの 1 枚絵なので表示時間 (enable) は付けない。
-        icon_chains, _count, _groups = comment_decor.build_icon_chains(
-            items, self._eff_cfg, self._canvas[0], self._canvas[1],
-            in_label="[vsub]", out_label="[hqout]", with_enable=False)
+        # ④ 字幕とコメントアイコン。1 枚絵なので表示時間 (enable) は付けない。
+        chains.append(f"{current}{ass_chain}[hqsub]")
+        current = "[hqsub]"
+        icon_chains, _count, _groups = compositor.icon_chains(
+            items, self._eff_cfg, profile, current, "[hqicon]",
+            with_enable=False)
         if icon_chains:
-            chains.append(f"{current}{ass_chain}[vsub]")
             chains.extend(icon_chains)
-        else:
-            chains.append(f"{current}{ass_chain}[hqout]")
+            current = "[hqicon]"
+
+        # ⑤ 透かしはチェーンの**最後**。字幕・アイコンの上へ重ねる (ver5 resolve §3.1)
+        wm_args, wm_chains, current = compositor.watermark_chain(
+            self._settings, profile, current, "[hqwm]", input_count,
+            required=getattr(self, "_watermark_required", False))
+        if wm_chains:
+            input_args += wm_args
+            input_count += 1
+            chains.extend(wm_chains)
 
         cmd = [
             ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg), "-y", "-hide_banner",
             "-loglevel", "error",
             "-ss", f"{source_sec:.3f}", "-i", media.path,
         ]
-        cmd += extra_inputs
+        cmd += input_args
         cmd += ["-frames:v", "1", "-filter_complex", ";".join(chains),
-                "-map", "[hqout]", out_path]
+                "-map", current, out_path]
         try:
             result = subprocess.run(
                 cmd, capture_output=True, creationflags=no_window_creationflags())
@@ -1098,72 +1347,25 @@ class PreviewPanel(QWidget):
             return
         _HighQualityDialog(out_path, self).exec()
 
-    # 高精度プレビューへぼかしを足す (ver5 resolve4 §5.9)。
-    # 1 フレームぶんのマスクを PNG へ書き出し、書き出しと同じフィルタ
-    # (blur_overlay.build_chains) で合成する。マスクが無ければ何もしない。
-    def _hq_blur_chains(self, media, source_sec, in_label):
+    # 高精度プレビュー用に、1 フレームぶんのぼかしマスクを PNG へ書き出す。
+    # 合成そのものは compositor.blur_chains が行う (第 3 実装を作らないため / §1.1)。
+    # マスクが無い・作れないときは None を返し、ぼかしを省く。
+    def _hq_blur_mask(self, media, source_sec):
         preview = getattr(self, "_blur_preview", None)
         if preview is None:
-            return [], in_label
+            return None
         try:
             from PIL import Image                    # noqa: PLC0415 (任意依存)
 
-            from ...blur.config import config       # noqa: PLC0415
-            from ...modules import blur_overlay      # noqa: PLC0415
-
             mask = preview.mask(media.id, source_sec)
             if mask is None or mask.getbbox() is None:
-                return [], in_label                  # ぼかす所が無いフレーム
+                return None                          # ぼかす所が無いフレーム
             mask_path = os.path.join(self._work_dir, "preview_hq_mask.png")
             Image.fromarray(np.asarray(mask)).save(mask_path)
-            chains, out_label = blur_overlay.build_chains(
-                mask_path, in_label, "[hqblur]", self._canvas[0], self._canvas[1],
-                config(self._settings), prefix="hqbl")
-            return chains, out_label
+            return mask_path
         except Exception:                            # noqa: BLE001 (表示で落とさない)
             _logger.exception("高精度プレビューへぼかしを反映できませんでした")
-            return [], in_label
-
-    # 高精度プレビューへ画像・動画オーバーレイを足す (ver5 resolve4 §5.9)。
-    # 位置・大きさ・透明度は書き出し (renderer._video_filters) と同じ式で求める。
-    # 戻り値: (チェーン, 出力ラベル, 追加する -i 引数)
-    def _hq_overlay_chains(self, in_label, playhead):
-        chains = []
-        inputs = []
-        current = in_label
-        step = 0
-        timeline = self._controller.timeline
-        for clip in timeline.overlay_elements():
-            if isinstance(clip, SubtitleClip) or not clip.contains(playhead):
-                continue
-            media = timeline.media_by_id(clip.media_id)
-            if media is None or not os.path.exists(media.path or ""):
-                continue
-            index = 1 + step            # 入力 0 はベース映像。1 クリップにつき -i を 1 本足す
-            if media.is_image():
-                inputs += ["-i", media.path]
-            else:
-                offset = max(playhead - clip.timeline_start, 0.0)
-                inputs += ["-ss", f"{clip.source_in + offset:.3f}", "-i", media.path]
-
-            # 拡大率はキャンバス幅に対する比率 (renderer と同じ)
-            target_w = max(int(self._canvas[0] * float(clip.transform.scale or 1.0)), 2)
-            scale_chain = f"scale={target_w}:-2"
-            if float(clip.transform.opacity or 1.0) < 1.0:
-                scale_chain += (f",format=rgba,colorchannelmixer="
-                                f"aa={float(clip.transform.opacity):.3f}")
-            chains.append(f"[{index}:v]{scale_chain}[hqov{step}]")
-
-            # 正規化座標 (-1〜1・Y は上が正) を overlay の左上座標へ変換する
-            pos_x = (float(clip.transform.x or 0.0) + 1.0) * self._canvas[0] / 2.0
-            pos_y = (1.0 - float(clip.transform.y or 0.0)) * self._canvas[1] / 2.0
-            label = f"[hqv{step}]"
-            # 1 枚絵なので enable (表示時間) は付けない
-            chains.append(f"{current}[hqov{step}]overlay="
-                          f"{pos_x:.1f}-w/2:{pos_y:.1f}-h/2{label}")
-            current = label
-            step += 1
-        return chains, current, inputs
+            return None
 
     # ------------------------------------------------------------------
     # 後片付け
@@ -1183,6 +1385,24 @@ class PreviewPanel(QWidget):
         self._frame_worker.wait(2000)
         self._frame_source.close()
         self._audio_source.cleanup()
+
+
+# プロキシのタイルを FrameSource へ渡すための擬似 MediaRef (ver6 resolve3 §4.4)
+#
+# FrameSource が見るのは id / path / width と is_image() だけなので、
+# MediaRef を作らずこれで足りる。タイルは常に動画 (画像ではない)。
+class _TileMedia:
+
+    def __init__(self, media_id, path, width, height):
+        self.id = media_id
+        self.path = path
+        self.width = int(width)
+        self.height = int(height)
+        self.fps = 0.0
+        self.has_audio = True
+
+    def is_image(self):
+        return False
 
 
 # プレビューの QGraphicsView (右クリックメニューを親へ委譲する)
@@ -1219,8 +1439,8 @@ class _HighQualityDialog(QDialog):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
         note = QLabel(
-            tr("この画像は本番と同じ ASS 描画です。編集画面上の字幕は Qt による近似表示のため、"
-            "縁取りや影の見え方が異なります。"))
+            tr("この画像は本番と同じ経路 (切り抜き・ぼかし・ASS・コメントアイコン・透かし) で"
+            "原寸のまま描き直したものです。"))
         note.setWordWrap(True)
         theme.mark_note(note)
         layout.addWidget(note)

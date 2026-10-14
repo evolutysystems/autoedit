@@ -180,6 +180,22 @@ class FilterChainTest(unittest.TestCase):
         self.assertIn("crop=910:1078:500:0,scale=1080:1280", chain)
         self.assertIn("vstack=inputs=2", chain)
 
+    # ぼかし半径はキャンバス比で決まる (ver6 resolve3 §3.3)。
+    # 設定値の意味は「本番キャンバスに対する px」で、プロキシ (低解像度) では
+    # 同じ比率へ換算しないとプレビューのぼかしが本番より強く見える。
+    def test_boxblur_radius_follows_the_canvas_ratio(self):
+        layout = crop.make_layout(crop.MODE_SINGLE, [(420, 0, 1080, 1080)],
+                                  self.media, *_CANVAS, background=crop.BG_BLUR)
+
+        full = crop.filter_chain(layout, 1080, 1920, 60, self.cfg)
+        half = crop.filter_chain(layout, 540, 960, 60, self.cfg, scale=0.5)
+
+        self.assertIn("boxblur=20:2", full)
+        self.assertIn("boxblur=10:2", half)
+        # 既定 (scale 省略) は従来と 1 文字も変わらない
+        self.assertEqual(full, crop.filter_chain(layout, 1080, 1920, 60,
+                                                 self.cfg, scale=1.0))
+
     # crop の引数は整数であること (FFmpeg が小数を受け付けない)
     def test_integers(self):
         layout = crop.make_layout(crop.MODE_SINGLE, [(10.4, 20.6, 100.5, 200.5)],

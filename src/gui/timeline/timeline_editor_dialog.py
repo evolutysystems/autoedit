@@ -42,6 +42,7 @@ from ...version import __version__
 from .. import project_thumbnail, theme
 from ..color_field import ColorField
 from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
+from .proxy_manager import ProxyManager
 from ..subtitle_editor_dialog import RESOLVE_EXPORT_BUTTON_TEXT, run_resolve_export
 from .preview_items import native_scale
 from .preview_panel import PreviewPanel
@@ -107,6 +108,13 @@ class TimelineEditorDialog(QDialog):
 
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.timeline_changed.connect(self._on_timeline_changed)
+        # レンダ済みバー (どこが「出力と同じ絵」か) をルーラーへ出す (ver6 resolve3 §3.5)
+        if self.proxy.is_enabled() and self.proxy.coverage_bar_enabled():
+            self.proxy.coverage_changed.connect(self._update_coverage)
+            self.proxy.tile_ready.connect(lambda _index: self._update_coverage())
+            self._update_coverage()
+        # 「今出力したら透かしが入るか」をプレビューへ伝える (§4.5)
+        self._update_watermark_hint()
         # ぼかし対象の目印をプレビューへ出す (§5.7)。機能 OFF なら何も起きない。
         self.controller.playhead_moved.connect(self._update_blur_markers)
         self.controller.saved_state_changed.connect(self._update_window_title)
@@ -127,6 +135,10 @@ class TimelineEditorDialog(QDialog):
         upper = QSplitter(Qt.Horizontal)
         self.preview = PreviewPanel(self.controller, work_dir, asr_audio_path, parent=self)
         upper.addWidget(self.preview)
+        # プロキシ (ver6 resolve3)。設定が "off" / 作れない環境なら
+        # ProxyManager 側が縮退し、従来の近似プレビューのまま動く (§7)。
+        self.proxy = ProxyManager(self.controller, work_dir, parent=self)
+        self.preview.set_proxy_manager(self.proxy)
         self.inspector = _InspectorPanel(self.controller, parent=self)
         # 役割変更の結果 (トラック移動の可否) をプレビュー下へ出す (ver3 resolve11 §5.8)
         self.inspector.status_message.connect(self.preview.set_status)
@@ -1008,6 +1020,30 @@ class TimelineEditorDialog(QDialog):
             _logger.warning("最近使ったプロジェクトの記録に失敗しました (処理は続行します)")
 
     # ------------------------------------------------------------------
+    # プロキシ (ver6 resolve3)
+    # ------------------------------------------------------------------
+
+    # レンダ済みバーを塗り直す
+    def _update_coverage(self):
+        try:
+            self.timeline_panel.ruler.set_coverage(
+                self.proxy.coverage(), self.proxy.rendering_span())
+        except Exception:  # noqa: BLE001 (表示の更新で編集を止めない)
+            _logger.debug("レンダ済みバーを更新できませんでした")
+
+    # 「今出力したら透かしが入るか」を先読みしてプレビューへ伝える (§4.5)
+    #
+    # 出力時の判定はサーバーの予約応答で決まる (ver5 resolve §5.4) が、編集画面の
+    # 時点ではまだ予約していない。予約はポイントを消費するためプレビューでは行えない。
+    # **分からないときは必ず「入る」側に倒す。** 「入らないと思っていたら入っていた」が
+    # 最も損害の大きい失敗であり、renderer._confirm_blur_failure と同じ方針に揃える。
+    def _update_watermark_hint(self):
+        required = _watermark_hint(services_config.current_points())
+        self.preview.set_watermark_required(required)
+        if self.proxy.is_enabled():
+            self.proxy.set_watermark_required(required)
+
+    # ------------------------------------------------------------------
     # DaVinci Resolve 出力
     # ------------------------------------------------------------------
 
@@ -1111,7 +1147,46 @@ class TimelineEditorDialog(QDialog):
             self.timeline_panel.shutdown()
         except Exception:  # noqa: BLE001 (同上)
             _logger.exception("Timeline の後片付けに失敗しました")
+        try:
+            self.proxy.shutdown()
+        except Exception:  # noqa: BLE001 (同上)
+            _logger.exception("プロキシの後片付けに失敗しました")
         super().done(code)
+
+
+# プレビューで透かしを出すかを残高から先読みする (ver6 resolve3 §4.5)
+#
+# **ここは「予約の代わり」ではない。** 出力の可否はサーバーの応答だけで決める規約
+# (services/points.py の冒頭 R9) を崩さないよう、判定結果をプレビューの表示にだけ使う。
+#   ・ポイント機能が無い / 残高を一度も取れていない → True (安全側に倒す)
+#   ・サブスク (無制限) → False
+#   ・残高 0 → True
+#
+# 【限界】1 回ぶんの消費量はサーバーが予約時に決めるため、クライアントは知らない。
+#   そのため「残高は残っているが 1 件ぶんには足りない」場合だけは先読みを外し、
+#   プレビューに透かしが出ない。残高が 0 になった時点で必ず出る。
+#   通信はしない (last_balance = 最後に取れた値) ので編集画面を開くのを遅らせない。
+def _watermark_hint(points):
+    if points is None:
+        return True
+    try:
+        balance = points.last_balance()
+    except Exception:  # noqa: BLE001 (先読みの失敗で編集を止めない)
+        _logger.debug("透かしの先読みに失敗しました (安全側に倒します)")
+        return True
+    if not balance:
+        return True
+    if balance.get("unlimited"):
+        return False
+    available = balance.get("available")
+    if available is None:
+        available = balance.get("balance")
+    if available is None:
+        return True
+    try:
+        return int(available) <= 0
+    except (TypeError, ValueError):
+        return True
 
 
 # 文字入力欄にフォーカスがある間、登録済みショートカットをすべて無効化する
