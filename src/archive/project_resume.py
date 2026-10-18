@@ -9,11 +9,13 @@
 # (clip_writer.finish_clips) を通す。出力の作られ方は通常実行と変わらない。
 import os
 import tempfile
+import time
 
 from ..exceptions import InputError, PipelineCancelled
 from ..i18n import tr
 from ..modules import ffmpeg_runner, loudness_normalizer
 from ..services import points as points_service
+from ..services import telemetry
 from ..timeline import media_recovery, media_sidecar, project_io
 from ..timeline.builder import timeline_config
 from ..utils.logger import get_logger
@@ -189,27 +191,44 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
                              result_callback=None, relink_callback=None,
                              restore_path=None, points=None,
                              watermark_confirm_callback=None):
+    # ログ送信 (request1 / resolve1 §7.2 / §7.3)。projectId はプロジェクト
+    # ファイルに紐づけるため、再開を何度しても Projects は 1 行のままになる。
+    project_id = telemetry.register_project(None, settings, project_path=project_path)
+    started_at = telemetry.export_started(project_id, resumed=True)
     # 再開でも出力はできるため、通常実行と同じく 1 ジョブ 1 予約とする (ver5 resolve §3.2)
     reservation = points_service.reserve(
         points, points_service.JOB_ARCHIVE, points_service.OUTPUT_VIDEO)
     # 透かしが入るなら開始前に確認する (R12)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
         raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         outputs = _run_from_archive_project(
             project_path, settings, progress_cb, result_callback, relink_callback,
             restore_path, points_service.watermark_required(reservation))
-    except Exception:
+    except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 失敗・中断では消費しない (R6)
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, error=e)
         raise
 
     if outputs:
         points_service.commit(points, reservation)
+        _log_export(project_id, settings, started_at, True)
     else:
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
     return outputs
+
+
+# 再開からの出力 1 回分の結果をログへ積む (request1 / resolve1 §7.3)。
+def _log_export(project_id, settings, started_at, success, cancelled=False, error=None):
+    telemetry.export_finished(
+        project_id, success, (time.monotonic() - started_at) * 1000.0,
+        settings=settings, cancelled=cancelled)
+    if error is not None:
+        telemetry.report_error("project_resume", error)
 
 
 def _run_from_archive_project(project_path, settings, progress_cb=None,

@@ -489,6 +489,20 @@
         "activation_poll_sec": 3,
         "activation_timeout_sec": 180
     },
+    "telemetry": {
+        "enabled": true,
+        "send_errors": false,
+        "send_analytics": true,
+        "flush_on_startup": true,
+        "flush_after_export": true,
+        "max_requests_per_flush": 92,
+        "request_interval_ms": 200,
+        "sent_retention_days": 7,
+        "error_retention_days": 30,
+        "queue_limit_errors": 500,
+        "queue_limit_events": 5000,
+        "queue_limit_default": 1000
+    },
     "blur": {
         "enabled": true,
         "preview_marker": true,

@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime
 
 # パッケージ実行・単独スクリプト実行の両対応 (main.py と同方針)
@@ -36,6 +37,8 @@ if __package__ is None or __package__ == "":
         run_pipeline,
     )
     from src.services import config as services_config
+    from src.services import telemetry
+    from src.gui.log_workers import LogFlushWorker
     from src.settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -59,6 +62,7 @@ else:
         run_pipeline,
     )
     from ..services import config as services_config
+    from ..services import telemetry
     from ..settings.settings_window import (
         SettingsWindow,
         load_settings,
@@ -76,6 +80,7 @@ else:
     from . import theme
     from .archive_tab import ArchiveTabWidget
     from .file_drop_area import FileDropArea
+    from .log_workers import LogFlushWorker
     from .points_indicator import PointsIndicator, WatermarkConfirmBridge
     from .project_library_dialog import ProjectLibraryDialog
     from .project_resume_row import PROJECT_FILE_FILTER, confirm_project_kind
@@ -119,6 +124,10 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
 # 文言・× ボタン・実行ボタンはすべてこの選択を見る。
 _KIND_VIDEO = "video"
 _KIND_PROJECT = "project"
+
+# ログ送信を始めるまでの待ち (ミリ秒 / request1 / resolve1 §6.2)。
+# 起動直後と出力直後は利用者が次の操作をしている最中なので、少し待ってから始める。
+_LOG_FLUSH_DELAY_MS = 3000
 
 # D&D 領域の案内文と補足 (ver3 resolve15 C1 / C4)
 _DROP_PLACEHOLDER = "ドラッグ＆ドロップでファイルを選択"
@@ -1072,6 +1081,12 @@ class MainWindow(QWidget):
         # ポイント (ver5 resolve §5.4)。プロセス全体で 1 つだけ持ち、
         # 出力処理・残高表示・アカウントタブで共有する (§6.4 のリフレッシュ直列化)。
         self._points = services_config.shared_points(self._settings)
+        # ログ送信 (request1 / resolve1 §6)。停止要求を 1 箇所で受けるため、
+        # 画面と出力処理が同じ実体を見る。
+        self._log_sender = services_config.shared_log_sender(self._settings)
+        self._log_worker = None
+        # 起動時の 1 回目を 1 度だけ走らせるための印 (§13 Q1)
+        self._log_flush_started = False
         self._build_ui()
         # 言語切替の通知を購読する (ver8 resolve §5)。
         # メイン画面は起動中ずっと生きているため解除は要らない。
@@ -1172,6 +1187,9 @@ class MainWindow(QWidget):
         # 加入状態は残高の応答 (GET /api/points) だけで分かる。読む場所を増やさず、
         # インジケータが取った値を購読する (ver6 resolve2 §4.2)。
         self.points_indicator.balance_changed.connect(self._refresh_subscription_button)
+        # 起動時のログ送信は残高取得 (BalanceWorker) の後へ回す (resolve1 §13 Q1)。
+        # 起動直後に HTTP を 2 本並べない。
+        self.points_indicator.balance_changed.connect(self._on_balance_for_log_flush)
 
         # 表示言語の切替 (ver8 resolve §5)。設定ボタンと同じ帯の左端へ置く。
         # タブバーと同じ高さの左コーナーへ入れるため、設定ボタンと高さが揃う。
@@ -1303,16 +1321,56 @@ class MainWindow(QWidget):
     def _on_tab_running_changed(self, tab_key, running):
         if running:
             self._running_tabs.add(tab_key)
+            # 利用者の操作を優先する (request1 R3)。送信フェーズを打ち切り、
+            # sending に残った分は waiting へ戻る。
+            self._log_sender.request_stop()
         else:
             self._running_tabs.discard(tab_key)
             # 出力が終わると残高が動くため取り直す (ver5 resolve §5.6)
             self.points_indicator.refresh(force=True)
+            # 出力が終わって操作可能に戻ったのでログを送る (resolve1 §6.2 T2)
+            self._log_sender.allow()
+            if self._telemetry_config().get("flush_after_export", True):
+                QTimer.singleShot(_LOG_FLUSH_DELAY_MS, self._start_log_flush)
         self.settings_button.setEnabled(not self._running_tabs)
         # 実行中は加入状態を変えさせない (ver6 resolve2 §2.1)。
         # 走っている予約の透かし判定は予約時にサーバーが決めた値で固定されるため、
         # 途中で加入されると画面の表示と実際の出力が食い違う。
         self.subscription_button.setEnabled(
             not self._running_tabs and not self._subscription_kind)
+
+    # ===== ログ送信 (request1 / resolve1 §6) =====
+
+    def _telemetry_config(self):
+        config = self._settings.get("telemetry", {})
+        return config if isinstance(config, dict) else {}
+
+    # 残高が取れた (= 起動直後の通信が終わった) ので 1 回目を予約する。
+    # 残高は定期更新でも飛んでくるため、起動時の 1 回だけに絞る。
+    def _on_balance_for_log_flush(self, _balance):
+        if self._log_flush_started:
+            return
+        self._log_flush_started = True
+        if self._telemetry_config().get("flush_on_startup", True):
+            QTimer.singleShot(_LOG_FLUSH_DELAY_MS, self._start_log_flush)
+
+    # 送信ワーカーを最低優先度で起動する。
+    # 利用者が何か実行中なら始めない (始めても 1 件目で打ち切られる)。
+    def _start_log_flush(self):
+        if self._running_tabs or not self._log_sender.enabled:
+            return
+        if self._log_worker is not None and self._log_worker.isRunning():
+            return
+
+        self._log_sender.allow()
+        self._log_worker = LogFlushWorker(self._log_sender, parent=self)
+        self._log_worker.finished_with.connect(self._on_log_flush_finished)
+        self._log_worker.start_low()
+
+    # 送信結果は画面へ出さない。ログ送信の失敗は利用者の問題ではない。
+    def _on_log_flush_finished(self, result):
+        if result is not None and (result.sent or result.failed):
+            _logger.info("ログ送信: %s", result)
 
     # ===== 表示言語の切替 (ver8 resolve §5) =====
 
@@ -1457,6 +1515,7 @@ def _resolve_app_icon_path():
 
 # エントリーポイント
 def main():
+    started_at = time.monotonic()
     # 凍結配布物では twitch-dl を別バイナリにせず、本体exeを multi-call で twitchdl CLI として動かす。
     # これによりアップデート/インストール時に本体と一緒に twitch-dl も展開される (追加バイナリ不要 /
     # flow17 R3)。twitch_source が凍結時に [sys.executable, "__twitchdl__", ...] を起動する。
@@ -1476,6 +1535,9 @@ def main():
     # 表示言語を反映する (ver8 resolve §4)。
     # 画面を 1 つも作る前に当てることで、起動時から選ばれている言語で表示される。
     settings = load_settings()
+    # ログ送信 (request1 / resolve1 §6.2 T1)。画面を作る前にキューを用意し、
+    # 前回がクラッシュで終わっていればそれも記録する。送信はまだ行わない。
+    telemetry.configure(settings)
     i18n.apply(settings)
     # ガラスモーフィズムのテーマを適用する (ver3 resolve3 §5.9)。
     # QApplication へ 1 回当てるだけで、以後に作られるダイアログにも自動で効く。
@@ -1483,6 +1545,11 @@ def main():
     theme.apply(app, settings)
     window = MainWindow()
     window.show()
+    # 起動の記録 (セッション開始 + AppStart)。画面が出てから積む。
+    telemetry.app_started(startup_ms=(time.monotonic() - started_at) * 1000.0)
+    # 正常終了を記録する。ここを通らずに落ちた場合は、次回起動時に
+    # session.json が残っていることで crash として記録される (resolve1 §7.1)。
+    app.aboutToQuit.connect(telemetry.app_closing)
     # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)
     window.start_update_check()
     sys.exit(app.exec())

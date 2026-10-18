@@ -5,12 +5,14 @@
 #   ③ 出力先へ原子的に書き出す (一時ファイル→成功時 rename)。SRT サイドカーも併記。
 # 既存フロー (焼き込み・採点・パイプライン) には一切干渉しない読み取り専用機能。
 import os
+import time
 
 from ..archive import config as archive_config
 from ..exceptions import AutoEditError, ExportError
 from ..i18n import tr
 from ..modules import ffmpeg_runner, output_profile, subtitle_generator, watermark_overlay
 from ..services import points as points_service
+from ..services import telemetry
 from ..timeline import project_io
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
@@ -672,12 +674,22 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
         len(spec.get("titles", [])), spec.get("width"), spec.get("height"), spec.get("fps"),
     )
 
+    # ログ送信 (request1 / resolve1 §7.2 / §7.3)。元動画のパスで projectId を
+    # 決め、尺は spec が既に ffprobe した値を使う (再計測しない)。
+    source = spec.get("source") or {}
+    canvas = {"width": spec.get("width"), "height": spec.get("height")}
+    project_id = telemetry.register_project(
+        source.get("path"), settings, output_profile=canvas,
+        video_length=source.get("duration"))
+    started_at = telemetry.export_started(project_id)
+
     # ポイントの予約 (書き出しの開始時 / ver5 resolve §3.2)。
     # 残高が足りなくても書き出しは止めず、最上位レーンへ透かしクリップを足す (R4 / §5.5)。
     reservation = points_service.reserve(
         points, job_type, points_service.OUTPUT_RESOLVE_PROJECT)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
+        _log_export(project_id, canvas, cfg, started_at, False, cancelled=True)
         _logger.info("透かし入りでの書き出しを取りやめました: %s", dest_path)
         return None
     if points_service.watermark_required(reservation):
@@ -692,13 +704,15 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
                 tr("FCPXML の生成に失敗しました: {error}", error=e)) from e
 
         _atomic_write(dest_path, content)
-    except Exception:
+    except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 書き出せなかったら消費しない (R6)
         points_service.cancel(points, reservation)
+        _log_export(project_id, canvas, cfg, started_at, False, error=e)
         raise
 
     # 成果物ができてから確定する (R3)。SRT サイドカーは非致命のため待たない。
     points_service.commit(points, reservation)
+    _log_export(project_id, canvas, cfg, started_at, True)
     written = [dest_path]
 
     # SRT サイドカー (失敗しても FCPXML は出力済みのため非致命 / §7)
@@ -711,6 +725,16 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
     total = sum(c["duration"] for c in spec.get("clips", []))
     _logger.info("Resolve 出力完了: %s (タイムライン尺 %.2fs)", " / ".join(written), total)
     return written
+
+
+# Resolve 出力 1 回分の結果をログへ積む (request1 / resolve1 §7.3)。
+# 動画を書き出すわけではないため、codec には出力形式 (fcpxml) を入れる。
+def _log_export(project_id, canvas, cfg, started_at, success, cancelled=False, error=None):
+    telemetry.export_finished(
+        project_id, success, (time.monotonic() - started_at) * 1000.0,
+        output_profile=canvas, codec=cfg.get("format"), cancelled=cancelled)
+    if error is not None:
+        telemetry.report_error("resolve_export", error)
 
 
 # 透かしクリップを spec へ足し、座標をタイトルと同じ規約へ移す (ver5 resolve §5.5)。

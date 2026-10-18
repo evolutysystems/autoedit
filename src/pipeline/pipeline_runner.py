@@ -1,6 +1,7 @@
 # パイプラインオーケストレーション
 # 設計書 5.1 pipeline_runner.py に対応
 import os
+import time
 
 from ..exceptions import AutoEditError, InputError, PipelineCancelled
 from ..i18n import tr
@@ -15,6 +16,7 @@ from ..modules import (
     volume_analyzer,
 )
 from ..services import points as points_service
+from ..services import telemetry
 from ..settings.settings_window import save_settings
 from ..timeline import builder as timeline_builder
 from ..timeline import media_recovery, project_io, renderer
@@ -37,6 +39,16 @@ def _reserve(points, context):
         points, points_service.JOB_CLIP, points_service.OUTPUT_VIDEO)
     context.watermark_required = points_service.watermark_required(reservation)
     return reservation
+
+
+# 出力 1 本の結果をログへ積む (request1 / resolve1 §7.3)。
+# 成功・失敗・キャンセルのすべてで呼ぶ。例外は telemetry 側で握るため戻り値は見ない。
+def _log_export(context, settings, started_at, success, cancelled=False, error=None):
+    telemetry.export_finished(
+        context.project_id, success, (time.monotonic() - started_at) * 1000.0,
+        settings=settings, output_profile=context.output_profile, cancelled=cancelled)
+    if error is not None:
+        telemetry.report_error("pipeline_runner", error)
 
 
 # 1クリック実行のエントリ
@@ -66,11 +78,17 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
                                blur_failure_callback=blur_failure_callback)
     # 出力プロファイル(縦/横)を入力動画から1回だけ解決し、以降の全工程で共有する (request14)
     context.output_profile = output_profile.resolve_output_profile(input_path, settings)
+    # ログ送信 (request1 / resolve1 §7.2)。projectId を決めて Projects を積む。
+    # 送信は行わず、ファイルを 1 本書くだけなのでオフラインでも失敗しない。
+    context.project_id = telemetry.register_project(
+        input_path, settings, output_profile=context.output_profile)
+    started_at = telemetry.export_started(context.project_id)
     # ポイントの予約 (出力の開始時 / ver5 resolve §3.2)
     reservation = _reserve(points, context)
     # 透かしが入るなら開始前に確認する (R12)。やめるなら消費せず中断する。
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, cancelled=True)
         raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         if use_timeline:
@@ -82,20 +100,24 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
         _logger.info("パイプライン正常終了: %s", output_path)
         # 成果物ができてから確定する (R3)
         points_service.commit(points, reservation)
+        _log_export(context, settings, started_at, True)
         return output_path
 
     except PipelineCancelled:
         # ユーザーが字幕編集画面でキャンセルした場合 (異常終了ではない)
         _logger.info("パイプライン中断: ユーザーによるキャンセル")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, cancelled=True)
         raise
-    except AutoEditError:
+    except AutoEditError as e:
         _logger.exception("パイプライン中断: 既知エラー")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, error=e)
         raise
-    except Exception:
+    except Exception as e:  # noqa: BLE001 (記録して再送出する)
         _logger.exception("パイプライン中断: 想定外エラー")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, error=e)
         raise
     finally:
         _cleanup(context)
@@ -168,10 +190,17 @@ def run_from_project(project_path, settings, progress_cb=None,
     context.project_created_at = meta.get("created_at")
     context.timeline = timeline
 
+    # ログ送信 (request1 / resolve1 §7.2)。projectId はプロジェクトファイルに
+    # 紐づけて覚えるため、再開を何度しても Projects は 1 行のまま (upsert) になる。
+    context.project_id = telemetry.register_project(
+        input_path, settings, project_path=project_path,
+        output_profile=context.output_profile)
+    started_at = telemetry.export_started(context.project_id, resumed=True)
     # 再開でも出力は 1 本できるため、通常実行と同じく予約する (ver5 resolve §3.2)
     reservation = _reserve(points, context)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, cancelled=True)
         raise PipelineCancelled(tr("透かし入りでの出力を取りやめました"))
     try:
         # ① 素材の復旧 (足りなければ元動画から作り直す / 再リンクを求める)
@@ -194,19 +223,23 @@ def run_from_project(project_path, settings, progress_cb=None,
         output_path = output_writer.run(context)
         _logger.info("再編集の書き出し正常終了: %s", output_path)
         points_service.commit(points, reservation)
+        _log_export(context, settings, started_at, True)
         return output_path
 
     except PipelineCancelled:
         _logger.info("再編集を中断: ユーザーによるキャンセル")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, cancelled=True)
         raise
-    except AutoEditError:
+    except AutoEditError as e:
         _logger.exception("再編集を中断: 既知エラー")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, error=e)
         raise
-    except Exception:
+    except Exception as e:  # noqa: BLE001 (記録して再送出する)
         _logger.exception("再編集を中断: 想定外エラー")
         points_service.cancel(points, reservation)
+        _log_export(context, settings, started_at, False, error=e)
         raise
     finally:
         _cleanup(context)

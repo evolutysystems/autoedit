@@ -10,6 +10,7 @@ import copy
 import os
 import shutil
 import tempfile
+import time
 
 from ..i18n import tr
 from ..modules import (
@@ -26,6 +27,7 @@ from ..modules import (
 from ..modules.subtitle_generator import _format_ass_time, _hex_to_ass_color
 from ..pipeline.pipeline_context import PipelineContext
 from ..services import points as points_service
+from ..services import telemetry
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline import renderer
 from ..utils.logger import get_logger
@@ -688,29 +690,46 @@ def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
 # 戻り値: 出力ファイルパスの一覧 (結合時は [..., 結合1本]、非結合時は個別クリップ群)。
 def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
                 curve=None, points=None, watermark_confirm_callback=None):
+    # ログ送信 (request1 / resolve1 §7.2 / §7.3)
+    project_id = telemetry.register_project(input_path, settings)
+    started_at = telemetry.export_started(project_id)
     # 予約は 1 回の出力操作につき 1 本。出力本数が何本でも 100pt である (ver5 resolve §2.5)。
     reservation = points_service.reserve(
         points, points_service.JOB_ARCHIVE, points_service.OUTPUT_VIDEO)
     # 透かしが入るなら開始前に確認する (R12)
     if not points_service.confirmed(reservation, watermark_confirm_callback):
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
         _logger.info("透かし入りでの出力を取りやめました")
         return []
     try:
         outputs = _write_clips(input_path, settings, clips, progress_cb, result_callback,
                                curve, points_service.watermark_required(reservation))
-    except Exception:
+    except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 失敗・中断では消費しない (R6)
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, error=e)
         raise
 
     if outputs:
         # 成果物ができてから確定する (R3)
         points_service.commit(points, reservation)
+        _log_export(project_id, settings, started_at, True)
     else:
         # 結果画面でのキャンセル / 出力 0 件
         points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
     return outputs
+
+
+# 切り抜き出力 1 回分の結果をログへ積む (request1 / resolve1 §7.3)。
+# 出力本数が何本でも「1 回の出力操作」として 1 件だけ残す (予約と同じ数え方)。
+def _log_export(project_id, settings, started_at, success, cancelled=False, error=None):
+    telemetry.export_finished(
+        project_id, success, (time.monotonic() - started_at) * 1000.0,
+        settings=settings, cancelled=cancelled)
+    if error is not None:
+        telemetry.report_error("clip_writer", error)
 
 
 def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,

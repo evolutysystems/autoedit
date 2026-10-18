@@ -888,6 +888,33 @@ DEFAULT_SETTINGS = {
         # 支払いの反映待ちの上限 (秒)
         "activation_timeout_sec": 180,
     },
+    # クライアント側ログ送信 (request1 / resolve1 §10)。設定画面には出さない。
+    #
+    # 【重要】入れ子は作らない (_merge_with_defaults が入れ子の欠落キーを
+    #   補完しないため)。上限値は queue_limit_* で平らに持つ。
+    #
+    # send_errors の既定は false。例外メッセージのマスク (resolve1 §8) は
+    # 実装済みだが、収集項目をプライバシーポリシーへ明記するまで送らない
+    # (resolve1 §12 P3 / §13 Q5)。
+    "telemetry": {
+        "enabled": True,
+        "send_errors": False,
+        "send_analytics": True,
+        # 起動時 (残高取得の後) に送る / 出力が終わって操作可能に戻ったら送る
+        "flush_on_startup": True,
+        "flush_after_export": True,
+        # 1 回の送信で投げるリクエスト数の上限。受信系のレート制限は 120 本/分。
+        "max_requests_per_flush": 92,
+        # 1 件ごとに空ける間隔 (ミリ秒)。回線と CPU を利用者へ譲るため。
+        "request_interval_ms": 200,
+        # 送信後 / 恒久的失敗の保持日数
+        "sent_retention_days": 7,
+        "error_retention_days": 30,
+        # 送信待ちに溜めてよい件数 (溢れたら古いものから捨てる)
+        "queue_limit_errors": 500,
+        "queue_limit_events": 5000,
+        "queue_limit_default": 1000,
+    },
     # トラッキングぼかし (ver5 resolve8 §7)。
     # 既定は無効。有効にしたときだけ追従・マスク生成・焼き込みが走る (R14)。
     # 設定画面に出すのは「使うかどうか」と見え方だけで、モデルやしきい値は出さない。

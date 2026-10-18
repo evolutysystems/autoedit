@@ -2,8 +2,10 @@
 # 設計書 4. クラス構成 - PipelineContext に対応
 import os
 import tempfile
+import time
 
 from ..i18n import tr
+from ..services import telemetry
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -49,6 +51,12 @@ class PipelineContext:
         self._current_video_path = input_path
         self.intermediate_paths = {}
         self.output_path = None
+
+        # クライアント側ログ送信 (request1 / resolve1 §7.6)。
+        # project_id は出力の開始時に telemetry.register_project が決める。
+        # 未設定 (CLI / テスト / 送信無効) のときは工程ログを積まない。
+        self.project_id = None
+        self._step_pending = None
 
         # 出力プロファイル (縦/横の判定結果とキャンバス寸法 / request14)
         # パイプライン開始時に resolve_output_profile で解決して設定する。
@@ -126,6 +134,10 @@ class PipelineContext:
 
     # 工程開始を通知して進捗バーを進める
     def begin_step(self, label):
+        # 工程の所要時間を測る (ProcessingLogs / resolve1 §7.6)。
+        # 完了しないまま次が始まった場合は、前の工程を失敗として残す。
+        self._finish_step(success=False)
+        self._step_pending = (label, time.monotonic())
         self.current_step += 1
         ratio = (self.current_step - 1) / max(self.total_steps, 1)
         self.progress_callback(ratio, tr(
@@ -134,6 +146,7 @@ class PipelineContext:
 
     # 工程完了通知
     def end_step(self, label):
+        self._finish_step(success=True, label=label)
         ratio = self.current_step / max(self.total_steps, 1)
         self.progress_callback(ratio, tr(
             "[{step}/{total}] {label} 完了",
@@ -156,6 +169,8 @@ class PipelineContext:
 
     # 作業ディレクトリの後処理 (パイプライン終了時に一時ファイルを削除する)
     def cleanup(self):
+        # 中断した工程を失敗として残す (例外で end_step を通らなかった分)
+        self._finish_step(success=False)
         # 保持していた Resolve 出力用の編集点を破棄する (resolve20 §5.3 寿命管理)
         self.clear_keep_segments()
         # Timeline と認識用音声も同じ寿命で破棄する (ver3 / 回答 Q10)
@@ -176,6 +191,19 @@ class PipelineContext:
                     os.remove(path)
             except OSError:
                 _logger.warning("一時ファイル削除に失敗: %s", path)
+
+    # 測っていた工程を 1 件の処理ログとして積む (ProcessingLogs / resolve1 §7.6)。
+    # 例外は telemetry 側で握るため、ここでは何も確認しない。
+    def _finish_step(self, success, label=None):
+        pending = self._step_pending
+        self._step_pending = None
+        if not pending:
+            return
+
+        started_label, started_at = pending
+        telemetry.processing_finished(
+            self.project_id, label or started_label,
+            (time.monotonic() - started_at) * 1000.0, success)
 
 
 # 進捗コールバック未指定時のデフォルト動作

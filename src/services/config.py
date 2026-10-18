@@ -3,6 +3,7 @@
 # ハードコードを避け、setting.json の api セクションを唯一の出どころとする。
 import threading
 
+from .log_sender import LogSender
 from .points import PointsService
 from .stretheus_auth import StretheusAuth
 
@@ -32,11 +33,17 @@ def create_points(settings, auth=None, store_dir=None):
     return PointsService(auth or create_auth(settings), settings, store_dir=store_dir)
 
 
+# 設定から LogSender を作る (request1 / resolve1 §4.1)。
+# 認証を共有するため、既にある StretheusAuth を渡すこと。
+def create_log_sender(settings, auth=None, queue=None):
+    return LogSender(auth or create_auth(settings), settings, queue=queue)
+
+
 # ---- プロセス全体で 1 つだけ持つ実体 (GUI 用) --------------------------------
 # リフレッシュの直列化はインスタンス内のロックで行うため、画面・出力処理・
 # 残高表示がそれぞれ別の実体を持つと直列化が効かない (§6.4)。
 # CLI / テストはここを使わず、必要なら create_auth / create_points を直接呼ぶ。
-_shared = {"auth": None, "points": None}
+_shared = {"auth": None, "points": None, "log_sender": None}
 _shared_lock = threading.Lock()
 
 
@@ -58,6 +65,24 @@ def shared_points(settings):
         return _shared["points"]
 
 
+# 共有の LogSender (request1 / resolve1 §6)。停止要求を 1 箇所で受けるため、
+# 画面と出力処理が同じ実体を見る必要がある。認証も残高表示と共有する。
+def shared_log_sender(settings):
+    with _shared_lock:
+        if _shared["log_sender"] is None:
+            if _shared["auth"] is None:
+                _shared["auth"] = create_auth(settings)
+            _shared["log_sender"] = LogSender(_shared["auth"], settings)
+        return _shared["log_sender"]
+
+
+# 既に作られている共有 LogSender を返す (無ければ None)。
+# 出力処理から「送信をいま止めて」と伝えるために使う。
+def current_log_sender():
+    with _shared_lock:
+        return _shared["log_sender"]
+
+
 # 既に作られている共有 PointsService を返す (無ければ None)。
 # 画面から直接書き出す経路 (Resolve 出力) で使う。GUI を立ち上げていない
 # 呼び出し (CLI / テスト) では None になり、ポイント処理を通らない。
@@ -71,3 +96,4 @@ def reset_shared():
     with _shared_lock:
         _shared["auth"] = None
         _shared["points"] = None
+        _shared["log_sender"] = None
