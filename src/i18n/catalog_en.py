@@ -631,6 +631,7 @@ CATALOG = {
     "採点する動画を選択": "Select a video to score",
     "採点する動画ファイルを選択、または「参照...」": "Select a video file to score, or use \"Browse...\"",
     "採点グラフ": "Score graph",
+    "採点グラフの表示を切り替えます": "Show or hide the score graph",
     "採点グラフ (縦=スコア / 横=時間[秒]・マーカ=TOP5)": "Score graph (vertical = score / horizontal = time [s], markers = top 5)",
     "採点上位の切り抜き候補です。使用する候補にチェックを入れ、\n「完了」で切り抜きと字幕焼き込みを開始します。": "These are the top-scoring clip candidates. Check the ones you want to use,\nthen press \"Finish\" to start clipping and burning in subtitles.",
     "採点中…": "Scoring…",

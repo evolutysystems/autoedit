@@ -34,7 +34,6 @@ from ...archive import timeline_builder as archive_timeline
 from ...export import resolve_export
 from ...services import config as services_config
 from ...timeline import project_io
-from ...settings.settings_window import save_settings
 from ...utils.logger import get_logger
 from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from ..score_graph_widget import ScoreGraphWidget
@@ -127,6 +126,12 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
 
         self._dock_host = host
         self._restore_dock_state(ui_cfg)
+        # 記憶した配置に「閉じた」状態が入っていても採点グラフは出し直す
+        # (ver8 resolve2 §3-1)。閉じたまま覚えると、出し直す口が
+        # 画面のどこにも無くなってしまうため。
+        if bool(ui_cfg["archive_graph_dock_always_show"]):
+            self.graph_dock.show()
+        self._bind_graph_toggle()
         return host
 
     def _decide_button_text(self):
@@ -230,6 +235,15 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             tr("入力するとクリップ先頭にイントロカード、本編に左上タグが付きます"))
         self.theme_edit.editingFinished.connect(self._on_theme_changed)
         layout.addWidget(self.theme_edit, 1)
+
+        # 採点グラフ (ドック) の表示切替 (ver8 resolve2 §3-2)。
+        # ドックは × で閉じられるため、1 クリックで出し直せる口を
+        # 常に見えるクリップバーへ置く。押下状態は実際の表示と同期する。
+        self.graph_toggle = QPushButton(tr("採点グラフ"))
+        self.graph_toggle.setCheckable(True)
+        self.graph_toggle.setChecked(True)
+        self.graph_toggle.setAutoDefault(False)
+        layout.addWidget(self.graph_toggle)
         return bar
 
     # 画面が見せるセクション一覧 (ver3 resolve13 §3-6)
@@ -557,6 +571,29 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     # ドック配置の保存・復元 (§7)
     # ------------------------------------------------------------------
 
+    # クリップバーのトグルとドックの表示状態をつなぐ (ver8 resolve2 §3-2)
+    #
+    # ドック側の toggleViewAction を介すため、× で閉じた・ショートカットで
+    # 消した・配置を復元した、のどの経路でもボタンの押下状態が実表示と一致する。
+    # setChecked / setVisible は値が変わるときだけ通知するので循環しない。
+    def _bind_graph_toggle(self):
+        self.graph_toggle.setChecked(self.graph_dock.isVisible())
+        self.graph_dock.toggleViewAction().toggled.connect(
+            self.graph_toggle.setChecked)
+        self.graph_toggle.toggled.connect(self.graph_dock.setVisible)
+        key = str(self.controller.cfg["shortcuts"].get("toggle_score_graph", ""))
+        tip = tr("採点グラフの表示を切り替えます")
+        self.graph_toggle.setToolTip("%s (%s)" % (tip, key) if key else tip)
+
+    # 採点グラフの表示切替キー (ver8 resolve2 §3-3)。
+    # 基底のフック経由で登録するため、文字入力中は無効化される。
+    def _register_extra_shortcuts(self, bind):
+        bind("toggle_score_graph", self._toggle_graph_dock)
+
+    # ドックの表示 / 非表示を 1 打鍵で入れ替える (ボタン側は結線で追従する)
+    def _toggle_graph_dock(self):
+        self.graph_dock.setVisible(not self.graph_dock.isVisible())
+
     def _restore_dock_state(self, ui_cfg):
         state = str(ui_cfg.get("archive_dock_state") or "")
         if not state or self._dock_host is None:
@@ -569,19 +606,21 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         if not self._dock_host.restoreState(raw):
             _logger.info("ドック配置を復元できなかったため既定配置にします")
 
-    def _save_dock_state(self):
+    # 閉じるときに覚える派生画面ぶんの状態 = 採点グラフのドック配置。
+    # 画面の大きさ・位置と同じ 1 回の保存に相乗りする (ver8 resolve3 §3-3)。
+    def _collect_window_state(self, store):
         if self._dock_host is None:
-            return
+            return False
         try:
             state = base64.b64encode(
                 bytes(self._dock_host.saveState())).decode("ascii")
-            ui_cfg = self._settings.setdefault("timeline", {}).setdefault("ui", {})
-            if ui_cfg.get("archive_dock_state") == state:
-                return
-            ui_cfg["archive_dock_state"] = state
-            save_settings(self._settings)
         except Exception:  # noqa: BLE001 (配置の記憶に失敗しても画面は閉じる)
             _logger.exception("ドック配置の保存に失敗しました (処理は続行します)")
+            return False
+        if store.get("archive_dock_state") == state:
+            return False
+        store["archive_dock_state"] = state
+        return True
 
     # ------------------------------------------------------------------
     # 結果・終了
@@ -639,10 +678,6 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         if self._save_enabled:
             self._discard_autosave()
         super(TimelineEditorDialog, self).accept()
-
-    def done(self, code):
-        self._save_dock_state()
-        super().done(code)
 
 
 

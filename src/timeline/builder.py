@@ -75,7 +75,34 @@ _DEFAULT_SHORTCUTS = {
     # 手で書いても Ctrl+Shift+V は復活しない。
     "copy": "Ctrl+C",
     "paste": "Ctrl+V",
+    # 採点グラフ (アーカイブ用画面のドック) の表示切替 (ver8 resolve2 §3-3)
+    "toggle_score_graph": "G",
 }
+
+# 画面の大きさ・位置の記憶 (画面の種別 → saveGeometry() の base64) を検証して返す。
+# 読めない値は捨てる (記憶なし = setting.json の既定サイズで開く / ver8 resolve3 §3-1)。
+def _geometry_store(value):
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): state for key, state in value.items()
+            if key and isinstance(state, str) and state}
+
+
+# 分割位置の記憶 (画面の種別 → 分割の名前 → saveState() の base64) を検証して返す。
+# 読めない値は捨てる (記憶なし = split_ratio から組んだ既定 / ver8 resolve4 §3-1)。
+def _splitter_store(value):
+    if not isinstance(value, dict):
+        return {}
+    cleaned = {}
+    for key, states in value.items():
+        if not key or not isinstance(states, dict):
+            continue
+        rows = {str(name): state for name, state in states.items()
+                if name and isinstance(state, str) and state}
+        if rows:
+            cleaned[str(key)] = rows
+    return cleaned
+
 
 # キー割り当てを既定で補完する (欠落キーは既定へ戻す)
 def _shortcut_config(values):
@@ -367,6 +394,22 @@ def timeline_config(settings):
             "archive_clip_selector_width_px": _positive_int(
                 ui.get("archive_clip_selector_width_px"), 260),
             "archive_dock_state": str(ui.get("archive_dock_state", "") or ""),
+            # 記憶した配置が「閉じた」状態でも採点グラフを出し直すか
+            # (ver8 resolve2 §3-1)。False にすると閉じたままを覚える。
+            "archive_graph_dock_always_show": bool(
+                ui.get("archive_graph_dock_always_show", True)),
+            # 画面の大きさ・位置・表示していたモニターの記憶 (ver8 resolve3 §3-1)。
+            # false にすると毎回 window_width / window_height で開く。
+            "remember_window_geometry": bool(
+                ui.get("remember_window_geometry", True)),
+            "window_geometry": _geometry_store(ui.get("window_geometry")),
+            # 分割位置の記憶 (ver8 resolve4 §3-1)。覚えるかは
+            # remember_window_geometry と同じスイッチで決める。
+            "splitter_state": _splitter_store(ui.get("splitter_state")),
+            # 復元した窓を「画面内にある」と見なす最小の見え幅・高さ。
+            # これ未満しか見えないときは主モニターの中央へ戻す (§3-2)。
+            "window_min_visible_px": _positive_int(
+                ui.get("window_min_visible_px"), 120),
             # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §5.5)
             "subtitle_color_swatch_width_px": _positive_int(
                 ui.get("subtitle_color_swatch_width_px"), 28),

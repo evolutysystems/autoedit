@@ -470,6 +470,16 @@ DEFAULT_SETTINGS = {
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
             "archive_dock_state": "",
+            # 閉じた状態を覚えていても採点グラフを出し直す (ver8 resolve2 §3-1)
+            "archive_graph_dock_always_show": True,
+            # Timeline 編集画面の大きさ・位置・モニターを覚える (ver8 resolve3 §3-1)。
+            # window_geometry は画面の種別 ("clip"/"archive") ごとの控え。
+            "remember_window_geometry": True,
+            "window_geometry": {},
+            # 分割位置の控え (種別 → "main"/"upper" / ver8 resolve4 §3-1)
+            "splitter_state": {},
+            # 復元した窓がこれ未満しか見えないときは主モニターへ戻す (§3-2)
+            "window_min_visible_px": 120,
             # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §7)
             "subtitle_color_swatch_width_px": 28,
         },
@@ -599,6 +609,8 @@ DEFAULT_SETTINGS = {
             # 貼り付けは 1 種類だけ (Ctrl+Shift+V は割り当てない)。
             "copy": "Ctrl+C",
             "paste": "Ctrl+V",
+            # 採点グラフの表示切替 (ver8 resolve2 §3-3)
+            "toggle_score_graph": "G",
         },
         # 貼り付けの方針 (ver3 resolve10 §7)
         "paste": {

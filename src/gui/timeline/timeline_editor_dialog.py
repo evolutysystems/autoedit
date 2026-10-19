@@ -4,12 +4,19 @@
 #
 # 現行の字幕編集画面 (SubtitleEditorDialog) は削除せず残してあり、
 # setting.json の timeline.enabled=false でそちらへ戻せる (R2)。
+import base64
 import os
 import shutil
 from datetime import datetime
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
+from PySide6.QtCore import QByteArray, QObject, QPoint, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import (
+    QFont,
+    QFontDatabase,
+    QGuiApplication,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -87,7 +94,9 @@ class TimelineEditorDialog(QDialog):
         # 保存 UI を出すか (アーカイブ用は素材が一時ファイルのため出さない / resolve7 §3-6)
         self._save_enabled = (self._project_save_enabled()
                               and bool(self._project_cfg["save_button"]))
-        self.resize(ui_cfg["window_width"], ui_cfg["window_height"])
+        # 前回閉じたときの大きさ・位置・表示していたモニターで開く
+        # (ver8 resolve3 §3-1)。記憶が無ければ setting.json の既定サイズ。
+        self._restore_geometry(ui_cfg)
 
         self._build_ui(work_dir, asr_audio_path, ui_cfg)
         self._register_shortcuts()
@@ -145,6 +154,8 @@ class TimelineEditorDialog(QDialog):
         upper.addWidget(self.inspector)
         upper.setStretchFactor(0, 4)
         upper.setStretchFactor(1, 1)
+        # 分割位置を覚えるため手元に持つ (ver8 resolve4 §3-1)
+        self._upper_splitter = upper
 
         # 下部: Timeline
         self.timeline_panel = TimelinePanel(self.controller, parent=self)
@@ -155,6 +166,9 @@ class TimelineEditorDialog(QDialog):
         ratio = float(ui_cfg["split_ratio"])
         self._splitter.setStretchFactor(0, max(int(ratio * 100), 1))
         self._splitter.setStretchFactor(1, max(int((1 - ratio) * 100), 1))
+        # 前回の分割位置 (プレビュー / Timeline・プレビュー / インスペクタ) を戻す。
+        # 記憶が無ければ split_ratio から組んだ既定のまま (ver8 resolve4 §3-1)。
+        self._restore_splitters(ui_cfg)
 
         # 主要部 (プレビュー・インスペクタ・Timeline) を 1 つの器へまとめてから置く。
         # 派生画面がこの器を包んだり (_wrap_content)、上へ行を足したり
@@ -280,6 +294,12 @@ class TimelineEditorDialog(QDialog):
         media = timeline.media_by_id(str(source.get("media_id", "") or ""))
         return [media] if media is not None else []
 
+    # 派生画面だけで使うショートカットを足すフック (ver8 resolve2 §3-3)。
+    # bind(action, handler) は setting.json の timeline.shortcuts から
+    # キー割り当てを引いて登録する (未割り当て・不正値なら何もしない)。
+    def _register_extra_shortcuts(self, bind):
+        return None
+
     # ------------------------------------------------------------------
     # ショートカット (§6.6 / §6.7)
     # ------------------------------------------------------------------
@@ -348,6 +368,10 @@ class TimelineEditorDialog(QDialog):
         if self._save_enabled:
             bind("save", lambda: self.save_project())
             bind("save_as", lambda: self.save_project(ask=True))
+
+        # 派生画面が足すショートカット (アーカイブ用の採点グラフ切替など)。
+        # guard を作る前に通すことで、文字入力中の無効化も同じ扱いになる。
+        self._register_extra_shortcuts(bind)
 
         self._shortcut_guard = _ShortcutGuard(registered, self)
 
@@ -1020,6 +1044,144 @@ class TimelineEditorDialog(QDialog):
             _logger.warning("最近使ったプロジェクトの記録に失敗しました (処理は続行します)")
 
     # ------------------------------------------------------------------
+    # 画面の大きさ・位置・分割位置の記憶 (ver8 resolve3 / resolve4)
+    # ------------------------------------------------------------------
+
+    # 記憶を分ける鍵。クリップ用とアーカイブ用では要る広さが違うため
+    # (アーカイブ用は採点グラフのドックを載せる)、種別ごとに別で覚える。
+    def _geometry_key(self):
+        return self._project_kind()
+
+    # 前回の大きさ・位置・モニターを復元する (§3-1)。
+    #
+    # saveGeometry() の控えにはどのモニターに居たか・最大化していたかも
+    # 入るため、マルチディスプレイでも開いていた側へ戻る。
+    # 記憶が無い・読めない・復元できないときは既定サイズで開く。
+    def _restore_geometry(self, ui_cfg):
+        self.resize(ui_cfg["window_width"], ui_cfg["window_height"])
+        if not bool(ui_cfg["remember_window_geometry"]):
+            return
+        state = str((ui_cfg["window_geometry"] or {}).get(
+            self._geometry_key(), "") or "")
+        if not state:
+            return
+        try:
+            raw = QByteArray(base64.b64decode(state.encode("ascii")))
+        except (ValueError, UnicodeEncodeError):
+            _logger.warning("保存された画面の大きさを読めないため既定で開きます")
+            return
+        if not self.restoreGeometry(raw):
+            _logger.info("画面の大きさを復元できなかったため既定で開きます")
+            self.resize(ui_cfg["window_width"], ui_cfg["window_height"])
+            return
+        self._pull_into_screen(ui_cfg)
+
+    # 復元した位置が今あるモニターから外れていたら主モニターの中央へ戻す。
+    #
+    # 外部モニターを外した・解像度を変えた後に画面外へ開くと、窓を掴めず
+    # 編集できなくなるため。端が少しかかっているだけでも掴めないので、
+    # 「見えている幅と高さ」で判定する。
+    def _pull_into_screen(self, ui_cfg):
+        margin = max(int(ui_cfg["window_min_visible_px"]), 1)
+        frame = self.frameGeometry()
+        for screen in QGuiApplication.screens():
+            shown = screen.availableGeometry().intersected(frame)
+            if shown.width() >= margin and shown.height() >= margin:
+                return
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        self.resize(self.size().boundedTo(available.size()))
+        size = self.frameGeometry().size()
+        self.move(available.center()
+                  - QPoint(size.width() // 2, size.height() // 2))
+        _logger.info(
+            "前回の画面位置が今のモニター構成から外れているため主モニターで開きます")
+
+    # 閉じるときに覚える画面の状態を 1 回の保存でまとめて書く (§3-3)。
+    #
+    # 大きさ・位置 (この画面) とドック配置 (アーカイブ用) は同じ setting.json へ
+    # 書くため、閉じるたびに 2 度書かないよう 1 つにまとめる。
+    def _save_window_state(self):
+        try:
+            store = self._settings.setdefault("timeline", {}).setdefault("ui", {})
+            changed = self._collect_geometry(store)
+            if self._collect_splitters(store):
+                changed = True
+            if self._collect_window_state(store):
+                changed = True
+            if changed:
+                save_settings(self._settings)
+        except Exception:  # noqa: BLE001 (記憶に失敗しても画面は閉じる)
+            _logger.exception("画面の状態の保存に失敗しました (処理は続行します)")
+
+    # 大きさ・位置・モニターを base64 で控える。書き換えたら True。
+    def _collect_geometry(self, store):
+        if not bool(self.controller.cfg["ui"]["remember_window_geometry"]):
+            return False
+        state = base64.b64encode(bytes(self.saveGeometry())).decode("ascii")
+        saved = store.get("window_geometry")
+        saved = dict(saved) if isinstance(saved, dict) else {}
+        if saved.get(self._geometry_key()) == state:
+            return False
+        saved[self._geometry_key()] = state
+        store["window_geometry"] = saved
+        return True
+
+    # 覚える分割 ("main" = プレビュー / Timeline, "upper" = プレビュー / インスペクタ)
+    def _splitters(self):
+        return {"main": self._splitter, "upper": self._upper_splitter}
+
+    # 前回の分割位置を戻す (ver8 resolve4 §3-1)。
+    #
+    # 窓の大きさを先に復元してあるため (resolve3 §3-1)、控えたピクセル幅が
+    # そのまま同じ見た目になる。読めない控えは捨てて既定の比率のままにする。
+    def _restore_splitters(self, ui_cfg):
+        if not bool(ui_cfg["remember_window_geometry"]):
+            return
+        saved = (ui_cfg["splitter_state"] or {}).get(self._geometry_key()) or {}
+        for name, splitter in self._splitters().items():
+            state = str(saved.get(name, "") or "")
+            if not state:
+                continue
+            try:
+                raw = QByteArray(base64.b64decode(state.encode("ascii")))
+            except (ValueError, UnicodeEncodeError):
+                _logger.warning(
+                    "保存された分割位置を読めないため既定にします: %s", name)
+                continue
+            if not splitter.restoreState(raw):
+                _logger.info("分割位置を復元できなかったため既定にします: %s", name)
+
+    # 分割位置を base64 で控える。書き換えたら True。
+    def _collect_splitters(self, store):
+        if not bool(self.controller.cfg["ui"]["remember_window_geometry"]):
+            return False
+        saved = store.get("splitter_state")
+        saved = dict(saved) if isinstance(saved, dict) else {}
+        mine = saved.get(self._geometry_key())
+        mine = dict(mine) if isinstance(mine, dict) else {}
+        changed = False
+        for name, splitter in self._splitters().items():
+            state = base64.b64encode(
+                bytes(splitter.saveState())).decode("ascii")
+            if mine.get(name) == state:
+                continue
+            mine[name] = state
+            changed = True
+        if not changed:
+            return False
+        saved[self._geometry_key()] = mine
+        store["splitter_state"] = saved
+        return True
+
+    # 派生画面が覚えたい状態を store (timeline.ui) へ足すフック。
+    # 書き換えたら True を返す (保存は _save_window_state が 1 回で行う)。
+    def _collect_window_state(self, store):
+        return False
+
+    # ------------------------------------------------------------------
     # プロキシ (ver6 resolve3)
     # ------------------------------------------------------------------
 
@@ -1139,6 +1301,8 @@ class TimelineEditorDialog(QDialog):
     def done(self, code):
         if self._autosave_timer is not None:
             self._autosave_timer.stop()
+        # 窓を閉じる前に大きさ・位置を控える (ver8 resolve3 §3-3)
+        self._save_window_state()
         try:
             self.preview.shutdown()
         except Exception:  # noqa: BLE001 (後片付けの失敗で終了を妨げない)

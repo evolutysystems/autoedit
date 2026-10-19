@@ -194,6 +194,11 @@
             "archive_graph_dock_area": "top",
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
+            "archive_graph_dock_always_show": true,
+            "remember_window_geometry": true,
+            "window_geometry": {},
+            "splitter_state": {},
+            "window_min_visible_px": 120,
             "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAXUAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAF1AAAAG8A////AAAF1AAABAkAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
@@ -270,7 +275,8 @@
             "save": "Ctrl+S",
             "save_as": "Ctrl+Shift+S",
             "copy": "Ctrl+C",
-            "paste": "Ctrl+V"
+            "paste": "Ctrl+V",
+            "toggle_score_graph": "G"
         },
         "paste": {
             "ripple_scope": "base_syncs_all",
