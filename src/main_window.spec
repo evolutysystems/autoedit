@@ -32,6 +32,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # インストーラが output_directory を利用者の選択で上書きする (installer/AutoEdit.iss §6.2)。
 _BLANKED_GENERAL_KEYS = ('video_directory', 'opening_video', 'ending_video', 'output_directory')
 
+# 「編集の続き」の履歴も一覧ごと空へ戻す (security.md F5)。
+# 既定は空 (settings_window.DEFAULT_SETTINGS) で、開発端末が開いたファイルの
+# 置き場所を配布物へ載せる意味もないため、general の 4 キーと同じ扱いにする。
+_EMPTIED_LIST_PATHS = (
+    ('timeline', 'project', 'recent'),
+    ('timeline', 'project', 'recent_archive'),
+)
+
 # ドライブレター付きの絶対パスと UNC パス
 _LOCAL_PATH_RE = re.compile(r'^(?:[A-Za-z]:[\\/]|\\\\)')
 
@@ -57,6 +65,16 @@ def _build_shipped_settings(source='settings/setting.json'):
         for key in _BLANKED_GENERAL_KEYS:
             if general.get(key):
                 general[key] = ''
+
+    # 最近使ったプロジェクトの一覧を空へ戻す (アプリが起動のたびに書き足すため)
+    for keys in _EMPTIED_LIST_PATHS:
+        node = data
+        for key in keys[:-1]:
+            node = node.get(key) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if isinstance(node, dict) and node.get(keys[-1]):
+            node[keys[-1]] = []
 
     # 空へ戻すキーは既知のものだけ。上で拾えない場所 (新しい設定項目や
     # recent/extra_dirs のような一覧) に絶対パスが残っていたら、
