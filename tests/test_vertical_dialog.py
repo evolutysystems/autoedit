@@ -217,11 +217,11 @@ class VerticalProjectDialogTest(unittest.TestCase):
     def test_create_rebases_archive_media(self):
         from unittest import mock
 
-        from src.archive import vod_rebase
+        from src.archive import cut_origin, vod_rebase
 
         self.timeline = _timeline(archive=True)
         dialog = self._dialog()
-        with mock.patch.object(vod_rebase, "_keyframe_at_or_before",
+        with mock.patch.object(cut_origin, "measure",
                                lambda *_a, **_k: 98.5):
             dialog._make_rebase = lambda: vod_rebase.plan(self.timeline, {})
             with tempfile.TemporaryDirectory() as tmp:

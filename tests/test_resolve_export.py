@@ -5,6 +5,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from src.export import resolve_export
 from src.timeline.model import (
@@ -296,6 +297,59 @@ class TestArchiveSpec(_SourceFileCase):
         self.assertEqual(spec["titles"], [])
 
 
+    # keep_segments は「切り出した素材の中の秒」なので、足すのは vod_start ではなく
+    # 実際の切り出し原点であること (素材の先頭は vod_start より前から始まる / §5.2)
+    def test_offset_uses_measured_cut_origin(self):
+        entries = [{"index": 1, "start": 180.0, "end": 190.0,
+                    "keep_segments": [(0.0, 2.0), (5.0, 6.0)], "items": [], "theme": ""}]
+        with mock.patch.object(resolve_export.cut_origin, "measure",
+                               return_value=177.984) as measure:
+            spec = resolve_export.build_archive_spec(
+                self.source, entries, _settings(), profile=_PROFILE)
+        measure.assert_called_once()
+        self.assertEqual([(c["start"], c["duration"]) for c in spec["clips"]],
+                         [(177.984, 2.0), (182.984, 1.0)])
+
+    # entry が source_origin を持つ場合はそれを使い、測り直さないこと
+    def test_source_origin_is_trusted(self):
+        entries = [{"index": 1, "start": 180.0, "end": 190.0,
+                    "keep_segments": [(0.0, 2.0)], "items": [], "theme": "",
+                    "source_origin": 177.5}]
+        with mock.patch.object(resolve_export.cut_origin, "measure") as measure:
+            spec = resolve_export.build_archive_spec(
+                self.source, entries, _settings(), profile=_PROFILE)
+        measure.assert_not_called()
+        self.assertEqual(spec["clips"][0]["start"], 177.5)
+
+    # 同じクリップ区間を何度も測らないこと (クリップ数ぶん ffprobe を走らせない)
+    def test_origin_is_measured_once_per_clip_start(self):
+        entries = [
+            {"index": 1, "start": 180.0, "end": 190.0,
+             "keep_segments": [(0.0, 2.0)], "items": [], "theme": ""},
+            {"index": 2, "start": 180.0, "end": 190.0,
+             "keep_segments": [(0.0, 2.0)], "items": [], "theme": ""},
+            {"index": 3, "start": 300.0, "end": 310.0,
+             "keep_segments": [(0.0, 2.0)], "items": [], "theme": ""},
+        ]
+        with mock.patch.object(resolve_export.cut_origin, "measure",
+                               side_effect=lambda _p, start, _c: start - 2.0) as measure:
+            spec = resolve_export.build_archive_spec(
+                self.source, entries, _settings(), profile=_PROFILE)
+        self.assertEqual(measure.call_count, 2)
+        self.assertEqual([c["start"] for c in spec["clips"]], [178.0, 178.0, 298.0])
+
+    # イントロ区間は本編の先頭 (切り出し原点) に接すること (重複・飛びを作らない)
+    def test_intro_card_is_anchored_to_cut_origin(self):
+        entries = [{"index": 1, "start": 180.0, "end": 190.0,
+                    "keep_segments": [(0.0, 10.0)], "items": [], "theme": "神回"}]
+        with mock.patch.object(resolve_export.cut_origin, "measure", return_value=178.0):
+            spec = resolve_export.build_archive_spec(
+                self.source, entries, _settings(), profile=_PROFILE)
+        self.assertEqual((spec["clips"][0]["start"], spec["clips"][0]["duration"]),
+                         (176.5, 1.5))
+        self.assertEqual(spec["clips"][1]["start"], 178.0)
+
+
 class TestOutputPathAndWrite(_SourceFileCase):
 
     # ファイル名は {prefix}_{stem}.fcpxml (prefix 空なら {stem}.fcpxml) / §5.7
@@ -453,6 +507,44 @@ class TestSrtWriter(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         self.assertEqual(blocks[0], "1\n00:00:00,500 --> 00:00:02,000\n1行目\n2行目")
         self.assertEqual(blocks[1], "2\n01:01:01,250 --> 01:01:02,000\n後半\n")
+
+    # 呼び出し側が字幕トラックごとに連結してくるため、時刻順へ並べ替えること
+    # (コメントトラックの cue が本文トラックの後ろに付いて時刻が逆行する / §5.6)
+    def test_build_srt_sorts_by_time(self):
+        from src.export import srt_writer
+        content = srt_writer.build_srt([
+            {"start": 0.0, "end": 1.0, "text": "本文1"},
+            {"start": 100.0, "end": 101.0, "text": "本文2"},
+            {"start": 200.0, "end": 201.0, "text": "本文3"},
+            {"start": 50.0, "end": 51.0, "text": "コメント"},
+        ])
+        blocks = content.split("\n\n")
+        self.assertEqual([b.splitlines()[0] for b in blocks], ["1", "2", "3", "4"])
+        self.assertEqual([b.splitlines()[2] for b in blocks],
+                         ["本文1", "コメント", "本文2", "本文3"])
+        self.assertIn("00:00:50,000 --> 00:00:51,000", blocks[1])
+
+    # 1 フレーム未満の重なり (丸め) は直前の終了を詰めて解消すること
+    def test_build_srt_snaps_tiny_overlap(self):
+        from src.export import srt_writer
+        content = srt_writer.build_srt([
+            {"start": 2.607, "end": 4.515, "text": "A"},
+            {"start": 4.514, "end": 8.406, "text": "B"},
+        ])
+        blocks = content.split("\n\n")
+        self.assertIn("00:00:02,607 --> 00:00:04,514", blocks[0])
+        self.assertIn("00:00:04,514 --> 00:00:08,406", blocks[1])
+
+    # 同時表示 (別トラック) の重なりは時刻を変えずに残すこと
+    def test_build_srt_keeps_simultaneous(self):
+        from src.export import srt_writer
+        content = srt_writer.build_srt([
+            {"start": 10.0, "end": 14.0, "text": "本文"},
+            {"start": 11.0, "end": 13.0, "text": "コメント"},
+        ])
+        blocks = content.split("\n\n")
+        self.assertIn("00:00:10,000 --> 00:00:14,000", blocks[0])
+        self.assertIn("00:00:11,000 --> 00:00:13,000", blocks[1])
 
     def test_format_srt_time(self):
         from src.export import srt_writer

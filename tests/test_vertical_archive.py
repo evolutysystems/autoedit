@@ -2,7 +2,7 @@
 # 実行: python -m unittest discover -s tests
 # 重点:
 #   ・素材が元 VOD 1 本へ張り替わり、時刻が VOD 基準へ直ること
-#   ・足す値が vod_start ではなく「切り出しの先頭 (キーフレーム)」であること
+#   ・足す値が vod_start ではなく「切り出しの原点 (実測)」であること
 #   ・保存した縦プロジェクトがクリップ用として開けること (archive セクションが消える)
 #   ・切り抜きの指定が張り替え後も有効なままであること
 #   ・元の Timeline を変更しないこと
@@ -12,7 +12,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from src.archive import vod_rebase
+from src.archive import cut_origin, vod_rebase
 from src.exceptions import InputError
 from src.timeline import crop, project_io, vertical_builder
 from src.timeline.model import (
@@ -102,7 +102,7 @@ class PlanTest(unittest.TestCase):
 
     # 控えのある素材だけが張り替え対象になり、足す値はキーフレーム位置になること
     def test_offsets_use_keyframe(self):
-        with mock.patch.object(vod_rebase, "_keyframe_at_or_before", _stub_keyframe):
+        with mock.patch.object(cut_origin, "measure", _stub_keyframe):
             plan = vod_rebase.plan(self.timeline, {})
         self.assertEqual(plan["offsets"], {"m1": 98.5, "m2": 498.5})
         self.assertEqual(plan["media"].path, VOD)
@@ -112,33 +112,51 @@ class PlanTest(unittest.TestCase):
     # 控えの無い素材と、音量正規化について知らせること
     def test_warnings(self):
         clips = self.timeline.base_video_track().clips
-        with mock.patch.object(vod_rebase, "_keyframe_at_or_before", _stub_keyframe):
+        with mock.patch.object(cut_origin, "measure", _stub_keyframe):
             plan = vod_rebase.plan(self.timeline, {}, clips)
         text = "\n".join(plan["warnings"])
         self.assertIn("元 VOD から作られていない素材 1 件", text)
         self.assertIn("音量の正規化", text)
 
 
-class KeyframeProbeTest(unittest.TestCase):
+# 切り出し原点の実測 (archive/cut_origin.py)
+class CutOriginTest(unittest.TestCase):
 
-    # ffprobe の出力から「要求位置以前で最も近いキーフレーム」を選ぶこと
-    def test_picks_nearest_before(self):
-        stdout = "\n".join([
-            "96.000000,K__", "98.000000,K__", "99.000000,___", "100.500000,K__"])
-        with mock.patch("src.archive.vod_rebase.subprocess.run",
+    # シーク直後のパケットの最小 PTS を採用すること (音声が映像キーフレームより前に来る)
+    def test_uses_smallest_packet_pts(self):
+        stdout = "\n".join(["1,97.984000", "0,98.059000", "1,98.005333"])
+        with mock.patch("src.archive.cut_origin.subprocess.run",
                         return_value=mock.Mock(returncode=0, stdout=stdout)):
-            self.assertEqual(vod_rebase._keyframe_at_or_before(VOD, 100.0, {}), 98.0)
+            self.assertAlmostEqual(cut_origin.measure(VOD, 100.0, {}), 97.984)
 
-    # 測れなければ要求位置をそのまま使い、作成を止めないこと
+    # パケットが測れなければ映像キーフレームで代用すること
+    def test_falls_back_to_keyframe(self):
+        packets = mock.Mock(returncode=1, stdout="")
+        keyframes = mock.Mock(returncode=0, stdout="\n".join([
+            "96.000000,K__", "98.000000,K__", "99.000000,___", "100.500000,K__"]))
+        with mock.patch("src.archive.cut_origin.subprocess.run",
+                        side_effect=[packets, keyframes]):
+            self.assertEqual(cut_origin.measure(VOD, 100.0, {}), 98.0)
+
+    # どちらも測れなければ要求位置をそのまま使い、処理を止めないこと
     def test_falls_back_on_failure(self):
-        with mock.patch("src.archive.vod_rebase.subprocess.run",
+        with mock.patch("src.archive.cut_origin.subprocess.run",
                         return_value=mock.Mock(returncode=1, stdout="")):
-            self.assertEqual(vod_rebase._keyframe_at_or_before(VOD, 100.0, {}), 100.0)
+            self.assertEqual(cut_origin.measure(VOD, 100.0, {}), 100.0)
+
+    # 要求位置より後ろ / 戻りすぎの値は採用しないこと
+    def test_rejects_out_of_range(self):
+        with mock.patch("src.archive.cut_origin.subprocess.run",
+                        return_value=mock.Mock(returncode=0, stdout="0,100.500000")):
+            self.assertEqual(cut_origin.measure(VOD, 100.0, {}), 100.0)
+        with mock.patch("src.archive.cut_origin.subprocess.run",
+                        return_value=mock.Mock(returncode=0, stdout="0,10.000000")):
+            self.assertEqual(cut_origin.measure(VOD, 100.0, {}, window_sec=5.0), 100.0)
 
     # 先頭 (0 秒) は測るまでもないこと
     def test_zero_needs_no_probe(self):
-        with mock.patch("src.archive.vod_rebase.subprocess.run") as run:
-            self.assertEqual(vod_rebase._keyframe_at_or_before(VOD, 0.0, {}), 0.0)
+        with mock.patch("src.archive.cut_origin.subprocess.run") as run:
+            self.assertEqual(cut_origin.measure(VOD, 0.0, {}), 0.0)
         run.assert_not_called()
 
 
@@ -147,7 +165,7 @@ class BuildTest(unittest.TestCase):
     def setUp(self):
         self.timeline = _archive_timeline()
         self.layout = _layout(self.timeline)
-        with mock.patch.object(vod_rebase, "_keyframe_at_or_before", _stub_keyframe):
+        with mock.patch.object(cut_origin, "measure", _stub_keyframe):
             self.plan = vod_rebase.plan(self.timeline, {})
         self.vertical, self.warnings = vertical_builder.build(
             self.timeline, ["c1", "c2", "c3"], self.layout, {}, rebase=self.plan)

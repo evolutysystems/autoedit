@@ -8,12 +8,13 @@ import os
 import time
 
 from ..archive import config as archive_config
+from ..archive import cut_origin
 from ..exceptions import AutoEditError, ExportError
 from ..i18n import tr
 from ..modules import ffmpeg_runner, output_profile, subtitle_generator, watermark_overlay
 from ..services import points as points_service
 from ..services import telemetry
-from ..timeline import project_io
+from ..timeline import media_probe, project_io
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from . import fcpxml_builder, srt_writer
@@ -28,6 +29,8 @@ _SRT_EXTENSION = ".srt"
 _TEMP_SUFFIX = ".tmp"
 # イントロカードのバッファを出力へ含める最小尺 (clip_writer._build_intro_card と同一判定)
 _MIN_INTRO_SEC = 0.1
+# 切り出し原点のずれをログに残す下限 (秒)。フレーム未満は騒がない。
+_ORIGIN_WARN_SEC = 0.01
 # ASS テンキー配置 → 水平/垂直の寄せ判定 (§5.5)
 _ALIGN_LEFT = (1, 4, 7)
 _ALIGN_RIGHT = (3, 6, 9)
@@ -340,6 +343,29 @@ def _clips_from_segments(segments, name_prefix, source_offset=0.0):
     return clips
 
 
+# 素材内の時刻を元 VOD へ戻すときに足す値 (= 切り出した素材の先頭に当たる VOD 時刻)
+#
+# keep_segments は「切り出した素材の中の秒」で、素材は clip_writer.cut_region が
+# ストリームコピーで作るため先頭が要求位置 (vod_start) より前にずれている。
+# vod_start をそのまま足すと最大 1 GOP (Twitch なら約 2 秒) ぶん後ろの絵を指してしまう
+# ため、実際の切り出し位置を測って足す (archive/cut_origin.py)。
+# entry に source_origin があればそれを信用する (呼び出し側が既に測っている場合)。
+# cache: 同じ vod_start を何度も測らないための辞書 (呼び出し側が使い回す)
+def _source_origin(source_path, clip_start, settings, entry, cache):
+    recorded = (entry or {}).get("source_origin")
+    if recorded is not None:
+        return float(recorded)
+    if clip_start in cache:
+        return cache[clip_start]
+    origin = cut_origin.measure(
+        source_path, clip_start, (settings or {}).get("ffmpeg", {}))
+    if clip_start - origin > _ORIGIN_WARN_SEC:
+        _logger.info("clip 開始 %.3fs の素材は VOD %.3fs から始まっています (差 %.3fs)",
+                     clip_start, origin, clip_start - origin)
+    cache[clip_start] = origin
+    return origin
+
+
 # 元ソースの総尺を取得する (失敗時は 0.0 = builder 側でタイムライン全長を代用)
 def _probe_duration(source_path, settings):
     try:
@@ -347,6 +373,20 @@ def _probe_duration(source_path, settings):
     except (AutoEditError, OSError, TypeError, ValueError):
         _logger.warning("ソース総尺の取得に失敗 (タイムライン全長で代用): %s", source_path)
         return 0.0
+
+
+# 元ソースの実寸とフレームレートを取得する (失敗時は (0, 0, 0.0))
+#
+# FCPXML の asset はシーケンスではなく **素材自身**の format を宣言しなければならない。
+# 出力諸元 (1920x1080/60fps) を素材にも書くと、Resolve 側が素材を別フレームレートとして
+# コンフォームしてしまう (例: 1280x720/30fps の VOD を 60fps と宣言する / resolve21 §5.6)。
+def _probe_source_format(source_path, settings):
+    try:
+        media = media_probe.probe(source_path, "source", settings)
+        return int(media.width or 0), int(media.height or 0), float(media.fps or 0.0)
+    except (AutoEditError, OSError, TypeError, ValueError) as e:
+        _logger.warning("ソースの寸法/フレームレート取得に失敗 (出力諸元で代用): %s", e)
+        return 0, 0, 0.0
 
 
 # ソースパスの妥当性を検証する (未特定/不在はエクスポート中止 / §7)
@@ -360,6 +400,7 @@ def _validate_source(source_path):
 # spec の共通部 (諸元・ソース・イベント名) を作る
 def _base_spec(source_path, settings, profile, cfg, project_name):
     fps = ffmpeg_runner.get_output_fps(settings.get("ffmpeg", {}))
+    source_width, source_height, source_fps = _probe_source_format(source_path, settings)
     return {
         "version": cfg["fcpxml_version"],
         "event_name": cfg["event_name"],
@@ -371,6 +412,10 @@ def _base_spec(source_path, settings, profile, cfg, project_name):
             "path": os.path.abspath(source_path),
             "name": os.path.splitext(os.path.basename(source_path))[0],
             "duration": _probe_duration(source_path, settings),
+            # asset の format 宣言用 (測れなければ 0 = シーケンス諸元を使い回す)
+            "width": source_width,
+            "height": source_height,
+            "fps": source_fps,
         },
         "title_effect_uid": cfg["title_effect_uid"],
         "caption_role": _caption_role(cfg),
@@ -599,10 +644,11 @@ def export_timeline(timeline, settings, overwrite_confirm=None, points=None,
 # ------------------------------------------------------------------
 
 # 結果画面 (アーカイブ用) の内容から spec を作る
-# entries: [{"index","start","end","keep_segments","items","theme","eff_cfg"}]
+# entries: [{"index","start","end","keep_segments","items","theme","eff_cfg","source_origin"}]
 #   start/end       = 元 VOD 相対のクリップ区間
-#   keep_segments   = クリップ内の残す区間 (クリップ相対 / None なら区間全長)
+#   keep_segments   = クリップ内の残す区間 (切り出した素材の相対 / None なら区間全長)
 #   items           = 編集済み字幕 (prepared=無音カット後クリップ基準)
+#   source_origin   = 素材の先頭に当たる VOD 時刻 (省略時は cut_origin で実測する)
 def build_archive_spec(source_path, entries, settings, profile=None):
     _validate_source(source_path)
     cfg = resolve_config(settings)
@@ -620,10 +666,13 @@ def build_archive_spec(source_path, entries, settings, profile=None):
     titles = []
     captions = []
     srt_entries = []
+    origins = {}      # vod_start -> 切り出し原点 (同じ区間を何度も測らない)
     cursor = 0.0  # タイムライン上の現在位置 (秒)
     for entry in entries or []:
         index = entry.get("index")
         clip_start = float(entry.get("start", 0.0))
+        # 素材の時刻を VOD へ戻す起点。vod_start ではなく実際の切り出し位置を使う (§5.2)
+        origin = _source_origin(source_path, clip_start, settings, entry, origins)
         theme = str(entry.get("theme", "") or "")
         # クリップ個別の実効字幕設定 (縦動画の上書き反映済み) を優先する
         eff_cfg = entry.get("eff_cfg") or subtitle_generator.build_effective_subtitle_cfg(
@@ -632,8 +681,8 @@ def build_archive_spec(source_path, entries, settings, profile=None):
 
         # イントロ (開始前 buffer_sec を元 VOD から戻した区間) + 中央テーマ文字
         if include_card and theme:
-            intro_start = max(0.0, clip_start - card["buffer_sec"])
-            intro_len = clip_start - intro_start
+            intro_start = max(0.0, origin - card["buffer_sec"])
+            intro_len = origin - intro_start
             if intro_len >= _MIN_INTRO_SEC:
                 clips.append({
                     "start": intro_start, "duration": intro_len, "name": f"clip{index}_intro",
@@ -650,7 +699,7 @@ def build_archive_spec(source_path, entries, settings, profile=None):
         if not segments:
             # 無音カット OFF / 編集点なし → 生のクリップ区間そのまま (§5.8)
             segments = [(0.0, max(float(entry.get("end", 0.0)) - clip_start, 0.0))]
-        body_clips = _clips_from_segments(segments, f"clip{index}_cut", source_offset=clip_start)
+        body_clips = _clips_from_segments(segments, f"clip{index}_cut", source_offset=origin)
         if not body_clips:
             continue
         body_duration = sum(c["duration"] for c in body_clips)

@@ -316,5 +316,66 @@ class TestExplicitLayout(unittest.TestCase):
         self.assertEqual(sequence.get("duration"), "9s")
 
 
+class TestSourceFormat(unittest.TestCase):
+
+    def setUp(self):
+        self.spec = {
+            "version": "1.9", "event_name": "Stretheus", "project_name": "archive_vod",
+            "fps": 60, "width": 1920, "height": 1080,
+            "source": {"path": "/tmp/vod.mp4", "name": "vod", "duration": 12985.259},
+            "clips": [{"start": 177.984, "duration": 5.0, "name": "cut1"}],
+            "titles": [], "captions": [], "title_effect_uid": "",
+        }
+
+    # 実寸・実フレームレートが分かるときは asset 専用の format を宣言すること
+    # (1280x720/30fps の VOD を 1920x1080/60fps と宣言すると Resolve 側が誤解する)
+    def test_asset_declares_its_own_format(self):
+        self.spec["source"].update({"width": 1280, "height": 720, "fps": 30.0})
+        root = _parse(builder.build_fcpxml(self.spec))
+        formats = {f.get("id"): f for f in root.findall("./resources/format")}
+        asset = root.find("./resources/asset")
+        self.assertNotEqual(asset.get("format"), "r1")
+        source_format = formats[asset.get("format")]
+        self.assertEqual(source_format.get("frameDuration"), "1/30s")
+        self.assertEqual((source_format.get("width"), source_format.get("height")),
+                         ("1280", "720"))
+        # シーケンス側の format は出力諸元のまま
+        self.assertEqual(formats["r1"].get("frameDuration"), "1/60s")
+        self.assertEqual(formats["r1"].get("width"), "1920")
+
+    # 実寸・実フレームレートが測れなければ従来どおりシーケンスの format を使い回すこと
+    def test_without_probe_keeps_single_format(self):
+        root = _parse(builder.build_fcpxml(self.spec))
+        self.assertEqual(len(root.findall("./resources/format")), 1)
+        self.assertEqual(root.find("./resources/asset").get("format"), "r1")
+
+    # 素材の諸元が出力と同じなら format を増やさないこと
+    def test_same_format_is_not_duplicated(self):
+        self.spec["source"].update({"width": 1920, "height": 1080, "fps": 60.0})
+        root = _parse(builder.build_fcpxml(self.spec))
+        self.assertEqual(len(root.findall("./resources/format")), 1)
+        self.assertEqual(root.find("./resources/asset").get("format"), "r1")
+
+    # asset の duration は素材のフレーム境界で表すこと (29.97 を 1/30 と書かない)
+    def test_asset_duration_uses_source_timebase(self):
+        self.spec["source"].update({"width": 1280, "height": 720, "fps": 29.97,
+                                    "duration": 10.0})
+        root = _parse(builder.build_fcpxml(self.spec))
+        asset = root.find("./resources/asset")
+        source_format = root.findall("./resources/format")[1]
+        self.assertEqual(source_format.get("frameDuration"), "1001/30000s")
+        # 10 秒 = 300 フレーム → 300 * 1001 / 30000
+        self.assertEqual(asset.get("duration"), "300300/30000s")
+
+    # fps から frameDuration への変換 (近い標準値へ寄せ、無ければ整数 fps)
+    def test_frame_duration_text(self):
+        self.assertEqual(builder.frame_duration_text(30.0), "1/30s")
+        self.assertEqual(builder.frame_duration_text(29.97), "1001/30000s")
+        self.assertEqual(builder.frame_duration_text(59.94), "1001/60000s")
+        self.assertEqual(builder.frame_duration_text(60), "1/60s")
+        self.assertEqual(builder.frame_duration_text(0), None)
+        self.assertEqual(builder.frame_duration_text(None), None)
+
+
 if __name__ == "__main__":
     unittest.main()

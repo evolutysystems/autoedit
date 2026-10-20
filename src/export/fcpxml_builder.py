@@ -19,6 +19,8 @@ _logger = get_logger(__name__)
 _FORMAT_ID = "r1"
 _ASSET_ID = "r2"
 _EFFECT_ID = "r3"
+# 元ソースの実フォーマット用 ID (寸法/フレームレートがシーケンスと違うときだけ作る)
+_SOURCE_FORMAT_ID = "r4"
 
 # 既定のタイトル effect UID (Text+ 用 UID 未確定時のフォールバック / resolve20 §10-9)
 # Resolve は取り込み時に Basic Title を Text+ 相当のテキストへ変換する。
@@ -31,6 +33,15 @@ _TITLE_EFFECT_NAME = "Basic Title"
 
 # caption の既定ロール (ITT・日本語 / resolve21 §5.4)
 DEFAULT_CAPTION_ROLE = "iTT?captionFormat=ITT.ja"
+
+# frameDuration に使う標準値 (1 フレームの秒数 = 分子/分母)。
+# 実測 fps に最も近いものを選ぶ。29.97 等を "1/30s" と書くと Resolve 側で尺がずれる。
+_FRAME_DURATIONS = (
+    (1, 24), (1001, 24000), (1, 25), (1, 30), (1001, 30000),
+    (1, 48), (1, 50), (1, 60), (1001, 60000), (1, 100), (1, 120),
+)
+# 実測 fps を標準値へ丸める許容 (fps)
+_FPS_TOLERANCE = 0.05
 
 # 生成する XML の既定値 (spec 側の欠落を安全に補完する)
 _DEFAULT_VERSION = "1.9"
@@ -85,6 +96,36 @@ def format_time(seconds, fps):
 def format_duration(seconds, fps):
     fps = int(fps) if int(fps or 0) > 0 else _DEFAULT_FPS
     return frames_to_text(max(to_frames(seconds, fps), 1), fps)
+
+
+# fps を FCPXML の frameDuration 表記へ変換する (不正値は None)
+# 実測値に近い標準値があればそれを使い、無ければ整数 fps として書く。
+def frame_duration_text(fps):
+    try:
+        value = float(fps or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0.0:
+        return None
+    best = min(_FRAME_DURATIONS, key=lambda d: abs(d[1] / d[0] - value))
+    if abs(best[1] / best[0] - value) <= _FPS_TOLERANCE:
+        return f"{best[0]}/{best[1]}s"
+    rounded = int(round(value))
+    return f"1/{rounded}s" if rounded > 0 else None
+
+
+# 元ソースの実フォーマット (width, height, frameDuration 文字列) を返す
+# いずれかが欠けていれば None (= シーケンスの format を使い回す)
+def _source_format(source):
+    try:
+        width = int(source.get("width") or 0)
+        height = int(source.get("height") or 0)
+    except (TypeError, ValueError):
+        return None
+    text = frame_duration_text(source.get("fps"))
+    if width <= 0 or height <= 0 or not text:
+        return None
+    return width, height, text
 
 
 # "#RRGGBB" を FCPXML の RGBA (0-1 実数4値・空白区切り) へ変換する
@@ -267,16 +308,44 @@ def build_fcpxml(spec):
         "height": str(height),
     })
 
+    # asset が参照する format。元ソースの実寸・実フレームレートが分かる場合は
+    # シーケンスとは別に宣言する (実体と違う宣言は Resolve 側のコンフォームを狂わせる。
+    # 例: 1280x720/30fps の VOD を 1920x1080/60fps と宣言する / resolve21 §5.6)。
+    source_format = _source_format(source)
+    asset_format_id = _FORMAT_ID
+    asset_frame_duration = None
+    if source_format is not None:
+        source_width, source_height, frame_duration = source_format
+        if (source_width, source_height, frame_duration) != (width, height, f"1/{fps}s"):
+            asset_format_id = _SOURCE_FORMAT_ID
+            asset_frame_duration = frame_duration
+            ET.SubElement(resources, "format", {
+                "id": _SOURCE_FORMAT_ID,
+                "name": f"Source{source_width}x{source_height}",
+                "frameDuration": frame_duration,
+                "width": str(source_width),
+                "height": str(source_height),
+            })
+
     # asset の duration は元ソース全長 (不明ならタイムライン全長で代用する)
-    source_f = max(to_frames(source.get("duration", 0.0), fps), 0) or timeline_f
+    try:
+        source_sec = float(source.get("duration", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        source_sec = 0.0
+    if source_sec <= 0.0:
+        source_sec = timeline_f / float(fps)
+    asset_duration = (_time_text_on(source_sec, asset_frame_duration)
+                      if asset_frame_duration else None)
+    if asset_duration is None:
+        asset_duration = frames_to_text(max(to_frames(source_sec, fps), 1), fps)
     asset = ET.SubElement(resources, "asset", {
         "id": _ASSET_ID,
         "name": str(source.get("name") or "source"),
         "start": "0s",
-        "duration": frames_to_text(max(source_f, 1), fps),
+        "duration": asset_duration,
         "hasVideo": "1",
         "hasAudio": "1",
-        "format": _FORMAT_ID,
+        "format": asset_format_id,
     })
     ET.SubElement(asset, "media-rep", {
         "kind": "original-media",
@@ -411,6 +480,35 @@ def _compact_text_nodes(root):
         text_element.text = None
         for child in text_element:
             child.tail = None
+
+
+# frameDuration 表記 ("1001/30000s") を (分子, 分母) へ分解する (不正なら None)
+def _parse_frame_duration(frame_duration):
+    text = str(frame_duration or "").rstrip("s")
+    numerator, _, denominator = text.partition("/")
+    try:
+        num = int(numerator)
+        den = int(denominator or 1)
+    except ValueError:
+        return None
+    if num <= 0 or den <= 0:
+        return None
+    return num, den
+
+
+# 秒を「その素材のフレーム境界」へ量子化した FCPXML 時刻表記にする
+# 例: frameDuration="1001/30000s" で 10 秒 → 300 フレーム → "300300/30000s"
+def _time_text_on(seconds, frame_duration):
+    parsed = _parse_frame_duration(frame_duration)
+    if parsed is None:
+        return None
+    num, den = parsed
+    try:
+        frames = max(int(round(float(seconds) * den / num)), 1)
+    except (TypeError, ValueError):
+        return None
+    total = frames * num
+    return f"{total // den}s" if total % den == 0 else f"{total}/{den}s"
 
 
 # 重なり素材 1 件ぶんの resources id (asset, format) を返す
