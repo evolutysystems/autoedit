@@ -842,6 +842,10 @@ DEFAULT_SETTINGS = {
             "clip_edit_points": "context",  # クリップ用の編集点取得 ("context"=保持値)
             "include_intro_card": True,    # テーマ/タグ文字を出力に含めるか
             "clip_prefix": "clip",         # クリップ用出力の接頭辞 (空文字で接頭辞なし)
+            # Timeline 経路のクリップ配置 (resolve5 §19-4)
+            # "preserve"=Timeline 上の位置をそのまま出力 (空きは gap)
+            # "pack"=先頭から詰める (従来。先頭の余白ぶん字幕がずれる)
+            "timeline_layout": "preserve",
             "title": {                     # 位置変換の係数 (ハードコード回避)
                 "coord_space": "normalized",  # "normalized" | "pixel"
                 "origin": "center",           # Resolve 座標の原点
@@ -851,6 +855,10 @@ DEFAULT_SETTINGS = {
                 "caption_format": "ITT",   # caption の書式 ("ITT" のみ実装)
                 "language": "ja",          # caption ロールの言語コード
                 "srt_sidecar": True,       # SRT サイドカーを併せて出力する
+                # 先頭 0 秒へ空白字幕を 1 件足す (resolve5 §19-2c)。
+                # 取り込み側が先頭の空きを詰める場合の保険のため既定 OFF。
+                "lead_anchor": False,
+                "lead_anchor_text": "　",  # アンカーの本文 (全角空白)
             },
         },
     },

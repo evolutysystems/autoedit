@@ -7,6 +7,16 @@ import tempfile
 import unittest
 
 from src.export import resolve_export
+from src.timeline.model import (
+    ORIGIN_OPENING,
+    TRACK_SUBTITLE,
+    TRACK_VIDEO,
+    Clip,
+    MediaRef,
+    SubtitleClip,
+    Timeline,
+    Track,
+)
 
 # 横 1920x1080 の出力プロファイル (縦判定のための ffprobe を回避する)
 _PROFILE = {"is_portrait": False, "orientation": "landscape", "width": 1920, "height": 1080}
@@ -338,6 +348,94 @@ class TestOutputPathAndWrite(_SourceFileCase):
         written = resolve_export.export_spec(spec, dest, settings=_settings())
         self.assertEqual(written, [dest])
         self.assertFalse(os.path.exists(os.path.join(self._dir, "out3.srt")))
+
+
+# Timeline 経路の出力 (resolve5 §19-2)
+# オープニング 4 秒 + 本編 2 クリップ。本編の前に「余白」がある状態を再現する。
+class TestTimelineSpec(_SourceFileCase):
+
+    def _timeline(self):
+        media = [
+            MediaRef("m1", "video", self.source, 600.0, 1920, 1080, 60, True),
+            MediaRef("m3", "video", "D:/assets/op.mp4", 4.0, 1920, 1080, 60, True),
+        ]
+        video = Track("V1", TRACK_VIDEO, 1, name="Video 1", is_base=True, clips=[
+            Clip("c0", "m3", 0.0, 4.0, 0.0, 4.0, origin={"type": ORIGIN_OPENING}),
+            Clip("c1", "m1", 4.0, 5.0, 0.0, 5.0),
+            Clip("c2", "m1", 9.0, 3.0, 20.0, 23.0),
+        ])
+        subtitle = Track("S1", TRACK_SUBTITLE, 1, name="Subtitle 1", clips=[
+            SubtitleClip("s1", 4.35, 2.1, "本編の字幕"),
+        ])
+        return Timeline(fps=60, width=1920, height=1080,
+                        source={"media_id": "m1", "input_path": self.source},
+                        media_pool=media, tracks=[video, subtitle])
+
+    # 先頭のオープニングぶんの余白を保ったまま出力する (既定 timeline_layout=preserve)
+    def test_timeline_preserves_leading_opening_space(self):
+        spec = resolve_export.build_timeline_spec(self._timeline(), _settings())
+        self.assertEqual([c["offset"] for c in spec["clips"]], [4.0, 9.0])
+        self.assertEqual([c["start"] for c in spec["clips"]], [0.0, 20.0])
+        # 字幕も Timeline 座標のまま (詰めると 0.35 になり 4 秒ずれる)
+        self.assertAlmostEqual(spec["captions"][0]["offset"], 4.35)
+
+    # 字幕の時刻は字幕クリップの timeline_start と一致する
+    def test_timeline_subtitles_keep_timeline_coordinates(self):
+        timeline = self._timeline()
+        spec = resolve_export.build_timeline_spec(timeline, _settings())
+        expected = [c.timeline_start for c in timeline.subtitle_clips()]
+        self.assertEqual([c["offset"] for c in spec["captions"]], expected)
+
+    # SRT サイドカーも同じ座標になる (別読み込みでもズレない)
+    def test_timeline_srt_matches_fcpxml_positions(self):
+        spec = resolve_export.build_timeline_spec(self._timeline(), _settings())
+        self.assertAlmostEqual(spec["srt_entries"][0]["start"], 4.35)
+        self.assertAlmostEqual(spec["srt_entries"][0]["end"], 6.45)
+
+    # timeline_layout="pack" では従来どおり先頭から詰める (後方互換)
+    def test_timeline_layout_pack_keeps_old_behavior(self):
+        settings = _settings()
+        settings["export"]["resolve"]["timeline_layout"] = "pack"
+        spec = resolve_export.build_timeline_spec(self._timeline(), settings)
+        self.assertEqual([c.get("offset") for c in spec["clips"]], [None, None])
+        self.assertEqual([c["start"] for c in spec["clips"]], [0.0, 20.0])
+        # 余白が消えるぶん字幕が 4 秒前へ出る (今回の不具合そのもの)
+        self.assertAlmostEqual(spec["captions"][0]["offset"], 0.35)
+
+
+# 先頭アンカー字幕 (resolve5 §19-2c)
+class TestLeadAnchor(_SourceFileCase):
+
+    def _settings_with_anchor(self, enabled):
+        settings = _settings()
+        settings["export"]["resolve"]["subtitle"] = {"lead_anchor": enabled}
+        return settings
+
+    def _export(self, settings, name):
+        spec = resolve_export.build_clip_spec(
+            self.source, [(0.0, 5.0)],
+            [{"start": 2.0, "end": 3.0, "text": "本文", "use": True, "role": "streamer"}],
+            settings, profile=_PROFILE)
+        dest = os.path.join(self._dir, name)
+        resolve_export.export_spec(spec, dest, settings=settings)
+        with open(os.path.splitext(dest)[0] + ".srt", "r", encoding="utf-8") as f:
+            srt = f.read()
+        with open(dest, "r", encoding="utf-8") as f:
+            return f.read(), srt
+
+    # 有効時は 0 秒へ 1 フレームの空白字幕と SRT の 1 件目が入る
+    def test_lead_anchor_adds_zero_second_caption(self):
+        fcpxml, srt = self._export(self._settings_with_anchor(True), "anchor.fcpxml")
+        self.assertIn('name="先頭アンカー"', fcpxml)
+        self.assertTrue(srt.startswith("1\n00:00:00,000 --> 00:00:00,017\n\u3000"))
+        # 本編の字幕は後ろへずれずそのまま
+        self.assertIn("00:00:02,000 --> 00:00:03,000\n本文", srt)
+
+    # 既定 (無効) では何も足さない
+    def test_lead_anchor_disabled_by_default(self):
+        fcpxml, srt = self._export(self._settings_with_anchor(False), "plain.fcpxml")
+        self.assertNotIn("先頭アンカー", fcpxml)
+        self.assertTrue(srt.startswith("1\n00:00:02,000 --> 00:00:03,000\n本文"))
 
 
 class TestSrtWriter(unittest.TestCase):

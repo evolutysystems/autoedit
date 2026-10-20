@@ -182,7 +182,7 @@ def resolve_clip_spec(canvas_width, canvas_height, duration_sec, cfg):
 # spec へ透かしクリップを足して返す (ver5 resolve §5.5)。
 # 素材が読めない / 尺が 0 のときは spec をそのまま返す (書き出し自体は止めない / §4-3)。
 def add_resolve_clip(spec, settings):
-    duration = sum(float(c.get("duration") or 0.0) for c in (spec.get("clips") or []))
+    offset, duration = _body_span(spec.get("clips"))
     if duration <= 0:
         return spec
 
@@ -191,9 +191,27 @@ def add_resolve_clip(spec, settings):
     if overlay is None:
         return spec
 
+    overlay["offset"] = offset
     spec.setdefault("overlays", []).append(overlay)
-    _logger.info("Resolve 出力へ透かしクリップを追加しました (全長 %.2fs)", duration)
+    _logger.info(
+        "Resolve 出力へ透かしクリップを追加しました (%.2fs から %.2fs)", offset, duration)
     return spec
+
+
+# 透かしが覆う区間 (開始秒, 尺秒) を返す (resolve5 §19-3)
+# クリップが位置 (offset) を持つ場合は本編の先頭〜末尾だけを覆い、
+# 先頭や途中の余白 (オープニングを置く場所) には乗せない。
+# 位置を持たない従来の spec では先頭から尺の総和ぶんを覆う。
+def _body_span(clips):
+    clips = [c for c in (clips or []) if float(c.get("duration") or 0.0) > 0]
+    if not clips:
+        return 0.0, 0.0
+    if not any(c.get("offset") is not None for c in clips):
+        return 0.0, sum(float(c.get("duration") or 0.0) for c in clips)
+    starts = [float(c.get("offset") or 0.0) for c in clips]
+    ends = [s + float(c.get("duration") or 0.0) for s, c in zip(starts, clips)]
+    offset = min(starts)
+    return offset, max(ends) - offset
 
 
 # PNG の寸法を IHDR から読む (外部ライブラリを足さないため / docs/claude.md)

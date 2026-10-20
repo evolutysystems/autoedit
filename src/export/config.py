@@ -24,6 +24,9 @@ def resolve_config(settings):
         "clip_edit_points": str(resolve.get("clip_edit_points", "context") or "context"),
         # アーカイブのイントロ/タグ演出をテキストとして出力へ含めるか (§5.4)
         "include_intro_card": bool(resolve.get("include_intro_card", True)),
+        # Timeline 経路のクリップ配置 (resolve5 §19-4)
+        # "preserve"=Timeline 上の位置をそのまま出力 (空きは gap) / "pack"=先頭から詰める (従来)
+        "timeline_layout": str(resolve.get("timeline_layout", "preserve") or "preserve"),
         # クリップ用出力のファイル名接頭辞 (空文字なら接頭辞なし)
         "clip_prefix": str(resolve.get("clip_prefix", "clip") or ""),
         # 位置変換の係数 (§5.5)
@@ -43,5 +46,10 @@ def resolve_config(settings):
             "language": str(subtitle.get("language", "ja") or "ja"),
             # SRT サイドカーを併せて出力するか
             "srt_sidecar": bool(subtitle.get("srt_sidecar", True)),
+            # 先頭 0 秒へ空白字幕を 1 件足すか (resolve5 §19-2c)。
+            # 取り込み側が「先頭の空きを詰めて最初の字幕を 0 秒へ寄せる」場合の保険。
+            "lead_anchor": bool(subtitle.get("lead_anchor", False)),
+            # 先頭アンカーの本文。空文字だと取り込み時に捨てられるため既定は全角空白。
+            "lead_anchor_text": str(subtitle.get("lead_anchor_text", "　") or "　"),
         },
     }

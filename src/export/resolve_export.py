@@ -490,19 +490,28 @@ def build_timeline_spec(timeline, settings, profile=None):
     body_media_id = (timeline.source or {}).get("media_id")
     all_clips = timeline.base_clips()
     body_clips = [c for c in all_clips if c.media_id == body_media_id]
+    preserve = _preserve_layout(cfg)
     skipped = len(all_clips) - len(body_clips)
     if skipped:
         _logger.warning(
             "元動画以外のクリップ %d 件 (オープニング/エンディング/追加メディア) は "
-            "FCPXML に含めません。Resolve 側で追加してください。", skipped)
+            "FCPXML に含めません。%s", skipped,
+            "その区間は余白 (gap) として出力するため、Resolve 側で素材を置いてください。"
+            if preserve else "Resolve 側で追加してください。")
     if not body_clips:
         raise ExportError(tr("元動画のクリップが 1 つも残っていないため出力できません。"))
 
-    segments = [(c.source_in, c.source_out) for c in body_clips]
-    spec["clips"] = _clips_from_segments(segments, "cut")
-
-    # 字幕は「出力する範囲だけで詰め直したタイムライン」の時刻へ写像する
-    items = _timeline_subtitle_items(timeline, segments, body_media_id)
+    if preserve:
+        # Timeline 上の位置をそのまま写す (詰め直さない / resolve5 §19-2)。
+        # 字幕も Timeline 座標のままなので、余白ぶんのズレが生じない。
+        spec["clips"] = _clips_from_base_clips(body_clips, "cut")
+        items = _timeline_items_as_is(timeline)
+    else:
+        # 従来 (先頭から詰める)。余白が無い Timeline では preserve と同じ結果になる。
+        segments = [(c.source_in, c.source_out) for c in body_clips]
+        spec["clips"] = _clips_from_segments(segments, "cut")
+        # 字幕は「出力する範囲だけで詰め直したタイムライン」の時刻へ写像する
+        items = _timeline_subtitle_items(timeline, segments, body_media_id)
     mode = _subtitle_mode(cfg)
     if mode in ("caption", "both"):
         spec["captions"] = _captions_from_items(items, 0.0, font_profile, "字幕")
@@ -515,8 +524,38 @@ def build_timeline_spec(timeline, settings, profile=None):
     return spec
 
 
+# Timeline のクリップ配置をそのまま出力するか (resolve5 §19-4)
+def _preserve_layout(cfg):
+    return str(cfg.get("timeline_layout", "preserve")) != "pack"
+
+
+# Timeline のベースクリップを「位置込み」のクリップ列へ変換する (resolve5 §19-2)
+# timeline_start を offset として渡すため、先頭・途中の余白がそのまま残る。
+def _clips_from_base_clips(body_clips, name_prefix):
+    clips = []
+    for order, clip in enumerate(body_clips or [], 1):
+        duration = max(float(clip.source_out) - float(clip.source_in), 0.0)
+        if duration <= 0:
+            continue
+        clips.append({
+            "offset": max(float(clip.timeline_start), 0.0),
+            "start": float(clip.source_in),
+            "duration": duration,
+            "name": f"{name_prefix}{order}",
+        })
+    return clips
+
+
+# 字幕クリップを Timeline 座標のまま items へ変換する (写像しない / resolve5 §18-2)
+# 余白 (オープニング区間など) に載っている字幕も位置を保って出力する
+# (FCPXML では gap の接続要素になる / §18-3)。
+def _timeline_items_as_is(timeline):
+    return [clip.to_item() for clip in timeline.subtitle_clips()]
+
+
 # 字幕クリップを「出力対象クリップだけを連結したタイムライン」の時刻へ直す
 # 元動画以外の上に載っている字幕 (OP 中のテロップなど) は出力しない。
+# timeline_layout="pack" (従来挙動) のときだけ使う。
 def _timeline_subtitle_items(timeline, segments, body_media_id):
     full_map = TimeMap.from_clips(timeline.base_clips(), body_media_id=body_media_id)
     export_map = TimeMap.from_segments(segments, media_id=body_media_id)
@@ -543,12 +582,16 @@ def _timeline_subtitle_items(timeline, segments, body_media_id):
 
 # Timeline 用 (ver3): 編集画面から呼ぶ一括エクスポート
 # 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_timeline(timeline, settings, overwrite_confirm=None, points=None):
+# watermark_confirm_callback: ポイント不足で透かしが入るときの確認フック。
+#   渡さないと無確認で透かし入り出力になるため、GUI からは必ず渡す (ver5 resolve §5.6 R12)
+def export_timeline(timeline, settings, overwrite_confirm=None, points=None,
+                    watermark_confirm_callback=None):
     spec = build_timeline_spec(timeline, settings)
     source_path = (timeline.source or {}).get("input_path", "")
     dest = default_output_path(settings, source_path, resolve_config(settings)["clip_prefix"])
     return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
-                       points=points, job_type=_job_type(timeline))
+                       points=points, job_type=_job_type(timeline),
+                       watermark_confirm_callback=watermark_confirm_callback)
 
 
 # ------------------------------------------------------------------
@@ -695,6 +738,9 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
     if points_service.watermark_required(reservation):
         _add_watermark_overlay(spec, cfg, settings or {})
 
+    # 先頭アンカー (取り込み側が先頭の空きを詰める場合の保険 / resolve5 §19-2c)
+    _add_lead_anchor(spec, cfg)
+
     try:
         try:
             content = fcpxml_builder.build_fcpxml(spec)
@@ -722,9 +768,23 @@ def export_spec(spec, dest_path, settings=None, overwrite_confirm=None,
     if spec.get("captions") or srt_path:
         _inform_track_style_once()
 
-    total = sum(c["duration"] for c in spec.get("clips", []))
-    _logger.info("Resolve 出力完了: %s (タイムライン尺 %.2fs)", " / ".join(written), total)
+    _logger.info(
+        "Resolve 出力完了: %s (タイムライン尺 %.2fs)",
+        " / ".join(written), _timeline_length(spec.get("clips")))
     return written
+
+
+# タイムライン全長 (秒) を返す (ログ用)
+# 位置 (offset) を持つ spec は余白を含む末尾まで、持たない spec は尺の総和
+# (従来の連結並び / resolve5 §19-1)。
+def _timeline_length(clips):
+    clips = [c for c in (clips or []) if float(c.get("duration") or 0.0) > 0]
+    if not clips:
+        return 0.0
+    if not any(c.get("offset") is not None for c in clips):
+        return sum(float(c.get("duration") or 0.0) for c in clips)
+    return max(float(c.get("offset") or 0.0) + float(c.get("duration") or 0.0)
+               for c in clips)
 
 
 # Resolve 出力 1 回分の結果をログへ積む (request1 / resolve1 §7.3)。
@@ -735,6 +795,38 @@ def _log_export(project_id, canvas, cfg, started_at, success, cancelled=False, e
         output_profile=canvas, codec=cfg.get("format"), cancelled=cancelled)
     if error is not None:
         telemetry.report_error("resolve_export", error)
+
+
+# 先頭 0 秒へ 1 フレームの空白字幕を足す (resolve5 §19-2c)
+# Resolve の字幕取り込みが「先頭の空きを詰めて最初の字幕を 0 秒へ寄せる」挙動を
+# 持つ場合の保険。最初の字幕が既に先頭にあるときは何もしない。
+# 既定 OFF (export.resolve.subtitle.lead_anchor)。
+def _add_lead_anchor(spec, cfg):
+    sub_cfg = cfg["subtitle"]
+    if not sub_cfg["lead_anchor"]:
+        return
+    fps = int(spec.get("fps") or 0) or 60
+    frame = 1.0 / fps
+    text = sub_cfg["lead_anchor_text"]
+    added = []
+
+    captions = spec.get("captions") or []
+    if captions and min(float(c.get("offset", 0.0) or 0.0) for c in captions) >= frame:
+        captions.insert(0, {
+            "offset": 0.0, "duration": frame, "text": text, "name": "先頭アンカー",
+        })
+        spec["captions"] = captions
+        added.append("caption")
+
+    entries = spec.get("srt_entries") or []
+    if entries and min(float(e.get("start", 0.0) or 0.0) for e in entries) >= frame:
+        # keep_blank: 空白のままでも SRT へ残す (srt_writer の空テキスト除外の対象外)
+        entries.insert(0, {"start": 0.0, "end": frame, "text": text, "keep_blank": True})
+        spec["srt_entries"] = entries
+        added.append("SRT")
+
+    if added:
+        _logger.info("先頭 0 秒へアンカー字幕を追加しました (%s)", " / ".join(added))
 
 
 # 透かしクリップを spec へ足し、座標をタイトルと同じ規約へ移す (ver5 resolve §5.5)。
@@ -800,7 +892,10 @@ def _job_type(timeline):
     return points_service.JOB_CLIP
 
 
-def export_clip_review(export_context, items, overwrite_confirm=None, points=None):
+# watermark_confirm_callback: ポイント不足で透かしが入るときの確認フック。
+#   渡さないと無確認で透かし入り出力になるため、GUI からは必ず渡す (ver5 resolve §5.6 R12)
+def export_clip_review(export_context, items, overwrite_confirm=None, points=None,
+                       watermark_confirm_callback=None):
     context = export_context or {}
     settings = context.get("settings") or {}
     source_path = context.get("source_path", "")
@@ -810,15 +905,20 @@ def export_clip_review(export_context, items, overwrite_confirm=None, points=Non
     )
     dest = default_output_path(settings, source_path, resolve_config(settings)["clip_prefix"])
     return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
-                       points=points, job_type=points_service.JOB_CLIP)
+                       points=points, job_type=points_service.JOB_CLIP,
+                       watermark_confirm_callback=watermark_confirm_callback)
 
 
 # アーカイブ用 (R2): 結果画面から呼ぶ一括エクスポート
 # 戻り値: 出力パスの list ([fcpxml] または [fcpxml, srt]) / None (上書きしない選択)
-def export_archive_result(source_path, entries, settings, overwrite_confirm=None, points=None):
+# watermark_confirm_callback: ポイント不足で透かしが入るときの確認フック。
+#   渡さないと無確認で透かし入り出力になるため、GUI からは必ず渡す (ver5 resolve §5.6 R12)
+def export_archive_result(source_path, entries, settings, overwrite_confirm=None,
+                          points=None, watermark_confirm_callback=None):
     spec = build_archive_spec(source_path, entries, settings)
     if not spec["clips"]:
         raise ExportError(tr("出力対象のクリップがありません (使用クリップを1つ以上選択してください)。"))
     dest = default_output_path(settings, source_path, archive_config.clip_prefix(settings))
     return export_spec(spec, dest, settings=settings, overwrite_confirm=overwrite_confirm,
-                       points=points, job_type=points_service.JOB_ARCHIVE)
+                       points=points, job_type=points_service.JOB_ARCHIVE,
+                       watermark_confirm_callback=watermark_confirm_callback)

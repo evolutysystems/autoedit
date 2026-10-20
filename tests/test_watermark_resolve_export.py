@@ -5,6 +5,9 @@
 #   ・透かしは字幕 (lane 1) より上のレーンへ置くこと
 #   ・書き出せたときだけ commit し、失敗では cancel すること (R3 / R6)
 #   ・単価の種別が入口で決まること (クリップ 25pt / アーカイブ 100pt / 確認事項 #3)
+#   ・透かし確認フックが入口から export_spec まで中継されること (ver8 resolve5)
+import ast
+import inspect
 import os
 import tempfile
 import unittest
@@ -104,6 +107,18 @@ class ResolveClipSpecTest(unittest.TestCase):
         self.assertEqual(len(spec["overlays"]), 1)
         self.assertEqual(spec["overlays"][0]["duration"], 15.0)
         self.assertEqual(spec["overlays"][0]["offset"], 0.0)
+
+    # クリップが位置を持つ場合は本編の先頭〜末尾だけを覆う (余白には乗せない / resolve5 §19-3)
+    def test_covers_body_span_only(self):
+        spec = _spec()
+        spec["clips"] = [
+            {"offset": 4.0, "start": 0.0, "duration": 5.0, "name": "c1"},
+            {"offset": 11.0, "start": 20.0, "duration": 3.0, "name": "c2"},
+        ]
+        watermark_overlay.add_resolve_clip(spec, {})
+
+        self.assertEqual(spec["overlays"][0]["offset"], 4.0)
+        self.assertEqual(spec["overlays"][0]["duration"], 10.0)
 
 
 class FcpxmlOverlayTest(unittest.TestCase):
@@ -251,6 +266,97 @@ class JobTypeTest(unittest.TestCase):
                 setattr(resolve_export, name, original)
 
         self.assertEqual(seen, ["archive", "clip"])
+
+
+# 入口 (export_timeline / export_clip_review / export_archive_result) から
+# 合流点 (export_spec) への引数の中継 (ver8 resolve5 §4-2)
+#
+# export_spec へ引数を足したときに入口への書き足しを忘れると、画面のボタンを
+# 押すまで誰も気づけない (ver8 resolve5 §2-1)。ここで定義の時点で落とす。
+class EntryPointRelayTest(unittest.TestCase):
+
+    # GUI が渡す形で入口を呼べること + 透かし確認フックがそのまま届くこと
+    def test_entry_points_relay_watermark_callback(self):
+        sentinel = lambda: True  # noqa: E731 (同一性を見るための目印)
+        seen = []
+        originals = {
+            "export_spec": resolve_export.export_spec,
+            "build_timeline_spec": resolve_export.build_timeline_spec,
+            "build_archive_spec": resolve_export.build_archive_spec,
+            "build_clip_spec": resolve_export.build_clip_spec,
+            "default_output_path": resolve_export.default_output_path,
+            "_job_type": resolve_export._job_type,
+        }
+        resolve_export.export_spec = (
+            lambda *_a, **kw: seen.append(kw.get("watermark_confirm_callback")))
+        resolve_export.build_timeline_spec = lambda *_a, **_k: _spec()
+        resolve_export.build_archive_spec = lambda *_a, **_k: _spec()
+        resolve_export.build_clip_spec = lambda *_a, **_k: _spec()
+        resolve_export.default_output_path = lambda *_a, **_k: "out.fcpxml"
+        resolve_export._job_type = lambda *_a, **_k: "clip"
+        # export_timeline は timeline.source を直接読むため最小の控えを渡す
+        class _Timeline:
+            source = {"input_path": "a.mp4"}
+
+        try:
+            resolve_export.export_timeline(
+                _Timeline(), {}, watermark_confirm_callback=sentinel)
+            resolve_export.export_clip_review(
+                {"settings": {}, "source_path": "a.mp4"}, [],
+                watermark_confirm_callback=sentinel)
+            resolve_export.export_archive_result(
+                "vod.mp4", [{"index": 1}], {}, watermark_confirm_callback=sentinel)
+        finally:
+            for name, original in originals.items():
+                setattr(resolve_export, name, original)
+
+        self.assertEqual(seen, [sentinel, sentinel, sentinel])
+
+    # 入口 3 本が合流点の公開キーワードを欠いていないこと (次の足し忘れを止める)
+    def test_entry_points_accept_gui_keywords(self):
+        required = ("overwrite_confirm", "points", "watermark_confirm_callback")
+        for name in ("export_timeline", "export_clip_review", "export_archive_result"):
+            params = inspect.signature(getattr(resolve_export, name)).parameters
+            for keyword in required:
+                with self.subTest(entry=name, keyword=keyword):
+                    self.assertIn(keyword, params)
+
+    # GUI の呼び出しが渡すキーワードが、呼ぶ関数の署名に実在すること
+    # (画面を起動せずソースを読んで突き合わせる / ver8 resolve5 §4-2)
+    def test_gui_export_calls_match_signature(self):
+        gui_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "gui")
+        checked = 0
+        for root, _dirs, files in os.walk(gui_dir):
+            for file_name in files:
+                if not file_name.endswith(".py"):
+                    continue
+                path = os.path.join(root, file_name)
+                with open(path, encoding="utf-8") as f:
+                    tree = ast.parse(f.read(), filename=path)
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    # resolve_export.export_*(...) の形だけを見る
+                    if not isinstance(func, ast.Attribute) or                             not isinstance(func.value, ast.Name) or                             func.value.id != "resolve_export" or                             not func.attr.startswith("export_"):
+                        continue
+                    entry = getattr(resolve_export, func.attr, None)
+                    self.assertIsNotNone(
+                        entry, f"{path}:{node.lineno} 存在しない関数 {func.attr}")
+                    params = inspect.signature(entry).parameters
+                    for keyword in node.keywords:
+                        if keyword.arg is None:  # **kwargs 展開は対象外
+                            continue
+                        with self.subTest(call=f"{file_name}:{node.lineno}", kw=keyword.arg):
+                            self.assertIn(
+                                keyword.arg, params,
+                                f"{path}:{node.lineno} {func.attr}() に "
+                                f"{keyword.arg} が無い")
+                    checked += 1
+
+        # 画面側の呼び出しを拾えていないと黙って通ってしまうため件数も見る
+        self.assertGreaterEqual(checked, 4)
 
 
 if __name__ == "__main__":

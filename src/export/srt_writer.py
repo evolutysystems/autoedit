@@ -20,14 +20,17 @@ def format_srt_time(seconds):
 
 
 # entries から SRT 文字列を組み立てる
-# entries: [{"start": 秒, "end": 秒, "text": str (実改行可)}, ...] (タイムライン時刻・出現順)
+# entries: [{"start": 秒, "end": 秒, "text": str (実改行可),
+#            "keep_blank": bool (任意)}, ...] (タイムライン時刻・出現順)
 # テキストが空の entry と尺が 0 以下の entry は出力しない。連番は 1 起点。
+# keep_blank=True の entry だけは空白のままでも残す
+# (先頭 0 秒のアンカー字幕。意図的に空白なので「空だから落とす」対象外 / resolve5 §19-2c)。
 def build_srt(entries):
     blocks = []
     number = 1
     for entry in entries or []:
         text = str(entry.get("text", "")).strip("\n")
-        if not text.strip():
+        if not text.strip() and not entry.get("keep_blank"):
             continue
         start = float(entry.get("start", 0.0) or 0.0)
         end = float(entry.get("end", 0.0) or 0.0)

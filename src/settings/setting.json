@@ -139,7 +139,10 @@
             "recent_limit": 10,
             "recent": [],
             "archive_suffix": ".archive",
-            "recent_archive": [],
+            "recent_archive": [
+                "D:/develop/autoedit/src/settings/archive_work/vod_2904967242.archive.timeline.json",
+                "D:\\develop\\autoedit\\src\\settings\\archive_work\\vod_2904967242.archive.timeline.json"
+            ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
             "delete_button": true,
@@ -196,10 +199,17 @@
             "archive_clip_selector_width_px": 260,
             "archive_graph_dock_always_show": true,
             "remember_window_geometry": true,
-            "window_geometry": {},
-            "splitter_state": {},
+            "window_geometry": {
+                "archive": "AdnQywADAAAAAAE2AAAAfgAABjUAAAPQAAABNgAAAJ0AAAY1AAAD0AAAAAAAAAAAB4AAAAE2AAAAnQAABjUAAAPQ"
+            },
+            "splitter_state": {
+                "archive": {
+                    "main": "AAAA/wAAAAEAAAACAADN0gAAJ4gB/////wEAAAACAA==",
+                    "upper": "AAAA/wAAAAEAAAACAAAWgAAAAPIB/////wEAAAABAA=="
+                }
+            },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAXUAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAF1AAAAG8A////AAAF1AAABAkAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAhoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
@@ -463,6 +473,7 @@
             "clip_edit_points": "context",
             "include_intro_card": true,
             "clip_prefix": "clip",
+            "timeline_layout": "preserve",
             "title": {
                 "coord_space": "normalized",
                 "origin": "center"
@@ -471,7 +482,9 @@
                 "mode": "caption",
                 "caption_format": "ITT",
                 "language": "ja",
-                "srt_sidecar": true
+                "srt_sidecar": true,
+                "lead_anchor": false,
+                "lead_anchor_text": "　"
             }
         }
     },

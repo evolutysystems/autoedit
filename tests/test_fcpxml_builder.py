@@ -233,5 +233,88 @@ class TestBuildFcpxml(unittest.TestCase):
         self.assertEqual(root.tag, "fcpxml")
 
 
+# Timeline の位置をそのまま出力する経路 (resolve5 §19-1)
+# clips が offset を持つ場合、先頭/途中の余白を gap として残す。
+class TestExplicitLayout(unittest.TestCase):
+
+    # 先頭 10 秒 + 途中 2 秒 (15〜17s) の余白を持つ spec
+    def setUp(self):
+        self.spec = {
+            "version": "1.9", "fps": 60, "width": 1920, "height": 1080,
+            "source": {"path": "/tmp/sample.mp4", "name": "sample", "duration": 600.0},
+            "clips": [
+                {"offset": 10.0, "start": 2.0, "duration": 5.0, "name": "cut1"},
+                {"offset": 17.0, "start": 10.0, "duration": 4.0, "name": "cut2"},
+            ],
+            "captions": [{
+                "offset": 12.0, "duration": 1.0, "text": "本編の字幕",
+                "placement": "bottom", "name": "字幕1",
+            }],
+        }
+
+    def _spine(self):
+        root = _parse(builder.build_fcpxml(self.spec))
+        return root.find("./library/event/project/sequence/spine")
+
+    # offset を与えたクリップはその位置へ置かれる (尺の累積にならない)
+    def test_explicit_offset_is_used_as_timeline_position(self):
+        clips = self._spine().findall("./asset-clip")
+        self.assertEqual([c.get("offset") for c in clips], ["10s", "17s"])
+        self.assertEqual([c.get("start") for c in clips], ["2s", "10s"])
+
+    # 先頭の余白が gap として出る (オープニングを置く場所が残る)
+    def test_leading_gap_is_emitted(self):
+        first = list(self._spine())[0]
+        self.assertEqual(first.tag, "gap")
+        self.assertEqual((first.get("offset"), first.get("duration")), ("0s", "10s"))
+        self.assertEqual(first.get("start"), "0s")
+
+    # 途中の余白も gap として出る (削除/無効化したクリップの穴が詰まらない)
+    def test_middle_gap_is_emitted(self):
+        children = list(self._spine())
+        self.assertEqual([e.tag for e in children],
+                         ["gap", "asset-clip", "gap", "asset-clip"])
+        self.assertEqual((children[2].get("offset"), children[2].get("duration")),
+                         ("15s", "2s"))
+
+    # 余白の上に載った字幕は捨てず、gap の子要素として出す (resolve5 §18-3)
+    def test_subtitle_on_gap_is_anchored_to_gap(self):
+        self.spec["captions"] = [{
+            "offset": 3.0, "duration": 1.0, "text": "余白の上の字幕",
+            "placement": "bottom", "name": "字幕1",
+        }]
+        gap = list(self._spine())[0]
+        caption = gap.find("./caption")
+        self.assertIsNotNone(caption)
+        # gap のローカル時間 (start=0s) なのでタイムライン時刻と同じ
+        self.assertEqual((caption.get("offset"), caption.get("duration")), ("3s", "1s"))
+
+    # 本編上の字幕は従来どおり担当クリップの親ローカル時間へ入る
+    def test_subtitle_on_clip_keeps_parent_local_time(self):
+        clip = self._spine().findall("./asset-clip")[0]
+        caption = clip.find("./caption")
+        # タイムライン 12.0s = クリップ1 (位置 10.0s / ソース in 2.0s) 上のソース 4.0s
+        self.assertEqual(caption.get("offset"), "4s")
+
+    # シーケンス尺は余白を含む「最終要素の終端」になる
+    def test_sequence_duration_includes_gaps(self):
+        root = _parse(builder.build_fcpxml(self.spec))
+        sequence = root.find("./library/event/project/sequence")
+        self.assertEqual(sequence.get("duration"), "21s")
+
+    # offset を与えない従来の spec では出力が変わらない (後方互換)
+    def test_output_unchanged_without_offsets(self):
+        packed = dict(self.spec, clips=[
+            {"start": 2.0, "duration": 5.0, "name": "cut1"},
+            {"start": 10.0, "duration": 4.0, "name": "cut2"},
+        ], captions=[])
+        root = _parse(builder.build_fcpxml(packed))
+        spine = root.find("./library/event/project/sequence/spine")
+        self.assertEqual([e.tag for e in spine], ["asset-clip", "asset-clip"])
+        self.assertEqual([c.get("offset") for c in spine], ["0s", "5s"])
+        sequence = root.find("./library/event/project/sequence")
+        self.assertEqual(sequence.get("duration"), "9s")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -49,8 +49,11 @@ _OVERLAY_LANE = 2
 _OVERLAY_ASSET_ID = "r10"
 _OVERLAY_FORMAT_ID = "r11"
 
-# クランプ発生の周知ログを 1 回だけ出すためのフラグ (resolve21 §7)
-_warned_once = {"clamp": False}
+# 空き区間 (gap) の表示名 (resolve5 §19-1)
+_GAP_NAME = "余白"
+
+# クランプ/重なり発生の周知ログを 1 回だけ出すためのフラグ (resolve21 §7 / resolve5 §19-1)
+_warned_once = {"clamp": False, "overlap": False}
 
 
 # 秒を整数フレームへ量子化する (§5.3。不正値は 0 フレーム)
@@ -118,21 +121,54 @@ def _file_uri(path):
 # タイムラインのフレーム量子化とアンカリング (resolve21 §5.2/§5.3)
 # ------------------------------------------------------------------
 
-# クリップ列を整数フレームへ量子化し、タイムライン位置を量子化済み尺の累積で確定する
+# クリップ列を整数フレームへ量子化し、タイムライン位置を確定する
 # 戻り値: [{"name", "offset_f"(タイムライン位置), "start_f"(ソース in 点), "dur_f"}, ...]
+#   ・offset 有り (Timeline 経路 / resolve5 §19-1): 各クリップの位置を直接量子化する。
+#     累積しないため丸め誤差が積み上がらず、Timeline 上の余白もそのまま残る。
+#   ・offset 無し (クリップ用/アーカイブ用 経路): 従来どおり量子化済み尺の累積で並べる。
 def _quantize_clips(clips, fps):
     quantized = []
     cursor_f = 0
     for index, clip in enumerate(clips, 1):
         dur_f = max(to_frames(clip.get("duration", 0.0), fps), 1)
+        offset = clip.get("offset")
+        offset_f = cursor_f if offset is None else max(to_frames(offset, fps), 0)
         quantized.append({
             "name": str(clip.get("name") or f"cut{index}"),
-            "offset_f": cursor_f,
+            "offset_f": offset_f,
             "start_f": max(to_frames(clip.get("start", 0.0), fps), 0),
             "dur_f": dur_f,
         })
-        cursor_f += dur_f
-    return quantized
+        cursor_f = offset_f + dur_f
+    # 明示位置が順不同でも spine を時刻順に並べる (累積方式では元の順序が保たれる)
+    return sorted(quantized, key=lambda fc: fc["offset_f"])
+
+
+# クリップ間の空き区間を gap として補う (resolve5 §19-1)
+#   ・先頭の余白: オープニングを置く場所として残す
+#   ・途中の余白: 削除/無効化したクリップ・追加メディアの区間
+# gap も接続要素 (字幕/透かし) の親になれるため、余白上の字幕を捨てずに出力できる。
+# 累積方式 (offset 無し) では隙間が生じないため、戻り値は入力と同一になる。
+def _fill_gaps(fclips):
+    filled = []
+    cursor_f = 0
+    for fc in fclips:
+        if fc["offset_f"] > cursor_f:
+            filled.append({
+                "name": _GAP_NAME,
+                "offset_f": cursor_f,
+                "start_f": 0,
+                "dur_f": fc["offset_f"] - cursor_f,
+                "is_gap": True,
+            })
+        elif fc["offset_f"] < cursor_f and not _warned_once["overlap"]:
+            # V1 では通常起きない。位置を動かさず、そのまま出力して Resolve 側の判断に委ねる。
+            _warned_once["overlap"] = True
+            _logger.warning(
+                "ベーストラックのクリップが重なっています。位置を変えずにそのまま出力します。")
+        filled.append(fc)
+        cursor_f = max(cursor_f, fc["offset_f"] + fc["dur_f"])
+    return filled
 
 
 # タイムライン区間 [start_f, end_f) を担当クリップへ割り当てる (§5.2)
@@ -167,9 +203,10 @@ def _assign_to_clips(fclips, start_f, end_f, timeline_f):
     return pieces
 
 
-# クリップ列の合計尺 (タイムライン全長・フレーム) を返す
+# タイムライン全長 (フレーム) を返す
+# 余白を含むため「最終要素の終端」で求める (隙間が無ければ尺の総和と一致する / resolve5 §19-1)
 def _total_frames(fclips):
-    return sum(fc["dur_f"] for fc in fclips)
+    return max((fc["offset_f"] + fc["dur_f"] for fc in fclips), default=0)
 
 
 # spec から FCPXML 文字列を生成して返す
@@ -177,7 +214,10 @@ def _total_frames(fclips):
 #   "version": str, "event_name": str, "project_name": str,
 #   "fps": int, "width": int, "height": int,
 #   "source": {"path": 絶対パス, "name": str, "duration": float},
-#   "clips":  [{"start": ソース内イン点秒, "duration": 尺秒, "name": str}, ...]  ← spine の順に連結
+#   "clips":  [{"start": ソース内イン点秒, "duration": 尺秒, "name": str,
+#               "offset": タイムライン位置秒 (任意)}, ...]
+#             offset 省略時は spine の順に連結、指定時はその位置へ置き空きは gap になる
+#             (Timeline の余白を保つ / resolve5 §19-1)
 #   "titles": [{"offset": タイムライン秒, "duration": 尺秒, "text": str,
 #               "font": str, "font_size": int, "color": "#RRGGBB",
 #               "stroke_color": "#RRGGBB", "stroke_alpha": float, "stroke_width": int,
@@ -211,7 +251,8 @@ def build_fcpxml(spec):
     source = spec.get("source") or {}
 
     # 以降の時間計算は全て整数フレームで行う (§5.3)
-    fclips = _quantize_clips(clips, fps)
+    # 明示位置が与えられている場合は空き区間を gap で補う (resolve5 §19-1)
+    fclips = _fill_gaps(_quantize_clips(clips, fps))
     timeline_f = _total_frames(fclips)
 
     root = ET.Element("fcpxml", {"version": str(spec.get("version") or _DEFAULT_VERSION)})
@@ -285,16 +326,25 @@ def build_fcpxml(spec):
     spine = ET.SubElement(sequence, "spine")
 
     # 本線: keep 区間ごとに元ソースを参照するクリップを連結する (= カット編集点 / §5.2)
-    # offset は量子化済み尺の累積 (整数フレーム) で確定し、隙間/重なりを作らない (§5.3)
+    # offset は整数フレームで確定し、隙間/重なりを作らない (§5.3)。
+    # 空き区間は gap として出力し、Timeline 上の余白を保つ (resolve5 §19-1)。
     clip_elements = []
     for fc in fclips:
-        element = ET.SubElement(spine, "asset-clip", {
-            "ref": _ASSET_ID,
-            "name": fc["name"],
-            "offset": frames_to_text(fc["offset_f"], fps),
-            "start": frames_to_text(fc["start_f"], fps),
-            "duration": frames_to_text(fc["dur_f"], fps),
-        })
+        if fc.get("is_gap"):
+            element = ET.SubElement(spine, "gap", {
+                "name": fc["name"],
+                "offset": frames_to_text(fc["offset_f"], fps),
+                "start": "0s",
+                "duration": frames_to_text(fc["dur_f"], fps),
+            })
+        else:
+            element = ET.SubElement(spine, "asset-clip", {
+                "ref": _ASSET_ID,
+                "name": fc["name"],
+                "offset": frames_to_text(fc["offset_f"], fps),
+                "start": frames_to_text(fc["start_f"], fps),
+                "duration": frames_to_text(fc["dur_f"], fps),
+            })
         clip_elements.append(element)
 
     # 接続要素は担当クリップの子要素とし、offset は親ローカル時間で表す (§5.2)。
