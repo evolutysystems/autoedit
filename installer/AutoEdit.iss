@@ -19,7 +19,7 @@
 
 ; ---- リリース毎に更新するパラメータ -------------------------------
 #define MyAppName        "Stretheus"
-#define MyAppVersion     "1.5.7"
+#define MyAppVersion     "1.5.8"
 #define MyAppPublisher   "Evoluty Systems"
 #define MyAppExeName     "Stretheus.exe"
 
@@ -35,11 +35,11 @@
 ;  - CPU版で 2GiB 未満に収まる場合は単一ファイル: "Stretheus-v1.0.0.zip"
 ;  - 2GiB を超える場合は分割: "Stretheus-v1.0.0.zip.001,Stretheus-v1.0.0.zip.002"
 ;    (各 part は GitHub Releases の 2GiB 上限未満であること)
-#define PayloadParts     "Stretheus-v1.5.7.zip"
+#define PayloadParts     "Stretheus-v1.5.8.zip"
 
 ; 結合後zipの期待 SHA-256 (大文字16進・空文字なら検証スキップ)。
 ;  リリース時に Get-FileHash で取得して設定する (installer/README.md 参照)。
-#define PayloadSHA256    "0B6DF581D23985AEC59B511410756CD627257CF59CFFBA8A5D49AB827FDC78ED"
+#define PayloadSHA256    "380322E83842D0CD97E662D2F82F3CA820EF569D35FDA2393C9162625B630A3E"
 ; -------------------------------------------------------------------
 
 [Setup]
