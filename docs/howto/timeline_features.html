@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timeline 編集機能ガイド</title>
+<style>
+/* ===== テーマ変数（ライト） ===== */
+:root{
+  --bg:#f5f6f8;
+  --panel:#ffffff;
+  --panel-2:#fafbfc;
+  --text:#1b1f24;
+  --text-dim:#5c6672;
+  --border:#dfe3e8;
+  --accent:#2f6feb;
+  --accent-soft:#e7efff;
+  --th-bg:#eef1f5;
+  --kbd-bg:#ffffff;
+  --kbd-border:#c7ccd4;
+  --warn-bg:#fff7e6;
+  --warn-border:#f0b429;
+  --code-bg:#eef1f5;
+  --shadow:0 1px 3px rgba(16,24,40,.08), 0 8px 24px rgba(16,24,40,.06);
+  --radius:10px;
+}
+/* ===== テーマ変数（ダーク：OS 設定に追従） ===== */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15181d;
+    --panel:#1d2127;
+    --panel-2:#21262d;
+    --text:#e6e9ee;
+    --text-dim:#a0a8b4;
+    --border:#30363d;
+    --accent:#6ba0ff;
+    --accent-soft:#1f2b40;
+    --th-bg:#262c34;
+    --kbd-bg:#2b3139;
+    --kbd-border:#4a515b;
+    --warn-bg:#2e2612;
+    --warn-border:#b4830f;
+    --code-bg:#262c34;
+    --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+/* ===== テーマ変数（ダーク：ボタンで明示指定） ===== */
+:root[data-theme="dark"]{
+  --bg:#15181d;
+  --panel:#1d2127;
+  --panel-2:#21262d;
+  --text:#e6e9ee;
+  --text-dim:#a0a8b4;
+  --border:#30363d;
+  --accent:#6ba0ff;
+  --accent-soft:#1f2b40;
+  --th-bg:#262c34;
+  --kbd-bg:#2b3139;
+  --kbd-border:#4a515b;
+  --warn-bg:#2e2612;
+  --warn-border:#b4830f;
+  --code-bg:#262c34;
+  --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.75;
+}
+
+/* ===== ヘッダ ===== */
+.site-header{
+  padding:28px 16px 24px;
+  background:linear-gradient(135deg,#2f6feb 0%,#7b4ddb 100%);
+  color:#fff;
+}
+.site-header .inner{max-width:1180px;margin:0 auto;}
+.site-header h1{margin:0 0 6px;font-size:26px;letter-spacing:.02em;}
+.site-header p{margin:0;opacity:.9;font-size:13.5px;}
+.theme-btn{
+  position:fixed;top:14px;right:14px;z-index:50;
+  background:rgba(255,255,255,.18);color:#fff;
+  border:1px solid rgba(255,255,255,.45);
+  border-radius:999px;padding:6px 14px;font-size:12.5px;
+  cursor:pointer;font-family:inherit;
+}
+.theme-btn:hover{background:rgba(255,255,255,.3);}
+
+/* ===== レイアウト ===== */
+.wrap{
+  max-width:1180px;margin:0 auto;padding:24px 16px 64px;
+  display:grid;grid-template-columns:230px minmax(0,1fr);gap:28px;align-items:start;
+}
+/* 目次 */
+.toc{
+  position:sticky;top:16px;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 14px 16px;box-shadow:var(--shadow);
+  max-height:calc(100vh - 32px);overflow:auto;
+}
+.toc h2{margin:0 0 10px;font-size:12px;letter-spacing:.14em;color:var(--text-dim);}
+.toc ol{margin:0;padding:0;list-style:none;counter-reset:toc;}
+.toc li{counter-increment:toc;margin:2px 0;}
+.toc a{
+  display:block;padding:5px 8px;border-radius:6px;
+  color:var(--text);text-decoration:none;font-size:13px;
+}
+.toc a::before{content:counter(toc) ". ";color:var(--text-dim);}
+.toc a:hover{background:var(--accent-soft);color:var(--accent);}
+
+/* ===== セクション ===== */
+section{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 22px 24px;margin:0 0 20px;box-shadow:var(--shadow);scroll-margin-top:16px;
+}
+section > h2{
+  margin:0 0 4px;font-size:19px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;border-bottom:2px solid var(--border);
+}
+section > h2 .num{
+  flex:0 0 auto;min-width:28px;height:28px;padding:0 7px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--accent);color:#fff;border-radius:7px;font-size:13px;font-weight:700;
+}
+section > h2 .src{font-size:12px;color:var(--text-dim);font-weight:400;}
+h3{margin:22px 0 8px;font-size:15.5px;color:var(--accent);}
+h3:first-of-type{margin-top:16px;}
+p{margin:10px 0;}
+.lead{color:var(--text-dim);font-size:13.5px;margin:8px 0 0;}
+
+/* ===== テーブル ===== */
+.t-scroll{overflow-x:auto;margin:12px 0;}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:480px;}
+th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top;}
+th{background:var(--th-bg);font-weight:700;white-space:nowrap;}
+tbody tr:nth-child(even){background:var(--panel-2);}
+tbody tr:hover{background:var(--accent-soft);}
+td:first-child{font-weight:600;}
+table.nowrap-first td:first-child{white-space:nowrap;}
+
+/* ===== 箇条書き ===== */
+ul.list{margin:10px 0;padding-left:0;list-style:none;}
+ul.list > li{position:relative;padding-left:18px;margin:6px 0;}
+ul.list > li::before{
+  content:"";position:absolute;left:4px;top:.72em;
+  width:6px;height:6px;border-radius:50%;background:var(--accent);
+}
+ul.list ul{margin:4px 0;padding-left:18px;}
+ul.list ul li{margin:3px 0;color:var(--text-dim);font-size:13.5px;}
+
+/* ===== 注意書き ===== */
+.note{
+  margin:14px 0;padding:11px 14px;border-left:4px solid var(--warn-border);
+  background:var(--warn-bg);border-radius:0 8px 8px 0;font-size:13.5px;
+}
+.note strong{display:block;margin-bottom:2px;font-size:12.5px;letter-spacing:.06em;color:var(--text-dim);}
+
+/* ===== コード / キー ===== */
+code{
+  background:var(--code-bg);border:1px solid var(--border);border-radius:5px;
+  padding:1px 5px;font-family:Consolas,"Courier New",monospace;font-size:12.5px;
+}
+kbd{
+  display:inline-block;background:var(--kbd-bg);border:1px solid var(--kbd-border);
+  border-bottom-width:2px;border-radius:5px;padding:1px 7px;margin:1px;
+  font-family:Consolas,"Courier New",monospace;font-size:12.5px;white-space:nowrap;
+}
+
+/* ===== トラック構成図 ===== */
+.tracks{margin:14px 0;display:flex;flex-direction:column;gap:6px;}
+.track{
+  display:flex;align-items:center;gap:12px;
+  border:1px solid var(--border);border-left:6px solid var(--tc);
+  border-radius:8px;padding:9px 13px;background:var(--panel-2);
+}
+.track .tag{
+  flex:0 0 auto;min-width:62px;text-align:center;
+  background:var(--tc);color:#fff;border-radius:5px;
+  padding:2px 8px;font-size:12px;font-weight:700;
+}
+.track .desc{font-size:13.5px;}
+.track .desc small{display:block;color:var(--text-dim);font-size:12.5px;}
+.t-sub{--tc:#d6456b;}
+.t-ov{--tc:#d4821a;}
+.t-base{--tc:#2f9e6b;}
+.t-aud{--tc:#5b6ff0;}
+
+/* ===== チップ ===== */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.chip{
+  background:var(--accent-soft);color:var(--accent);
+  border:1px solid var(--border);border-radius:999px;
+  padding:4px 12px;font-size:12.5px;font-weight:600;
+}
+
+/* ===== 絞り込み入力 ===== */
+.filter{display:flex;align-items:center;gap:8px;margin:12px 0 4px;flex-wrap:wrap;}
+.filter input{
+  flex:1 1 220px;max-width:320px;
+  background:var(--panel-2);color:var(--text);
+  border:1px solid var(--border);border-radius:7px;
+  padding:7px 11px;font-size:13.5px;font-family:inherit;
+}
+.filter input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.filter .count{font-size:12.5px;color:var(--text-dim);}
+
+footer{
+  max-width:1180px;margin:0 auto;padding:0 16px 40px;
+  color:var(--text-dim);font-size:12.5px;text-align:center;
+}
+
+/* ===== 画面の全体図 ===== */
+.screen-sec.pinned{position:sticky;top:12px;z-index:30;}
+.pin-btn{
+  margin-left:auto;background:var(--accent-soft);color:var(--accent);
+  border:1px solid var(--border);border-radius:7px;padding:4px 12px;
+  font-size:12.5px;cursor:pointer;font-family:inherit;
+}
+.pin-btn:hover{background:var(--accent);color:#fff;}
+
+/* 画面図は実機（ダーク）に合わせて常に暗い配色 */
+.screen{
+  margin:12px 0 0;border:1px solid #3a3f46;border-radius:9px;overflow:hidden;
+  background:#1e2126;color:#e8ebef;font-size:11.5px;line-height:1.45;
+}
+.screen .sc-title{
+  background:#2b3038;color:#cfd5dc;padding:4px 10px;
+  border-bottom:1px solid #3a3f46;
+}
+.hot{position:relative;}
+.hot:hover{outline:2px solid var(--accent);outline-offset:-2px;}
+.badge{
+  position:absolute;top:4px;left:4px;z-index:4;
+  width:19px;height:19px;border-radius:50%;
+  background:#2f6feb;color:#fff;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  text-decoration:none;border:1px solid rgba(255,255,255,.55);
+}
+.badge:hover{background:#fff;color:#2f6feb;}
+.badge-inline{
+  position:static;display:inline-flex;width:17px;height:17px;
+  font-size:10.5px;vertical-align:middle;margin:0 3px;
+}
+.sc-note{color:#8f98a3;font-size:10.5px;}
+
+/* クリップバー（切り抜き編集画面のみ） */
+.sc-clipbar{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:6px 10px 6px 28px;border-bottom:1px dashed #4a5059;background:#22262c;
+}
+
+/* 上段: プレビュー / インスペクタ */
+.sc-mid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,1.4fr);}
+.sc-pv{padding:10px 10px 8px 10px;border-right:1px solid #3a3f46;}
+.sc-stage{
+  background:#101215;border:1px solid #3a3f46;border-radius:5px;
+  height:104px;position:relative;margin-top:14px;
+}
+.sc-overlay{
+  position:absolute;left:9px;top:10px;width:74px;height:44px;
+  border:1px dashed #6fd0cd;border-radius:3px;background:rgba(40,132,130,.28);
+  color:#bdeceb;font-size:10px;display:flex;align-items:center;justify-content:center;
+}
+.sc-handle{position:absolute;width:6px;height:6px;background:#ffd65c;border-radius:1px;}
+.sc-handle.tl{left:-3px;top:-3px;} .sc-handle.tr{right:-3px;top:-3px;}
+.sc-handle.bl{left:-3px;bottom:-3px;} .sc-handle.br{right:-3px;bottom:-3px;}
+.sc-caption{
+  position:absolute;left:50%;transform:translateX(-50%);bottom:9px;
+  background:rgba(0,0,0,.55);border:1px dashed #e0c070;border-radius:3px;
+  padding:1px 8px;color:#ffe9b0;font-size:10.5px;white-space:nowrap;
+}
+.sc-transport{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:8px;color:#aab2bc;}
+.sc-btn{background:#2b3038;border:1px solid #454b53;border-radius:4px;padding:1px 7px;color:#dde2e8;}
+a.sc-btn{text-decoration:none;}
+a.sc-btn:hover{border-color:#9fc0ff;color:#fff;}
+.sc-slider{width:52px;height:3px;background:#454b53;border-radius:2px;}
+.sc-status{margin-top:5px;color:#8f98a3;font-size:10.5px;}
+.sc-insp{padding:10px 10px 8px 10px;}
+.sc-insp-ttl{color:#9fc0ff;font-weight:700;margin:0 0 5px;font-size:11px;}
+.sc-field{
+  background:#23272d;border:1px solid #3a3f46;border-radius:4px;
+  padding:2px 7px;margin:4px 0;color:#cfd5dc;
+  display:flex;justify-content:space-between;gap:8px;
+}
+.sc-field b{font-weight:400;color:#8f98a3;}
+
+/* Timeline 領域 */
+.sc-tl{border-top:1px solid #3a3f46;background:#262628;position:relative;padding-top:0;}
+.sc-row{display:flex;align-items:stretch;border-bottom:1px solid #404044;}
+.sc-head{
+  flex:0 0 54px;background:#1e1e20;border-right:1px solid #404044;
+  padding:0 7px;display:flex;align-items:center;color:#ecd9b0;font-size:10.5px;
+}
+.sc-lane{flex:1 1 auto;display:flex;align-items:center;gap:0;padding:3px 0;min-width:0;}
+.sc-ruler{height:19px;background:#1e1e20;color:#9aa3ad;font-size:10px;
+  display:flex;align-items:center;gap:0;padding:0;}
+.sc-ruler .sc-ticks{flex:1 1 auto;display:flex;justify-content:space-between;padding:0 6px;}
+.sc-clip{
+  height:19px;border-radius:3px;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:10px;overflow:hidden;
+  white-space:nowrap;margin:0 1px;
+}
+.sc-gap{height:19px;}
+.c-body{background:#3a6ca8;}
+.c-op{background:#7e57a8;}
+.c-ed{background:#6057a8;}
+.c-ov{background:#288482;}
+.c-sub{background:#b2822e;}
+.c-audio{background:#38824e;}
+.c-off{background:#606060;color:#d6d6d6;}
+.sel{outline:2px solid #ffd65c;outline-offset:-2px;}
+.sc-wave{
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.45) 0 1px,transparent 1px 4px),
+    #38824e;
+}
+.sc-playhead{
+  position:absolute;left:41%;top:0;bottom:0;width:2px;background:#e85454;z-index:3;
+}
+.sc-playhead::before{
+  content:"";position:absolute;top:0;left:-4px;
+  border-left:5px solid transparent;border-right:5px solid transparent;
+  border-top:7px solid #e85454;
+}
+.sc-scroll{height:9px;background:#1e1e20;border-top:1px solid #404044;display:flex;}
+.sc-scroll span{margin-left:54px;width:42%;background:#4a4a50;border-radius:4px;}
+.sc-zoom{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:5px 10px 5px 28px;background:#22262c;border-top:1px solid #3a3f46;
+}
+.sc-hint{color:#8f98a3;font-size:10.5px;}
+
+/* 下部ボタン行 */
+.sc-buttons{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:7px 10px 7px 28px;background:#2b3038;border-top:1px solid #3a3f46;
+}
+.sc-buttons .spacer{flex:1 1 auto;}
+.sc-primary{background:#2f6feb;border-color:#2f6feb;color:#fff;}
+.sc-danger{background:transparent;border-color:#d6607a;color:#f0a8b7;}
+
+/* クリップ色の凡例 */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;}
+.legend span{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--text-dim);
+}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block;}
+
+/* 固定表示中は図を小さくする */
+.screen-sec.pinned .screen{font-size:10.5px;}
+.screen-sec.pinned .sc-stage{height:62px;margin-top:10px;}
+.screen-sec.pinned .sc-overlay{height:30px;width:58px;}
+.screen-sec.pinned .sc-transport,
+.screen-sec.pinned .sc-status,
+.screen-sec.pinned .legend,
+.screen-sec.pinned .sc-caption,
+.screen-sec.pinned .pin-hint{display:none;}
+.screen-sec.pinned .sc-field{margin:2px 0;}
+
+/* 移動先セクションを一瞬わかりやすく */
+section:target{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ===== 狭い画面 ===== */
+@media (max-width:860px){
+  .wrap{grid-template-columns:1fr;gap:18px;padding:18px 16px 48px;}
+  .toc{position:static;max-height:none;}
+  .site-header h1{font-size:21px;}
+  section{padding:16px 14px 20px;}
+  .sc-mid{grid-template-columns:1fr;}
+  .sc-pv{border-right:none;border-bottom:1px solid #3a3f46;}
+  .screen-sec.pinned{position:static;}
+}
+/* ===== 印刷 ===== */
+@media print{
+  .theme-btn,.toc,.filter,.pin-btn{display:none;}
+  .screen-sec.pinned{position:static;}
+  .wrap{display:block;}
+  section{box-shadow:none;break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+
+<button class="theme-btn" id="themeBtn" type="button">テーマ切替</button>
+
+<header class="site-header">
+  <div class="inner">
+    <h1>Timeline 編集機能ガイド</h1>
+    <p>autoedit / Timeline 編集画面・切り抜き編集（採点結果）画面の操作リファレンス</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h2>目次</h2>
+  <p style="margin:0 0 8px;"><a href="#screen" style="display:block;padding:5px 8px;border-radius:6px;color:var(--accent);text-decoration:none;font-size:13px;background:var(--accent-soft);">画面の全体図</a></p>
+  <ol>
+    <li><a href="#buttons">下部ボタン</a></li>
+    <li><a href="#preview">プレビュー上の直接編集</a></li>
+    <li><a href="#inspector">インスペクタ</a></li>
+    <li><a href="#timeline">Timeline 領域</a></li>
+    <li><a href="#shortcuts">ショートカット一覧</a></li>
+    <li><a href="#behavior">編集機能のふるまい</a></li>
+    <li><a href="#vertical">縦動画プロジェクト</a></li>
+    <li><a href="#resolve">DaVinci Resolve 出力</a></li>
+    <li><a href="#export">書き出し（決定）</a></li>
+    <li><a href="#scoring">切り抜き編集画面</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- 画面の全体図 -->
+<section id="screen" class="screen-sec">
+  <h2>
+    <span class="num" style="min-width:34px;">図</span>画面の全体図
+    <button class="pin-btn" id="pinBtn" type="button">図を固定して読む</button>
+  </h2>
+  <p class="lead pin-hint">青い丸番号をクリックすると、その部分の説明へ移動します。「図を固定して読む」を押すと、スクロールしても図が上に残ります。</p>
+
+  <div class="screen">
+    <div class="sc-title">Timeline 編集 — project.json</div>
+
+    <!-- クリップバー（切り抜き編集画面のみ） -->
+    <div class="sc-clipbar hot">
+      <a class="badge" href="#scoring" title="10. 切り抜き編集（採点結果）画面の固有機能">10</a>
+      <span class="sc-note">［切り抜き編集画面のみ］</span>
+      <span class="sc-btn">clip1 0:00:10→0:01:20 点82.5 ▾</span>
+      <span class="sc-btn">セクション追加...</span>
+      <span class="sc-btn">☑ このクリップを使用する</span>
+      <span class="sc-btn">テーマ: ______</span>
+      <span class="sc-btn">採点グラフ</span>
+    </div>
+
+    <!-- 上段: プレビュー / インスペクタ -->
+    <div class="sc-mid">
+      <div class="sc-pv hot">
+        <a class="badge" href="#preview" title="2. プレビュー上での直接編集">2</a>
+        <div class="sc-stage">
+          <div class="sc-overlay">画像・動画
+            <i class="sc-handle tl"></i><i class="sc-handle tr"></i>
+            <i class="sc-handle bl"></i><i class="sc-handle br"></i>
+          </div>
+          <div class="sc-caption">字幕テキスト（ドラッグで位置を移動）</div>
+        </div>
+        <div class="sc-transport">
+          <span class="sc-btn">⏮</span><span class="sc-btn">◀◀</span>
+          <span class="sc-btn">▶</span><span class="sc-btn">▶▶</span>
+          <span class="sc-btn">⏭</span>
+          <span>0:00:24.50 / 0:03:12.00</span>
+          <span class="sc-btn">🔊</span><span class="sc-slider"></span>
+          <span class="sc-btn">高精度プレビュー</span>
+        </div>
+        <div class="sc-status">案内メッセージ（操作の結果・できなかった理由がここに出ます）</div>
+      </div>
+
+      <div class="sc-insp hot">
+        <a class="badge" href="#inspector" title="3. インスペクタ">3</a>
+        <p class="sc-insp-ttl" style="margin-top:14px;">インスペクタ</p>
+        <div class="sc-field"><b>字幕</b><span>テキスト</span></div>
+        <div class="sc-field"><b>役割</b><span>配信者 ▾</span></div>
+        <div class="sc-field"><b>フォント</b><span>(設定のフォント) ▾</span></div>
+        <div class="sc-field"><b>サイズ</b><span>0</span></div>
+        <div class="sc-field"><b>文字色/縁</b><span>■ / ■</span></div>
+        <div class="sc-field"><b>大きさ</b><span>100 %</span></div>
+        <div class="sc-field" style="justify-content:center;">位置を既定へ戻す</div>
+      </div>
+    </div>
+
+    <!-- Timeline 領域 -->
+    <div class="sc-tl hot">
+      <a class="badge" href="#timeline" title="4. Timeline 領域">4</a>
+      <div class="sc-playhead" title="再生ヘッド"></div>
+      <div class="sc-row sc-ruler">
+        <div class="sc-head" style="color:#9aa3ad;">&nbsp;</div>
+        <div class="sc-ticks"><span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span></div>
+      </div>
+      <div class="sc-row">
+        <div class="sc-head">S1</div>
+        <div class="sc-lane">
+          <div class="sc-gap" style="flex:0 0 8%;"></div>
+          <div class="sc-clip c-sub" style="flex:0 0 14%;">字幕</div>
+          <div class="sc-gap" style="flex:0 0 6%;"></div>
+          <div class="sc-clip c-sub sel" style="flex:0 0 16%;">字幕（選択中）</div>
+          <div class="sc-gap" style="flex:0 0 5%;"></div>
+          <div class="sc-clip c-sub" style="flex:0 0 18%;">字幕</div>
+        </div>
+      </div>
+      <div class="sc-row">
+        <div class="sc-head">S2</div>
+        <div class="sc-lane">
+          <div class="sc-gap" style="flex:0 0 26%;"></div>
+          <div class="sc-clip c-sub" style="flex:0 0 20%;">コメント</div>
+        </div>
+      </div>
+      <div class="sc-row">
+        <div class="sc-head">V2</div>
+        <div class="sc-lane">
+          <div class="sc-gap" style="flex:0 0 18%;"></div>
+          <div class="sc-clip c-ov" style="flex:0 0 22%;">画像・動画（オーバーレイ）</div>
+        </div>
+      </div>
+      <div class="sc-row">
+        <div class="sc-head">V1</div>
+        <div class="sc-lane">
+          <div class="sc-clip c-op" style="flex:0 0 9%;">OP</div>
+          <div class="sc-clip c-body" style="flex:0 0 26%;">本編</div>
+          <div class="sc-clip c-body" style="flex:0 0 30%;">本編
+            <a class="badge badge-inline" href="#vertical" title="7. 縦動画プロジェクトの作成（V1 クリップの右クリック）">7</a>
+          </div>
+          <div class="sc-clip c-off" style="flex:0 0 14%;">使用しない</div>
+          <div class="sc-clip c-ed" style="flex:0 0 9%;">ED</div>
+        </div>
+      </div>
+      <div class="sc-row">
+        <div class="sc-head">A1</div>
+        <div class="sc-lane">
+          <div class="sc-clip sc-wave" style="flex:0 0 9%;"></div>
+          <div class="sc-clip sc-wave" style="flex:0 0 26%;"></div>
+          <div class="sc-clip sc-wave" style="flex:0 0 30%;"></div>
+          <div class="sc-clip c-off" style="flex:0 0 14%;"></div>
+          <div class="sc-clip sc-wave" style="flex:0 0 9%;"></div>
+        </div>
+      </div>
+      <div class="sc-scroll"><span></span></div>
+    </div>
+
+    <!-- ズーム・操作ヒント行 -->
+    <div class="sc-zoom hot">
+      <a class="badge" href="#shortcuts" title="5. ショートカット一覧（操作ヒント行に主要キーが出ます）">5</a>
+      <span class="sc-btn">－</span><span class="sc-btn">＋</span><span class="sc-btn">全体</span>
+      <span class="sc-hint">W 分割 / A 前をリップル削除 / D 後ろをリップル削除 / Delete リップル削除・BackSpace 削除のみ / Space 再生・Q 倍速逆再生・E 倍速再生 / Alt で吸着オフ</span>
+    </div>
+
+    <!-- 下部ボタン -->
+    <div class="sc-buttons hot">
+      <a class="badge" href="#buttons" title="1. 下部ボタン">1</a>
+      <span class="sc-btn">元に戻す</span><span class="sc-btn">やり直す</span>
+      <span class="spacer"></span>
+      <span class="sc-btn">保存</span><span class="sc-btn">名前を付けて保存...</span>
+      <span class="sc-btn">ぼかし...</span>
+      <a class="sc-btn" href="#resolve" title="8. DaVinci Resolve 出力">DaVinci Resolve 出力</a>
+      <a class="sc-btn sc-primary" href="#export" title="9. 書き出し（決定）">決定</a>
+      <span class="sc-btn sc-danger">キャンセル</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="c-body"></i>本編</span>
+    <span><i class="c-op"></i>オープニング</span>
+    <span><i class="c-ed"></i>エンディング</span>
+    <span><i class="c-ov"></i>オーバーレイ（画像・動画）</span>
+    <span><i class="c-sub"></i>字幕</span>
+    <span><i class="c-audio"></i>音声</span>
+    <span><i class="c-off"></i>使用しない</span>
+    <span><i style="background:#ffd65c;"></i>選択中の枠</span>
+    <span><i style="background:#e85454;"></i>再生ヘッド</span>
+  </div>
+
+  <div class="note">
+    <strong>図の読み方</strong>
+    上段は左が<a href="#preview">プレビュー</a>・右が<a href="#inspector">インスペクタ</a>で、境界をドラッグして幅を変えられます（上段と Timeline の境界も同様）。
+    Timeline のトラック名（S1・S2・V2・V1・A1）は左端のヘッダに出ます。
+    クリップバー（最上段）は切り抜き編集（採点結果）画面にだけ付きます。
+    分割・リップル削除・コピー＆ペーストといった編集操作そのものの挙動は<a href="#behavior">6. 編集機能のふるまい</a>にまとめています。
+  </div>
+</section>
+
+<!-- 1. 下部ボタン -->
+<section id="buttons">
+  <h2><span class="num">1</span>下部ボタン</h2>
+  <div class="t-scroll">
+  <table class="nowrap-first">
+    <thead><tr><th>ボタン</th><th>動作</th><th>出る条件</th></tr></thead>
+    <tbody>
+      <tr><td>元に戻す<br><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>直前の編集を取り消す。ボタンには取り消す操作名が出る</td><td>常時</td></tr>
+      <tr><td>やり直す<br><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>取り消した編集をやり直す</td><td>常時</td></tr>
+      <tr><td>保存<br><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Timeline をプロジェクトファイルへ保存</td><td><code>timeline.project.save_button</code> が ON</td></tr>
+      <tr><td>名前を付けて保存<br><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>保存先を選んで保存</td><td>同上</td></tr>
+      <tr><td>DaVinci&nbsp;Resolve 出力</td><td>現在の Timeline を <code>.fcpxml</code> として出力</td><td>Resolve 出力が ON</td></tr>
+      <tr><td>決定</td><td>Timeline の内容で動画を書き出す<br>（採点結果画面では「完了（切り抜き＋字幕焼き込み）」）</td><td>常時</td></tr>
+      <tr><td>キャンセル</td><td>編集を破棄して処理を中断</td><td>常時</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <strong>注意</strong>
+    「決定」は <kbd>Enter</kbd> / <kbd>Space</kbd> では発動しません（長い書き出しの誤発動防止）。必ずクリックです。<br>
+    映像クリップが 1 つも残っていない状態で「決定」すると警告が出て、書き出せません。
+  </div>
+  <p class="lead">※ ぼかし機能が ON の環境では、この行に「ぼかし...」ボタンも並びます（<a href="#screen">画面の全体図</a>を参照）。</p>
+</section>
+
+<!-- 2. プレビュー -->
+<section id="preview">
+  <h2><span class="num">2</span>プレビュー上での直接編集</h2>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>対象</th><th>操作</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td>字幕</td><td>ドラッグ</td><td>表示位置を移動</td></tr>
+      <tr><td>画像・動画（オーバーレイ）</td><td>ドラッグ</td><td>表示位置を移動</td></tr>
+      <tr><td>画像・動画（オーバーレイ）</td><td>四隅のハンドルをドラッグ</td><td>縦横比を保って拡大・縮小</td></tr>
+      <tr><td>字幕・オーバーレイ</td><td>クリック</td><td>選択（インスペクタ・Timeline の選択と連動）</td></tr>
+      <tr><td>オーバーレイ</td><td>右クリック</td><td>削除 / レイヤー（最前面・前面・背面・最背面） / 大きさ（原寸・100%（画面幅））</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 3. インスペクタ -->
+<section id="inspector">
+  <h2><span class="num">3</span>インスペクタ</h2>
+
+  <h3>字幕を選んだとき</h3>
+  <div class="t-scroll">
+  <table class="nowrap-first">
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>字幕</td><td>テキスト（改行可）。入力欄から離れたときにまとめて確定（1 文字ごとに Undo 履歴が増えないように）</td></tr>
+      <tr><td>役割</td><td>配信者 / サブ / コメント。変更すると対応するトラックへ自動移動（設定次第）</td></tr>
+      <tr><td>フォント</td><td>一覧から選択。先頭の「(設定のフォント)」= 設定値に従う。各項目はそのフォント自体で描画されます</td></tr>
+      <tr><td>サイズ</td><td>数値指定。<code>0</code> で「既定」</td></tr>
+      <tr><td>文字色</td><td>このクリップだけの上書き。空欄にすると設定の役割色に戻る</td></tr>
+      <tr><td>縁の色</td><td>同上（透明度も指定可）</td></tr>
+      <tr><td>位置を既定へ戻す</td><td>ドラッグで動かした位置を捨て、設定の配置・余白に従わせる</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <strong>補足</strong>
+    字幕を複数選択しているときは、色の変更が選択中すべてに適用されます（その旨の案内が出ます）。
+  </div>
+
+  <h3>画像・動画（オーバーレイ）を選んだとき</h3>
+  <div class="t-scroll">
+  <table class="nowrap-first">
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>大きさ</td><td>キャンバス幅に対する %（100% = 画面の横幅いっぱい）。縦横比は常に保持</td></tr>
+      <tr><td>原寸</td><td>素材のピクセル数どおりの大きさにする</td></tr>
+      <tr><td>画面幅に合わせる</td><td>100% にする</td></tr>
+      <tr><td>位置を既定へ戻す</td><td>同上</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <strong>補足</strong>
+    字幕・音声・本編（V1）の映像には「大きさ」は出ません。
+  </div>
+</section>
+
+<!-- 4. Timeline 領域 -->
+<section id="timeline">
+  <h2><span class="num">4</span>Timeline 領域<span class="src">（原文 5 章）</span></h2>
+
+  <h3>5.1 トラックの並び（上から下へ）</h3>
+  <div class="tracks">
+    <div class="track t-sub"><span class="tag">S1 / S2</span><span class="desc">字幕トラック<small>S1 = 配信者／サブ、S2 = コメント</small></span></div>
+    <div class="track t-ov"><span class="tag">V2 ↑</span><span class="desc">オーバーレイ映像トラック<small>V2 以上／番号の大きい順</small></span></div>
+    <div class="track t-base"><span class="tag">V1</span><span class="desc">ベース映像トラック<small>本編・オープニング・エンディング</small></span></div>
+    <div class="track t-aud"><span class="tag">A1 …</span><span class="desc">音声トラック<small>V1 のクリップとリンク</small></span></div>
+  </div>
+  <ul class="list">
+    <li>クリップの色は種類別で、選択中は輪郭が太くなります。</li>
+    <li>「使用しない」にしたクリップは灰色表示になり、書き出しから外れます。</li>
+    <li>音声トラックには波形を表示します（設定 <code>timeline.waveform.enabled</code>）。</li>
+    <li>音声クリップは V1 のクリップに連動（リンク）しています。音声側を掴んでも V1 側の操作になります。</li>
+    <li>ロックされたトラックのクリップは、移動・トリム・字幕追加ができません。</li>
+  </ul>
+
+  <h3>5.3 右クリックメニュー（クリップ上）</h3>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>ここで分割</td><td>右クリックした位置でクリップを分割</td></tr>
+      <tr><td>コピー <kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>選択中のノードをコピー</td></tr>
+      <tr><td>再生ヘッドへ貼り付け <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>貼り付け先は常に再生ヘッド位置</td></tr>
+      <tr><td>再生ヘッドより前をリップル削除 <kbd>A</kbd></td><td>再生ヘッドがクリップ内にあるときのみ</td></tr>
+      <tr><td>再生ヘッドより後ろをリップル削除 <kbd>D</kbd></td><td>同上</td></tr>
+      <tr><td>リップル削除 <kbd>Delete</kbd></td><td>削除して後続を詰める</td></tr>
+      <tr><td>削除のみ（空白を残す） <kbd>BackSpace</kbd></td><td>削除して、跡は空白のまま</td></tr>
+      <tr><td>レイヤー ▶ 最前面 / 前面 / 背面 / 最背面</td><td>重なり順の変更（V1 のクリップは最背面固定で対象外）</td></tr>
+      <tr><td>使用する / 使用しない</td><td>書き出しに含めるかの切り替え</td></tr>
+      <tr><td>カット頭へ揃える（字幕のみ）</td><td>字幕の開始を V1 クリップ（カット）の頭へ揃える</td></tr>
+      <tr><td>すべての字幕をカット頭へ揃える</td><td>全字幕を対象に実行</td></tr>
+      <tr><td>ぼかし関連（V1 のクリップのみ）</td><td>「このクリップをぼかす」／「このクリップのぼかしを消す」／「ぼかし...」</td></tr>
+      <tr><td>縦動画プロジェクトを作成（V1 のクリップのみ）</td><td><a href="#vertical">7. 縦動画プロジェクトの作成</a>を参照</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>5.4 右クリックメニュー（何もない所）</h3>
+  <ul class="list">
+    <li>ここへ再生ヘッドを移動</li>
+    <li>再生ヘッドへ貼り付け（<kbd>Ctrl</kbd>+<kbd>V</kbd>）</li>
+    <li>字幕トラックの空き領域なら: <strong>字幕追加</strong> ／ すべての字幕をカット頭へ揃える
+      <ul><li>追加位置は編集点へ吸着します。コメント用トラック上で足した字幕は、最初から役割「コメント」になります。</li></ul>
+    </li>
+  </ul>
+
+  <h3>5.5 右クリックメニュー（音声クリップ上）</h3>
+  <ul class="list">
+    <li>ミュート ／ ミュート解除</li>
+    <li>音量 ▶ +6 dB / +3 dB / 0 dB / -3 dB / -6 dB</li>
+  </ul>
+  <div class="note">
+    <strong>補足</strong>
+    音声クリップには削除がありません（V1 側から消します）。
+  </div>
+
+  <h3>5.6 ズーム・スクロール</h3>
+  <div class="t-scroll">
+  <table class="nowrap-first">
+    <thead><tr><th>操作</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>－／＋ ボタン</td><td>縮小・拡大（<kbd>Ctrl</kbd> + ホイールでも可）</td></tr>
+      <tr><td>全体 ボタン</td><td>Timeline 全体が収まるまで縮小</td></tr>
+      <tr><td>横スクロールバー</td><td>表示位置の移動</td></tr>
+      <tr><td>操作ヒント行</td><td>主要ショートカットを常時表示</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 5. ショートカット -->
+<section id="shortcuts">
+  <h2><span class="num">5</span>ショートカット一覧（既定値）<span class="src">（原文 6 章）</span></h2>
+  <p class="lead">キー割り当ては設定（<code>timeline.shortcuts</code>）で変更できます。</p>
+  <div class="note">
+    <strong>重要</strong>
+    文字入力欄にカーソルがある間はすべて無効になります（そこでは通常の文字編集として働きます）。
+  </div>
+  <div class="filter">
+    <input type="search" id="scFilter" placeholder="キー・動作で絞り込み（例: 削除、Ctrl）" aria-label="ショートカット絞り込み">
+    <span class="count" id="scCount"></span>
+  </div>
+  <div class="t-scroll">
+  <table id="scTable" class="nowrap-first">
+    <thead><tr><th>キー</th><th>動作</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>W</kbd> / <kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>再生ヘッドで分割</td></tr>
+      <tr><td><kbd>A</kbd></td><td>再生ヘッドより前をリップル削除</td></tr>
+      <tr><td><kbd>D</kbd></td><td>再生ヘッドより後ろをリップル削除</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td>リップル削除（設定 <code>ripple_delete</code> に従う。既定 = リップル削除）</td></tr>
+      <tr><td><kbd>Shift</kbd>+<kbd>Delete</kbd></td><td>Delete の逆（常にもう一方の削除）</td></tr>
+      <tr><td><kbd>BackSpace</kbd></td><td>削除のみ（後続を詰めず空白を残す）</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>再生 / 停止</td></tr>
+      <tr><td><kbd>E</kbd></td><td>倍速再生（トグル）</td></tr>
+      <tr><td><kbd>Q</kbd></td><td>倍速逆再生（トグル・音声なし）</td></tr>
+      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>1 フレーム戻る / 進む</td></tr>
+      <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>先頭へ / 末尾へ</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>コピー</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>再生ヘッドへ貼り付け</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>字幕の開始をカット頭へ揃える（字幕を選んでいればその字幕、選んでいなければ全字幕）</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>元に戻す</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直す</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>=</kbd></td><td>拡大</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>-</kbd></td><td>縮小</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>名前を付けて保存</td></tr>
+      <tr><td><kbd>G</kbd></td><td>採点グラフの表示切替（切り抜き編集画面のみ）</td></tr>
+      <tr><td><kbd>Alt</kbd>（押しながら）</td><td>ドラッグ中の吸着オフ</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 6. ふるまい -->
+<section id="behavior">
+  <h2><span class="num">6</span>編集機能のふるまい<span class="src">（原文 7 章・説明時の注意点）</span></h2>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>機能</th><th>補足</th></tr></thead>
+    <tbody>
+      <tr><td>分割</td><td>再生ヘッド位置、または右クリックした位置で切る</td></tr>
+      <tr><td>リップル削除</td><td>削除した尺のぶん後続が詰まる。詰める対象トラックは設定 <code>ripple_sync_tracks</code>（既定: 全トラック）</td></tr>
+      <tr><td>削除のみ</td><td>跡が空白として残る。空白は書き出し時に黒（設定 <code>render.gap_policy</code>）</td></tr>
+      <tr><td>リップルトリム（<kbd>A</kbd> / <kbd>D</kbd>）</td><td>再生ヘッドがクリップ上にないときは実行されず、画面下に案内が出ます（エラーにはしません）</td></tr>
+      <tr><td>コピー＆ペースト</td><td>貼り付け位置は再生ヘッド。干渉した既存ノードは右へずれ、ずれた秒数が案内に出ます。貼り付けられなかった件数も表示されます</td></tr>
+      <tr><td>貼り付け失敗</td><td>トラックのロック・素材の欠落が原因。その旨の案内が出ます</td></tr>
+      <tr><td>字幕をカット頭へ揃える</td><td>V1 クリップの頭に合わせます。対象が無いときは「カット頭へ揃える字幕はありませんでした」</td></tr>
+      <tr><td>Undo / Redo</td><td>操作名付きで表示されます（例: 「元に戻す: クリップの移動」）</td></tr>
+      <tr><td>最小クリップ長</td><td>0.05 秒（設定 <code>min_clip_sec</code>）。これより短くはトリムできません</td></tr>
+      <tr><td>新規字幕の尺</td><td>2.0 秒（設定 <code>default_subtitle_sec</code>）</td></tr>
+      <tr><td>画像の既定尺</td><td>5.0 秒（設定 <code>media.default_image_duration_sec</code>）</td></tr>
+      <tr><td>追加できる素材</td><td>
+        動画: <code>.mp4</code> <code>.mov</code> <code>.avi</code> <code>.mkv</code> <code>.flv</code> <code>.wmv</code><br>
+        画像: <code>.png</code> <code>.jpg</code> <code>.jpeg</code> <code>.bmp</code> <code>.gif</code> <code>.webp</code>
+      </td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 7. 縦動画 -->
+<section id="vertical">
+  <h2><span class="num">7</span>縦動画プロジェクトの作成<span class="src">（原文 9 章）</span></h2>
+  <p>V1 のクリップを右クリック →「縦動画プロジェクトを作成」。</p>
+  <div class="t-scroll">
+  <table class="nowrap-first">
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>切り抜き方</td><td>全体 / 分割</td></tr>
+      <tr><td>背景</td><td>分割時の背景の指定</td></tr>
+      <tr><td>仕上がり</td><td>プレビュー</td></tr>
+      <tr><td>表示する位置</td><td>プレビューする時刻</td></tr>
+      <tr><td>保存先</td><td>「変更...」で指定</td></tr>
+      <tr><td>作成 / キャンセル</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <strong>補足</strong>
+    素材が元動画（VOD）に張り替えられるため、作成後も開き直せます。元動画が無い場合はメニューが出ません。
+  </div>
+</section>
+
+<!-- 8. Resolve -->
+<section id="resolve">
+  <h2><span class="num">8</span>DaVinci Resolve 出力<span class="src">（原文 11 章）</span></h2>
+  <p>「DaVinci Resolve 出力」ボタンで、現在の Timeline を DaVinci Resolve 用プロジェクトファイル（<code>.fcpxml</code>）として出力します。</p>
+  <div class="chips">
+    <span class="chip">上書き確認が入る</span>
+    <span class="chip">透かしの確認が入る</span>
+  </div>
+</section>
+
+<!-- 9. 書き出し -->
+<section id="export">
+  <h2><span class="num">9</span>書き出し（決定）<span class="src">（原文 12 章）</span></h2>
+  <ul class="list">
+    <li>「決定」で Timeline の内容を反映した動画を書き出します。</li>
+    <li>映像クリップが 0 件のときは書き出せません（警告）。</li>
+    <li>「使用しない」にしたクリップ・字幕は書き出しから外れます。</li>
+  </ul>
+</section>
+
+<!-- 10. 切り抜き編集 -->
+<section id="scoring">
+  <h2><span class="num">10</span>切り抜き編集（採点結果）画面の固有機能<span class="src">（原文 13 章）</span></h2>
+  <p>Timeline 編集画面の全機能に加えて、上部にクリップバー、ドックに採点グラフが付きます。</p>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>クリップ（コンボボックス）</td><td>「<code>clip1 0:00:10→0:01:20 点82.5</code>」の形式で一覧。選ぶとその先頭へ再生ヘッドが飛びます</td></tr>
+      <tr><td>セクション追加...</td><td>元動画の区間を指定してセクションを追加。元動画の時系列に沿った位置へ挿入され、既存セクションと重なる場合は 1 つに統合されます。準備中は進捗が出て中止もできます</td></tr>
+      <tr><td>このクリップを使用する</td><td>外すと Timeline 上で灰色になり、書き出しから外れます（戻せます）</td></tr>
+      <tr><td>テーマ</td><td>入力するとクリップ先頭にイントロカード、本編に左上タグが付きます。空欄 = テーマ演出なし</td></tr>
+      <tr><td>採点グラフ（ボタン / <kbd>G</kbd>）</td><td>採点グラフドックの表示切替</td></tr>
+      <tr><td>採点グラフ（ドック）</td><td>時系列の採点カーブとクリップのマーカ。マーカをクリックするとその位置へ移動。上下左右へドッキング位置を変更できます</td></tr>
+      <tr><td>完了（切り抜き＋字幕焼き込み）</td><td>「決定」に相当するボタン</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  出典: <code>docs/howto/timeline_features.md</code>
+</footer>
+
+<script>
+// テーマ切替（初期値は OS 設定。選択内容はこのブラウザにのみ保存）
+(function () {
+  var btn = document.getElementById('themeBtn');
+  var KEY = 'timeline-howto-theme';
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch (e) { /* 保存領域が使えない環境は OS 設定のまま */ }
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme');
+    if (!cur) {
+      cur = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    var next = (cur === 'dark') ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+})();
+
+// 画面図の固定表示（スクロールしても図を上に残す）
+(function () {
+  var btn = document.getElementById('pinBtn');
+  var sec = document.getElementById('screen');
+  var KEY = 'timeline-howto-pin';
+  function apply(on) {
+    sec.classList.toggle('pinned', on);
+    btn.textContent = on ? '固定を解除' : '図を固定して読む';
+    try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
+  }
+  var init = false;
+  try { init = localStorage.getItem(KEY) === '1'; } catch (e) { /* 保存不可なら既定（固定なし） */ }
+  apply(init);
+  btn.addEventListener('click', function () {
+    apply(!sec.classList.contains('pinned'));
+  });
+})();
+
+// ショートカット表の絞り込み
+(function () {
+  var input = document.getElementById('scFilter');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#scTable tbody tr'));
+  var count = document.getElementById('scCount');
+  function render() {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (tr) {
+      var hit = !q || tr.textContent.toLowerCase().indexOf(q) !== -1;
+      tr.style.display = hit ? '' : 'none';
+      if (hit) { shown++; }
+    });
+    count.textContent = shown + ' / ' + rows.length + ' 件';
+  }
+  input.addEventListener('input', render);
+  render();
+})();
+</script>
+
+</body>
+</html>

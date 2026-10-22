@@ -854,5 +854,128 @@ class AddMediaScaleTest(unittest.TestCase):
         self.assertAlmostEqual(clip.transform.scale, 0.25)
 
 
+# 字幕をカット頭へ揃える (ver8 resolve6 R5)
+# V1 は 3 クリップ (0-10 / 10-20 / 20-30)。カット頭は 0.0 / 10.0 / 20.0。
+class AlignSubtitlesTest(unittest.TestCase):
+
+    def setUp(self):
+        self.timeline = _build()
+        self.stack = commands.CommandStack()
+        self.subtitles = self.timeline.track_by_id("S1")
+        self.subtitles.clips = []
+
+    def _add(self, clip_id, start, duration):
+        clip = SubtitleClip(clip_id, start, duration, clip_id)
+        self.subtitles.clips.append(clip)
+        return clip
+
+    def _align(self, **kwargs):
+        command = commands.AlignSubtitlesToCutHeads(min_clip_sec=_MIN, **kwargs)
+        return self.stack.push(self.timeline, command), command
+
+    # 許容差内の遅れ → カット頭と一致する
+    # 終了はそのまま = 頭まで伸びる (生成時の整列と同じ。頭に間を残さない)
+    def test_small_gap_is_snapped(self):
+        self._add("s1", 10.4, 2.0)
+        ok, command = self._align()
+        self.assertTrue(ok)
+        self.assertEqual(command.aligned, 1)
+        clip = self.timeline.clip_by_id("s1")
+        self.assertAlmostEqual(clip.timeline_start, 10.0, places=6)
+        self.assertAlmostEqual(clip.timeline_end, 12.4, places=6)
+        self.assertAlmostEqual(clip.duration, 2.4, places=6)
+
+    # 許容差を超える遅れ → 動かさない (履歴にも積まない)
+    def test_large_gap_is_kept(self):
+        self._add("s1", 13.0, 2.0)
+        ok, _command = self._align()
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 13.0)
+
+    # 同じカットの 2 本目以降は動かさない (1 カット内の本数・位置は変えない)
+    def test_second_subtitle_in_the_same_cut_is_kept(self):
+        self._add("s1", 10.4, 1.0)
+        self._add("s2", 12.0, 1.0)
+        self._add("s3", 14.0, 1.0)
+        _ok, command = self._align()
+        self.assertEqual(command.aligned, 1)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 10.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s2").timeline_start, 12.0)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 14.0)
+        self.assertEqual(len(self.subtitles.clips), 3)
+
+    # 直前の字幕へ食い込む位置なら動かさない (重なりを作らない)
+    def test_overlap_with_the_previous_subtitle_is_avoided(self):
+        self._add("s1", 8.0, 3.5)       # 8.0〜11.5 (カット2 の頭をまたいでいる)
+        self._add("s2", 11.6, 1.0)      # カット2 の先頭字幕だが 10.0 へは寄せられない
+        _ok, _command = self._align()
+        self.assertAlmostEqual(self.timeline.clip_by_id("s2").timeline_start, 11.6)
+
+    # clamp_to_cut_end=True なら表示はカットの終端で止まる (subtitle_unit="cut" 用)
+    def test_end_is_clamped_at_the_cut_end(self):
+        self._add("s1", 18.0, 5.0)      # 18.0〜23.0 (カット2 の終端 20.0 を越えている)
+        ok, _command = self._align(clamp_to_cut_end=True)
+        self.assertTrue(ok)
+        clip = self.timeline.clip_by_id("s1")
+        self.assertAlmostEqual(clip.timeline_end, 20.0, places=6)
+
+    # 既定では終端で止めない (字幕がカットを跨ぐのが正常形 / ver8 resolve6 §12-5)
+    def test_end_is_not_clamped_by_default(self):
+        self._add("s1", 18.0, 5.0)
+        ok, _command = self._align()
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_end, 23.0)
+
+    # OP クリップは揃え先にしない
+    def test_opening_is_not_a_target(self):
+        from src.timeline.model import ORIGIN_OPENING
+
+        video = self.timeline.base_video_track()
+        video.clips.insert(0, Clip("op", "m1", 0.0, 3.0, 0.0, 3.0,
+                                   origin={"type": ORIGIN_OPENING}))
+        for clip in video.clips[1:]:
+            clip.timeline_start += 3.0
+        self._add("s1", 0.4, 1.0)       # OP の中。揃え先が無いので動かない
+        ok, _command = self._align()
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 0.4)
+
+    # ロックしたトラックは触らない
+    def test_locked_track_is_skipped(self):
+        self._add("s1", 10.4, 1.0)
+        self.subtitles.locked = True
+        ok, _command = self._align()
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 10.4)
+
+    # clip_ids を渡すとその字幕だけが対象になる
+    def test_only_the_given_clips_are_aligned(self):
+        self._add("s1", 0.4, 1.0)
+        self._add("s2", 10.4, 1.0)
+        _ok, command = self._align(clip_ids=["s2"])
+        self.assertEqual(command.aligned, 1)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 0.4)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s2").timeline_start, 10.0)
+
+    # 許容差 0 では何もしない
+    def test_zero_tolerance_does_nothing(self):
+        self._add("s1", 10.4, 1.0)
+        ok, _command = self._align(tolerance_sec=0.0)
+        self.assertFalse(ok)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 10.4)
+
+    # 複数件の整列が 1 手で元へ戻る (スナップショット方式)
+    def test_undo_restores_every_clip(self):
+        self._add("s1", 0.4, 1.0)
+        self._add("s2", 10.4, 1.0)
+        self._add("s3", 20.4, 1.0)
+        _ok, command = self._align()
+        self.assertEqual(command.aligned, 3)
+        self.stack.undo(self.timeline)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s1").timeline_start, 0.4)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s2").timeline_start, 10.4)
+        self.assertAlmostEqual(self.timeline.clip_by_id("s3").timeline_start, 20.4)
+
+
 if __name__ == "__main__":
     unittest.main()

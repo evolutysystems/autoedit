@@ -16,6 +16,7 @@ from src.timeline.model import (
     Clip,
     MediaRef,
     ORIGIN_SILENCE_CUT,
+    SubtitleClip,
     TRACK_AUDIO,
     TRACK_VIDEO,
     Timeline,
@@ -292,21 +293,36 @@ class _StubController:
 
 
 # QMediaPlayer の代用 (呼ばれた seek 位置だけ覚える)
+#
+# ソースの読み込みが**非同期**であることまで写す (ver8 resolve8 §8):
+# seekable=False の間は setPosition() を無視する = 実機と同じく seek が効かない。
 class _StubPlayer:
 
-    def __init__(self, duration_ms=60_000):
+    def __init__(self, duration_ms=60_000, seekable=True):
         self._duration_ms = duration_ms
         self.position_ms = 0
         self.rate = None
         self.playing = False
+        self.seekable = seekable
+        self.sources = []
+        self.video_outputs = []
 
     def duration(self):
         return self._duration_ms
 
-    def setSource(self, _url):
+    def isSeekable(self):
+        return self.seekable
+
+    def setVideoOutput(self, item):
+        self.video_outputs.append(item)
+
+    def setSource(self, url):
+        self.sources.append(url)
         self.position_ms = 0
 
     def setPosition(self, position_ms):
+        if not self.seekable:
+            return               # ロード完了前の seek は無視される (実機と同じ)
         self.position_ms = position_ms
 
     def setPlaybackRate(self, rate):
@@ -322,11 +338,11 @@ class _StubPlayer:
 # PreviewPanel の代用 self (再生系メソッドが触る属性だけを持つ)
 class _StubPanel:
 
-    def __init__(self, cfg, playhead=0.0, last_frame_at=None):
+    def __init__(self, cfg, playhead=0.0, last_frame_at=None, seekable=True):
         self._cfg = cfg
         self.controller = _StubController(playhead=playhead)
         self._controller = self.controller
-        self.player = _StubPlayer()
+        self.player = _StubPlayer(seekable=seekable)
         self._player = self.player
         self._rate = 1.0
         self._pending_rate = 1.0
@@ -335,10 +351,17 @@ class _StubPanel:
         self._silent_timer = None
         self._reverse_timer = None
         self.paused = False
+        # 再生開始時のシーク待ち (ver8 resolve8 §8)
+        self._seek_pending = False
+        self._seek_target_sec = 0.0
+        self._seek_offset_ms = 0
         # プロキシ (ver6 resolve3 §4.4)。既定は「無し」= 従来の近似プレビュー経路。
         self._proxy = None
         self._proxy_playing = False
         self.proxy_playing_calls = []
+        # プロキシ映像の見せ替え (ver8 resolve8 §9-5)
+        self._video_visible = False
+        self.video_shown_calls = []
 
     def pause(self):
         self.paused = True
@@ -353,6 +376,12 @@ class _StubPanel:
     def _set_proxy_playing(self, playing):
         self.proxy_playing_calls.append(bool(playing))
         self._proxy_playing = bool(playing)
+
+    # 映像の見せ替え (本物はベースフレームと出力先アイテムを入れ替える)
+    def _show_video_item(self, visible):
+        self.video_shown_calls.append(bool(visible))
+        self._video_visible = bool(visible)
+        return True
 
     def _proxy_tile(self, sec):
         return None if self._proxy is None else self._proxy.tile_at(sec)
@@ -566,6 +595,307 @@ class _StubAudioSource:
 
     def cached(self, _start, _length):
         return None
+
+
+# ------------------------------------------------------------------
+# ver8 resolve8 §8: 再生開始で再生ヘッドが戻らないこと
+# ------------------------------------------------------------------
+# QMediaPlayer のソース読み込みは非同期で、setSource() 直後の setPosition() は
+# 効かない。そのまま positionChanged(0) を再生ヘッドへ書き戻すと、チャンクの
+# 先頭 (プロキシなら最大 4 秒手前、認識用音声なら先頭) へ戻ってしまっていた。
+class SeekGateTest(unittest.TestCase):
+
+    def setUp(self):
+        if not preview_panel_module._MULTIMEDIA_AVAILABLE:
+            self.skipTest("QtMultimedia が無い環境では再生経路を検証できない")
+        self.cfg = timeline_config({})["preview"]
+
+    # ロード完了前 (seek が効かない) の状態で再生を始めたパネル
+    def _panel(self, playhead, chunk_start, seekable=False):
+        panel = _StubPanel(self.cfg, playhead=playhead, seekable=seekable)
+        PreviewPanel._start_playback(panel, "chunk.wav", chunk_start)
+        panel.controller.moves.clear()
+        return panel
+
+    # positionChanged 相当の通知を 1 回流す
+    def _notify(self, panel, sec):
+        position_ms = int(round((sec - panel._chunk_start) * 1000))
+        PreviewPanel._on_audio_position(panel, max(position_ms, 0))
+
+    # T9: シーク前の position=0 で再生ヘッドが動かない (回帰の本体)
+    def test_position_zero_before_seek_does_not_move_the_playhead(self):
+        panel = self._panel(playhead=15.0, chunk_start=0.0)
+        self.assertTrue(panel._seek_pending)
+        self.assertEqual(panel._seek_offset_ms, 15000)
+        self._notify(panel, 0.0)
+        self.assertEqual(panel.controller.moves, [],
+                         "シーク完了前の通知で再生ヘッドが動いている")
+        self.assertEqual(panel.controller.playhead(), 15.0)
+
+    # T10: 目標位置へ達した通知から動き出す
+    def test_playhead_moves_once_the_target_is_reached(self):
+        panel = self._panel(playhead=15.0, chunk_start=0.0)
+        for sec in (0.0, 1.0, 14.0):
+            self._notify(panel, sec)
+        self.assertEqual(panel.controller.moves, [])
+        self._notify(panel, 15.05)
+        self.assertTrue(panel.controller.moves)
+        self.assertFalse(panel._seek_pending)
+
+    # T11: プロキシタイル経路 (タイル頭から載せる) でも戻らない
+    def test_proxy_tile_start_does_not_rewind(self):
+        panel = self._panel(playhead=14.5, chunk_start=12.0)
+        panel._proxy_playing = True
+        self.assertEqual(panel._seek_offset_ms, 2500)
+        self._notify(panel, 12.0)
+        self.assertEqual(panel.controller.moves, [],
+                         "タイル頭の通知で再生ヘッドが戻っている")
+        self._notify(panel, 14.6)
+        self.assertEqual(panel.controller.moves, [14.6])
+
+    # T12: ロード完了 (LoadedMedia) で seek をやり直す
+    def test_seek_is_retried_when_the_media_is_loaded(self):
+        panel = self._panel(playhead=15.0, chunk_start=0.0)
+        self.assertEqual(panel.player.position_ms, 0, "まだ seek は効かない")
+        panel.player.seekable = True      # ロード完了
+        PreviewPanel._on_audio_status(
+            panel, preview_panel_module.QMediaPlayer.LoadedMedia)
+        self.assertEqual(panel.player.position_ms, 15000)
+
+    # T13: 先頭から鳴らすときは待たない (従来どおり 1 通知目から動く)
+    def test_no_gate_when_starting_from_the_chunk_head(self):
+        panel = self._panel(playhead=15.0, chunk_start=15.0)
+        self.assertFalse(panel._seek_pending)
+        self._notify(panel, 15.1)
+        self.assertEqual(panel.controller.moves, [15.1])
+
+    # T14: 停止でシーク待ちを持ち越さない
+    def test_pause_clears_the_gate(self):
+        panel = self._panel(playhead=15.0, chunk_start=0.0)
+        PreviewPanel.pause(panel)
+        self.assertFalse(panel._seek_pending)
+
+    # プロキシ再生では、位置が進んだ時点で映像を見せ替える (§9-5 の保険)
+    def test_proxy_video_is_shown_once_the_position_advances(self):
+        panel = self._panel(playhead=12.0, chunk_start=12.0)
+        panel._proxy_playing = True
+        self.assertEqual(panel.video_shown_calls, [])
+        self._notify(panel, 12.1)
+        self.assertIn(True, panel.video_shown_calls)
+
+    # ロード完了でも映像を見せ替える (§9-5 の本筋)
+    def test_proxy_video_is_shown_when_the_media_is_loaded(self):
+        panel = self._panel(playhead=12.0, chunk_start=12.0)
+        panel._proxy_playing = True
+        PreviewPanel._on_audio_status(
+            panel, preview_panel_module.QMediaPlayer.BufferedMedia)
+        self.assertIn(True, panel.video_shown_calls)
+
+
+# ------------------------------------------------------------------
+# ver8 resolve8 §9-2: タイル完成で画面を作り直すのは「見ている区間」だけ
+# ------------------------------------------------------------------
+class TileReadyTest(unittest.TestCase):
+
+    # ProxyManager の代用 (tile_sec() だけが要る)
+    class _StubProxy:
+
+        def __init__(self, tile_sec=4.0):
+            self._tile_sec = tile_sec
+
+        def tile_sec(self):
+            return self._tile_sec
+
+    class _Panel:
+
+        def __init__(self, playhead):
+            self._proxy = TileReadyTest._StubProxy()
+            self._controller = _StubController(playhead=playhead)
+            self.refreshed = 0
+
+        def is_playing(self):
+            return False
+
+        def _refresh_all(self):
+            self.refreshed += 1
+
+    # 見ている時刻のタイルなら差し替える
+    def test_refreshes_for_the_visible_tile(self):
+        panel = self._Panel(playhead=5.0)          # タイル 1 (4.0〜8.0)
+        PreviewPanel._on_tile_ready(panel, 1)
+        self.assertEqual(panel.refreshed, 1)
+
+    # 先読みで完成した別のタイルでは何もしない (チカチカの元)
+    def test_ignores_lookahead_tiles(self):
+        panel = self._Panel(playhead=5.0)
+        for index in (2, 3, 4):
+            PreviewPanel._on_tile_ready(panel, index)
+        self.assertEqual(panel.refreshed, 0)
+
+    # 再生中は差し替えない (従来どおり継ぎ目で行う)
+    def test_does_nothing_while_playing(self):
+        panel = self._Panel(playhead=5.0)
+        panel.is_playing = lambda: True
+        PreviewPanel._on_tile_ready(panel, 1)
+        self.assertEqual(panel.refreshed, 0)
+
+
+# ------------------------------------------------------------------
+# ver8 resolve8 §9-3: オーバーレイは中身が変わったときだけ作り直す
+# ------------------------------------------------------------------
+class OverlaySignatureTest(unittest.TestCase):
+
+    class _Timeline:
+
+        def __init__(self, media):
+            self._media = {m.id: m for m in media}
+
+        def media_by_id(self, media_id):
+            return self._media.get(media_id)
+
+    class _Panel:
+
+        def __init__(self, cfg, timeline, playhead=0.0, playing=False):
+            self._cfg = cfg
+            self._controller = _StubController(playhead=playhead)
+            self._controller.timeline = timeline
+            self._playing = playing
+
+        def is_playing(self):
+            return self._playing
+
+    def setUp(self):
+        self.cfg = timeline_config({})["preview"]
+        self.video = MediaRef("v1", "video", __file__, duration_sec=30.0, width=1920)
+        self.image = MediaRef("i1", "image", __file__)
+        self.timeline = self._Timeline([self.video, self.image])
+
+    def _panel(self, playhead=0.0, playing=False):
+        return self._Panel(self.cfg, self.timeline, playhead, playing)
+
+    def _subtitle(self, text="あいう"):
+        return SubtitleClip("s1", 0.0, 5.0, text=text)
+
+    def _video_clip(self):
+        return Clip("c1", "v1", 0.0, 10.0)
+
+    # 同じ内容なら署名が変わらない = 作り直さない
+    def test_same_content_keeps_the_signature(self):
+        panel = self._panel()
+        first = PreviewPanel._overlay_signature(panel, [self._subtitle()])
+        second = PreviewPanel._overlay_signature(panel, [self._subtitle()])
+        self.assertEqual(first, second)
+
+    # 字幕の文字を変えたら署名が変わる = 作り直す
+    def test_changed_text_changes_the_signature(self):
+        panel = self._panel()
+        first = PreviewPanel._overlay_signature(panel, [self._subtitle("あ")])
+        second = PreviewPanel._overlay_signature(panel, [self._subtitle("い")])
+        self.assertNotEqual(first, second)
+
+    # 停止中は動画オーバーレイの表示時刻も署名に入る (絵が変わるため)
+    def test_video_overlay_time_matters_while_stopped(self):
+        clip = self._video_clip()
+        first = PreviewPanel._overlay_signature(self._panel(playhead=1.0), [clip])
+        second = PreviewPanel._overlay_signature(self._panel(playhead=2.0), [clip])
+        self.assertNotEqual(first, second)
+
+    # 再生中は時刻成分を入れない (作り直すと再生が引っかかる / resolve6 §3-9)
+    def test_video_overlay_time_is_ignored_while_playing(self):
+        clip = self._video_clip()
+        first = PreviewPanel._overlay_signature(
+            self._panel(playhead=1.0, playing=True), [clip])
+        second = PreviewPanel._overlay_signature(
+            self._panel(playhead=2.0, playing=True), [clip])
+        self.assertEqual(first, second)
+
+    # 画像オーバーレイは時刻で絵が変わらないため署名も変わらない
+    def test_image_overlay_time_does_not_matter(self):
+        clip = Clip("c2", "i1", 0.0, 10.0)
+        first = PreviewPanel._overlay_signature(self._panel(playhead=1.0), [clip])
+        second = PreviewPanel._overlay_signature(self._panel(playhead=2.0), [clip])
+        self.assertEqual(first, second)
+
+
+# ------------------------------------------------------------------
+# ver8 resolve8 §9-4: update_debounce_ms を実際に使う
+# ------------------------------------------------------------------
+class RefreshDebounceTest(unittest.TestCase):
+
+    class _Timer:
+
+        def __init__(self):
+            self.started = []
+            self.stopped = 0
+            self.active = False
+
+        def start(self, delay):
+            self.started.append(delay)
+            self.active = True
+
+        def stop(self):
+            self.stopped += 1
+            self.active = False
+
+        def isActive(self):
+            return self.active
+
+    class _Panel:
+
+        def __init__(self, debounce_ms, play_fps=30, playing=False):
+            self._cfg = {"update_debounce_ms": debounce_ms, "play_fps": play_fps}
+            self._refresh_timer = RefreshDebounceTest._Timer()
+            self._last_refresh_at = 0.0
+            self._playing = playing
+            self.frames = 0
+            self.overlays = 0
+
+        def is_playing(self):
+            return self._playing
+
+        # 本物の取り直し (時刻の記録とタイマー停止を含む) をそのまま使う
+        def _refresh_now(self):
+            PreviewPanel._refresh_now(self)
+
+        def _request_frame(self):
+            self.frames += 1
+
+        def _rebuild_overlays(self):
+            self.overlays += 1
+
+    # 0 なら即時 (従来動作)
+    def test_zero_debounce_refreshes_immediately(self):
+        panel = self._Panel(0)
+        PreviewPanel._schedule_refresh(panel)
+        self.assertEqual((panel.frames, panel.overlays), (1, 1))
+        self.assertEqual(panel._refresh_timer.started, [])
+
+    # 1 回目は即時、続けて動いたぶんはタイマーへまとめる
+    def test_first_call_is_immediate_then_throttled(self):
+        panel = self._Panel(60)
+        PreviewPanel._schedule_refresh(panel)
+        self.assertEqual(panel.frames, 1, "最初の 1 回は待たずに描く")
+        PreviewPanel._schedule_refresh(panel)
+        PreviewPanel._schedule_refresh(panel)
+        self.assertEqual(panel.frames, 1, "連続した移動では取り直しをまとめる")
+        self.assertEqual(len(panel._refresh_timer.started), 1,
+                         "タイマーは 1 本だけ張る")
+
+    # タイマーの発火でまとめた 1 回を描く
+    def test_timeout_refreshes_once(self):
+        panel = self._Panel(60)
+        PreviewPanel._schedule_refresh(panel)
+        PreviewPanel._schedule_refresh(panel)
+        PreviewPanel._on_refresh_timeout(panel)
+        self.assertEqual((panel.frames, panel.overlays), (2, 2))
+
+    # 再生中は待たない (間引きは play_fps 側が担う)
+    def test_playing_refreshes_immediately(self):
+        panel = self._Panel(60, playing=True)
+        PreviewPanel._schedule_refresh(panel)
+        PreviewPanel._schedule_refresh(panel)
+        self.assertEqual(panel.frames, 2)
+        self.assertEqual(panel._refresh_timer.started, [])
 
 
 if __name__ == "__main__":

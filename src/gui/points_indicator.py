@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QWidget,
 )
+from shiboken6 import isValid
 
 from ..i18n import tr
 from ..services.stretheus_auth import parse_timestamp
@@ -175,7 +176,15 @@ class PointsIndicator(QWidget):
         self._worker.start()
 
     # ログアウト後などに外から呼ぶ
+    #
+    # アプリ終了中にも呼ばれる (resolve.md §9-4)。
+    # 設定画面 / サブスクリプション画面の destroyed は終了時にも飛ぶが、
+    # そのときメイン画面側のウィジェットは既に C++ 側が解放されており、
+    # 触ると RuntimeError (libshiboken: Internal C++ object already deleted)
+    # になる。解放済みなら何もしない (残高を取りに行く意味も無い)。
     def reload(self):
+        if not isValid(self) or not isValid(self.login_button):
+            return
         self._apply_state()
         self.refresh(force=True)
 

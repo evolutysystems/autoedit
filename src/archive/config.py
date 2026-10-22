@@ -1,6 +1,23 @@
 # アーカイブ採点の設定読み出し (ハードコード回避のため setting.json の archive セクションを参照)
 # 欠落キーは DEFAULT_SETTINGS 側で補完される前提だが、単体でも安全に既定へフォールバックする。
 import os
+import re
+import shutil
+import time
+
+from ..utils import trash
+from ..utils.logger import get_logger
+
+_logger = get_logger(__name__)
+
+# 取得物 (twitch-dl が作ったもの) だけに一致させる
+# (docs/error/fromUser/resolve.md §6-6)。
+#
+# 前置き一致 ("vod_" で始まる) にすると、同じフォルダに置かれる
+# **保存済みプロジェクト** vod_<id>.archive.json や書き出した
+# vod_<id>.archive.fcpxml まで削除対象に入ってしまう。
+# 消してよいのは「取り直せるもの」= 取得した動画とチャットだけである。
+_SOURCE_NAME_RE = re.compile(r"^(?:vod_\d+\.mp4|chat_\d+\.json)$")
 
 
 # src/settings ディレクトリの絶対パスを返す (work_dir/トークン等の相対解決の基準)。
@@ -74,7 +91,22 @@ def download_config(settings):
         "vod_quality_fallback": bool(dl.get("vod_quality_fallback", True)),
         "chat_source": str(dl.get("chat_source", "twitch-dl") or "twitch-dl"),
         "work_dir": str(dl.get("work_dir", "archive_work") or "archive_work"),
+        # 取得物の保持日数 / 失敗時の断片キャッシュの扱い
+        # (docs/error/fromUser/resolve.md §6-3・§6-6)
+        "keep_source_days": _coerce_int(dl.get("keep_source_days", 0), 0),
+        "keep_cache_on_error": bool(dl.get("keep_cache_on_error", False)),
+        # 元 VOD を残し続けるか (false = 自己完結したら捨てる / resolve.md §6-6)
+        "keep_vod": bool(dl.get("keep_vod", False)),
     }
+
+
+# 設定値を int へ直す (不正値は既定へ倒す)。負値は 0 (= 無期限/無効) とみなす。
+def _coerce_int(value, default):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else 0
 
 
 # 取得物の作業ディレクトリを絶対パスで解決し、無ければ作成して返す。
@@ -82,15 +114,124 @@ def download_config(settings):
 def resolve_work_dir(settings):
     work_dir = download_config(settings)["work_dir"]
     if not os.path.isabs(work_dir):
-        work_dir = os.path.join(_settings_dir(), work_dir)
+        work_dir = os.path.join(work_base_dir(), work_dir)
     os.makedirs(work_dir, exist_ok=True)
+    _migrate_token(work_dir, settings)
     return work_dir
+
+
+# 相対指定の work_dir を解決する基準フォルダ (docs/error/fromUser/resolve.md §6-6-6)
+#
+# 従来は src/settings 基準 = **インストールフォルダ配下**だった。
+# 取得物は 1 本 10〜25 GB になるため、アプリの置き場が数十 GB 膨らみ、
+# しかもシステムドライブ固定で利用者には見えなかった (2026-10-22 の報告)。
+# 利用者データの置き場である %LOCALAPPDATA%\Stretheus 配下へ移す。
+def work_base_dir():
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "Stretheus")
+
+
+# 旧版 (v1.5.8 以前) が使っていた作業フォルダ。
+# インストールフォルダ配下のため、**アプリ名変更前の AutoEdit 配下**にもあり得る
+# (AppId 据え置きで上書き更新した利用者は …\Programs\AutoEdit\ のまま / §8-1)。
+# ここは常に「この実行中のアプリ自身の」場所として解決すれば足りる。
+def legacy_work_dir(settings):
+    work_dir = download_config(settings)["work_dir"]
+    if os.path.isabs(work_dir):
+        return ""           # 絶対指定の利用者は移行の対象外 (自分で決めている)
+    return os.path.join(_settings_dir(), work_dir)
+
+
+# Twitch のログイン情報だけは新しい置き場へ引き継ぐ (§6-6-6)。
+#
+# トークンは作業フォルダ配下に置いているため、置き場を変えると**ログアウトしてしまう**。
+# 取得物 (GB 級) は移さないが、これだけは小さく、移さないと利用者が困る。
+def _migrate_token(new_work_dir, settings):
+    new_token = os.path.join(new_work_dir, "twitch_token.json")
+    if os.path.exists(new_token):
+        return
+    old_dir = legacy_work_dir(settings)
+    old_token = os.path.join(old_dir, "twitch_token.json") if old_dir else ""
+    if not old_token or not os.path.isfile(old_token):
+        return
+    try:
+        shutil.copy2(old_token, new_token)
+    except OSError as e:
+        _logger.warning("Twitch のログイン情報を引き継げませんでした: %s", e)
+        return
+    _logger.info("Twitch のログイン情報を新しい作業フォルダへ引き継ぎました")
 
 
 # Twitch トークンの保存先 (ローカル限定・機微情報。resolve17 §4.3.0/§7)。
 # 作業ディレクトリ配下に置く (書込可能・アンインストールで消える運用)。
 def twitch_token_path(settings):
     return os.path.join(resolve_work_dir(settings), "twitch_token.json")
+
+
+# 作業ディレクトリに溜まった取得物の合計サイズ (バイト) と件数を返す
+# (docs/error/fromUser/resolve.md §6-6)。
+# 戻り値: {"bytes": int, "files": int, "paths": [パス…]}
+# 画面へ「今いくら使っているか」を出すために使う。測れないものは数えない。
+def source_usage(settings):
+    work_dir = resolve_work_dir(settings)
+    total, paths = 0, []
+    for name in sorted(os.listdir(work_dir)):
+        if not _SOURCE_NAME_RE.match(name):
+            continue
+        path = os.path.join(work_dir, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            total += os.path.getsize(path)
+        except OSError:
+            continue
+        paths.append(path)
+    return {"bytes": total, "files": len(paths), "paths": paths}
+
+
+# 保持日数を過ぎた取得物を**ゴミ箱へ送る** (docs/error/fromUser/resolve.md §6-6)。
+#
+# keep_source_days=0 (既定) のときは何もしない。
+# パイプラインの最後ではなくアーカイブ画面を開いたときに呼ぶ:
+# 「続きから」で同じ VOD を使い直す運用があるため、直後に消してはいけない。
+#
+# 完全削除ではなくゴミ箱を使う。利用者が時間をかけて取得した素材であり、
+# 自動で消す以上は取り戻せなければならない (実装中に開発端末で 45 GB を
+# os.remove で消してしまい、復旧できなかった事故による)。
+# ゴミ箱が使えない環境では**何もしない**。黙って完全削除はしない (utils/trash.py と同方針)。
+# 戻り値: 回収したバイト数。失敗しても例外は外へ出さない (画面を止めない)。
+def sweep_old_sources(settings, now=None):
+    days = download_config(settings)["keep_source_days"]
+    if days <= 0:
+        return 0
+    if not trash.is_available():
+        _logger.info("ゴミ箱を使えないため取得物の自動削除は行いません")
+        return 0
+
+    deadline = (now if now is not None else time.time()) - days * 86400
+    targets, sizes = [], {}
+    for path in source_usage(settings)["paths"]:
+        try:
+            if os.path.getmtime(path) >= deadline:
+                continue
+            sizes[path] = os.path.getsize(path)
+        except OSError:
+            continue
+        targets.append(path)
+    if not targets:
+        return 0
+
+    result = trash.send_to_trash(targets)
+    freed = sum(sizes.get(path, 0) for path in result["trashed"])
+    for path in result["trashed"]:
+        _logger.info("保持日数を過ぎた取得物をゴミ箱へ送りました: %s",
+                     os.path.basename(path))
+    for item in result["failed"]:
+        _logger.warning("取得物をゴミ箱へ送れませんでした: %s (%s)",
+                        item["path"], item["reason"])
+    if freed:
+        _logger.info("取得物の掃除で %.1f GB を回収しました", freed / (1024 ** 3))
+    return freed
 
 
 # クリップ処理 (clip_pipeline) の設定を平坦化して返す

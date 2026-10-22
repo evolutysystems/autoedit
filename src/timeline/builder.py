@@ -56,6 +56,8 @@ _DEFAULT_SHORTCUTS = {
     "delete_alternate": "Shift+Delete",
     # 選択中のノードを削除するだけ (後続を詰めない / resolve2 R12)
     "delete_plain": "Backspace",
+    # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
+    "align_subtitles": "Ctrl+Shift+A",
     "undo": "Ctrl+Z",
     "redo": "Ctrl+Y",
     "redo_alt": "Ctrl+Shift+Z",
@@ -303,7 +305,8 @@ def timeline_config(settings):
         "enabled": bool(cfg.get("enabled", True)),
         "project_dir": str(cfg.get("project_dir", "") or ""),
         "project_suffix": str(cfg.get("project_suffix", ".timeline.json") or ".timeline.json"),
-        "autosave_sec": int(cfg.get("autosave_sec", 0) or 0),
+        # 自動保存の間隔 (秒 / 0=無効)。既定で有効 (resolve.md §8-2 7-3)。
+        "autosave_sec": int(cfg.get("autosave_sec", 60) or 0),
         "keep_project_file": bool(cfg.get("keep_project_file", True)),
         "auto_place_opening_ending": bool(opening_ending.get("auto_place", True)),
         "min_clip_sec": float(cfg.get("min_clip_sec", 0.05)),
@@ -332,6 +335,9 @@ def timeline_config(settings):
             "save_button": bool(project.get("save_button", True)),
             "confirm_on_close": bool(project.get("confirm_on_close", True)),
             "keep_media": bool(project.get("keep_media", False)),
+            # アーカイブ切り抜き用の keep_media (resolve.md §6-6)。
+            # 既定 true = クリップ映像もプロジェクトの隣へ置き、元 VOD へ依存させない。
+            "archive_keep_media": bool(project.get("archive_keep_media", True)),
             "media_dir_suffix": str(project.get("media_dir_suffix", ".media")
                                     or ".media"),
             "autosave_suffix": str(project.get("autosave_suffix", ".autosave.json")
@@ -432,8 +438,16 @@ def timeline_config(settings):
         },
         "preview": {
             "backend": str(preview.get("backend", "pyav") or "pyav"),
-            "width": int(preview.get("width", 960)),
-            "update_debounce_ms": int(preview.get("update_debounce_ms", 60)),
+            # 字幕プレビューのメトリクス基準 (ver8 resolve8 §5 / §11-1)。
+            # "libass" = 出力 (libass) と同じ字の大きさ・行送り・字間へ寄せる (既定)
+            # "em"     = 従来の Qt 近似 (em 基準・行送り x1.2・字間なし)
+            "subtitle_metrics_mode": (
+                "em" if str(preview.get("subtitle_metrics_mode", "libass")
+                            ).strip().lower() == "em" else "libass"),
+            # 再生ヘッドの移動から画面更新までの待ち (ms)。0 で即時 (従来動作)。
+            # 連続したスクラブ・ドラッグで毎回フレームを取り直すと、
+            # 停止中の表示がチカチカする (ver8 resolve8 §9-4)。
+            "update_debounce_ms": max(0, int(preview.get("update_debounce_ms", 60) or 0)),
             "cache_frames": int(preview.get("cache_frames", 8)),
             "high_quality_button": bool(preview.get("high_quality_button", True)),
             "audio_enabled": bool(preview.get("audio_enabled", True)),

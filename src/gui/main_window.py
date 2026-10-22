@@ -19,6 +19,7 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.exceptions import PipelineCancelled
     from src.gui.archive_tab import ArchiveTabWidget
+    from src.gui.failure_message import format_failure_message
     from src.gui.file_drop_area import FileDropArea
     from src.gui.project_library_dialog import ProjectLibraryDialog
     from src.gui.project_resume_row import (
@@ -36,6 +37,7 @@ if __package__ is None or __package__ == "":
         run_from_project,
         run_pipeline,
     )
+    from src.archive import legacy_cache
     from src.services import config as services_config
     from src.services import telemetry
     from src.gui.log_workers import LogFlushWorker
@@ -51,7 +53,7 @@ if __package__ is None or __package__ == "":
     from src.timeline import project_io
     from src.timeline.builder import timeline_config
     from src.gui import theme
-    from src.utils import updater
+    from src.utils import disk, updater, workspace
     from src.utils.logger import get_logger
     from src.version import __version__
 else:
@@ -61,6 +63,7 @@ else:
         run_from_project,
         run_pipeline,
     )
+    from ..archive import legacy_cache
     from ..services import config as services_config
     from ..services import telemetry
     from ..settings.settings_window import (
@@ -74,11 +77,12 @@ else:
     from ..i18n import tr
     from ..timeline import project_io
     from ..timeline.builder import timeline_config
-    from ..utils import updater
+    from ..utils import disk, updater, workspace
     from ..utils.logger import get_logger
     from ..version import __version__
     from . import theme
     from .archive_tab import ArchiveTabWidget
+    from .failure_message import format_failure_message
     from .file_drop_area import FileDropArea
     from .log_workers import LogFlushWorker
     from .points_indicator import PointsIndicator, WatermarkConfirmBridge
@@ -109,6 +113,19 @@ from PySide6.QtWidgets import (
 )
 
 _logger = get_logger(__name__)
+
+# twitch-dl 子プロセス (multi-call) の終了コードと通知行
+# (docs/error/fromUser/resolve.md §6-1)
+#
+# 凍結配布では本体 exe を `Stretheus.exe __twitchdl__ download …` として再起動し、
+# twitch-dl を動かしている。この子プロセスは**コンソールもログも持たない**ため、
+# 例外がそのまま抜けると PyInstaller が「Unhandled exception in script」の
+# モーダルダイアログを出し、親は利用者が閉じるまで待たされる (2026-10-22 の報告)。
+# click は EPIPE 以外の OSError を再送出する (click/core.py) ため、ENOSPC は素通りする。
+# そこで子側で必ず受け、親が読んでいる stdout へ 1 行出して終了コードで種別を伝える。
+_EXIT_DISK_FULL = 28            # 容量不足 (errno.ENOSPC に合わせる)
+_EXIT_CHILD_ERROR = 90          # その他の想定外 (click の 1/2 と衝突しない値)
+_TWITCHDL_ERROR_MARK = "__TWITCHDL_ERROR__"
 
 # 動画ファイルフィルタ (settings_window と整合)
 _VIDEO_FILE_FILTER = "動画ファイル (*.mp4 *.mov *.avi *.mkv *.flv *.wmv);;すべてのファイル (*)"
@@ -404,15 +421,7 @@ class VolumeThresholdBridge(QObject):
 # FFmpegError 等が stderr 末尾 (stderr_tail) を持つ場合は実エラー行の要点を併記し、
 # 「returncode だけ見えて原因が分からない」状況を避けて切り分けを容易にする。
 def _format_failure_message(error):
-    message = str(error)
-    stderr_tail = getattr(error, "stderr_tail", None)
-    if stderr_tail:
-        tail_lines = [ln for ln in str(stderr_tail).splitlines() if ln.strip()]
-        excerpt = "\n".join(tail_lines[-6:])  # 末尾の実エラー行のみ抜粋
-        if excerpt:
-            message = tr("{message}\n\nFFmpeg エラー詳細:\n{excerpt}",
-                         message=message, excerpt=excerpt)
-    return message
+    return format_failure_message(error)
 
 
 # パイプラインをワーカースレッドで実行する
@@ -1513,17 +1522,147 @@ def _resolve_app_icon_path():
     return icon_path if os.path.exists(icon_path) else None
 
 
-# エントリーポイント
-def main():
+# 旧版が残した取得データの回収を 1 度だけ尋ねる
+# (docs/error/fromUser/resolve.md §6-6-6 / §8-2 7-7)
+#
+# 置き場を変えたため、旧版が溜めた分は使われないまま残る (開発端末では計 94 GB)。
+# 自動では消さない。他ツールと共用しうる場所を含むうえ、
+# 「気づいたら消えていた」は取得に何時間もかかる素材では許されないためである。
+# 一度答えてもらったら覚えておき、二度と尋ねない。
+def _offer_legacy_cleanup(settings, parent=None):
+    download = settings.setdefault("archive", {}).setdefault("download", {})
+    if download.get("legacy_cache_checked"):
+        return
+    try:
+        items = legacy_cache.find_reclaimable(settings)
+    except OSError:
+        _logger.warning("旧データの確認に失敗しました (処理は続行します)")
+        return
+    if not items:
+        # 無ければ黙って覚えるだけ (以後この確認は走らない)
+        download["legacy_cache_checked"] = True
+        _save_settings_quietly(settings)
+        return
+
+    total = sum(item["bytes"] for item in items)
+    detail = "\n".join(
+        f"  {item['label']} : {disk.human(item['bytes'])}\n    {item['path']}"
+        for item in items)
+    answer = QMessageBox.question(
+        parent, tr("使われていないデータがあります"),
+        tr("以前のバージョンが残した {size} のデータが見つかりました。\n"
+           "現在は使っていないため、ゴミ箱へ送って空き容量を取り戻せます。\n\n"
+           "{detail}\n\n"
+           "ゴミ箱へ送りますか?", size=disk.human(total), detail=detail),
+        QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+    # 「いいえ」でも覚える。毎回の起動で尋ねられる方が煩わしい。
+    download["legacy_cache_checked"] = True
+    if answer == QMessageBox.Yes:
+        freed = legacy_cache.reclaim(items)
+        QMessageBox.information(
+            parent, tr("回収しました"),
+            tr("{size} の空き容量を取り戻しました (ゴミ箱に入っています)。",
+               size=disk.human(freed)))
+    _save_settings_quietly(settings)
+
+
+# 設定の保存に失敗しても起動を止めない (次回また尋ねるだけで済む)
+def _save_settings_quietly(settings):
+    try:
+        save_settings(settings)
+    except OSError:
+        _logger.warning("設定を保存できませんでした (処理は続行します)")
+
+
+# 致命的な例外を必ず記録し、分かる言葉で見せる (resolve.md §6-11)
+#
+# PyInstaller の windowed ビルドでは sys.stderr が None のため、
+# 受けそこねた例外はログにもコンソールにも残らない。
+# ここを通していれば、少なくとも「何が起きたか」は必ず残る。
+def _log_fatal(error):
+    try:
+        _logger.critical("致命的なエラーで終了します", exc_info=error)
+    except Exception:       # noqa: BLE001 (記録の失敗で二次被害を出さない)
+        pass
+
+
+# 起動を続けられない例外を利用者へ見せる。
+# 容量不足だけは原因が明確なので、素の [Errno 28] ではなく対処の分かる文言にする。
+# 受けそこねた例外を見せる。
+#
+# fatal : True  = このあとアプリが終わる (起動処理の失敗 / main の最後の砦)
+#         False = 画面の操作中に出た例外。**アプリは動き続ける**
+# PySide6 はスロット内の例外を exec() の外へ出さず、処理は続く。
+# そこで「終了します」と出すのは嘘になるため、文言を分ける
+# (2026-10-22 のセクション追加の報告で実際に誤った案内を出した)。
+def _show_error_dialog(error, fatal):
+    _log_fatal(error)
+    if disk.is_no_space(error):
+        message = disk.shortage_message(
+            os.path.abspath(os.sep), disk.free_bytes(os.path.abspath(os.sep)), None)
+    elif fatal:
+        message = tr("予期しないエラーで終了します。\n{error}", error=error)
+    else:
+        message = tr("予期しないエラーが発生しました。\n"
+                     "この操作は完了できませんでしたが、作業は続けられます。\n{error}",
+                     error=error)
+    try:
+        QMessageBox.critical(None, tr("エラー"), message)
+    except Exception:       # noqa: BLE001 (GUI を出せない状況でも落ちない)
+        pass
+
+
+# sys.excepthook 用 (スロット内などで受けそこねた例外。アプリは動き続ける)
+def _show_fatal_error(_exc_type, error, _traceback):
+    _show_error_dialog(error, fatal=False)
+
+
+# twitch-dl を子プロセスとして動かす (multi-call / flow17 R3)
+# 例外を**絶対に外へ出さない**のがこの関数の役目である (resolve.md §6-1)。
+# 外へ出すと PyInstaller のクラッシュダイアログになり、
+#   ・利用者には原因の分からない英語の窓が出る
+#   ・モーダルなので閉じるまで親 (GUI) が待たされる
+#   ・子にはロガーが無いため記録も残らない
+# という三重の損をする。ここで受けて stdout と終了コードで親へ伝える。
+def _run_twitchdl_child():
+    from twitchdl.cli import cli
+
+    sys.argv = ["twitch-dl", *sys.argv[2:]]  # `python -m twitchdl` 相当に整える
+    _logger.info("twitch-dl 子プロセス開始: %s", " ".join(sys.argv[1:3]))
+    try:
+        cli()  # click グループ (standalone_mode=True で内部 sys.exit する)
+    except SystemExit:
+        # click の正常な終了経路 (ctx.exit / ClickException)。従来どおり素通りさせる。
+        raise
+    except BaseException as error:      # noqa: BLE001 (ダイアログを出さないため広く捕捉)
+        no_space = disk.is_no_space(error)
+        _logger.exception("twitch-dl 子プロセスが異常終了しました (容量不足=%s)", no_space)
+        # 親は stdout を 1 行ずつ読んでいる (twitch_source._run)。
+        # 人が読む行としても、親が種別を判定する行としても使えるようにする。
+        try:
+            sys.stdout.write(
+                f"{_TWITCHDL_ERROR_MARK} {type(error).__name__}: {error}\n")
+            sys.stdout.flush()
+        except (OSError, AttributeError, ValueError):
+            pass    # 書けなくても終了コードで伝わる
+        sys.exit(_EXIT_DISK_FULL if no_space else _EXIT_CHILD_ERROR)
+    return None
+
+
+# 起動処理の本体 (例外の受けは main が行う)
+def _main():
     started_at = time.monotonic()
     # 凍結配布物では twitch-dl を別バイナリにせず、本体exeを multi-call で twitchdl CLI として動かす。
     # これによりアップデート/インストール時に本体と一緒に twitch-dl も展開される (追加バイナリ不要 /
     # flow17 R3)。twitch_source が凍結時に [sys.executable, "__twitchdl__", ...] を起動する。
     if len(sys.argv) > 1 and sys.argv[1] == "__twitchdl__":
-        from twitchdl.cli import cli
-        sys.argv = ["twitch-dl", *sys.argv[2:]]  # `python -m twitchdl` 相当に整える
-        cli()  # click グループ (standalone_mode=True で内部 sys.exit する)
-        return
+        return _run_twitchdl_child()
+
+    # 受けそこねた例外を必ず記録する (resolve.md §6-11)。
+    # PySide6 はスロット内の例外を exec() の外へ出さず、windowed ビルドでは
+    # sys.stderr も None のため、ここを設定しないと**痕跡が何も残らない**。
+    sys.excepthook = _show_fatal_error
+    threading.excepthook = lambda args: _log_fatal(args.exc_value)
 
     app = QApplication(sys.argv)
     # 実行中ウィンドウ/タスクバーのアイコンを設定する (exe 埋め込みアイコンとは別管理)。
@@ -1543,8 +1682,14 @@ def main():
     # QApplication へ 1 回当てるだけで、以後に作られるダイアログにも自動で効く。
     # ui.theme = "system" のときは何も当てず従来の Qt 既定で起動する。
     theme.apply(app, settings)
+    # 前回が異常終了していれば中間ファイルが残っている。画面を作る前に引き取る
+    # (resolve.md §6-10)。失敗しても起動は続ける。
+    workspace.sweep_stale(
+        max_age_hours=settings.get("general", {}).get("cleanup_stale_work_hours", 24))
     window = MainWindow()
     window.show()
+    # 旧版が残した取得データの回収 (§6-6-6)。画面が出てから 1 度だけ尋ねる。
+    _offer_legacy_cleanup(settings, window)
     # 起動の記録 (セッション開始 + AppStart)。画面が出てから積む。
     telemetry.app_started(startup_ms=(time.monotonic() - started_at) * 1000.0)
     # 正常終了を記録する。ここを通らずに落ちた場合は、次回起動時に
@@ -1553,6 +1698,21 @@ def main():
     # 起動時の更新チェック (設定 ON かつ凍結ビルド時のみ実際に走る)
     window.start_update_check()
     sys.exit(app.exec())
+
+
+# エントリーポイント (起動処理ごと例外から守る / resolve.md §6-11)
+#
+# 2026-10-22 の報告では main() 内の例外がそのまま抜けて
+# PyInstaller の「Unhandled exception in script」ダイアログになった。
+# 利用者には意味の分からない英語の窓しか残らないため、必ずここで受ける。
+def main():
+    try:
+        return _main()
+    except SystemExit:
+        raise
+    except BaseException as error:      # noqa: BLE001 (最後の砦)
+        _show_error_dialog(error, fatal=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

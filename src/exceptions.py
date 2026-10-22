@@ -28,6 +28,25 @@ class FFmpegError(AutoEditError):
         self.returncode = returncode
 
 
+# ディスク空き容量が足りない (docs/error/fromUser/resolve.md §6-2)
+#
+# FFmpegError と分けているのは「続けても必ず失敗する」ことを型で表すためである。
+# 正規化や字幕の失敗は握り潰して続行してよいが、容量不足だけは握り潰すと
+# 原因から離れた工程で別のエラーとして見えてしまう (resolve.md §5-4)。
+# AutoEditError 派生のため、既存の except AutoEditError 経路はそのまま効く。
+#
+# path     : 足りなかった場所
+# free     : 実測の空き (バイト / 取得できなければ None)
+# required : 必要と判断した量 (バイト / 不明なら None)
+class DiskSpaceError(AutoEditError):
+
+    def __init__(self, message, path=None, free=None, required=None):
+        super().__init__(message)
+        self.path = path
+        self.free = free
+        self.required = required
+
+
 # テロップ生成エラー
 class SubtitleError(AutoEditError):
     pass

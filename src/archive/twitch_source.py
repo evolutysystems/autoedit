@@ -5,15 +5,22 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
-from ..exceptions import InputError, TwitchError
+from ..exceptions import DiskSpaceError, FFmpegError, InputError, TwitchError
 from ..i18n import tr
+from ..utils import disk
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 
 _logger = get_logger(__name__)
+
+# 子プロセス (main_window._run_twitchdl_child) と取り決めた合図。
+# 片方だけ直すと伝わらなくなるため、値を変えるときは必ず両方を直すこと。
+_EXIT_DISK_FULL = 28
+_TWITCHDL_ERROR_MARK = "__TWITCHDL_ERROR__"
 
 # Twitch VOD URL から video id を抽出する正規表現 (twitch.tv/videos/<digits>) と裸ID。
 _VIDEO_URL_RE = re.compile(r"(?:twitch\.tv/videos/)(\d+)", re.IGNORECASE)
@@ -134,8 +141,41 @@ def _run(argv, progress_cb=None, label="取得中…", env=None):
             progress_cb(f"{label} {line[:80]}")
     code = proc.wait()
     if code != 0:
-        raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + "\n".join(tail[-5:]))
+        # 凍結配布の子プロセスは容量不足を終了コードで知らせてくる
+        # (main_window._run_twitchdl_child / resolve.md §6-1)。
+        # 「取得に失敗しました」ではなく原因そのものを出すため、ここで作り分ける。
+        if code == _EXIT_DISK_FULL or disk.looks_like_no_space("\n".join(tail)):
+            path = _last_target_dir(argv)
+            raise DiskSpaceError(
+                disk.shortage_message(path, disk.free_bytes(path), None),
+                path=path, free=disk.free_bytes(path))
+        detail = "\n".join(
+            line for line in tail[-5:] if not line.startswith(_TWITCHDL_ERROR_MARK))
+        marked = [line for line in tail if line.startswith(_TWITCHDL_ERROR_MARK)]
+        if marked:
+            # 子が握った例外の型と文言 (ダイアログの代わりに届く 1 行)
+            detail = (marked[-1][len(_TWITCHDL_ERROR_MARK):].strip()
+                      + ("\n" + detail if detail else ""))
+        raise TwitchError(f"twitch-dl の実行に失敗しました (code {code})。\n" + detail)
     return tail
+
+
+# 容量不足の報告に使う「書き込み先」を argv から拾う。
+# --cache-dir / --output のどちらかが必ず付いているため、そこから親フォルダを取る。
+# 見つからなければ現在の作業フォルダを返す (空き容量の桁が分かれば十分なため)。
+def _last_target_dir(argv):
+    for key in ("--cache-dir", "--output"):
+        if key in argv:
+            value = str(argv[argv.index(key) + 1])
+            # テンプレート ({id} 等) を含むため、実在する親まで遡って使う
+            while value and ("{" in os.path.basename(value) or not os.path.isdir(value)):
+                parent = os.path.dirname(value)
+                if not parent or parent == value:
+                    break
+                value = parent
+            if value:
+                return value
+    return os.getcwd()
 
 
 # ------------------------------------------------------------------
@@ -242,10 +282,42 @@ def resolve_quality(playlists, preferred="source"):
 # (error 20260810。source を持たない VOD が存在するため)。False で従来どおりの挙動。
 def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source",
                  auth_token="", start=None, end=None, progress_cb=None, ffmpeg_dir=None,
-                 quality_fallback=True):
+                 quality_fallback=True, ffmpeg_cfg=None, min_free_bytes=0,
+                 keep_cache_on_error=False):
     os.makedirs(work_dir, exist_ok=True)
     out_template = os.path.join(work_dir, "vod_{id}.{format}")
     expected = os.path.join(work_dir, f"vod_{video_id}.mp4")
+    # 断片 (.ts) の置き場を work_dir 配下へ引き取る (resolve.md §6-3-1)。
+    # 既定のままだと %LOCALAPPDATA%\twitch-dl へ落ち、
+    #   ・利用者からは見えない
+    #   ・work_dir を別ドライブへ移しても断片は C: に残る
+    #   ・失敗時に消えない (twitch-dl は成功時しか消さない)
+    # という三重の問題になる (2026-10-22 の報告で 48 GB が滞留していた)。
+    cache_root = os.path.join(work_dir, "cache")
+    cache_template = os.path.join(cache_root, "{id}", "{quality}")
+    cache_for_video = os.path.join(cache_root, str(video_id))
+
+    # 既に取得済みなら作り直さない。ただし**使える mp4 かどうかで判断する**
+    # (resolve.md §6-4)。twitch-dl の --skip-existing は存在するかしか見ないため、
+    # 前回の失敗で残った壊れたファイルを「取得済み」として通してしまい、
+    # 採点の最初の ffprobe で「ffprobeが失敗」になる。
+    if os.path.exists(expected):
+        if _is_usable_video(expected, ffmpeg_cfg):
+            _logger.info("取得済みの VOD を再利用します: %s", expected)
+            if progress_cb:
+                progress_cb(tr("取得済みの配信データを使います"))
+            return expected
+        _logger.error(
+            "取得済みの VOD が壊れているため取得し直します: %s (%s)",
+            expected, disk.human(_size_or_zero(expected)))
+        if progress_cb:
+            progress_cb(tr("前回の取得が壊れていたため取得し直します"))
+        _remove_quietly(expected)
+
+    # 取得前に空きを確かめる (resolve.md §6-3-3)。
+    # 断片と結合後で VOD 1 本の約 2 倍を使うが、尺は事前に分からないため
+    # 設定値 (min_free_space_gb) をそのまま要求値とする (§8-2 7-5)。
+    disk.ensure_free(work_dir, min_free_bytes, label="VOD取得")
 
     wanted = quality or "source"
     playlists = []
@@ -261,11 +333,14 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
                 progress_cb(message)
 
     argv = list(_resolve_twitchdl(twitch_dl_path))
+    # --skip-existing は使わない (上で自前に検証済み / resolve.md §6-4)。
+    # 判断をアプリ側へ一本化し、壊れたファイルを素通りさせない。
     argv += ["download", str(video_id),
              "--quality", chosen,
              "--format", "mp4",
              "--output", out_template,
-             "--skip-existing"]
+             "--cache-dir", cache_template,
+             "--overwrite"]
     if auth_token:
         argv += ["--auth-token", auth_token]
     if start:
@@ -275,7 +350,13 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
 
     try:
         _run(argv, progress_cb, label="VOD取得中…", env=_twitchdl_env(ffmpeg_dir))
+    except DiskSpaceError:
+        # 容量不足は原因がそのまま答えなので包み直さない。
+        # ただし断片は丸ごと残るため、ここで必ず引き取る (48 GB 滞留の再発防止)。
+        _cleanup_cache(cache_for_video, keep_cache_on_error)
+        raise
     except TwitchError as e:
+        _cleanup_cache(cache_for_video, keep_cache_on_error)
         # 画質が原因のときに何を直せばよいか分かるよう、候補を添えて包み直す
         names = ", ".join(p["name"] for p in playlists) if playlists else "取得できませんでした"
         raise TwitchError(
@@ -284,8 +365,70 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
     if not os.path.isfile(expected):
         raise TwitchError(
             tr("VOD の取得後にファイルが見つかりません: {path}", path=expected))
-    _logger.info("VOD 取得完了: %s (画質 %s)", expected, chosen)
+    # 取得できた「ことになっている」ファイルも必ず確かめる (resolve.md §6-4-3)。
+    # ここで弾いておかないと、壊れたまま採点へ進んで ffprobe の失敗として現れる。
+    if not _is_usable_video(expected, ffmpeg_cfg):
+        size = _size_or_zero(expected)
+        _remove_quietly(expected)
+        _cleanup_cache(cache_for_video, keep_cache_on_error)
+        raise TwitchError(
+            tr("取得した配信データが壊れています ({size})。"
+               "空き容量を確かめてから、もう一度お試しください。",
+               size=disk.human(size)))
+    _logger.info("VOD 取得完了: %s (%s / 画質 %s)",
+                 expected, disk.human(_size_or_zero(expected)), chosen)
     return expected
+
+
+# 動画として読める状態かを ffprobe で確かめる (resolve.md §6-4)。
+# ffmpeg_cfg が無い呼び出し (テスト等) ではサイズだけで判定し、従来どおり通す。
+def _is_usable_video(path, ffmpeg_cfg):
+    if _size_or_zero(path) <= 0:
+        return False
+    if ffmpeg_cfg is None:
+        return True
+    from ..modules import ffmpeg_runner       # noqa: PLC0415 (循環 import を避ける)
+
+    try:
+        return float(ffmpeg_runner.probe_duration(path, ffmpeg_cfg)) > 0.0
+    except (FFmpegError, OSError, ValueError):
+        return False
+
+
+def _size_or_zero(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def _remove_quietly(path):
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except OSError as e:
+        _logger.warning("壊れたファイルを削除できませんでした: %s (%s)", path, e)
+
+
+# 取得に失敗したときの断片キャッシュを片づける (resolve.md §6-3-2)。
+# twitch-dl は成功時しか消さないため、失敗が積み重なると断片だけが残り続ける。
+# keep=True (設定 keep_cache_on_error) のときは再試行を速くするため残す。
+def _cleanup_cache(cache_dir, keep):
+    if keep:
+        _logger.info("設定により断片キャッシュを残します: %s", cache_dir)
+        return
+    if not os.path.isdir(cache_dir):
+        return
+    freed = 0
+    for root, _dirs, files in os.walk(cache_dir):
+        for name in files:
+            freed += _size_or_zero(os.path.join(root, name))
+    try:
+        shutil.rmtree(cache_dir)
+        _logger.info("断片キャッシュを削除しました: %s (%s 回収)",
+                     cache_dir, disk.human(freed))
+    except OSError as e:
+        _logger.warning("断片キャッシュを削除できませんでした: %s (%s)", cache_dir, e)
 
 
 # コメント(チャット)を json で取得し、その json ファイルの絶対パスを返す (resolve17 §4.3.2)。

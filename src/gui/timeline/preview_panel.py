@@ -7,6 +7,7 @@
 #   ・音声は QMediaPlayer をマスタークロックにして再生し、映像を追従させる (§6.4-5)
 import os
 import subprocess
+import time
 
 import numpy as np
 from PySide6.QtCore import (
@@ -59,7 +60,7 @@ except Exception:  # noqa: BLE001
 from ...i18n import tr
 from ...modules import ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
-from ...timeline import commands, compositor, crop
+from ...timeline import commands, compositor, crop, proxy_render
 from ...timeline.audio_source import AudioChunkSource
 from ...timeline.frame_source import create_frame_source, is_pyav_available
 from ...timeline.model import SubtitleClip
@@ -209,6 +210,21 @@ class PreviewPanel(QWidget):
         # 再生開始・停止でリセットしないと、戻して再生したとき前回の到達点を
         # 越えるまで映像が更新されない (resolve12 §2.3)。
         self._last_frame_at = None
+        # 再生開始時のシーク待ち (ver8 resolve8 §8)。
+        # QMediaPlayer のソース読み込みは非同期で、setSource() 直後の
+        # setPosition() は効かない。その間に届く positionChanged(0) を
+        # 再生ヘッドへ書き戻すとチャンク先頭 (タイル頭・素材先頭) へ戻るため、
+        # 目標位置へ達するまで書き戻さない。
+        self._seek_pending = False
+        self._seek_target_sec = 0.0
+        self._seek_offset_ms = 0
+
+        # 再生ヘッド移動のデバウンス (ver8 resolve8 §9-4)。
+        # 移動が落ち着いてから 1 回だけ絵を取り直す。
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._on_refresh_timeout)
+        self._last_refresh_at = 0.0   # 直前に取り直した時刻 (time.monotonic)
 
         # スクラブ (再生ヘッドドラッグ中の音声 / resolve7 §5.13)
         #   ・self._rate は 0 のまま = 音声は再生ヘッドを動かさない (§2.5.2)
@@ -222,8 +238,9 @@ class PreviewPanel(QWidget):
         self._scrub_volume_backup = None  # スクラブ前の音量 (離したら戻す)
 
         self._overlay_items = {}
-        # 直前に並べたオーバーレイの ID 列 (再生中の作り直しを省くため / resolve6 §3-9)
-        self._overlay_ids = []
+        # 直前に並べたオーバーレイの署名 (作り直しを省くため / ver8 resolve8 §9-3)。
+        # None = まだ一度も並べていない (必ず 1 回は作る)。
+        self._overlay_signature_cache = None
         # 書き出しと同じぼかしをフレームへ当てる道具 (停止中だけ / ver5 resolve4 §5.8)
         self._blur_preview = None
 
@@ -234,6 +251,8 @@ class PreviewPanel(QWidget):
         self._proxy_playing = False     # いまプロキシを再生しているか
         self._proxy_tile_media = {}     # タイルから 1 フレーム取るための擬似 MediaRef
         self._video_item = None         # プロキシ映像の出力先
+        self._video_visible = False     # その出力先をいま見せているか
+        self._video_output_item = None  # QMediaPlayer へ渡してある映像シンク
         self._preparing_status = False  # 「準備中」を出しているか
         # 近似描画 (下書き) を描くか。プロキシの絵が出ている間は False。
         self._draft_visible = True
@@ -395,13 +414,40 @@ class PreviewPanel(QWidget):
     def _on_playhead_moved(self, sec):
         if self._proxy is not None:
             self._proxy.set_focus(sec)
+        self._update_time_label()    # 時刻表示は即時 (軽い・遅れると違和感が出る)
+        self._schedule_refresh()     # 絵とオーバーレイは update_debounce_ms ぶん待つ
+
+    # 絵の取り直しをまとめる (ver8 resolve8 §9-4)。
+    #
+    # 「動きが止まるまで待つ」だけにすると、スクラブ中ずっと絵が更新されない。
+    # 前回の取り直しから update_debounce_ms 以上たっていれば即時に取り直し、
+    # そうでなければ残り時間だけ待って 1 回にまとめる (= 1 秒あたりの取り直しを
+    # 頭打ちにする)。0 なら常に即時 = 従来動作。再生中の間引きは
+    # _on_audio_position (play_fps) が担うため、ここでは待たない。
+    def _schedule_refresh(self):
+        delay = int(self._cfg["update_debounce_ms"])
+        if delay <= 0 or self.is_playing():
+            self._refresh_now()
+            return
+        elapsed_ms = (time.monotonic() - self._last_refresh_at) * 1000.0
+        if elapsed_ms >= delay:
+            self._refresh_now()
+            return
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(int(delay - elapsed_ms))
+
+    def _refresh_now(self):
+        self._refresh_timer.stop()
+        self._last_refresh_at = time.monotonic()
         self._request_frame()
         self._rebuild_overlays()
-        self._update_time_label()
+
+    # デバウンスの発火 (ver8 resolve8 §9-4)
+    def _on_refresh_timeout(self):
+        self._refresh_now()
 
     def _refresh_all(self):
-        self._request_frame()
-        self._rebuild_overlays()
+        self._refresh_now()          # 待ち中の取り直しは今の 1 回に含める
         self._update_time_label()
 
     # ------------------------------------------------------------------
@@ -425,9 +471,18 @@ class PreviewPanel(QWidget):
         return self._proxy.tile_at(sec)
 
     # タイルが 1 枚できた → いまの再生ヘッドに関わるなら表示を差し替える
-    def _on_tile_ready(self, _tile_index):
+    #
+    # 先読み (lookahead_tiles) のぶん、見ていない区間のタイルも次々と完成する。
+    # それらで画面を作り直すと停止中にチカチカする (ver8 resolve8 §9-2)。
+    # いま映している時刻のタイルだけを差し替えの対象にする。
+    def _on_tile_ready(self, tile_index):
         if self.is_playing():
             return                      # 再生中の差し替えはしない (継ぎ目で行う)
+        if self._proxy is not None:
+            current = proxy_render.tile_index_at(self._controller.playhead(),
+                                                 self._proxy.tile_sec())
+            if int(tile_index) != current:
+                return
         self._refresh_all()
 
     # プロキシを諦めた (ffmpeg が無い / 繰り返し失敗)。近似表示へ戻る (§7)
@@ -453,12 +508,16 @@ class PreviewPanel(QWidget):
         return item
 
     # プロキシ映像の表示を切り替える (表示中はベースフレームを隠す)
+    # 状態が変わらないときは触らない (ver8 resolve8 §9-5)
     def _show_video_item(self, visible):
         item = self._ensure_video_item() if visible else self._video_item
         if item is None:
             return False
-        item.setVisible(bool(visible))
-        self._base_item.setVisible(not visible)
+        visible = bool(visible)
+        if visible != self._video_visible:
+            item.setVisible(visible)
+            self._base_item.setVisible(not visible)
+            self._video_visible = visible
         return True
 
     # 下書き (近似描画) を描くかを全オーバーレイへ伝える。
@@ -534,7 +593,9 @@ class PreviewPanel(QWidget):
         self._set_draft_visible(True)
         resolved = self._controller.source_at_playhead()
         if resolved is None:
-            # 空白 (ギャップ) は黒フレーム
+            # 空白 (ギャップ) は黒フレーム。ここだけが黒塗りの正当な経路で、
+            # 取得失敗は黒にしない (ver8 resolve8 §9-1)。
+            _logger.debug("この位置には映像がありません (黒フレーム): %.3f", playhead)
             self._base_item.show_blank(self._canvas)
             return
         media, source_sec = resolved
@@ -692,21 +753,46 @@ class PreviewPanel(QWidget):
     def _on_frame_failed(self, job_id):
         if job_id != self._frame_job:
             return
-        self._base_item.show_blank(self._canvas)
+        # 「取得できなかった」と「そこに映像が無い」は別物 (ver8 resolve8 §9-1)。
+        # 前者で黒く塗るとクリップ境界で暗転して見えるため、直前のフレームを
+        # そのまま残す。ギャップの黒塗りは _request_frame 側が行う。
+        _logger.warning("フレームを取得できませんでした "
+                        "(直前のフレームを表示します): %.3f",
+                        self._controller.playhead())
+
+    # 作り直しの要否を決める署名 (ver8 resolve8 §9-3)
+    #
+    # to_dict() は見た目を決める値 (字幕の文字・役割・フォント・サイズ・色・位置、
+    # 画像の素材・拡大率・不透明度・z) をすべて含むため、属性が増えても取りこぼさない。
+    # 動画オーバーレイだけは絵が時刻で変わるため「表示する時刻」も入れる。
+    # 再生中は時刻成分を入れない = 絵は止まるが再生が引っかからない (resolve6 §3-9)。
+    def _overlay_signature(self, elements):
+        playhead = self._controller.playhead()
+        playing = self.is_playing()
+        fps = max(int(self._cfg["play_fps"]), 1)
+        timeline = self._controller.timeline
+        parts = []
+        for element in elements:
+            frame = 0
+            if not playing and not isinstance(element, SubtitleClip):
+                media = timeline.media_by_id(element.media_id)
+                if media is not None and not media.is_image():
+                    frame = int(max(playhead - element.timeline_start, 0.0) * fps)
+            parts.append((element.id, repr(element.to_dict()), frame))
+        return tuple(parts)
 
     # 再生ヘッド位置に表示されるオーバーレイだけをシーンへ並べ直す
     def _rebuild_overlays(self):
         playhead = self._controller.playhead()
         elements = [e for e in self._controller.timeline.overlay_elements()
                     if e.contains(playhead)]
-        ids = [e.id for e in elements]
-        # 再生中は、映るオーバーレイの顔ぶれが変わらないかぎり作り直さない
-        # (resolve6 §3-9)。字幕は表示中ずっと同じ見た目のため差は出ない。
-        # 映像オーバーレイの絵は止まるが、作り直すと GUI スレッドで
-        # フレームを同期デコードすることになり再生そのものが引っかかる。
-        if self.is_playing() and ids == self._overlay_ids:
+        # 顔ぶれも中身も変わっていないなら作り直さない (ver8 resolve8 §9-3)。
+        # 破棄 → 再生成には動画オーバーレイの同期デコードが含まれるため、
+        # タイル完成のたびに走ると停止中の表示がチカチカしていた。
+        signature = self._overlay_signature(elements)
+        if signature == self._overlay_signature_cache:
             return
-        self._overlay_ids = ids
+        self._overlay_signature_cache = signature
 
         for item in self._overlay_items.values():
             self._scene.removeItem(item)
@@ -735,8 +821,11 @@ class PreviewPanel(QWidget):
     def _make_item(self, element):
         try:
             if isinstance(element, SubtitleClip):
+                # 字幕の大きさ・行送り・字間の基準 (ver8 resolve8 §5)。
+                # 既定 "libass" = 出力と同じ見え方。"em" で従来の近似へ戻せる。
                 return SubtitleOverlayItem(
-                    element, self._eff_cfg, self._font_profile, self._canvas)
+                    element, self._eff_cfg, self._font_profile, self._canvas,
+                    metrics_mode=self._cfg["subtitle_metrics_mode"])
             media = self._controller.timeline.media_by_id(element.media_id)
             if media is None:
                 return None
@@ -965,10 +1054,16 @@ class PreviewPanel(QWidget):
         # 間引き用の到達点を捨てる。持ち越すと、前回より手前から再生を始めたときに
         # 前回の到達点を越えるまで再生ヘッドが動かない (resolve12 §2.3)
         self._last_frame_at = None
-        offset_ms = int(max(self._controller.playhead() - self._chunk_start, 0.0) * 1000)
+        # 目標位置を覚えておく (ver8 resolve8 §8-2)。ロードが終わるまで seek は
+        # 効かず、その間の positionChanged(0) を書き戻すと再生ヘッドが
+        # チャンク先頭へ戻ってしまう。到達するまでは書き戻さない。
+        self._seek_target_sec = max(self._controller.playhead(), self._chunk_start)
+        offset_ms = int(max(self._seek_target_sec - self._chunk_start, 0.0) * 1000)
+        self._seek_offset_ms = offset_ms
+        self._seek_pending = offset_ms > 0   # 先頭から鳴らすなら待つ必要がない
         self._set_proxy_playing(from_proxy)
         self._player.setSource(QUrl.fromLocalFile(path))
-        self._player.setPosition(offset_ms)
+        self._player.setPosition(offset_ms)  # 既にシーク可能ならこれで足りる
         self._player.setPlaybackRate(rate)   # 倍速再生はこの 1 行が本体 (resolve2 §3-6-1)
         self._player.play()
         self._set_rate(rate)
@@ -976,22 +1071,37 @@ class PreviewPanel(QWidget):
             _logger.debug("再生速度: %.1f 倍 (前進)", rate)
 
     # プロキシ再生の入り / 出り。映像の出力先と下書きの表示をまとめて切り替える。
+    #
+    # 入るときに映像を**まだ見せ替えない**のが要点 (ver8 resolve8 §9-5)。
+    # setSource() のロード中は QGraphicsVideoItem に出す絵が無いため、先に
+    # 切り替えるとタイルの継ぎ目で必ず黒が 1 回見える。ロードが終わった時点
+    # (_on_audio_status / 最初の位置通知) で直前のフレームから差し替える。
     def _set_proxy_playing(self, playing):
         playing = bool(playing)
         if playing:
             # 映像を出せない環境 (QtMultimediaWidgets 無し) では音声だけ使い、
             # 映像は従来の近似描画のままにする (§7)
-            playing = self._show_video_item(True)
-            if not playing:
-                self._player.setVideoOutput(None)
+            item = self._ensure_video_item()
+            if item is None:
+                playing = False
+                self._set_video_output(None)
+            else:
+                self._set_video_output(item)
         elif self._proxy_playing:
             self._show_video_item(False)
-            self._player.setVideoOutput(None)
-        if playing and self._video_item is not None:
-            self._player.setVideoOutput(self._video_item)
+            self._set_video_output(None)
         # プロキシの絵が出ている間は近似描画の中身を描かない (二重描画になる)
         self._set_draft_visible(not playing)
         self._proxy_playing = playing
+
+    # 映像シンクを張り替える。同じ相手なら何もしない:
+    # 継ぎ目で setVideoOutput() を呼び直すとシンクが作り直され、
+    # そのぶん絵が途切れる (ver8 resolve8 §9-5 / A-fix-1 の最小対応)。
+    def _set_video_output(self, item):
+        if self._video_output_item is item:
+            return
+        self._player.setVideoOutput(item)
+        self._video_output_item = item
 
     # 音声が使えないときはタイマーで再生ヘッドだけを進める (§6.4-5 利用不可時)
     def _start_silent_playback(self):
@@ -1018,6 +1128,8 @@ class PreviewPanel(QWidget):
         self._pending_rate = 0.0
         # 逆再生・スクラブで再生ヘッドが戻された場合の残留値も断つ (resolve12 §2.6)
         self._last_frame_at = None
+        # シーク待ちを持ち越さない (ver8 resolve8 §8-4)
+        self._seek_pending = False
         self._set_rate(0.0)
 
     # 速度を切り替え、ボタン表示と playing_changed を更新する
@@ -1067,6 +1179,18 @@ class PreviewPanel(QWidget):
         if self._rate <= 0:
             return
         sec = self._chunk_start + position_ms / 1000.0
+        # シーク完了前の通知 (ほとんどは position=0) は捨てる。書き戻すと
+        # 再生ヘッドがチャンク先頭へ戻る (ver8 resolve8 §8-4)。
+        # 許容差は映像更新の下限間隔から導く (固定値を置かない)。
+        if self._seek_pending:
+            tolerance = 2.0 / max(int(self._cfg["play_fps"]), 1)
+            if sec < self._seek_target_sec - tolerance:
+                return
+            self._seek_pending = False
+        # mediaStatus を取りこぼした環境でも絵が止まったままにならないよう、
+        # 実際に位置が進んだ時点でも差し替える (ver8 resolve8 §9-5 の保険)
+        if self._proxy_playing and position_ms > 0 and not self._video_visible:
+            self._show_video_item(True)
         total = self._controller.timeline.duration_sec()
         if sec >= total:
             self.pause()
@@ -1103,6 +1227,16 @@ class PreviewPanel(QWidget):
     def _on_audio_status(self, status):
         if self._rate <= 0 or self._player is None:
             return
+        # ソースのロードは非同期で、setSource() 直後の setPosition() は
+        # isSeekable() が False のため無視される。読み込めた時点で seek を
+        # やり直し、目標位置から鳴らす (ver8 resolve8 §8-3)。
+        if status in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia):
+            if self._seek_pending and self._seek_offset_ms > 0:
+                self._player.setPosition(self._seek_offset_ms)
+            # ここまで直前のフレームを見せていた映像を、タイルの絵へ差し替える
+            # (ver8 resolve8 §9-5)
+            if self._proxy_playing:
+                self._show_video_item(True)
         if status == QMediaPlayer.EndOfMedia:
             # チャンクの終端 → 同じ速度のまま次のチャンクから続ける
             next_start = self._chunk_start + self._player.duration() / 1000.0

@@ -41,6 +41,10 @@ _FOLLOWS = (FOLLOW_TRACK, FOLLOW_FIXED)
 # 設定が空だったときの既定値 (settings_window.DEFAULT_SETTINGS["blur"] と同じ)
 _DEFAULTS = {
     "enabled": False,
+    # ぼかしの編集 UI (Timeline 編集画面の「ぼかし...」ボタンと右クリックの項目) を出すか。
+    # false でも enabled が true なら追従・マスク生成・焼き込みはそのまま走る。
+    # 「機能は生かしたまま、利用者には触らせない」ための口 (既定は出さない)。
+    "ui_enabled": False,
     "preview_marker": True,
     # Timeline 編集画面のプレビューで、停止中に実際のぼかしを反映する (ver5 resolve4 §5.8)
     "preview_blur": True,
@@ -115,6 +119,7 @@ def config(settings):
 
     return {
         "enabled": bool(section.get("enabled", _DEFAULTS["enabled"])),
+        "ui_enabled": bool(section.get("ui_enabled", _DEFAULTS["ui_enabled"])),
         "preview_marker": bool(section.get("preview_marker", _DEFAULTS["preview_marker"])),
         "preview_blur": bool(section.get("preview_blur", _DEFAULTS["preview_blur"])),
         "model": {
@@ -176,6 +181,20 @@ def config(settings):
 def is_enabled(settings):
     section = settings.get("blur", {}) if isinstance(settings, dict) else {}
     return bool(section.get("enabled", False)) if isinstance(section, dict) else False
+
+
+# ぼかしの編集 UI を出すか (blur.enabled かつ blur.ui_enabled)
+#
+# 焼き込み (renderer._prepare_blur_mask) は is_enabled だけを見るため、
+# ここが False でも**出力のぼかしは従来どおり掛かる**。
+# 「指定を作らせない / 触らせない」ことだけを決める口である。
+def is_ui_enabled(settings):
+    if not is_enabled(settings):
+        return False
+    section = settings.get("blur", {}) if isinstance(settings, dict) else {}
+    if not isinstance(section, dict):
+        return False
+    return bool(section.get("ui_enabled", _DEFAULTS["ui_enabled"]))
 
 
 # ぼかしの sigma / モザイク片の大きさ (キャンバス幅から求める)

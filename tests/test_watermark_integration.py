@@ -272,8 +272,17 @@ class PipelineReservationTest(unittest.TestCase):
             (ffmpeg_runner, "ensure_available"): ffmpeg_runner.ensure_available,
             (output_profile, "resolve_output_profile"): output_profile.resolve_output_profile,
             (pipeline_runner, "_run_timeline"): pipeline_runner._run_timeline,
+            (pipeline_runner, "_ensure_readable_input"):
+                pipeline_runner._ensure_readable_input,
+            (pipeline_runner, "_ensure_space_for_run"):
+                pipeline_runner._ensure_space_for_run,
         }
         ffmpeg_runner.ensure_available = lambda *_a, **_k: None
+        # 入力の事前検査と空き容量の確認は本テストの対象外
+        # (docs/error/fromUser/resolve.md §6-8・§6-12-4 で追加。
+        #  ここでは本物の動画ではなく自分自身のパスを入力に使っているため外す)
+        pipeline_runner._ensure_readable_input = lambda *_a, **_k: None
+        pipeline_runner._ensure_space_for_run = lambda *_a, **_k: None
         output_profile.resolve_output_profile = lambda *_a, **_k: {
             "width": 1920, "height": 1080, "is_portrait": False, "orientation": "landscape"}
         self.contexts = []

@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 
-from ..exceptions import FFmpegError
+from ..exceptions import DiskSpaceError, FFmpegError
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from ..utils.progress import run_ffmpeg_progress
@@ -219,19 +219,30 @@ def normalize_file(input_path, output_path, settings, on_progress=None):
         ffmpeg_runner.execute(
             cmd, total_duration=total_duration, on_progress=apply_progress,
             progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg))
+    except DiskSpaceError:
+        # 容量不足だけは継続しない (docs/error/fromUser/resolve.md §6-9)。
+        # 空きが無いまま先へ進むと、後続の工程が別の症状 (ffprobe の失敗など) で
+        # 落ち、原因から離れた場所しか利用者に見えなくなる。
+        _remove_quietly(output_path)
+        raise
     except FFmpegError:
         # 失敗しても本編を失わない: 部分ファイルを消して元パスで継続 (§7)
         _logger.exception(
             "ラウドネス正規化の適用に失敗 (元音声のまま継続): %s", input_path)
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except OSError:
-            pass
+        _remove_quietly(output_path)
         return input_path
 
     _logger.info("ラウドネス正規化 完了: %s", output_path)
     return output_path
+
+
+# 書きかけの出力を片づける (失敗しても処理は止めない)
+def _remove_quietly(path):
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 # クリップ用パイプラインの工程エントリ (resolve22 §5.3)

@@ -30,6 +30,7 @@ from ..archive import (
     pipeline,
     project_resume,
     twitch_source,
+    vod_retention,
 )
 from ..archive.twitch_auth import MARKER_SCOPE, TwitchAuth
 from ..exceptions import PipelineCancelled, TwitchError
@@ -41,8 +42,10 @@ from ..settings.settings_window import (
     register_fonts_in_dir,
     resolve_fonts_dir,
 )
+from ..utils import disk, trash
 from ..utils.logger import get_logger
 from . import theme
+from .failure_message import format_failure_message
 from .archive_result_window import ArchiveResultBridge
 from .points_indicator import WatermarkConfirmBridge
 from .project_library_dialog import ProjectLibraryDialog
@@ -82,7 +85,7 @@ class TwitchLoginWorker(QThread):
             self.finished_ok.emit(self._auth.get_self())
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("Twitch ログインに失敗")
-            self.failed.emit(str(e))
+            self.failed.emit(format_failure_message(e))
 
 
 # 保存済みトークンでのログイン状態の復元をワーカースレッドで行う。
@@ -101,7 +104,7 @@ class TwitchRestoreWorker(QThread):
         try:
             me = self._auth.get_self()
         except Exception as e:  # noqa: BLE001 (失効・回線断は未ログイン扱い)
-            self.failed.emit(str(e))
+            self.failed.emit(format_failure_message(e))
             return
 
         videos = []
@@ -134,7 +137,7 @@ class ArchiveAnalyzeWorker(QThread):
             self.finished_ok.emit({"result": result, "input_path": input_path})
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("アーカイブ採点に失敗")
-            self.failed.emit(str(e))
+            self.failed.emit(format_failure_message(e))
 
     # モードに応じて (ローカル動画パス, 正規化コメント or None, マーカー or None) を用意する
     def _prepare_source(self):
@@ -173,10 +176,16 @@ class ArchiveAnalyzeWorker(QThread):
         # VOD 取得。注: twitch-dl の --auth-token は Web クッキー系で Helix トークンとは別物のため、
         # ここでは付与しない (公開VODは不要)。sub-only 自VODはトークン貼付で補完 (resolve17 §4.3.0/§8-3b)。
         self.progress.emit(0.0, tr("VOD取得中…"))
+        # 取得前の空き容量確認・壊れた取得物の検出・断片キャッシュの後始末を
+        # download_vod 側で行うため、判断材料を渡す (resolve.md §6-3・§6-4)。
+        general = self._settings.get("general", {})
         input_path = twitch_source.download_vod(
             video_id, work_dir, dl["twitch_dl_path"], dl["vod_format"],
             progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir,
-            quality_fallback=dl["vod_quality_fallback"])
+            quality_fallback=dl["vod_quality_fallback"],
+            ffmpeg_cfg=self._settings.get("ffmpeg", {}),
+            min_free_bytes=disk.required_from_gb(general.get("min_free_space_gb", 20)),
+            keep_cache_on_error=dl["keep_cache_on_error"])
 
         # コメント取得。失敗してもコメント無しで採点続行 (resolve17 §5)
         comments = None
@@ -250,7 +259,7 @@ class ArchiveClipWorker(QThread):
             self.finished_ok.emit(outputs)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("切り抜き+焼き込みに失敗")
-            self.failed.emit(str(e))
+            self.failed.emit(format_failure_message(e))
 
     def _emit(self, ratio, label):
         self.progress.emit(float(ratio), str(label))
@@ -289,7 +298,7 @@ class ArchiveResumeWorker(QThread):
             self.cancelled.emit()
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("保存済みプロジェクトの再編集に失敗")
-            self.failed.emit(str(e))
+            self.failed.emit(format_failure_message(e))
 
     def _emit(self, ratio, label):
         self.progress.emit(float(ratio), str(label))
@@ -330,11 +339,94 @@ class ArchiveTabWidget(QWidget):
         self._restore_worker = None
         # このセッションで Twitch との疎通を確認できたか (ログインボタンの可否に使う)
         self._session_ok = False
+        # 取得物の使用量表示 (機能無効時は UI を作らないため None / resolve.md §6-6)
+        self.source_usage_label = None
+        self.clear_sources_button = None
         if self._enabled:
             self._build_ui()
             self._init_auth()
+            # 保持日数を過ぎた取得物を引き取る (docs/error/fromUser/resolve.md §6-6)。
+            # 取得物は 1 本 10〜25 GB あり、従来は一度も消えなかった。
+            # パイプラインの最後ではなくここで消すのは、「続きから」で
+            # 同じ VOD を使い直す運用があるため。
+            self._sweep_old_sources()
         else:
             self._build_disabled_ui()
+
+    # 取得物の掃除と使用量表示の更新 (resolve.md §6-6)
+    # 失敗しても画面は開く (掃除は付加機能であり、止める理由にならない)。
+    def _sweep_old_sources(self):
+        try:
+            # ① 役目を終えた元 VOD (= プロジェクトが自己完結したもの) を片づける。
+            #    「続きから編集するのに要るものはプロジェクトのフォルダに揃っている」
+            #    状態を作ったうえで、元 VOD を手放す (resolve.md §6-6)。
+            vod_retention.sweep_unneeded(self._settings)
+            # ② 保持日数での掃除 (既定は無期限 = 何もしない)
+            config.sweep_old_sources(self._settings)
+        except OSError:
+            _logger.warning("取得物の掃除に失敗しました (処理は続行します)")
+        self._refresh_source_usage()
+
+    # 取得物が今いくら使っているかをラベルへ出す (resolve.md §6-6)
+    def _refresh_source_usage(self):
+        if getattr(self, "source_usage_label", None) is None:
+            return
+        try:
+            usage = config.source_usage(self._settings)
+        except OSError:
+            self.source_usage_label.setText("")
+            return
+        if not usage["files"]:
+            self.source_usage_label.setText(tr("取得した配信データはありません"))
+            self.clear_sources_button.setEnabled(False)
+            return
+        self.source_usage_label.setText(
+            tr("取得した配信データ: {size} / {count} 件",
+               size=disk.human(usage["bytes"]), count=usage["files"]))
+        self.clear_sources_button.setEnabled(True)
+
+    # 取得した配信データをまとめて削除する (resolve.md §6-6)
+    # 利用者が自分で回収できる唯一の手段になるため、必ず確認してから消す。
+    def _on_clear_sources(self):
+        usage = config.source_usage(self._settings)
+        if not usage["files"]:
+            return
+        answer = QMessageBox.question(
+            self, tr("取得した配信データの削除"),
+            tr("取得した配信データ {count} 件 ({size}) をゴミ箱へ送ります。\n"
+               "元の配信は Twitch に残るため、必要になれば取得し直せます。\n"
+               "よろしいですか?",
+               count=usage["files"], size=disk.human(usage["bytes"])),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        # 完全削除ではなくゴミ箱へ送る (ver3 resolve9 §3-7 と同方針)。
+        # 取得に何時間もかかる素材のため、取り消せる形で消す。
+        sizes = {path: self._size_or_zero(path) for path in usage["paths"]}
+        result = trash.send_to_trash(usage["paths"])
+        freed = sum(sizes.get(path, 0) for path in result["trashed"])
+        for item in result["failed"]:
+            _logger.warning("取得物をゴミ箱へ送れませんでした: %s (%s)",
+                            item["path"], item["reason"])
+        _logger.info("取得物をゴミ箱へ送りました (%s 回収)", disk.human(freed))
+        if result["failed"]:
+            QMessageBox.warning(
+                self, tr("一部を削除できませんでした"),
+                tr("{size} を回収しましたが、{count} 件は削除できませんでした。",
+                   size=disk.human(freed), count=len(result["failed"])))
+        else:
+            QMessageBox.information(
+                self, tr("削除しました"),
+                tr("{size} の空き容量を回収しました (ゴミ箱に入っています)。",
+                   size=disk.human(freed)))
+        self._refresh_source_usage()
+
+    @staticmethod
+    def _size_or_zero(path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
 
     # アイコンをテーマの色で描き直す (ver3 resolve4 §5.10-3)
     # QPixmap へ焼き込むため、OS の明暗が切り替わったら作り直す必要がある。
@@ -492,6 +584,19 @@ class ArchiveTabWidget(QWidget):
         self.resume_row.wrong_kind_selected.connect(
             lambda path, kind: self.switch_tab_requested.emit(kind, path))
         root.addWidget(self.resume_row)
+
+        # 取得した配信データの使用量と回収手段 (docs/error/fromUser/resolve.md §6-6)
+        #
+        # 取得物は 1 本 10〜25 GB あり、従来は削除する手段がどこにも無かった。
+        # 「今いくら使っているか」を見せ、その場で回収できるようにする。
+        usage_row = QHBoxLayout()
+        self.source_usage_label = QLabel("")
+        usage_row.addWidget(self.source_usage_label)
+        usage_row.addStretch(1)
+        self.clear_sources_button = QPushButton(tr("取得データを削除"))
+        self.clear_sources_button.clicked.connect(self._on_clear_sources)
+        usage_row.addWidget(self.clear_sources_button)
+        root.addLayout(usage_row)
 
         # 進捗 + ステータス
         self.progress_bar = QProgressBar()

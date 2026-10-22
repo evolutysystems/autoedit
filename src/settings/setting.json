@@ -6,7 +6,10 @@
         "ending_video": "",
         "ending_enabled": false,
         "output_directory": "",
-        "auto_update_check": true
+        "auto_update_check": true,
+        "work_directory": "",
+        "min_free_space_gb": 20,
+        "cleanup_stale_work_hours": 24
     },
     "subtitle": {
         "language": "ja",
@@ -22,11 +25,11 @@
         "speech_min_duration_sec": 1.0,
         "speech_gate_mode": "trim",
         "speech_pad_sec": 0.0,
-        "font_family": "Yu Gothic UI",
+        "font_family": "07NikumaruFont",
         "font_size": 130,
         "custom_fonts_dir": "fonts",
         "wrap_engine": "budoux",
-        "min_line_length": 15,
+        "min_line_length": 5,
         "max_line_length": 20,
         "outline_color": "&H00FFFFFF",
         "sub_outline_color": "&H00FFFFFF",
@@ -74,7 +77,17 @@
         "whisper_no_speech_threshold": 0.6,
         "word_timestamps": true,
         "display_max_hold_sec": 2.0,
-        "display_min_duration_sec": 0.5
+        "display_min_duration_sec": 0.5,
+        "subtitle_unit": "length",
+        "subtitle_max_lines": 2,
+        "break_on_sentence_end": true,
+        "merge_max_cut_gap_sec": 0.0,
+        "word_attach_tolerance_sec": 0.25,
+        "split_across_cut": true,
+        "split_min_piece_sec": 0.3,
+        "align_to_cut_head": true,
+        "align_tolerance_sec": 0.6,
+        "hold_across_cut": false
     },
     "silence_cut": {
         "enabled": true,
@@ -140,8 +153,7 @@
             "recent": [],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "D:/develop/autoedit/src/settings/archive_work/vod_2904967242.archive.timeline.json",
-                "D:\\develop\\autoedit\\src\\settings\\archive_work\\vod_2904967242.archive.timeline.json"
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2904967242.archive.timeline.json"
             ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
@@ -162,7 +174,8 @@
                 "thumbnail_dir": "project_thumbs",
                 "thumbnail_cache_limit": 200
             },
-            "keep_blur_cache": true
+            "keep_blur_cache": true,
+            "archive_keep_media": true
         },
         "min_clip_sec": 0.05,
         "default_subtitle_sec": 2.0,
@@ -200,21 +213,26 @@
             "archive_graph_dock_always_show": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAQuAAAA9gAACS0AAARIAAAELgAAARUAAAktAAAESAAAAAAAAAAADXAAAAQuAAABFQAACS0AAARI"
+                "archive": "AdnQywADAAAAAAUvAAAAaQAACqwAAASGAAAFLwAAAIgAAAqsAAAEhgAAAAAAAAAADXAAAAUvAAAAiAAACqwAAASG",
+                "clip": "AdnQywADAAAAAAQuAAAA9gAACS0AAARIAAAELgAAARUAAAktAAAESAAAAAAAAAAADXAAAAQuAAABFQAACS0AAARI"
             },
             "splitter_state": {
                 "archive": {
-                    "main": "AAAA/wAAAAEAAAACAADN0gAAJ4gB/////wEAAAACAA==",
+                    "main": "AAAA/wAAAAEAAAACAAAC7gAAAQsB/////wEAAAACAA==",
                     "upper": "AAAA/wAAAAEAAAACAAAWgAAAAPIB/////wEAAAABAA=="
+                },
+                "clip": {
+                    "main": "AAAA/wAAAAEAAAACAAD0fgAAJ4gB/////wEAAAACAA==",
+                    "upper": "AAAA/wAAAAEAAAACAAAQ4AAAAPIB/////wEAAAABAA=="
                 }
             },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAhoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAVoAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAFaAAAAG8A////AAAFaAAAAuUAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28
         },
         "preview": {
             "backend": "pyav",
-            "width": 960,
+            "subtitle_metrics_mode": "libass",
             "update_debounce_ms": 60,
             "cache_frames": 8,
             "high_quality_button": true,
@@ -248,7 +266,7 @@
             "scrub_rate_mode": "grain",
             "scrub_low_quality_frames": true,
             "proxy": {
-                "mode": "tile",
+                "mode": "off",
                 "scale": 0.5,
                 "preset": "ultrafast",
                 "crf": 28,
@@ -286,6 +304,7 @@
             "save_as": "Ctrl+Shift+S",
             "copy": "Ctrl+C",
             "paste": "Ctrl+V",
+            "align_subtitles": "Ctrl+Shift+A",
             "toggle_score_graph": "G"
         },
         "paste": {
@@ -383,7 +402,12 @@
             "twitch_dl_path": "twitch-dl",
             "vod_format": "source",
             "chat_source": "twitch-dl",
-            "work_dir": "archive_work"
+            "work_dir": "archive_work",
+            "vod_quality_fallback": true,
+            "keep_source_days": 0,
+            "keep_cache_on_error": false,
+            "keep_vod": false,
+            "legacy_cache_checked": true
         },
         "auth": {
             "client_id": "mcu1dwig8t6bmv87xp6s08y2s757r5",
@@ -430,7 +454,10 @@
             "enabled": true,
             "default_length_sec": 180,
             "min_length_sec": 1.0,
-            "merge_on_overlap": true
+            "merge_on_overlap": true,
+            "occupied_by": "used",
+            "used_gap_merge_sec": 10.0,
+            "max_ranges": 20
         },
         "clip_pipeline": {
             "silence_cut": true,
@@ -524,6 +551,7 @@
     },
     "blur": {
         "enabled": true,
+        "ui_enabled": false,
         "preview_marker": true,
         "preview_blur": true,
         "model": {

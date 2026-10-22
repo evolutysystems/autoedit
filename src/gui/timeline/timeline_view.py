@@ -853,6 +853,9 @@ class TimelineView(QWidget):
                 action = menu.addAction(
                     tr("字幕追加"), lambda: self._add_subtitle(pos, track))
                 action.setEnabled(not track.locked)
+                # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
+                menu.addAction(tr("すべての字幕をカット頭へ揃える"),
+                               lambda: self._align_subtitles(None))
             menu.exec(event.globalPos())
             return
 
@@ -907,11 +910,39 @@ class TimelineView(QWidget):
         used = clip.use if isinstance(clip, SubtitleClip) else clip.enabled
         menu.addAction(tr("使用しない") if used else tr("使用する"),
                        lambda: self._controller.set_clip_enabled(clip.id, not used))
+        # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
+        self._add_align_actions(menu, clip)
         # クリップ単位のぼかし (ver5 resolve7 §5.9)。機能 OFF なら何も足さない。
         self._add_blur_actions(menu, clip, track)
         # 縦動画プロジェクトの作成 (ver5 resolve9 §5.9)。対象外なら何も足さない。
         self._add_vertical_actions(menu, clip, track)
         menu.exec(event.globalPos())
+
+    # 字幕の整列の項目をメニューへ足す (ver8 resolve6 R5)。字幕以外では何も足さない。
+    def _add_align_actions(self, menu, clip):
+        if not isinstance(clip, SubtitleClip):
+            return
+        timeline = self._controller.timeline
+        ids = [
+            clip_id for clip_id in self._controller.selected_ids()
+            if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)
+        ] or [clip.id]
+        menu.addSeparator()
+        label = (tr("カット頭へ揃える") if len(ids) <= 1
+                 else tr("選んだ {count} 件の字幕をカット頭へ揃える", count=len(ids)))
+        menu.addAction(label, lambda: self._align_subtitles(ids))
+        menu.addAction(tr("すべての字幕をカット頭へ揃える"),
+                       lambda: self._align_subtitles(None))
+
+    # 字幕の開始を V1 クリップ (カット) の頭へ揃える
+    # clip_ids=None で全字幕が対象。揃うものが無ければ状態表示で知らせる。
+    def _align_subtitles(self, clip_ids=None):
+        result = self._controller.align_subtitles_to_cut_heads(clip_ids)
+        if not result["changed"]:
+            self.status_message.emit(tr("カット頭へ揃える字幕はありませんでした"))
+            return
+        self.status_message.emit(
+            tr("{count} 件の字幕をカット頭へ揃えました", count=result["aligned"]))
 
     # 編集画面が持つぼかしの項目をメニューへ足す。
     # ベース (V1) のクリップだけが対象 (ぼかしは出力の下地に掛けるため)。

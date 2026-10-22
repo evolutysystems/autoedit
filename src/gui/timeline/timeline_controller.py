@@ -233,6 +233,25 @@ class TimelineController(QObject):
     def edit_subtitles(self, clip_ids, **fields):
         return self.execute(commands.EditSubtitles(clip_ids, **fields))
 
+    # 字幕の開始を V1 クリップ (カット) の頭へ揃える (ver8 resolve6 R5)
+    # clip_ids 省略時は全字幕が対象。戻り値 {"changed": bool, "aligned": 件数}
+    def align_subtitles_to_cut_heads(self, clip_ids=None):
+        from ...modules import subtitle_generator  # noqa: PLC0415 (重い import を遅らせる)
+
+        subtitle_cfg = self._settings.get("subtitle", {})
+        # 文字数で単位を作る既定 ("length") では字幕がカットを跨ぐのが正常形のため
+        # 終端を切らない。切るのは "cut" (旧挙動) のときだけ (ver8 resolve6 §12-6)。
+        clamp = (subtitle_generator.subtitle_unit(subtitle_cfg) == "cut"
+                 and not bool(subtitle_cfg.get("hold_across_cut", False)))
+        command = commands.AlignSubtitlesToCutHeads(
+            clip_ids,
+            tolerance_sec=float(subtitle_cfg.get("align_tolerance_sec", 0.6)),
+            clamp_to_cut_end=clamp,
+            min_clip_sec=self._cfg["min_clip_sec"],
+        )
+        changed = self.execute(command)
+        return {"changed": changed, "aligned": command.aligned}
+
     def set_clip_enabled(self, clip_id, enabled):
         return self.execute(commands.SetClipEnabled(clip_id, enabled))
 

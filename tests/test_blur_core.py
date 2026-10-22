@@ -13,7 +13,7 @@ import unittest
 import numpy as np
 
 from src.blur import detector, geometry
-from src.blur.config import config
+from src.blur.config import config, is_enabled, is_ui_enabled
 
 
 # 素材 1 本ぶんの最小限のメディア (geometry が見るのは width / height だけ)
@@ -45,6 +45,40 @@ class ConfigTest(unittest.TestCase):
     def test_detector_input_is_multiple_of_32(self):
         self.assertEqual(config({"blur": {"model": {"detector_input": 600}}})
                          ["model"]["detector_input"], 608)
+
+
+# 編集 UI の出し分け (blur.ui_enabled)
+#
+# 「機能 (焼き込み) は生かしたまま、利用者には触らせない」ための口であるため、
+# **is_enabled は ui_enabled に一切引きずられない**ことを押さえる。
+# 焼き込みの入口 (renderer._prepare_blur_mask) が見るのは is_enabled だけで、
+# ここが崩れると「ぼかすと指定したのに素で出た」側の失敗になる。
+class UiEnabledTest(unittest.TestCase):
+
+    # 既定は「機能 OFF・UI も出さない」
+    def test_defaults_are_off(self):
+        self.assertFalse(config({})["ui_enabled"])
+        self.assertFalse(is_ui_enabled({}))
+
+    # 旧設定 (キーが無い) では UI を出さない。焼き込みは enabled のまま動く
+    def test_missing_key_hides_ui_but_keeps_feature(self):
+        settings = {"blur": {"enabled": True}}
+        self.assertTrue(is_enabled(settings))
+        self.assertFalse(is_ui_enabled(settings))
+
+    # 明示的に false でも焼き込みは動く (今回の「ボタンだけ隠す」状態)
+    def test_ui_disabled_keeps_feature(self):
+        settings = {"blur": {"enabled": True, "ui_enabled": False}}
+        self.assertTrue(is_enabled(settings))
+        self.assertFalse(is_ui_enabled(settings))
+
+    # true にすれば UI が戻る
+    def test_ui_enabled(self):
+        self.assertTrue(is_ui_enabled({"blur": {"enabled": True, "ui_enabled": True}}))
+
+    # 機能 OFF なら ui_enabled が true でも UI は出さない
+    def test_feature_off_wins(self):
+        self.assertFalse(is_ui_enabled({"blur": {"enabled": False, "ui_enabled": True}}))
 
 
 class GeometryTest(unittest.TestCase):

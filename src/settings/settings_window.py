@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import sys
+import tempfile
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import (
     QDesktopServices,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -38,17 +40,27 @@ from PySide6.QtWidgets import (
 try:
     from src.gui import color_field, theme
     from src.i18n import tr
+    from src.utils import disk
 except ImportError:
     sys.path.insert(
         0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.gui import color_field, theme
     from src.i18n import tr
+    from src.utils import disk
 
 DEFAULT_UI_SETTINGS = theme.DEFAULT_UI_SETTINGS
 
 # モジュールロガー (フォント追加の INFO/WARNING 出力用 / resolve16 §6)
 # アプリ実行時は上位で構成済みハンドラへ伝播する。標準ライブラリのみ使用。
 _logger = logging.getLogger(__name__)
+
+# 設定値を int へ直す (不正値は既定へ倒す)。画面へ値を戻すときに使う。
+def _coerce_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 # ===== 定数定義 =====
 # 設定ファイルパス
@@ -171,6 +183,16 @@ DEFAULT_SETTINGS = {
         "output_directory": "",
         # 起動時の自動更新チェック ON/OFF (request_autoupdate.md §7)
         "auto_update_check": True,
+        # 中間ファイルの作業フォルダ (docs/error/fromUser/resolve.md §6-5)。
+        # 空 = 従来どおり %TEMP%。中間ファイルは素材 2〜3 本分になるため、
+        # システムドライブの空きが乏しい環境では別ドライブを指定できるようにする。
+        "work_directory": "",
+        # 処理を始める前に要求する空き容量 (GB)。0 で確認しない。
+        # 2026-10-22 の報告 (容量不足でクラッシュ) を受けて追加 (resolve.md §6-8)。
+        "min_free_space_gb": 20,
+        # 起動時に片づける作業フォルダの残骸の経過時間 (時間)。0 で掃除しない。
+        # 異常終了すると一時フォルダは消えずに残るため、次の起動で引き取る (§6-10)。
+        "cleanup_stale_work_hours": 24,
     },
     "subtitle": {
         "language": "ja",
@@ -266,6 +288,36 @@ DEFAULT_SETTINGS = {
         "word_timestamps": True,
         "display_max_hold_sec": 2.0,
         "display_min_duration_sec": 0.5,
+        # カット頭との位置合わせ (ver8 resolve6)
+        # UI には項目を出さず setting.json で管理する (表示タイミング整形と同系統)。
+        # テロップ単位の決め方 (第3部 §13-1)
+        #   "length"  : 文字数で決める (既定)。下限 = min_line_length /
+        #               上限 = max_line_length × subtitle_max_lines。
+        #               下限未満ならカットを跨いで繋ぎ、上限超過ならカット内でも切る
+        #   "cut"     : カットごとに必ず 1 本 (第2部の挙動)
+        #   "segment" : 認識セグメントそのまま (ver8 以前の挙動)
+        "subtitle_unit": "length",
+        # 1 本のテロップの最大行数 (上限文字数 = max_line_length × この値)
+        "subtitle_max_lines": 2,
+        # 下限達成後、文末記号 (。．！？!?) で区切る
+        "break_on_sentence_end": True,
+        # 取り除かれた無音がこれを超えたら下限未達でも区切る (0 で無制限)
+        "merge_max_cut_gap_sec": 0.0,
+        # カットの外へこぼれた単語を拾う許容差 (秒 / 第4部 R6)
+        # silencedetect は閾値を超えた時刻からカットを残すため、語頭の無声子音
+        # (閾値未満) は無音側へ落ちる。拾わないとテロップの頭が 1 文字消える。
+        # 0 で従来どおり落とす (幻聴字幕の抑制だけを優先する)。
+        "word_attach_tolerance_sec": 0.25,
+        # カットを跨ぐ認識結果を単語単位で分ける (R1 / subtitle_unit 未設定時の後方互換)
+        "split_across_cut": True,
+        # 前のカットに残る片がこれ未満なら、その語を次のカットの字幕へ寄せる (§4-2-1)
+        "split_min_piece_sec": 0.3,
+        # 各カットの先頭字幕の開始をカット頭へ揃える (R2)
+        "align_to_cut_head": True,
+        # 揃える許容差 (秒)。0 で無効。既定は volume_analysis.cut_min_silence_sec と同値
+        "align_tolerance_sec": 0.6,
+        # true で従来どおりカットを越えて表示を保持する (R3 を無効化)
+        "hold_across_cut": False,
     },
     "silence_cut": {
         # 無音カット ON/OFF (resolve12)。既定 True で従来挙動を維持する。
@@ -322,10 +374,15 @@ DEFAULT_SETTINGS = {
         "enabled": True,
         "project_dir": "",                     # 空 = general.output_directory
         "project_suffix": ".timeline.json",
-        # 編集画面の自動保存の間隔 (秒)。0=無効 (既定)。
-        # 有効にすると <プロジェクト>.autosave.json へ書き、次に開くとき
-        # 本体より新しければ「復元しますか」を出す (ver3 resolve7 §5.9)。
-        "autosave_sec": 0,
+        # 編集画面の自動保存の間隔 (秒)。0=無効。
+        # <プロジェクト>.autosave.json へ書き、次に開くとき本体より新しければ
+        # 「復元しますか」を出す (ver3 resolve7 §5.9)。
+        #
+        # 既定で有効にする (docs/error/fromUser/resolve.md §8-2 7-3)。
+        # 2026-10-22 の報告のように異常終了すると編集内容がすべて失われるため。
+        # 書くのはプロジェクト JSON 1 本 (実測 0.5 MB 前後) で、
+        # 容量を圧迫しない。保存できた時点で自動保存ファイルは消える。
+        "autosave_sec": 60,
         "keep_project_file": True,             # false なら「決定」後に削除する
         # 設定の OP/ED を Timeline へ自動配置するか (§6.9)。
         # false でも D&D による手動追加は可能。配置条件は concat_processor と同一。
@@ -355,6 +412,15 @@ DEFAULT_SETTINGS = {
             # 保存時に本編素材 (正規化後の中間ファイル) をプロジェクトの隣へ複製する。
             # true にすると開くのが速くなる代わりに動画 1 本ぶんのディスクを使う。
             "keep_media": False,
+            # アーカイブ切り抜き用だけ別に持つ (docs/error/fromUser/resolve.md §6-6)。
+            #
+            # アーカイブ用は従来 keep_audio だけを残し、映像は開くたびに
+            # **元 VOD から切り直して**いた。そのため元 VOD (1 本 10〜25 GB) を
+            # 永久に抱え続ける必要があり、これがシステムドライブ枯渇の原因だった。
+            # クリップの映像もプロジェクトの隣へ置けば、プロジェクトが自己完結し、
+            # 元 VOD は不要になる (= プロジェクトを消せば一緒に消える)。
+            # 開き直しも「切り直し」が無くなるぶん速くなる。
+            "archive_keep_media": True,
             # 複製先フォルダの接尾辞 (<プロジェクト名> + これ)
             "media_dir_suffix": ".media",
             # 素材が見つからないときの方針
@@ -485,7 +551,10 @@ DEFAULT_SETTINGS = {
         },
         "preview": {
             "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
-            "width": 960,                      # プレビュー描画の基準幅
+            # 字幕プレビューのメトリクス基準 (ver8 resolve8 §5)。
+            # "libass" = 出力と同じ字の大きさ・行送り・字間 / "em" = 従来の Qt 近似
+            "subtitle_metrics_mode": "libass",
+            # 再生ヘッド移動から画面更新までの待ち (ms)。0 で即時 (ver8 resolve8 §9-4)
             "update_debounce_ms": 60,
             "cache_frames": 8,
             "high_quality_button": True,       # 「高精度プレビュー」ボタンの表示
@@ -731,6 +800,29 @@ DEFAULT_SETTINGS = {
             "vod_quality_fallback": True,
             "chat_source": "twitch-dl",  # コメントは twitch-dl chat json に一本化
             "work_dir": "archive_work",  # 取得物の作業ディレクトリ (settings 相対 or 絶対)
+            # 取得物 (vod_*.mp4 / chat_*.json) の保持日数 (0 = 無期限 / 既定)。
+            # 取得物は 1 本で 10〜25 GB になり、従来は一度も消えなかったため
+            # システムドライブを数十 GB 占有していた (docs/error/fromUser/resolve.md §3-3)。
+            #
+            # ただし**既定では自動削除しない**。利用者が時間をかけて取得した素材であり、
+            # 「画面を開いただけで消えた」が最も損害の大きい失敗だからである
+            # (実装中に開発端末で 45 GB を自動削除してしまった事故による / §6-6)。
+            # 回収は画面の「取得データを削除」(確認あり・ゴミ箱行き) を主な手段とし、
+            # 日数での自動削除はこの値を 1 以上にした利用者だけに働かせる。
+            "keep_source_days": 0,
+            # 取得に失敗したとき、断片 (.ts) のキャッシュを残すか (resolve.md §6-3-2)。
+            # 既定 false = 消す。true にすると再試行は速いが、失敗のたびに
+            # VOD 1 本ぶんのキャッシュが積み上がる。
+            "keep_cache_on_error": False,
+            # 取得した元 VOD を残し続けるか (docs/error/fromUser/resolve.md §6-6)。
+            #
+            # 既定 false = プロジェクトが自己完結した時点でゴミ箱へ送る。
+            # true にすると残すため「セクション追加」(採点で選ばれなかった区間を
+            # 後から足す) が使い続けられるが、1 本 10〜25 GB を抱えることになる。
+            "keep_vod": False,
+            # 旧版が残した取得データの回収を尋ねたか (resolve.md §6-6-6)。
+            # 一度答えてもらったら true にし、毎回の起動で尋ねないようにする。
+            "legacy_cache_checked": False,
         },
         # Twitch ログイン (OAuth インプリシットフロー / resolve17 §4.3.0)。
         # client_id は dev.twitch.tv で登録したアプリの値を設定する (Client-Secret は不要)。
@@ -941,6 +1033,11 @@ DEFAULT_SETTINGS = {
     "blur": {
         # 機能の有効化。false のとき追従もボタン表示も一切行わない
         "enabled": False,
+        # ぼかしの編集 UI (Timeline 編集画面の「ぼかし...」ボタンと右クリックの項目) を
+        # 出すか。false でも enabled が true なら焼き込みはそのまま走る。
+        # 「まだ利用者に触らせない」ために既定は false とし、設定画面にも出さない。
+        # 触らせるときは setting.json で true にする (blur.enabled も true が必要)。
+        "ui_enabled": False,
         # プレビューへ「ぼかしを外した所」の目印を出す
         "preview_marker": True,
         # Timeline 編集画面のプレビューで、停止中に実際のぼかしを反映する (ver5 resolve4 §5.8)。
@@ -1091,6 +1188,8 @@ def _normalize_legacy_values(merged):
         changed = True
     if _fill_blur_nested_defaults(merged):
         changed = True
+    if _fill_archive_nested_defaults(merged):
+        changed = True
     if _migrate_ripple_delete(merged):
         changed = True
     return changed
@@ -1193,6 +1292,14 @@ def _fill_ui_nested_defaults(merged):
 # 調整する前提のため、新バージョンで増えたキーがファイル上に現れる必要がある。
 def _fill_blur_nested_defaults(merged):
     return _fill_nested_defaults(merged, "blur")
+
+
+# archive セクションの入れ子 (download / scoring / clip_pipeline …) も補完する
+# (docs/error/fromUser/resolve.md §6-5)。取得物の保持日数のように
+# 設定画面に出さず setting.json で調整する項目があるため、
+# 新バージョンで増えたキーがファイル上に現れる必要がある。
+def _fill_archive_nested_defaults(merged):
+    return _fill_nested_defaults(merged, "archive")
 
 
 # 指定セクションの入れ子辞書について、欠落キーを既定で再帰的に補完する。
@@ -1448,8 +1555,25 @@ class SettingsWindow(QWidget):
         self.tabs.addTab(self._build_subtitle_tab(), tr("字幕"))
         self.tabs.addTab(self._build_vertical_tab(), tr("縦動画"))
         self.tabs.addTab(self._build_archive_tab(), tr("アーカイブ"))
-        self.tabs.addTab(self._build_blur_tab(), tr("ぼかし"))
+        # ぼかしタブは blur.ui_enabled のときだけ**並べる** (Timeline 編集画面の
+        # 「ぼかし...」ボタンと同じ元栓)。false のとき利用者から触れる口を無くす。
+        #
+        # タブの中身は出さないときも必ず作る。ぼかしの設定は _load_to_ui /
+        # _collect_settings がここのウィジェットを読み書きするため、作らないと
+        # 保存のたびに blur セクションが落ちてしまう (= 焼き込みまで止まる)。
+        # self へ持たせるのは、タブへ足さないぶんの参照を残して解放させないため。
+        self._blur_tab = self._build_blur_tab()
+        if self._blur_ui_enabled():
+            self.tabs.addTab(self._blur_tab, tr("ぼかし"))
         self.tabs.addTab(self._build_account_tab(), tr("アカウント"))
+
+    # ぼかしの設定を利用者へ見せるか (blur.enabled かつ blur.ui_enabled)。
+    # タブを組む時点では _loaded_settings がまだ無いため、保存済みの設定を読む。
+    def _blur_ui_enabled(self):
+        from ..blur.config import is_ui_enabled      # noqa: PLC0415 (機能 OFF なら読まない)
+
+        settings = getattr(self, "_loaded_settings", None) or load_settings()
+        return is_ui_enabled(settings)
 
     # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
     #
@@ -1531,6 +1655,36 @@ class SettingsWindow(QWidget):
         self.output_dir_edit = QLineEdit()
         grid.addWidget(self._make_column_label("出力ディレクトリ"), row, 0)
         grid.addLayout(self._make_dir_picker(self.output_dir_edit), row, 1)
+        row += 1
+
+        # 作業フォルダ (docs/error/fromUser/resolve.md §6-5)
+        # 中間ファイルは素材 2〜3 本分になる。空のままだと Windows の一時フォルダ
+        # (= システムドライブ) を使うため、空きが乏しい環境では別ドライブを選べるようにする。
+        self.work_dir_edit = QLineEdit()
+        self.work_dir_edit.setPlaceholderText(
+            tr("空の場合は Windows の一時フォルダを使います"))
+        self.work_dir_edit.textChanged.connect(self._update_work_dir_note)
+        grid.addWidget(self._make_column_label("作業フォルダ"), row, 0)
+        grid.addLayout(self._make_dir_picker(self.work_dir_edit), row, 1)
+        row += 1
+
+        # 作業フォルダの空き容量 (今どこに何 GB あるのかを見えるようにする / §6-5)
+        self.work_dir_note = self._make_note_label("")
+        grid.addWidget(self.work_dir_note, row, 1)
+        row += 1
+
+        # 開始前に必要な空き容量 (§6-8)
+        self.min_free_space_spin = QSpinBox()
+        self.min_free_space_spin.setRange(0, 1000)
+        self.min_free_space_spin.setSuffix(" GB")
+        self.min_free_space_spin.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
+        grid.addWidget(self._make_column_label("必要な空き容量"), row, 0)
+        grid.addWidget(self.min_free_space_spin, row, 1)
+        row += 1
+        grid.addWidget(
+            self._make_note_label(
+                "処理を開始する前にこの空きがあるか確認します (0 で確認しない)"),
+            row, 1)
         row += 1
 
         # 自動更新チェック ON/OFF (request_autoupdate.md §7)
@@ -2162,6 +2316,31 @@ class SettingsWindow(QWidget):
         label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         return label
 
+    # 作業フォルダの空き容量を表示し直す (docs/error/fromUser/resolve.md §6-5)
+    #
+    # 「どこに何 GB 置かれるのか」が見えないことが、システムドライブを
+    # 気づかないうちに使い切る原因になっていた。設定画面で実測値を見せる。
+    def _update_work_dir_note(self):
+        folder = self.work_dir_edit.text().strip()
+        target = folder or tempfile.gettempdir()
+        free = disk.free_bytes(target)
+        if free is None:
+            self.work_dir_note.setText(
+                tr("空き容量を確認できません: {path}", path=target))
+            return
+        self.work_dir_note.setText(
+            tr("{path} （空き {free}）", path=target, free=disk.human(free)))
+
+    # 補足説明の小さいラベルを生成する (resolve3 §5.3 と同じ作り)
+    # 文字サイズは QSS ではなくフォントで指定する (インライン指定を増やさない)。
+    def _make_note_label(self, text):
+        label = QLabel(tr(text) if text else "")
+        theme.mark_note(label)
+        note_font = QFont(label.font())
+        note_font.setPointSize(FONT_NOTE_POINT_SIZE)
+        label.setFont(note_font)
+        return label
+
     # 整数入力用の QLineEdit を生成する (バリデータ付き)
     def _make_int_edit(self):
         edit = QLineEdit()
@@ -2333,6 +2512,11 @@ class SettingsWindow(QWidget):
         self.ending_edit.setText(general.get("ending_video", ""))
         self.ending_enabled_check.setChecked(bool(general.get("ending_enabled", True)))
         self.output_dir_edit.setText(general.get("output_directory", ""))
+        # 作業フォルダ・必要な空き容量 (docs/error/fromUser/resolve.md §6-5)
+        self.work_dir_edit.setText(general.get("work_directory", ""))
+        self.min_free_space_spin.setValue(
+            _coerce_int(general.get("min_free_space_gb", 20), 20))
+        self._update_work_dir_note()
         self.auto_update_check_check.setChecked(bool(general.get("auto_update_check", True)))
 
         # 無音カット
@@ -2590,6 +2774,8 @@ class SettingsWindow(QWidget):
             "ending_video": self.ending_edit.text().strip(),
             "ending_enabled": self.ending_enabled_check.isChecked(),
             "output_directory": self.output_dir_edit.text().strip(),
+            "work_directory": self.work_dir_edit.text().strip(),
+            "min_free_space_gb": self.min_free_space_spin.value(),
             "auto_update_check": self.auto_update_check_check.isChecked(),
         })
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除。

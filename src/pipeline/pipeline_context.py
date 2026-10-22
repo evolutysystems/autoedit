@@ -1,11 +1,14 @@
 # パイプライン中間コンテキスト
 # 設計書 4. クラス構成 - PipelineContext に対応
 import os
+import shutil
 import tempfile
 import time
+from datetime import datetime
 
 from ..i18n import tr
 from ..services import telemetry
+from ..utils import disk
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -39,10 +42,19 @@ class PipelineContext:
         self.timeline_review_callback = timeline_review_callback
 
         # 作業ディレクトリ (未指定なら一時ディレクトリ生成)
+        #
+        # 明示指定時は実行ごとの専用サブフォルダを掘る
+        # (docs/error/fromUser/resolve.md §6-7-1)。
+        # 指定フォルダへ直接ばら撒くと、連結用の部品ファイル (tl_part_*) のように
+        # allocate_intermediate を通らない中間物が取り残される。
+        # 実行単位のフォルダごと消せば、残骸が積み上がらない。
         self._tempdir_obj = None
+        self._owns_working_dir = False
         if working_dir:
-            os.makedirs(working_dir, exist_ok=True)
-            self.working_dir = working_dir
+            self.working_dir = os.path.join(
+                working_dir, f"autoedit_{datetime.now():%Y%m%d_%H%M%S}_{os.getpid()}")
+            os.makedirs(self.working_dir, exist_ok=True)
+            self._owns_working_dir = True
         else:
             self._tempdir_obj = tempfile.TemporaryDirectory(prefix="autoedit_")
             self.working_dir = self._tempdir_obj.name
@@ -132,6 +144,29 @@ class PipelineContext:
         self.intermediate_paths[filename] = path
         return path
 
+    # 役目を終えた中間ファイルを捨てる (docs/error/fromUser/resolve.md §6-7-2)
+    #
+    # 従来は cleanup() の 1 回だけで消していたため、工程をまたぐたびに
+    # 素材 1 本分ずつ積み上がり、ピークで 3 本分の空きを要求していた。
+    # 「次の工程の出力ができた時点で前段は要らない」ものだけをここで解放する。
+    # 消せなくても処理は止めない (次の cleanup() で改めて消える)。
+    # 戻り値: 回収したバイト数 (ログ用)。
+    def release_intermediate(self, filename):
+        path = self.intermediate_paths.get(filename)
+        if not path or not os.path.exists(path):
+            return 0
+        try:
+            freed = os.path.getsize(path)
+            os.remove(path)
+        except OSError as e:
+            _logger.warning("中間ファイルを解放できませんでした: %s (%s)", path, e)
+            return 0
+        self.intermediate_paths.pop(filename, None)
+        _logger.info("中間ファイルを解放しました: %s (%.1f MB 回収 / 作業先の空き %s)",
+                     filename, freed / 1024 / 1024,
+                     disk.human(disk.free_bytes(self.working_dir)))
+        return freed
+
     # 工程開始を通知して進捗バーを進める
     def begin_step(self, label):
         # 工程の所要時間を測る (ProcessingLogs / resolve1 §7.6)。
@@ -180,6 +215,15 @@ class PipelineContext:
         # 自動生成した一時ディレクトリは中身ごと削除する
         if self._tempdir_obj is not None:
             self._tempdir_obj.cleanup()
+            return
+
+        # 設定で作業フォルダを指定された場合も、実行ごとの専用フォルダを
+        # 掘っているため中身ごと消してよい (resolve.md §6-7-1)。
+        if self._owns_working_dir:
+            try:
+                shutil.rmtree(self.working_dir, ignore_errors=True)
+            except OSError:
+                _logger.warning("作業フォルダを削除できませんでした: %s", self.working_dir)
             return
 
         # working_dir 明示指定時は TemporaryDirectory の自動削除が効かないため、

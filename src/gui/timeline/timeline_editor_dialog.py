@@ -67,6 +67,18 @@ _FONT_DEFAULT_LABEL = "(設定のフォント)"
 _FONT_PREVIEW_POINT_SIZE = 12
 
 
+# パスがそのフォルダ直下にあるか (大文字小文字は Windows に合わせて無視する)
+def _in_folder(path, folder):
+    if not path or not folder:
+        return False
+    try:
+        here = os.path.normcase(os.path.dirname(os.path.abspath(path)))
+        there = os.path.normcase(os.path.abspath(folder))
+    except OSError:
+        return False
+    return here == there
+
+
 class TimelineEditorDialog(QDialog):
 
     # timeline      : 編集対象 (builder が組んだもの)
@@ -211,8 +223,13 @@ class TimelineEditorDialog(QDialog):
 
         # ぼかし (ver5 resolve8 §5.12.3)。
         # blur.enabled が False のときは**ボタンを出さない** (R14)。
+        # blur.ui_enabled が False のときも出さない。こちらは「機能 (焼き込み) は
+        # 生かしたまま、利用者には触らせない」ための口で、出力のぼかしには影響しない。
+        # このボタンは画面のぼかし UI 全体の元栓でもあり (blur_button is None で
+        # 右クリックの項目・プレビューの目印も出なくなる)、入口がボタンと
+        # 右クリックの 2 つに分かれて片方だけ残ることがない。
         self.blur_button = None
-        if self._blur_enabled():
+        if self._blur_ui_enabled():
             self.blur_button = QPushButton(tr("ぼかし..."))
             self.blur_button.setAutoDefault(False)
             self.blur_button.setToolTip(
@@ -352,6 +369,8 @@ class TimelineEditorDialog(QDialog):
         # _ShortcutGuard が無効化し、本来の文字コピー＆ペーストとして働く。
         bind("copy", self._copy)
         bind("paste", self._paste)
+        # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
+        bind("align_subtitles", self._align_subtitles)
         # 履歴・移動・ズーム
         bind("undo", self._undo)
         bind("redo", self._redo)
@@ -427,6 +446,19 @@ class TimelineEditorDialog(QDialog):
             message += tr(" ({count} 件は貼れませんでした)", count=result["skipped"])
         self.preview.set_status(message)
 
+    # Ctrl+Shift+A: 字幕の開始を V1 クリップ (カット) の頭へ揃える (ver8 resolve6 R5)
+    # 字幕を選んでいればその字幕だけ、選んでいなければ全字幕が対象。
+    def _align_subtitles(self):
+        timeline = self.controller.timeline
+        ids = [
+            clip_id for clip_id in self.controller.selected_ids()
+            if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)
+        ]
+        result = self.controller.align_subtitles_to_cut_heads(ids or None)
+        self.preview.set_status(
+            tr("{count} 件の字幕をカット頭へ揃えました", count=result["aligned"])
+            if result["changed"] else tr("カット頭へ揃える字幕はありませんでした"))
+
     # E: 倍速再生 (トグル)
     def _play_fast_forward(self):
         self.preview.toggle_rate(+self.controller.cfg["preview"]["playback_rate"])
@@ -476,11 +508,14 @@ class TimelineEditorDialog(QDialog):
     # トラッキングぼかし (ver5 resolve2 §5.6.1)
     # ------------------------------------------------------------------
 
-    # 機能が有効か (設定だけを見る。モデルの有無は解析を始めるときに確かめる)
-    def _blur_enabled(self):
-        from ...blur.config import is_enabled       # noqa: PLC0415 (機能 OFF なら読まない)
+    # ぼかしの編集 UI を出すか (blur.enabled かつ blur.ui_enabled / 設定だけを見る。
+    # モデルの有無は解析を始めるときに確かめる)。
+    # 焼き込みは renderer が blur.enabled だけを見るため、ここが False でも
+    # 出力のぼかしは従来どおり掛かる。
+    def _blur_ui_enabled(self):
+        from ...blur.config import is_ui_enabled    # noqa: PLC0415 (機能 OFF なら読まない)
 
-        return is_enabled(self._settings)
+        return is_ui_enabled(self._settings)
 
     # 手元の追従結果を読むだけ (ver5 resolve8 §5.12.3)。
     #
@@ -828,7 +863,7 @@ class TimelineEditorDialog(QDialog):
         if self._created_at is None:
             # 初回保存の時刻を覚え、2 回目以降の上書きで作成時刻が動かないようにする
             self._created_at = datetime.now().isoformat(timespec="seconds")
-        if self._project_cfg["keep_media"]:
+        if self._keep_media_for_kind():
             # 素材の複製は JSON を書く前に行う (複製先を指した状態で書き出すため)
             self._copy_media_beside_project(target)
         elif self._project_cfg["keep_audio"]:
@@ -931,6 +966,18 @@ class TimelineEditorDialog(QDialog):
         if saved:
             _logger.info("音声サイドカーを %d 件保存しました: %s", saved, folder)
 
+    # この種別で素材の映像をプロジェクトの隣へ置くか
+    # (docs/error/fromUser/resolve.md §6-6)
+    #
+    # アーカイブ切り抜き用は別の既定を持つ。クリップ用は元動画が利用者のファイルで
+    # 消えないため複製しなくてよいが、アーカイブ用の元 VOD は**アプリが取得した
+    # 一時的なもの**で、残し続ける前提に置くと置き場が無限に膨らむ (45 GB の滞留)。
+    # 映像まで持たせてプロジェクトを自己完結させ、元 VOD を捨てられるようにする。
+    def _keep_media_for_kind(self):
+        if self._project_kind() == project_io.KIND_ARCHIVE:
+            return bool(self._project_cfg["archive_keep_media"])
+        return bool(self._project_cfg["keep_media"])
+
     # 本編素材 (正規化後の中間ファイル) をプロジェクトの隣へ複製する
     # (resolve7 §3-5 案B / timeline.project.keep_media)
     # 中間ファイルは実行の終わりに消えるため、複製しておくと次に開くときに
@@ -948,25 +995,31 @@ class TimelineEditorDialog(QDialog):
                 continue
             if input_path and os.path.abspath(media.path) == os.path.abspath(input_path):
                 continue        # 元動画そのもの = 消えないため複製しない
-            # 複製先の名前にメディア ID を付ける (アーカイブ用は全クリップが
-            # normalized.mp4 という同名のため、そのままでは衝突する / resolve9 §5.4)
-            dest = os.path.join(folder, f"{media.id}_{os.path.basename(media.path)}")
-            try:
-                os.makedirs(folder, exist_ok=True)
-                # 同じ内容が既にあるなら複製し直さない (保存のたびに数百 MB を書かない)
-                if not (os.path.exists(dest)
-                        and os.path.getsize(dest) == os.path.getsize(media.path)):
-                    QApplication.setOverrideCursor(Qt.WaitCursor)
-                    try:
-                        self.preview.set_status(tr("素材を複製しています…"))
-                        shutil.copy2(media.path, dest)
-                    finally:
-                        QApplication.restoreOverrideCursor()
-                    _logger.info("素材をプロジェクトの隣へ複製しました: %s", dest)
-            except OSError:
-                # 複製に失敗しても保存そのものは続ける (元のパスを指したまま書き出す)
-                _logger.exception("素材の複製に失敗しました (保存は続行します)")
-                continue
+            if _in_folder(media.path, folder):
+                # 既に複製先フォルダの中を指している (前回の保存で複製済み)。
+                # ここで名前を組み直すと m1_m1_normalized.mp4 のように接頭辞が
+                # 積み重なり、保存のたびに同じ素材が増えてしまう。
+                dest = media.path
+            else:
+                # 複製先の名前にメディア ID を付ける (アーカイブ用は全クリップが
+                # normalized.mp4 という同名のため、そのままでは衝突する / resolve9 §5.4)
+                dest = os.path.join(folder, f"{media.id}_{os.path.basename(media.path)}")
+                try:
+                    os.makedirs(folder, exist_ok=True)
+                    # 同じ内容が既にあるなら複製し直さない (保存のたびに数百 MB を書かない)
+                    if not (os.path.exists(dest)
+                            and os.path.getsize(dest) == os.path.getsize(media.path)):
+                        QApplication.setOverrideCursor(Qt.WaitCursor)
+                        try:
+                            self.preview.set_status(tr("素材を複製しています…"))
+                            shutil.copy2(media.path, dest)
+                        finally:
+                            QApplication.restoreOverrideCursor()
+                        _logger.info("素材をプロジェクトの隣へ複製しました: %s", dest)
+                except OSError:
+                    # 複製に失敗しても保存そのものは続ける (元のパスを指したまま書き出す)
+                    _logger.exception("素材の複製に失敗しました (保存は続行します)")
+                    continue
             media.path = dest
             if media.id == body_id:
                 source["media_path"] = dest
@@ -981,7 +1034,8 @@ class TimelineEditorDialog(QDialog):
     # ------------------------------------------------------------------
     # 自動保存 (resolve7 §5.9 / timeline.autosave_sec)
     # ------------------------------------------------------------------
-    # 既定は autosave_sec=0 (無効) のため、設定しなければ従来どおり何も起きない。
+    # 既定で有効 (60 秒 / resolve.md §8-2 7-3)。0 にすると止まる。
+    # 書き先は本体とは別ファイルのため、本体を勝手に書き換えることはない。
     # 書き先は本体とは別ファイル (<プロジェクト>.autosave.json) で、本体は上書きしない。
     # 次に開くとき本体より新しい autosave があれば main_window が復元を尋ねる。
 
@@ -1295,6 +1349,11 @@ class TimelineEditorDialog(QDialog):
             return False
         if clicked is save:
             return self.save_project()    # 保存に失敗したら閉じない
+        # 「保存せずに閉じる」= 利用者が編集を捨てると決めた。
+        # 自動保存は**異常終了に備えるもの**なので、意図して捨てたものを
+        # 次に開くとき「復元しますか」と差し出すのはおかしいし、
+        # 誰も使わないファイルが置き場に残り続ける (resolve.md §8-2 7-3)。
+        self._discard_autosave()
         return True
 
     # 終了時に再生を止め、スレッドと一時ファイルを片づける (§10)

@@ -3,8 +3,9 @@
 import os
 import shutil
 
-from ..exceptions import InputError
+from ..exceptions import DiskSpaceError, InputError
 from ..i18n import tr
+from ..utils import disk
 from ..utils.logger import get_logger
 from . import ffmpeg_runner, watermark_overlay
 
@@ -42,8 +43,39 @@ def finalize(intermediate_path, output_path):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # 同一ボリュームなら move、跨ぐなら copy+remove
-    shutil.move(intermediate_path, output_path)
+    #
+    # 跨ぐ場合は copy になるため、出力先の空きが尽きると**中途半端な出力**が残る
+    # (docs/error/fromUser/resolve.md §6-9)。再生できない動画を成果物として
+    # 残さないよう、失敗したら必ず消してから原因を伝える。
+    try:
+        shutil.move(intermediate_path, output_path)
+    except OSError as e:
+        _remove_quietly(output_path)
+        if disk.is_no_space(e):
+            folder = os.path.dirname(os.path.abspath(output_path))
+            raise DiskSpaceError(
+                disk.shortage_message(folder, disk.free_bytes(folder),
+                                      _size_or_zero(intermediate_path)),
+                path=folder, free=disk.free_bytes(folder)) from e
+        raise
     return output_path
+
+
+def _size_or_zero(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+# 書きかけの出力を片づける (消せなくても処理は続ける)
+def _remove_quietly(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            _logger.warning("書きかけの出力を削除しました: %s", path)
+    except OSError:
+        _logger.warning("書きかけの出力を削除できませんでした: %s", path)
 
 
 # 出力直前の保険 (ver5 resolve §5.4)。
@@ -92,6 +124,11 @@ def run(context):
     output_dir = general_cfg.get("output_directory", "")
 
     output_path = resolve_output_path(context.input_path, output_dir)
+    # 配置する直前に出力先の空きを確かめる (resolve.md §6-8)。
+    # ここまで来て失敗すると、長い処理をやり直すことになるため必要量で測る。
+    video_path = context.current_video_path()
+    disk.ensure_free(os.path.dirname(os.path.abspath(output_path)),
+                     _size_or_zero(video_path), label="出力先")
     final = finalize(_ensure_watermark(context), output_path)
     context.output_path = final
     _logger.info("出力完了: %s", final)

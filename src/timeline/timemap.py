@@ -141,6 +141,11 @@ class TimeMap:
     # 情報
     # ------------------------------------------------------------------
 
+    # Timeline 上のクリップ境界 [(head, tail), ...] を昇順で返す (ver8 resolve6 §4-6)
+    # 字幕をカット頭へ揃える / 字幕をカットを跨がせない判定に使う。
+    def timeline_bounds(self):
+        return [(e.timeline_start, e.timeline_end) for e in self._entries]
+
     # Timeline 全長 (エントリの最終終端)
     def timeline_duration(self):
         return self._entries[-1].timeline_end if self._entries else 0.0

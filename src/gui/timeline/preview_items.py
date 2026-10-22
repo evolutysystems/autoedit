@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...modules import comment_decor, subtitle_generator
+from . import font_metrics
 
 # ASS テンキー配置 → 水平/垂直の寄せ (resolve_export と同じ対応)
 _ALIGN_LEFT = (1, 4, 7)
@@ -347,7 +348,10 @@ class ImageOverlayItem(_OverlayMixin, QGraphicsPixmapItem):
 # 字幕オーバーレイ (Qt による近似描画 / §6.4-4)
 class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
 
-    def __init__(self, clip, eff_cfg, font_profile, canvas_size, parent=None):
+    # metrics_mode: "libass" = 字の大きさ・行送り・字間を出力 (libass) へ合わせる
+    #               "em"     = 従来の Qt 近似 (ver8 resolve8 §5-4 の退避口)
+    def __init__(self, clip, eff_cfg, font_profile, canvas_size, parent=None,
+                 metrics_mode=font_metrics.MODE_LIBASS):
         # ASS の改行 \N を実改行へ戻して表示する
         text = str(clip.text or "").replace("\\N", "\n")
         role = str(clip.role or "streamer")
@@ -358,9 +362,20 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         self._canvas_size = canvas_size
 
         font = QFont(clip.font or font_profile.family)
-        # ASS の Fontsize は PlayRes 単位 = キャンバスのピクセル
-        pixel_size = int(clip.font_size or font_profile.size or 48)
-        font.setPixelSize(pixel_size)
+        # ASS の Fontsize は PlayRes 単位 = キャンバスのピクセル。
+        # ただし「Fontsize = em」ではない: libass は usWinAscent + usWinDescent が
+        # Fontsize になるようスケールするため、em 基準の Qt では字が大きく出ていた
+        # (同梱フォントで約 8% / ver8 resolve8 §5)。描画用のサイズだけ換算し、
+        # 位置・箱の推定に使う ass_size (= 出力と共有する値) は変えない。
+        ass_size = int(clip.font_size or font_profile.size or 48)
+        self._metrics_mode = str(metrics_mode or font_metrics.MODE_LIBASS)
+        draw_size = font_metrics.libass_pixel_size(font, ass_size, self._metrics_mode)
+        font.setPixelSize(max(int(draw_size), 1))
+        # 字間 (ASS Style の Spacing)。PlayRes 単位 = px のためそのまま渡せる。
+        # 既定 0 では何もしない (ver8 resolve8 §7)。
+        spacing = _spacing_px(eff_cfg)
+        if spacing and self._metrics_mode == font_metrics.MODE_LIBASS:
+            font.setLetterSpacing(QFont.AbsoluteSpacing, spacing)
         font.setBold(bool(font_profile.bold))
         font.setItalic(bool(font_profile.italic))
         font.setUnderline(bool(font_profile.underline))
@@ -384,11 +399,14 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         self._shadow_color = ass_color_to_qcolor(font_profile.back_color, "#000000")
         self.setPen(QPen(Qt.NoPen))
 
-        # 行送りは ASS 側と同じ値 (comment_bg_line_height_ratio) で決める (§4.7-3)。
-        # コメント背景の箱の高さも comment_decor.text_extent が同じ式で出すため、
-        # 箱と文字が食い違わない。
+        # 行送りはフォントの実メトリクスで積む (ver8 resolve8 §6)。
+        # comment_bg_line_height_ratio (既定 1.2) はコメント背景の箱の高さを
+        # 推定するための比であり、libass が行を積む量ではない。固定比で積むと
+        # 行数に比例して縦位置がずれていた (1 行あたり約 13px)。
+        # 箱は従来どおり comment_decor の推定値を使う (出力と同じ推定のままにする)。
         self._lines = str(self.text() or "").split("\n")
-        self._line_height = pixel_size * _line_height_ratio(eff_cfg)
+        self._line_height = font_metrics.line_advance_px(
+            font, ass_size, self._metrics_mode, _line_height_ratio(eff_cfg))
         metrics = QFontMetricsF(font)
         self._line_widths = [metrics.horizontalAdvance(line) for line in self._lines]
         self._text_width = max(self._line_widths) if self._line_widths else 0.0
@@ -564,7 +582,17 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         self._paint_selection(painter)
 
 
-# 行送りの比 (ASS 側と同じ値を使う / ver6 resolve3 §4.7-3)
+# 字間 (ASS Style の Spacing / ver8 resolve8 §7)。読めなければ 0 (= 字間なし)。
+def _spacing_px(eff_cfg):
+    try:
+        return float((eff_cfg or {}).get("spacing") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# 行送りの比 (コメント背景の箱の推定と同じ値 / ver6 resolve3 §4.7-3)
+# ver8 resolve8 §6 で描画の行送りは実メトリクスへ移したため、
+# ここは "em" モード (従来動作) と、メトリクスが読めないときの保険で使う。
 def _line_height_ratio(eff_cfg):
     try:
         ratio = float((eff_cfg or {}).get("comment_bg_line_height_ratio") or 1.2)

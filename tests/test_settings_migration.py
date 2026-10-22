@@ -9,6 +9,7 @@
 import copy
 import os
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -351,7 +352,14 @@ class BlurSettingsTest(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance() or QApplication([])
-        window = sw.SettingsWindow()
+        # 追加フォント (settings/fonts) はテストでは Qt へ登録しない。
+        # テストは画面の無い offscreen プラットフォームで動いており、こちらの
+        # フォントデータベースは addApplicationFont を境に文字を描けなくなる。
+        # 後続のテストで QPainter が何も描かなくなり、アイコンの色を見る
+        # test_subscription_ui が「描かれていない」として落ちる (同一プロセスのみ)。
+        # 本番 (windows プラットフォーム) では起きないため製品側は変えない。
+        with mock.patch.object(sw, "register_fonts_in_dir"):
+            window = sw.SettingsWindow()
         try:
             window.blur_enabled_check.setChecked(True)
             window.blur_strength_edit.setText("70")

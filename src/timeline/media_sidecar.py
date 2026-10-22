@@ -9,7 +9,7 @@
 # 測定も再エンコードも無いため、開くまでが数分から数十秒へ縮む。
 import os
 
-from ..exceptions import FFmpegError
+from ..exceptions import DiskSpaceError, FFmpegError
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 
@@ -59,6 +59,9 @@ def export_audio(src_path, dest_path, ffmpeg_cfg):
     ]
     try:
         ffmpeg_runner.execute(cmd)
+    except DiskSpaceError:
+        _remove(dest_path)
+        raise       # 容量不足は継続しない (resolve.md §6-9)
     except FFmpegError:
         # 音声が無い素材・抜き出せない容器でも保存そのものは続ける
         _logger.warning("音声サイドカーを作れませんでした (保存は続行します): %s", src_path)
@@ -93,6 +96,9 @@ def mux(video_path, audio_path, dest_path, ffmpeg_cfg):
     ]
     try:
         ffmpeg_runner.execute(cmd)
+    except DiskSpaceError:
+        _remove(dest_path)
+        raise       # 容量不足は継続しない (resolve.md §6-9)
     except FFmpegError:
         _logger.warning("映像と音声の多重化に失敗しました: %s + %s", video_path, audio_path)
         _remove(dest_path)

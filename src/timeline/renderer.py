@@ -71,6 +71,14 @@ def render(timeline, context):
     result_path = _render_overlays_and_subtitles(
         timeline, context, base_path, cfg, ffmpeg_cfg)
 
+    # ベース映像は焼き込み先ができた時点で用済みになる
+    # (docs/error/fromUser/resolve.md §6-7-3)。
+    # 中間形式 (PCM 音声) のため本編と同じかそれ以上の大きさがあり、
+    # 最後まで抱えているとピークが素材 1 本分ぶん余計に膨らむ。
+    # ※ normalized.mp4 は Timeline の素材として参照され続けるため解放しない。
+    if result_path != base_path:
+        context.release_intermediate(os.path.basename(base_path))
+
     # ── Step 3.4: ぼかしが未適用のまま先へ進めない (§5.5.3)
     # オーバーレイも字幕も無い経路はここで単独パスとして焼き込む。
     result_path = blur_overlay.ensure_applied(

@@ -500,8 +500,11 @@ def _run(command, is_cancelled=None):
 
     if process.returncode != 0:
         # そのタイルだけ諦める。近似描画のまま編集は続けられる (§7)
-        _logger.warning("プロキシのタイル生成に失敗しました (code=%s): %s",
-                        process.returncode,
+        # どのタイルが失敗したのか分かるよう出力名を残す (tile_<番号>_<鍵>.mp4)。
+        # 同じタイルが 3 回続けて失敗するとプロキシ自体を諦めるため、
+        # 番号が分からないと後から原因を追えない。
+        _logger.warning("プロキシのタイル生成に失敗しました (code=%s / %s): %s",
+                        process.returncode, os.path.basename(command[-1]),
                         (err or b"").decode("utf-8", "replace").strip()[-500:])
         return False, "failed"
     return True, ""

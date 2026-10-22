@@ -5,7 +5,13 @@
 #  ../StreamPipeline/dev と同一の faster-whisper を既定採用)
 import os
 
-from ..exceptions import AutoEditError, FFmpegError, PipelineCancelled, SubtitleError
+from ..exceptions import (
+    AutoEditError,
+    DiskSpaceError,
+    FFmpegError,
+    PipelineCancelled,
+    SubtitleError,
+)
 from ..i18n import tr
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline.timemap import TimeMap
@@ -25,6 +31,9 @@ _logger = get_logger(__name__)
 # 語頭の取りこぼしが出るようなら 200ms へ戻す (resolve8 §9 Q1)。
 # 設定項目としては出さない (要望 D3)。400 に戻せば従来の挙動へ完全に戻る。
 _VAD_SPEECH_PAD_MS = 100
+
+# 秒の比較に使う許容誤差 (ミリ秒精度で保持するため 1e-6 で十分 / timemap と同じ)
+_EPS = 1e-6
 
 # ASS Style のうち要望対象外のため固定維持する値 (マジックナンバー回避)
 _ASS_SCALE_X = 100
@@ -219,6 +228,15 @@ class FontProfile:
 _DEFAULT_FILLERS = ["えー", "えっと", "あのー", "そのー", "あー", "うー"]
 
 
+# フィラー(口癖)を除去する (ver8 resolve6 §4-2)
+# カット跨ぎの分割では単語から本文を組み直すため、認識時に除いたフィラーが
+# 戻ってしまう。除去規則を 1 か所に置き、組み直しでも同じ規則を掛ける。
+def strip_fillers(text, fillers=None):
+    for filler in (fillers if fillers is not None else _DEFAULT_FILLERS):
+        text = text.replace(filler, "")
+    return text.strip()
+
+
 # テキストタイムラインのソース抽象
 # 実装クラスは extract(input_path, language) -> [{"start": float, "end": float, "text": str}] を返す
 class TextSource:
@@ -410,7 +428,13 @@ class WhisperTextSource(TextSource):
             text = self._split_lines(text)
             # 発話実時間(先頭語start〜末尾語end)を採用し、語頭/語尾の無音を除く (対策A)
             start, end = self._speech_bounds(seg)
-            timeline.append({"start": start, "end": end, "text": text})
+            entry = {"start": start, "end": end, "text": text}
+            # 単語の区間はカット跨ぎの分割にだけ使う (ver8 resolve6 §4-1)。
+            # 取れたときだけ載せるため、取れない構成では辞書の形が従来と同一になる。
+            words = self._word_spans(seg)
+            if words:
+                entry["words"] = words
+            timeline.append(entry)
 
         _logger.info("音声認識完了 (%d セグメント)", len(timeline))
         return timeline
@@ -426,6 +450,22 @@ class WhisperTextSource(TextSource):
                 return float(min(starts)), float(max(ends))
         # フォールバック (単語情報なし): セグメント境界をそのまま使う
         return float(seg.start), float(seg.end)
+
+    # 単語の区間列 [{"start","end","text"}] を返す (ver8 resolve6 §4-1)
+    # カットを跨いだセグメントを単語単位で分けるために使う。
+    # word_timestamps=False / モデルが返さない場合は空リスト (従来動作へ倒す)。
+    @staticmethod
+    def _word_spans(seg):
+        spans = []
+        for word in (getattr(seg, "words", None) or []):
+            if word.start is None or word.end is None:
+                continue
+            spans.append({
+                "start": float(word.start),
+                "end": float(word.end),
+                "text": str(getattr(word, "word", "")),
+            })
+        return spans
 
     # ハルシネーション抑制オプション付きで音声認識を実行する (対策A)
     # VAD 初期化に失敗した場合は VAD 無しへフォールバックして処理を継続する (§5)
@@ -467,11 +507,9 @@ class WhisperTextSource(TextSource):
                 return model.transcribe(input_path, **kwargs)
             raise
 
-    # フィラー(口癖)を除去する
+    # フィラー(口癖)を除去する (規則は共通ヘルパへ委譲)
     def _strip_fillers(self, text):
-        for filler in self._fillers:
-            text = text.replace(filler, "")
-        return text.strip()
+        return strip_fillers(text, self._fillers)
 
     # 改行 (ASS の \\N) を挿入する (共通ヘルパへ委譲)
     # wrap_engine="budoux" で文節改行、それ以外/未導入時は文字数改行へフォールバック。
@@ -1009,6 +1047,8 @@ def _gate_with_settings(input_path, timeline, total_duration,
         speech_regions = detect_speech_regions(
             input_path, total_duration, speech_threshold_db, min_duration_sec, ffmpeg_cfg
         )
+    except DiskSpaceError:
+        raise       # 容量不足は継続しない (resolve.md §6-9)
     except FFmpegError as e:
         # 検出失敗時はテロップ全体を失わないよう従来タイムラインで継続
         _logger.warning("発話区間検出に失敗したため絞り込みをスキップ: %s", e)
@@ -1040,7 +1080,12 @@ def _gate_with_settings(input_path, timeline, total_duration,
 #   - 次の発話まで max_hold_sec を超える場合は「発話末+max_hold_sec」で削除する (R2)
 #   - max_hold_sec 以内に次の発話がある場合は次の発話開始まで表示し、隙間なく切り替える (R3)
 # min_duration_sec はチラつき防止の表示下限 (次の発話に食い込む場合は次発話を優先)。
-def adjust_display_timing(timeline, max_hold_sec=2.0, min_duration_sec=0.0):
+#
+# cut_bounds (ver8 resolve6 R3): 詰めた軸のカット境界 [(head, tail), ...]。
+# 渡すと表示をカットの終端で止める (カット頭で必ず次のテロップへ切り替わる)。
+# 既定 None で従来どおり = 旧 (物理カット) 経路の挙動は変わらない。
+def adjust_display_timing(timeline, max_hold_sec=2.0, min_duration_sec=0.0,
+                          cut_bounds=None):
     if not timeline:
         return timeline
     # 発話開始の昇順に整列する (入力リストは破壊しない)
@@ -1064,6 +1109,20 @@ def adjust_display_timing(timeline, max_hold_sec=2.0, min_duration_sec=0.0):
             disp_end = disp_start + min_duration_sec
             if has_next:
                 disp_end = min(disp_end, next_start)
+
+        # 表示を「発話が終わったカットの終端」で止める (ver8 resolve6 第3部 R3')
+        # 第2部は開始を含むカットの終端で切っていたため、カットを跨ぐテロップが
+        # 最初のカットの終端で消えていた (§10.2 原因G)。基準を発話終了側へ移し、
+        # 跨ぎは許したまま「次のカットへ余分に残り続ける」ことだけを防ぐ。
+        # 開始がカット終端ちょうどのときはクランプしない (尺が 0 になるため。
+        # 下の不正区間判定へ任せる)。
+        if cut_bounds is not None:
+            probe = max(float(speech_end) - _EPS, float(disp_start))
+            tail = _cut_tail_at(cut_bounds, probe)
+            if tail is None:
+                tail = _cut_tail_at(cut_bounds, disp_start)
+            if tail is not None and tail - disp_start > _EPS:
+                disp_end = min(disp_end, tail)
 
         # 不正区間 (終了<=開始) は破棄する
         if disp_end <= disp_start:
@@ -1300,6 +1359,452 @@ def map_items_to_timeline(timeline_items, keep_segments):
     return mapped, dropped
 
 
+# ------------------------------------------------------------------
+# カット跨ぎの分割とカット頭への整列 (ver8 resolve6)
+# ------------------------------------------------------------------
+# 映像カットの単位は「無音で区切った有音区間 (keep_segments)」、テロップの単位は
+# 「Whisper の認識セグメント (文の区切り)」で、別の基準で切られている。
+# 跨いだセグメントは map_items_to_timeline() が 1 本へまとめるため、
+# テロップが前のカットの途中から流れてしまう (resolve6 §2-1)。
+# ここでカット跨ぎを単語単位で分け、各カットの先頭テロップだけを頭へ寄せる。
+#
+# 1 カット内のテロップの本数は変えない (resolve6 §3-3)。
+# 分割が本数を増やすのは「カットを跨いだセグメント」だけで、カット内の区切りや
+# 2 本目以降の開始位置には一切触らない。
+#
+# ただしこの「カットごとに必ず 1 本」が文脈の続くテロップを裁断したため
+# (resolve6 §10.2 原因F)、既定の単位は文字数へ移した (第3部 R1' /
+# regroup_items_by_length)。以下の分割は subtitle_unit = "cut" の退路として残す。
+
+
+# item と重なる「残す区間」を昇順で返す (2 本以上なら item はカットを跨いでいる)
+def _keep_spans_of(item, keep_segments):
+    start = float(item.get("start", 0.0))
+    end = float(item.get("end", 0.0))
+    spans = []
+    for seg_start, seg_end in (keep_segments or []):
+        span_start = float(seg_start)
+        span_end = float(seg_end)
+        if min(end, span_end) - max(start, span_start) > _EPS:
+            spans.append((span_start, span_end))
+    spans.sort()
+    return spans
+
+
+# 単語が属する区間の番号を返す (属せなければ None)
+# 通常は「単語の中点が入る区間」で決まる。中点がカット済みの無音へ落ちた単語は
+# 重なりが最大の区間へ寄せる (文字を落とさないため)。
+def _span_index_for_word(word, spans):
+    start = float(word.get("start", 0.0))
+    end = float(word.get("end", 0.0))
+    middle = (start + end) / 2.0
+    best = None
+    best_overlap = 0.0
+    for index, (span_start, span_end) in enumerate(spans):
+        if span_start - _EPS <= middle < span_end - _EPS:
+            return index
+        overlap = min(end, span_end) - max(start, span_start)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best = index
+    return best
+
+
+# 単語列の発話長 (先頭語の開始〜末尾語の終了)
+def _words_speech_len(words):
+    if not words:
+        return 0.0
+    return max(w["end"] for w in words) - min(w["start"] for w in words)
+
+
+# 単語を区間ごとに振り分ける (resolve6 §4-2)
+# 戻り値: [{"words": 時刻を決める単語, "text_words": 本文を作る単語}, ...]
+#
+# 先頭の片の発話長が min_piece_sec 未満のときは、その語を次の片の本文の先頭へ
+# 寄せる (§4-2-1)。寄せるのは「文字」だけで、時刻は寄せない。時刻まで持ち込むと
+# 区間が再びカットを跨ぎ、元の症状へ戻ってしまう。
+def _words_by_span(words, spans, min_piece_sec=0.0):
+    buckets = [[] for _ in spans]
+    for word in (words or []):
+        index = _span_index_for_word(word, spans)
+        if index is None:
+            continue
+        buckets[index].append(word)
+
+    pieces = [{"words": b, "text_words": list(b)} for b in buckets if b]
+    while len(pieces) >= 2 and _words_speech_len(pieces[0]["words"]) < min_piece_sec - _EPS:
+        head = pieces.pop(0)
+        pieces[0]["text_words"] = head["text_words"] + pieces[0]["text_words"]
+    return pieces
+
+
+# 認識セグメントを「残す区間」ごとに分ける (resolve6 R1)
+# 入力・出力はどちらも素材時間。カットを跨がないセグメントは一切触らない。
+#   ・跨いでいない                → そのまま通す (従来と完全に同一)
+#   ・跨いでいて単語が取れない    → そのまま通す (安全側へ倒す / R4)
+#   ・跨いでいて単語が取れる      → カットごとの字幕へ分ける
+# 分けた各片の start/end は「その片に入った単語の実時間」。keep_segments の端では
+# なく単語の端を使うことで、カット内での遅れを整列処理 (R2) へ正しく渡す。
+#
+# wrap: 本文の整形関数 (フィラー除去＋改行)。単語から本文を組み直すため、
+#       認識時と同じ整形を掛け直す必要がある。
+# 戻り値: (items, 分割で増えた件数)
+def split_items_by_keep_segments(items, keep_segments, wrap=None,
+                                 min_piece_sec=0.0):
+    out = []
+    added = 0
+    for item in (items or []):
+        words = item.get("words")
+        spans = _keep_spans_of(item, keep_segments) if words else []
+        if len(spans) <= 1:
+            out.append(item)
+            continue
+
+        pieces = _words_by_span(words, spans, min_piece_sec)
+        emitted = 0
+        for piece in pieces:
+            text = "".join(w["text"] for w in piece["text_words"]).strip()
+            if not text:
+                continue
+            out.append({
+                **item,
+                "start": min(w["start"] for w in piece["words"]),
+                "end": max(w["end"] for w in piece["words"]),
+                "text": wrap(text) if wrap else text,
+                "words": piece["words"],
+            })
+            emitted += 1
+
+        if emitted == 0:
+            # 単語から本文を作れなかった (防御的なケース) → 元の 1 本で通す
+            out.append(item)
+            continue
+        added += emitted - 1
+    return out, added
+
+
+# ------------------------------------------------------------------
+# 文字数で決めるテロップ単位 (ver8 resolve6 第3部 R1')
+# ------------------------------------------------------------------
+# カットごとに必ず 1 本作ると、1 文が息継ぎ (無音 0.6 秒) で切られた数だけ
+# テロップへ裁断される (resolve6 §10.2 原因F)。そこで単位の決め方を
+# 「カット」から「文字数」へ移し、カット境界は「切ってよい候補」へ格下げする。
+#   ・下限 (min_chars) 未満の間は切らない    → カットを跨いで繋ぐ (1 テロップ : N クリップ)
+#   ・下限達成後はカット境界・文末・認識セグメント境界で切る
+#                                             → カット頭からテロップが始まる
+#   ・上限 (max_chars) 超過はカット内でも切る → 1 クリップ : N テロップ
+
+# テロップ単位の決め方 (subtitle.subtitle_unit)
+_SUBTITLE_UNIT_LENGTH = "length"    # 文字数で単位を作る (第3部 / 既定)
+_SUBTITLE_UNIT_CUT = "cut"          # カットごとに必ず 1 本 (第2部)
+_SUBTITLE_UNIT_SEGMENT = "segment"  # 認識セグメントそのまま (ver8 以前)
+_SUBTITLE_UNITS = (_SUBTITLE_UNIT_LENGTH, _SUBTITLE_UNIT_CUT, _SUBTITLE_UNIT_SEGMENT)
+
+# 文末と見なす記号 (下限達成後はここで区切ってよい / resolve6 §11-2 B3)
+_SENTENCE_END = ("。", "．", "！", "？", "!", "?")
+
+# カットの外へこぼれた単語を拾う許容差 (秒 / resolve6 第4部 R6)
+# silence_cut.min_silence_duration_sec = 0.6 の半分未満にしてあるため、
+# 取り除かれた無音の中央は必ず空く = 無音へ出た幻聴字幕は拾わない (§18-5)。
+_DEFAULT_WORD_ATTACH_TOLERANCE_SEC = 0.25
+
+# 寄せた単語に残す最低の尺 (秒)。尺 0 の区間は写像で捨てられるため (§18-3)
+_MIN_WORD_SEC = 0.05
+
+
+# テロップ単位の決め方を解決する (resolve6 §13-1 / 後方互換つき)
+# subtitle_unit が無い旧 setting.json では split_across_cut から決める
+# (false = カットに合わせる処理を入れていない状態 → 認識セグメントそのまま)。
+def subtitle_unit(subtitle_cfg):
+    cfg = subtitle_cfg or {}
+    value = str(cfg.get("subtitle_unit", "")).strip().lower()
+    if value in _SUBTITLE_UNITS:
+        return value
+    if value:
+        _logger.warning(
+            "subtitle.subtitle_unit が不正なため '%s' を使います: %s",
+            _SUBTITLE_UNIT_LENGTH, value)
+        return _SUBTITLE_UNIT_LENGTH
+    return (_SUBTITLE_UNIT_LENGTH if cfg.get("split_across_cut", True)
+            else _SUBTITLE_UNIT_SEGMENT)
+
+
+# 単語の末尾が文末記号かどうか
+def _ends_sentence(word):
+    text = str((word or {}).get("text", "")).strip()
+    return bool(text) and text.endswith(_SENTENCE_END)
+
+
+# 単語が属するカット番号と次の走査位置を返す (カットされた無音の中なら番号は None)
+# 単語列・keep_segments はどちらも時間順のため、走査位置 cursor を前へ進めるだけで足りる。
+# 中点が無音へ落ちた単語は重なりが最大のカットへ寄せる
+# (文字を落とさないため。規則は _span_index_for_word() と同じ)。
+def _cut_index_of_word(word, keep_segments, cursor=0):
+    segments = keep_segments or []
+    start = float(word.get("start", 0.0))
+    end = float(word.get("end", 0.0))
+    middle = (start + end) / 2.0
+
+    # 単語より完全に手前のカットは以後の単語でも使わないため走査位置を進める
+    index = min(max(int(cursor), 0), len(segments))
+    while index < len(segments) and float(segments[index][1]) <= start + _EPS:
+        index += 1
+
+    hit = _cut_index_from(segments, index, start, end, middle)
+    if hit is not None or index == 0:
+        return hit, index
+    # 走査位置が目的のカットを通り過ぎていた場合の保険 (単語の順序が前後したとき /
+    # resolve6 §18-2)。先頭から 1 度だけ読み直し、見つかればそこへ走査位置を戻す。
+    hit = _cut_index_from(segments, 0, start, end, middle)
+    return (hit, hit) if hit is not None else (None, index)
+
+
+# from_index から前へ走査し、単語が属するカット番号を返す (見つからなければ None)
+# 中点が入るカットを優先し、無ければ重なりが最大のカットへ寄せる。
+def _cut_index_from(segments, from_index, start, end, middle):
+    best = None
+    best_overlap = 0.0
+    probe = from_index
+    while probe < len(segments):
+        span_start = float(segments[probe][0])
+        span_end = float(segments[probe][1])
+        if span_start >= end - _EPS:
+            break  # これ以降のカットは単語より後ろ
+        if span_start - _EPS <= middle < span_end - _EPS:
+            return probe  # 中点が入るカット (通常はここで決まる)
+        overlap = min(end, span_end) - max(start, span_start)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best = probe
+        probe += 1
+    return best
+
+
+# 単語の前後で最も近いカットを返す (どの端も許容差を超えるなら None / R6)
+# 語頭のこぼれ (次のカットの頭) と語尾のこぼれ (前のカットの尻) の両方を拾い、
+# どちらも許容差内なら近い方を選ぶ。
+def _nearest_cut_within(word, keep_segments, tolerance_sec):
+    if tolerance_sec <= 0:
+        return None
+    start = float(word.get("start", 0.0))
+    end = float(word.get("end", 0.0))
+    best = None
+    best_gap = None
+    for index, (seg_start, seg_end) in enumerate(keep_segments or []):
+        span_start = float(seg_start)
+        span_end = float(seg_end)
+        if span_start >= end - _EPS:
+            gap = span_start - end  # 単語はこのカットの手前にある (語頭のこぼれ)
+        elif span_end <= start + _EPS:
+            gap = start - span_end  # 単語はこのカットの後ろにある (語尾のこぼれ)
+        else:
+            continue  # 重なっている = ここへは来ない (呼び出し側で解決済み)
+        if gap <= tolerance_sec + _EPS and (best_gap is None or gap < best_gap):
+            best = index
+            best_gap = gap
+    return best
+
+
+# 単語の時刻をカットの中へ収める (R6)
+# 寄せた単語がテロップの先頭に来ると開始がカット頭と一致し、写像でも落ちない。
+# 尺が 0 になると map_items_to_timeline() が区間を捨てるため最低幅を残す。
+# 収め直す必要がなければ元の辞書をそのまま返す (通常はこちら)。
+def _clamp_word_to_cut(word, span):
+    span_start = float(span[0])
+    span_end = float(span[1])
+    word_start = float(word.get("start", 0.0))
+    word_end = float(word.get("end", 0.0))
+    start = min(max(word_start, span_start), span_end)
+    end = min(max(word_end, start + _MIN_WORD_SEC), span_end)
+    if abs(start - word_start) <= _EPS and abs(end - word_end) <= _EPS:
+        return word
+    return {**word, "start": start, "end": end}
+
+
+# 単語を「属するカット番号」と「そのカット内へ収めた時刻」へ解決する (R6)
+#
+# カット頭 (keep_segments の開始) は silencedetect がレベルを超えた時刻であり、
+# 語頭の無声子音や立ち上がり (閾値未満) は無音側へ落ちる。一方 Whisper は VAD の
+# speech_pad_ms を足して認識するため、単語はカット頭より前から始まる。この差で
+# こぼれた語を落とすとテロップの頭から 1 文字消える (resolve6 §18-1)。
+#   ・どれかのカットに重なる単語      → 従来どおり (中点 → 重なり最大) で決める
+#   ・重ならず端まで許容差内の単語    → その端のカットへ寄せる (文字を落とさない)
+#   ・重ならず許容差より遠い単語      → None (カット済みの無音への幻聴字幕とみて落とす)
+#
+# 戻り値: (カット番号 or None, 収め直した単語 or None, 次の走査位置)
+def _resolve_word_cut(word, keep_segments, cursor=0,
+                      attach_tolerance_sec=_DEFAULT_WORD_ATTACH_TOLERANCE_SEC):
+    index, cursor = _cut_index_of_word(word, keep_segments, cursor)
+    if index is None:
+        index = _nearest_cut_within(word, keep_segments, attach_tolerance_sec)
+        if index is None:
+            return None, None, cursor
+    return index, _clamp_word_to_cut(word, keep_segments[index]), cursor
+
+
+# 単語列から 1 テロップを作る (resolve6 §11-4)
+# start/end は単語の実時間。本文は認識時と同じ整形 (フィラー除去＋改行) を掛け直す。
+# template は先頭語を出した認識セグメント (付随キーを引き継ぐため)。
+# 本文が空になった場合は None を返す (呼び出し側で捨てる)。
+def _item_from_words(words, wrap=None, template=None):
+    if not words:
+        return None
+    text = "".join(str(w.get("text", "")) for w in words).strip()
+    if not text:
+        return None
+    item = dict(template or {})
+    item.update({
+        "start": min(float(w["start"]) for w in words),
+        "end": max(float(w["end"]) for w in words),
+        "text": wrap(text) if wrap else text,
+        "words": list(words),
+    })
+    return item
+
+
+# テロップの単位を文字数で作り直す (resolve6 第3部 R1')
+#
+# 入力・出力はどちらも素材時間。単語列を下限〜上限文字数の範囲でまとめ直す
+# (§11-2 の B1〜B5)。カット境界・文末・認識セグメント境界はいずれも
+# 「下限に達していれば切ってよい候補」で、下限未満なら跨いで繋ぐ。
+# カットを跨ぐテロップが生まれるのは意図どおりで、跨ぎは後段の
+# map_items_to_timeline() が詰めた軸の 1 区間へまとめる。
+#
+# wrap           : 本文の整形関数 (フィラー除去＋改行)。単語から本文を組み直すため必要
+# min_chars      : 下限文字数 (これ未満の間は切らない)
+# max_chars      : 上限文字数 (これを超えるときは必ず切る)
+# max_cut_gap_sec: 取り除かれた無音がこれを超えたら文脈が切れたとみなす (0 で無制限)
+# attach_tolerance_sec: カットの外へこぼれた単語を拾う許容差 (0 で拾わない / R6)
+#
+# 単語が取れない item は他と混ぜられないためそのまま 1 本で通す (安全側 / R4)。
+# 戻り値: (items, テロップ件数)
+def regroup_items_by_length(items, keep_segments, wrap=None,
+                            min_chars=5, max_chars=40,
+                            break_on_sentence_end=True,
+                            max_cut_gap_sec=0.0,
+                            attach_tolerance_sec=_DEFAULT_WORD_ATTACH_TOLERANCE_SEC):
+    out = []
+    buf = []          # 現在のテロップへ積んだ単語
+    buf_len = 0       # 積んだ本文の文字数 (改行記号は数えない)
+    buf_item = None   # 先頭語を出した認識セグメント
+    last_cut = None   # 直前語が属したカット番号
+    last_end = None   # 直前語の終了 (素材時間)
+    cursor = 0        # keep_segments の走査位置
+
+    # 積んだ単語を 1 本のテロップとして確定する
+    def flush():
+        nonlocal buf, buf_len, buf_item
+        item = _item_from_words(buf, wrap, buf_item)
+        if item is not None:
+            out.append(item)
+        buf, buf_len, buf_item = [], 0, None
+
+    for item in (items or []):
+        words = item.get("words")
+        if not words:
+            flush()
+            out.append(item)
+            last_cut = None
+            last_end = None
+            continue
+        boundary = True   # この認識セグメントの最初の語か (B5)
+        for raw_word in words:
+            # カットへの振り分けと、こぼれた語の寄せ (R6) をここで済ませる
+            cut, word, cursor = _resolve_word_cut(
+                raw_word, keep_segments, cursor, attach_tolerance_sec)
+            if cut is None:
+                continue  # 許容差より遠い = カット済みの無音の中の語 (幻聴字幕)
+            text = str(word.get("text", "")).strip()
+            if not text:
+                continue
+            if buf:
+                # B1: 上限超過 (下限未達でも切る。上限は絶対)
+                over = buf_len + len(text) > max_chars
+                # B4: 取り除かれた無音が長い (文脈が切れている)
+                far = (max_cut_gap_sec > 0 and last_end is not None
+                       and float(word["start"]) - last_end > max_cut_gap_sec)
+                enough = buf_len >= min_chars
+                # B2: 別のカットへ移った (= カット頭から次のテロップが始まる)
+                crossed = cut != last_cut
+                # B3: 直前語が文末記号で終わる
+                ended = break_on_sentence_end and _ends_sentence(buf[-1])
+                # B5: 別の認識セグメントへ移った (= 別の文。間に息継ぎがある)
+                if over or far or (enough and (crossed or ended or boundary)):
+                    flush()
+            if not buf:
+                buf_item = item
+            buf.append(word)
+            buf_len += len(text)
+            boundary = False
+            last_cut = cut
+            last_end = float(word["end"])
+    flush()
+    return out, len(out)
+
+
+# 詰めた軸の時刻を含むカットの番号を返す (カットの外なら None)
+def _cut_index_at(cut_bounds, sec):
+    value = float(sec)
+    for index, (head, tail) in enumerate(cut_bounds or []):
+        if head - _EPS <= value < tail - _EPS:
+            return index
+    return None
+
+
+# 詰めた軸の時刻を含むカットの終端を返す (カットの外なら None)
+def _cut_tail_at(cut_bounds, sec):
+    index = _cut_index_at(cut_bounds, sec)
+    return None if index is None else cut_bounds[index][1]
+
+
+# 各カットの先頭字幕の開始をカット頭へ合わせる (resolve6 R2)
+# cut_bounds   : 詰めた軸のカット境界 [(head, tail), ...] (TimeMap.timeline_bounds())
+# tolerance_sec: 寄せる許容差。0 以下で無効 (= 何もしない)
+#
+# 触るのは start だけ。end は後段の adjust_display_timing() が作り直すため、
+# ここで尺や重なりの面倒を見る必要がない (§3-2)。
+#
+# 寄せるのは「そのカットで最初に出るテロップ」1 本だけ (taken 集合)。
+# 1 カットに 3 本でも 5 本でもテロップが入るのが通常形で、2 本目以降は
+# 認識の発話頭のまま残す (頭へ吸わせると 1 本目と同時に出てしまう / §3-3)。
+#
+# カットを跨ぐテロップ (第3部 R1') があると「カット頭が直前のテロップに
+# 覆われている」状態が起きる。そこへ次のテロップを吸わせると重なり、
+# adjust_display_timing() の R3 (次の開始まで表示) が直前のテロップを
+# 境界で打ち切ってしまう (resolve6 §10.2 原因H)。よって prev_end を見て、
+# 覆われているカット頭へは吸わせない。
+#
+# 戻り値: (items, 寄せた件数)
+def align_items_to_cut_heads(items, cut_bounds, tolerance_sec):
+    if tolerance_sec <= 0 or not cut_bounds or not items:
+        return items, 0
+
+    aligned = 0
+    out = []
+    taken = set()
+    prev_end = None
+    for entry in sorted(items, key=lambda e: e["start"]):
+        index = _cut_index_at(cut_bounds, entry["start"])
+        if index is None:
+            out.append(entry)
+            prev_end = max(prev_end or 0.0, float(entry["end"]))
+            continue
+        head = cut_bounds[index][0]
+        gap = float(entry["start"]) - head
+        # 直前のテロップがカット頭を覆っているなら動かさない (重なりを作らない)
+        covered = prev_end is not None and head < prev_end - _EPS
+        # gap < 0 は起きない (split_interval がカット頭へ丸めている)。
+        # 許容差より大きい差は動かさない = 長いカットの途中から始まる発話を
+        # 頭へ吸わせないための安全弁。
+        if index not in taken and not covered and _EPS < gap <= tolerance_sec:
+            entry = {**entry, "start": head}
+            aligned += 1
+        taken.add(index)
+        prev_end = max(prev_end or 0.0, float(entry["end"]))
+        out.append(entry)
+    return out, aligned
+
+
 # 編集点モード用の音声認識 (docs/request/ver3/resolve.md §7.3 / 20260812 resolve2.md §4)
 #
 # 認識は「素材そのまま (無音カット前) の音声」に対して行い、得られた素材時間を
@@ -1358,6 +1863,44 @@ def recognize_for_timeline(context, keep_segments):
         _logger.warning("テロップタイムラインが空のため字幕を作成しません")
         return [], eff_cfg
 
+    # ── テロップの単位を決める (ver8 resolve6 第3部 R1' / 第2部 R1)
+    # 写像より前 = 素材時間のうちに行う。でないとカット境界と単語を突き合わせられない。
+    unit = subtitle_unit(eff_cfg)
+    if unit != _SUBTITLE_UNIT_SEGMENT:
+        min_len = int(eff_cfg.get("min_line_length", 15))
+        max_len = int(eff_cfg.get("max_line_length", 20))
+        engine = str(eff_cfg.get("wrap_engine", "budoux")).strip().lower()
+        remove_fillers = bool(eff_cfg.get("remove_fillers", False))
+        fillers = eff_cfg.get("fillers", _DEFAULT_FILLERS)
+
+        # 単語から本文を組み直すため、認識時と同じ整形 (フィラー除去＋改行) を掛ける
+        def _refine(text):
+            if remove_fillers:
+                text = strip_fillers(text, fillers)
+            return wrap_lines(text, min_len, max_len, engine)
+
+        if unit == _SUBTITLE_UNIT_LENGTH:
+            # 文字数で単位を作り直す (第3部 R1')。上限 = 1 行の上限 × 最大行数。
+            max_chars = max(max_len * int(eff_cfg.get("subtitle_max_lines", 2)), 1)
+            min_chars = max(min(min_len, max_chars), 0)
+            timeline_items, count = regroup_items_by_length(
+                timeline_items, keep_segments, wrap=_refine,
+                min_chars=min_chars, max_chars=max_chars,
+                break_on_sentence_end=bool(eff_cfg.get("break_on_sentence_end", True)),
+                max_cut_gap_sec=float(eff_cfg.get("merge_max_cut_gap_sec", 0.0)),
+                attach_tolerance_sec=float(eff_cfg.get(
+                    "word_attach_tolerance_sec",
+                    _DEFAULT_WORD_ATTACH_TOLERANCE_SEC)))
+            _logger.info("テロップ単位を文字数で再構成: %d 件 (下限 %d / 上限 %d 文字)",
+                         count, min_chars, max_chars)
+        else:
+            # カットごとに必ず 1 本 (第2部 R1 / 旧挙動への退路)
+            timeline_items, added = split_items_by_keep_segments(
+                timeline_items, keep_segments, wrap=_refine,
+                min_piece_sec=float(eff_cfg.get("split_min_piece_sec", 0.3)))
+            _logger.info("カット跨ぎの字幕を分割: %d 件増 (計 %d 件)",
+                         added, len(timeline_items))
+
     # ── 素材時間 → 詰めた軸へ写す (20260812 resolve2.md §4)
     before_map = len(timeline_items)
     timeline_items, dropped = map_items_to_timeline(timeline_items, keep_segments)
@@ -1369,11 +1912,24 @@ def recognize_for_timeline(context, keep_segments):
         _logger.warning("写像後の字幕が 0 件のため字幕を作成しません")
         return [], eff_cfg
 
+    # ── 開始をカット頭へ揃える (ver8 resolve6 R2)
+    # 整形より前に行う。整形は次の字幕の開始から終了を決めるため、先に開始を
+    # 確定させないと伸ばし先が旧位置になる (§3-2)。
+    cut_bounds = TimeMap.from_segments(keep_segments).timeline_bounds()
+    if eff_cfg.get("align_to_cut_head", True):
+        timeline_items, aligned = align_items_to_cut_heads(
+            timeline_items, cut_bounds,
+            float(eff_cfg.get("align_tolerance_sec", 0.6)))
+        _logger.info("字幕の開始をカット頭へ整列: %d 件", aligned)
+
     # ── 表示タイミング整形 (詰めた軸の上で行う。整形の意味を変えないため写像の後)
+    # カット境界を渡し、表示をカットの終端で止める (R3)。
     max_hold_sec = float(eff_cfg.get("display_max_hold_sec", 2.0))
     min_duration_sec = float(eff_cfg.get("display_min_duration_sec", 0.5))
     before_count = len(timeline_items)
-    timeline_items = adjust_display_timing(timeline_items, max_hold_sec, min_duration_sec)
+    timeline_items = adjust_display_timing(
+        timeline_items, max_hold_sec, min_duration_sec,
+        cut_bounds=None if eff_cfg.get("hold_across_cut", False) else cut_bounds)
     _logger.info(
         "テロップ表示タイミング整形: %d → %d 区間 (max_hold=%.1fs, min_dur=%.1fs)",
         before_count, len(timeline_items), max_hold_sec, min_duration_sec,

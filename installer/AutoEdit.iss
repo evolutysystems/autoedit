@@ -93,6 +93,13 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 ; [Code] で展開したファイルは Inno のアンインストールログに含まれないため、
 ; インストール先フォルダ一式を明示削除する。ユーザー指定の出力先(別フォルダ)は残す (§9-11)。
 Type: filesandordirs; Name: "{app}"
+; 作業フォルダ (取得した配信データ・Twitch のログイン情報) は
+; docs/error/fromUser/resolve.md §6-6-6 でインストール先の外へ移した。
+; 外へ出したぶんアンインストールでは自動で消えなくなるため、ここで明示削除する。
+; 取得物は 1 本 10〜25 GB になり得るので、残すと「消したのに容量が戻らない」ことになる。
+; ※ 編集結果 (プロジェクト) と出力動画は利用者が選んだ別フォルダにあり、対象外。
+Type: filesandordirs; Name: "{localappdata}\{#MyAppName}\archive_work"
+Type: dirifempty; Name: "{localappdata}\{#MyAppName}"
 
 [Code]
 var

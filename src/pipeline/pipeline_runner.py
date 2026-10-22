@@ -1,9 +1,10 @@
 # パイプラインオーケストレーション
 # 設計書 5.1 pipeline_runner.py に対応
 import os
+import tempfile
 import time
 
-from ..exceptions import AutoEditError, InputError, PipelineCancelled
+from ..exceptions import AutoEditError, FFmpegError, InputError, PipelineCancelled
 from ..i18n import tr
 from ..modules import (
     concat_processor,
@@ -20,6 +21,7 @@ from ..services import telemetry
 from ..settings.settings_window import save_settings
 from ..timeline import builder as timeline_builder
 from ..timeline import media_recovery, project_io, renderer
+from ..utils import disk
 from ..utils.logger import get_logger
 from ..version import __version__
 from .pipeline_context import PipelineContext
@@ -70,6 +72,12 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
 
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
+    # 工程に入る前に「読める動画か」「置き場があるか」を確かめる
+    # (docs/error/fromUser/resolve.md §6-8・§6-12-4)。
+    # 従来は存在確認しかしておらず、読めない動画は音量解析まで進んでから
+    # 「ffprobe が失敗」という分かりにくい形で落ちていた。
+    _ensure_readable_input(input_path, settings)
+    _ensure_space_for_run(input_path, settings)
 
     use_timeline = is_timeline_mode(settings)
     context = _prepare_context(input_path, settings, progress_cb, subtitle_review_callback,
@@ -174,6 +182,8 @@ def run_from_project(project_path, settings, progress_cb=None,
         input_path=input_path,
         settings=settings,
         progress_callback=progress_cb,
+        # 再編集も中間ファイルを作るため、置き場の設定は同じく効かせる (§6-7-1)
+        working_dir=_work_directory(settings),
         total_steps=2,
         timeline_review_callback=timeline_review_callback,
         blur_failure_callback=blur_failure_callback,
@@ -255,6 +265,65 @@ def is_timeline_mode(settings):
     return str(mode).strip().lower() == "edit_points"
 
 
+# 中間ファイルの置き場を設定から解決する (空なら None = %TEMP%)
+# (docs/error/fromUser/resolve.md §6-7-1)
+def _work_directory(settings):
+    folder = str((settings or {}).get("general", {}).get("work_directory", "") or "").strip()
+    if not folder:
+        return None
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except OSError:
+        # 作れない指定 (外したドライブ等) は従来どおり %TEMP% へ倒す。
+        # 設定の誤りで実行そのものができなくなる方が損が大きい。
+        _logger.warning("作業フォルダを使えないため既定の一時フォルダを使います: %s", folder)
+        return None
+    return folder
+
+
+# 入力動画が ffprobe で読めることを確かめる (resolve.md §6-12-4)
+# 読めない理由 (無い / 0 バイト / 壊れている) はここで名指しして止める。
+def _ensure_readable_input(input_path, settings):
+    try:
+        width, height = ffmpeg_runner.probe_dimensions(
+            input_path, settings.get("ffmpeg", {}))
+    except FFmpegError as e:
+        raise InputError(
+            tr("この動画を読み込めません: {path}\n{error}",
+               path=input_path, error=e)) from e
+    _logger.info("入力動画を確認しました: %dx%d / %s",
+                 width, height, disk.human(_size_or_zero(input_path)))
+
+
+# 実行に必要な空き容量を確かめる (resolve.md §6-8)
+# 作業先と出力先が別ドライブのこともあるため、両方を見る。
+def _ensure_space_for_run(input_path, settings):
+    general = (settings or {}).get("general", {})
+    required = disk.required_from_gb(general.get("min_free_space_gb", 20))
+    if required <= 0:
+        return
+    work_dir = _work_directory(settings) or tempfile.gettempdir()
+    disk.ensure_free(work_dir, required, label="作業フォルダ")
+    output_dir = str(general.get("output_directory", "") or "").strip()
+    if not output_dir:
+        output_dir = os.path.dirname(os.path.abspath(input_path))
+    if _same_drive(work_dir, output_dir):
+        return      # 同じドライブなら 2 度測らない
+    disk.ensure_free(output_dir, required, label="出力先")
+
+
+def _same_drive(left, right):
+    return (os.path.splitdrive(os.path.abspath(left))[0].lower()
+            == os.path.splitdrive(os.path.abspath(right))[0].lower())
+
+
+def _size_or_zero(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
 # コンテキストを準備する
 def _prepare_context(input_path, settings, progress_cb, subtitle_review_callback=None,
                      volume_analysis_callback=None, timeline_review_callback=None,
@@ -267,6 +336,9 @@ def _prepare_context(input_path, settings, progress_cb, subtitle_review_callback
         input_path=input_path,
         settings=settings,
         progress_callback=progress_cb,
+        # 中間ファイルの置き場 (docs/error/fromUser/resolve.md §6-7-1)。
+        # 空なら従来どおり %TEMP% を使うため、設定しなければ挙動は変わらない。
+        working_dir=_work_directory(settings),
         total_steps=4 if use_timeline else 5,
         subtitle_review_callback=subtitle_review_callback,
         volume_analysis_callback=volume_analysis_callback,

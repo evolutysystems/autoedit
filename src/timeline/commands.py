@@ -1395,6 +1395,103 @@ class EditSubtitles(Command):
         return changed
 
 
+# 時刻を含む区間の番号を返す (区間の外なら None / ver8 resolve6)
+def _cut_index_at(bounds, sec):
+    value = float(sec)
+    for index, (head, tail) in enumerate(bounds or []):
+        if head - _EPS <= value < tail - _EPS:
+            return index
+    return None
+
+
+# 字幕の開始を V1 クリップ (カット) の頭へ揃える (ver8 resolve6 R5)
+#
+# 生成時の整列 (subtitle_generator.align_items_to_cut_heads) は作り直さないと
+# 効かないため、既存プロジェクトと手編集後のための救済としてこのコマンドを置く。
+# 揃え先は keep_segments ではなく V1 のクリップにする。手編集で分割・削除した
+# 後は V1 のクリップこそが「いまのカット」であり、keep_segments は古いため。
+#
+# 1 カット内のテロップの本数は変えない (resolve6 §3-3)。寄せるのはそのカットで
+# 最初に出る 1 本だけで、2 本目以降は位置をそのまま残す。
+#
+# clamp_to_cut_end の既定は False (resolve6 §12-5)。テロップの単位を文字数へ
+# 移した第3部では字幕がカットを跨ぐのが正常形であり、手編集後のクリップには
+# 「発話がどこで終わったか」の情報が無いため、終端をカット境界で切ると
+# 意図した跨ぎを壊してしまう。True は subtitle_unit = "cut" 用の退路。
+class AlignSubtitlesToCutHeads(Command):
+
+    label = "字幕をカット頭へ揃える"
+
+    def __init__(self, clip_ids=None, tolerance_sec=0.6,
+                 clamp_to_cut_end=False, min_clip_sec=0.05):
+        # None = 全字幕が対象。空リストを渡されたときも全件にはしない
+        self._clip_ids = None if clip_ids is None else {i for i in clip_ids if i}
+        self._tolerance_sec = float(tolerance_sec)
+        self._clamp_to_cut_end = bool(clamp_to_cut_end)
+        self._min_clip_sec = float(min_clip_sec)
+        # 揃えた件数 (UI の状態表示用。apply 後に読む)
+        self.aligned = 0
+
+    def apply(self, timeline):
+        self.aligned = 0
+        if self._tolerance_sec <= 0:
+            return False
+        # OP/ED は揃え先にしない (素材の頭へ字幕を吸わせない)
+        bounds = [
+            (c.timeline_start, c.timeline_end)
+            for c in timeline.base_clips() if not c.is_opening_or_ending()
+        ]
+        if not bounds:
+            return False
+
+        changed = False
+        for track in timeline.subtitle_tracks():
+            if track.locked:
+                continue
+            prev_end = None
+            taken = set()
+            for clip in sorted(track.clips, key=lambda c: c.timeline_start):
+                if self._align_one(clip, bounds, taken, prev_end):
+                    changed = True
+                    self.aligned += 1
+                prev_end = clip.timeline_end
+            track.sort_clips()
+
+        if changed:
+            _logger.info("字幕をカット頭へ揃えました: %d 件 (許容差 %.2fs)",
+                         self.aligned, self._tolerance_sec)
+        return changed
+
+    # 字幕 1 件を揃える。変化があれば True。
+    def _align_one(self, clip, bounds, taken, prev_end):
+        if self._clip_ids is not None and clip.id not in self._clip_ids:
+            return False
+        index = _cut_index_at(bounds, clip.timeline_start)
+        if index is None:
+            return False
+        head, tail = bounds[index]
+        # そのカットの先頭字幕だけが対象 (2 本目以降は動かさない)
+        first_in_cut = index not in taken
+        taken.add(index)
+
+        start = clip.timeline_start
+        end = clip.timeline_end
+        gap = start - head
+        if first_in_cut and _EPS < gap <= self._tolerance_sec:
+            # 直前の字幕へ食い込むなら動かさない (重なりを作らない)
+            if prev_end is None or head >= prev_end - _EPS:
+                start = head
+        if self._clamp_to_cut_end:
+            end = min(end, tail)
+        if end - start < self._min_clip_sec - _EPS:
+            return False
+        if abs(start - clip.timeline_start) <= _EPS and abs(end - clip.timeline_end) <= _EPS:
+            return False
+        clip.timeline_start = start
+        clip.duration = end - start
+        return True
+
+
 # 使用 ON/OFF (旧画面の「使用」チェックに相当)
 class SetClipEnabled(Command):
 

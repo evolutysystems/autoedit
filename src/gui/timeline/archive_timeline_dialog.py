@@ -220,6 +220,19 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
                 "既存セクションと重なる場合は 1 つへ統合されます。"))
             self.add_section_button.clicked.connect(self._on_add_section)
             layout.addWidget(self.add_section_button)
+        elif self._section_add_blocked_by_missing_source():
+            # 元 VOD を手放したあとに開き直した場合 (docs/error/fromUser/resolve.md §6-6)。
+            # 黙ってボタンを消すと「前は在ったのに」と理由が分からないため、
+            # 押せない状態で出し、なぜ使えないかと戻し方を伝える。
+            self.add_section_button = QPushButton(tr("セクション追加..."))
+            self.add_section_button.setAutoDefault(False)
+            self.add_section_button.setEnabled(False)
+            self.add_section_button.setToolTip(
+                tr("元動画が無いため、新しい区間を追加できません。\n"
+                   "この編集に使う素材はプロジェクトに保存されているため編集は続けられます。\n"
+                   "区間を足したい場合は、設定の「元動画を残す」を有効にしたうえで"
+                   "取得し直してください。"))
+            layout.addWidget(self.add_section_button)
 
         self.use_check = QCheckBox(tr("このクリップを使用する"))
         self.use_check.setToolTip(
@@ -375,6 +388,14 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
                     and self._source_path
                     and os.path.exists(self._source_path))
 
+    # 追加機能が「元動画が無いことだけ」を理由に使えない状態か (resolve.md §6-6)。
+    # 機能そのものが無効・経路が違う場合と区別し、説明を出す相手を絞る。
+    def _section_add_blocked_by_missing_source(self):
+        return bool(self._section_cfg["enabled"]
+                    and self._clip_workdir
+                    and self._clip_settings
+                    and not (self._source_path and os.path.exists(self._source_path)))
+
     # 元動画の全長 (秒)。取れなければ 0.0 = 上限チェックをしない。
     # ffprobe を毎回叩かないよう 1 度だけ測る。
     def _vod_duration_sec(self):
@@ -502,10 +523,20 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._section_worker.failed.connect(self._on_section_failed)
         self._section_worker.start()
 
+    # 進捗の反映 (docs/error/fromUser/resolve.md §9-3)
+    #
+    # **setValue() を最後に呼ぶ**こと。モーダルの QProgressDialog の setValue() は
+    # 内部で processEvents() を回すため、その最中に完了通知が届いて
+    # _on_section_ready → _close_section_progress が走り、
+    # self._section_progress が None になる。先に setValue() を呼ぶと、
+    # 戻ってきた直後の行で None を触って落ちる (2026-10-22 の報告)。
+    # 値の更新を最後に置けば、再入から戻った先に触るものが無くなる。
     def _on_section_progress(self, ratio, label):
-        if self._section_progress is not None:
-            self._section_progress.setValue(int(max(0.0, min(ratio, 1.0)) * 100))
-            self._section_progress.setLabelText(label)
+        dialog = self._section_progress
+        if dialog is None:
+            return
+        dialog.setLabelText(label)
+        dialog.setValue(int(max(0.0, min(ratio, 1.0)) * 100))
 
     # キャンセルは工程の切れ目でのみ効く (音声認識は途中で止められない / §3-5)
     def _on_section_cancel(self):

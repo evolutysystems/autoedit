@@ -6,13 +6,17 @@ import shutil
 import subprocess
 import sys
 
-from ..exceptions import FFmpegError
+from ..exceptions import DiskSpaceError, FFmpegError
 from ..i18n import tr
+from ..utils import disk
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
 from ..utils.progress import run_ffmpeg_progress
 
 _logger = get_logger(__name__)
+
+# -version の応答を待つ上限 (秒)。起動確認だけなので短くてよい。
+_VERSION_TIMEOUT_SEC = 20
 
 
 # 凍結配布物で同梱物を探索する基準ディレクトリ一覧を返す (error 20260708)
@@ -97,10 +101,80 @@ def ensure_available(ffmpeg_settings):
         if not (os.path.isfile(exe) or shutil.which(exe)):
             raise FFmpegError(
                 tr("FFmpeg 実行ファイルが見つかりません: {path}", path=exe))
+    # 「在る」だけでなく「起動できる」ことまで確かめる
+    # (docs/error/fromUser/resolve.md §6-12-4)。
+    # セキュリティソフトに隔離された・ランタイムが欠けている場合、
+    # 実体はあるのに起動だけが失敗し、stderr も空のまま probe が落ちる。
+    # 原因を名指しできないと切り分けに何日もかかるため、ここで弾く。
+    _ensure_runnable(get_ffprobe_exe(ffmpeg_settings))
+
+
+# 実行ファイルが実際に起動できるかを -version で確かめる (resolve.md §6-12-4)
+def _ensure_runnable(exe):
+    try:
+        result = subprocess.run(
+            [exe, "-version"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            creationflags=no_window_creationflags(), timeout=_VERSION_TIMEOUT_SEC)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise FFmpegError(
+            tr("FFmpeg を起動できません: {path} ({error})\n"
+               "セキュリティソフトに隔離されていないか確認してください。",
+               path=exe, error=e)) from e
+    if result.returncode != 0:
+        raise FFmpegError(
+            tr("FFmpeg を起動できません: {path} (returncode={code})\n"
+               "セキュリティソフトに隔離されていないか確認してください。",
+               path=exe, code=result.returncode))
+
+
+# probe の前に対象ファイルの状態を確かめる (docs/error/fromUser/resolve.md §6-12-1)
+#
+# 従来は状態を見ずに ffprobe へ渡していたため、何が起きても
+# 「ffprobe が失敗」の 1 行しか出ず、対象すら分からなかった (2026-10-22 の報告)。
+# 失敗の大半は「無い」「0 バイト」「開けない」のいずれかなので、
+# ffprobe を呼ぶ前に名指しできるものは名指しする。
+def _ensure_probeable(input_path):
+    path = str(input_path or "")
+    if not path:
+        raise FFmpegError(tr("対象ファイルが指定されていません"))
+    if not os.path.exists(path):
+        raise FFmpegError(tr("対象ファイルがありません: {path}", path=path))
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        raise FFmpegError(
+            tr("対象ファイルを開けません: {path} ({error})", path=path, error=e)) from e
+    if size <= 0:
+        raise FFmpegError(tr("対象ファイルが空です (0 バイト): {path}", path=path))
+
+
+# ffprobe の失敗を、原因を追える情報を添えた例外にする (resolve.md §6-12-2)
+# stderr が空になる失敗 (プロセス起動の失敗など) でも、
+# 対象パス・サイズ・returncode だけは必ず残す。
+def _probe_failure(cmd, input_path, result):
+    try:
+        size = os.path.getsize(input_path)
+    except OSError:
+        size = -1
+    message = tr(
+        "ffprobe が失敗しました (returncode={code})\n"
+        "  対象 : {path}\n"
+        "  容量 : {size}",
+        code=result.returncode, path=input_path,
+        size=(f"{size:,} バイト" if size >= 0 else "?"))
+    _logger.error("%s / stderr=%s", message, (result.stderr or "").strip() or "(空)")
+    return FFmpegError(
+        message,
+        command=cmd,
+        stderr_tail=result.stderr,
+        returncode=result.returncode,
+    )
 
 
 # 動画の総再生時間を ffprobe で取得する
 def probe_duration(input_path, ffmpeg_settings):
+    _ensure_probeable(input_path)
     ffprobe = get_ffprobe_exe(ffmpeg_settings)
     cmd = [
         ffprobe,
@@ -120,12 +194,7 @@ def probe_duration(input_path, ffmpeg_settings):
         raise FFmpegError(tr("ffprobe 実行に失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
-        raise FFmpegError(
-            tr("ffprobe が失敗"),
-            command=cmd,
-            stderr_tail=result.stderr,
-            returncode=result.returncode,
-        )
+        raise _probe_failure(cmd, input_path, result)
 
     try:
         data = json.loads(result.stdout)
@@ -160,6 +229,7 @@ def _extract_rotation(stream):
 # 動画の表示寸法(回転適用後の幅・高さ)を ffprobe で取得する (request14)
 # 戻り値: (width, height)。取得・解析失敗時は FFmpegError を送出する。
 def probe_dimensions(input_path, ffmpeg_settings):
+    _ensure_probeable(input_path)
     ffprobe = get_ffprobe_exe(ffmpeg_settings)
     cmd = [
         ffprobe,
@@ -179,10 +249,7 @@ def probe_dimensions(input_path, ffmpeg_settings):
         raise FFmpegError(tr("ffprobe 実行に失敗: {error}", error=e)) from e
 
     if result.returncode != 0:
-        raise FFmpegError(
-            tr("ffprobe が失敗"), command=cmd,
-            stderr_tail=result.stderr, returncode=result.returncode,
-        )
+        raise _probe_failure(cmd, input_path, result)
 
     try:
         streams = json.loads(result.stdout).get("streams", [])
@@ -201,6 +268,18 @@ def probe_dimensions(input_path, ffmpeg_settings):
     return width, height
 
 
+# FFmpeg コマンドから出力先 (最後の引数) のフォルダを取り出す。
+# 容量不足を報告するとき「どこが足りないのか」を示すために使う。
+# 推定できなければ現在の作業フォルダを返す (空きの桁が分かれば用は足りる)。
+def _output_path_of(command):
+    try:
+        target = str(command[-1])
+    except (IndexError, TypeError):
+        return os.getcwd()
+    folder = os.path.dirname(os.path.abspath(target))
+    return folder or os.getcwd()
+
+
 # 進捗通知付きで FFmpeg コマンドを実行する
 # 失敗時は FFmpegError を送出
 # progress_timeout_sec : 無進捗タイムアウト秒数 (0 以下で監視無効)
@@ -213,6 +292,15 @@ def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=
     )
     if returncode != 0:
         _logger.error("FFmpeg 失敗 (code=%s): %s", returncode, stderr_tail)
+        # 容量不足は「FFmpeg 実行失敗」ではなく原因そのものを出す
+        # (docs/error/fromUser/resolve.md §6-9)。
+        # DiskSpaceError へ変えることで、呼び出し側の「失敗しても継続」が
+        # この場合だけは働かなくなる (握り潰すと原因から離れた所で症状が出るため)。
+        if disk.looks_like_no_space(stderr_tail):
+            path = _output_path_of(command)
+            raise DiskSpaceError(
+                disk.shortage_message(path, disk.free_bytes(path), None),
+                path=path, free=disk.free_bytes(path))
         raise FFmpegError(
             tr("FFmpeg 実行失敗 (returncode={code})", code=returncode),
             command=command,
