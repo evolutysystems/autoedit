@@ -6,15 +6,29 @@
 #   ・キャンバスからはみ出さないこと (要望「画像がはみ出さないように注意」)
 #   ・アイコンを切っても背景だけが正しく縮むこと
 #   ・ffmpeg のフィルタが「入力を増やさず・位置ごとにまとめる」形になっていること
+#
+# 文字幅は docs/error/20261023/resolve.md §5 案A で**フォントからの実測**へ
+# 変わった。本ファイルの幅に関わるテストは、環境のフォントに左右されないよう
+# **固定係数のフォールバック経路** (_legacy_cfg) を明示して測る。
+# 実測経路の検証は tests/test_comment_bg_width.py にある (同梱フォントを使う)。
 import unittest
 
-from src.modules import comment_decor, subtitle_generator
+from src.modules import comment_decor, font_advance, subtitle_generator
 from src.settings.settings_window import DEFAULT_SETTINGS
 
 
 # 既定設定の字幕セクション (横動画)
 def _cfg(**overrides):
     cfg = dict(DEFAULT_SETTINGS["subtitle"])
+    cfg.update(overrides)
+    return cfg
+
+
+# 文字幅を固定係数で見積もる設定 (resolve.md §5 案A のフォールバック経路)。
+# 環境に入っているフォントに左右されないため、設計書 §6.1 の数値を
+# そのまま測るテストはこちらを使う。
+def _legacy_cfg(**overrides):
+    cfg = _cfg(comment_bg_measure_font=False, comment_bg_include_outline=False)
     cfg.update(overrides)
     return cfg
 
@@ -119,27 +133,29 @@ class CommentBackgroundTest(unittest.TestCase):
 
     def setUp(self):
         comment_decor.reset_warnings()
+        font_advance.reset_cache()
 
-    # 文字幅の推定 (既定係数は Yu Gothic UI の実測に合わせてある)
+    # 文字幅の推定 (フォールバック経路。既定係数は游ゴシック向け)
     def test_text_extent_estimation(self):
-        extent = comment_decor.text_extent(_comment(), _cfg())
+        extent = comment_decor.text_extent(_comment(), _legacy_cfg())
         # 最長行は 14 文字 x 0.78 x 48px = 524.16 → 525 / 2 行 x 48 x 1.2 → 116
         self.assertEqual((extent["width"], extent["height"], extent["lines"]),
                          (525, 116, 2))
+        self.assertFalse(extent["measured"])
 
     def test_half_width_characters(self):
-        extent = comment_decor.text_extent(_comment(text="abcd"), _cfg())
+        extent = comment_decor.text_extent(_comment(text="abcd"), _legacy_cfg())
         self.assertEqual(extent["width"], 87)      # 4 文字 x 0.45 x 48 = 86.4
 
-    # 係数を上げれば箱も広がる (等幅フォントへ切り替えたときの調整口)
+    # 係数を上げれば箱も広がる (実測できないフォントの調整口)
     def test_width_coefficient_is_configurable(self):
         extent = comment_decor.text_extent(
-            _comment(), _cfg(comment_bg_char_width_full=1.0))
+            _comment(), _legacy_cfg(comment_bg_char_width_full=1.0))
         self.assertEqual(extent["width"], 672)     # 14 文字 x 1.0 x 48
 
     # 設計書 §6.1 の箱 (左端 16 / 角丸 24)
     def test_background_box_landscape(self):
-        box = comment_decor.background_box(_comment(), _cfg(), 1920, 1080)
+        box = comment_decor.background_box(_comment(), _legacy_cfg(), 1920, 1080)
         self.assertEqual(box["x"], 16.0)           # アイコン左端 40 - 余白 24
         self.assertEqual(box["y"], 441.0)          # 540 - 75(アイコンの半分) - 24
         self.assertEqual(box["w"], 773.0)          # (文字右端 765 - 40) + 24*2
@@ -147,11 +163,24 @@ class CommentBackgroundTest(unittest.TestCase):
         self.assertEqual(box["radius"], 24)
         self.assertFalse(box["clamped"])
 
-    # アイコンを切ると箱は文字だけを囲う (左端 = 文字左 190 - 余白 24)
+    # アイコンを切ると箱は文字だけを囲う (左端 = 文字左 240 - 余白 24)
     def test_background_without_icon(self):
         box = comment_decor.background_box(
-            _comment(), _cfg(comment_icon_enabled=False), 1920, 1080)
+            _comment(), _legacy_cfg(comment_icon_enabled=False), 1920, 1080)
         self.assertEqual(box["x"], 216.0)
+
+    # 縁取りの張り出しを箱に入れる (resolve.md §4 原因C)。
+    # 文字の左右へ outline_width ぶん広がる。
+    def test_outline_bleed_widens_the_box(self):
+        plain = comment_decor.background_box(
+            _comment(), _legacy_cfg(comment_icon_enabled=False), 1920, 1080)
+        bleed = comment_decor.background_box(
+            _comment(),
+            _legacy_cfg(comment_icon_enabled=False,
+                        comment_bg_include_outline=True, outline_width=10),
+            1920, 1080)
+        self.assertEqual(bleed["x"], plain["x"] - 10)
+        self.assertEqual(bleed["w"], plain["w"] + 20)
 
     # 角丸半径は短辺の半分を超えない
     def test_radius_is_capped(self):
@@ -159,9 +188,12 @@ class CommentBackgroundTest(unittest.TestCase):
             _comment(text="あ"), _cfg(comment_bg_radius_px=999), 1920, 1080)
         self.assertLessEqual(box["radius"], box["h"] / 2.0)
 
-    # キャンバスに収まらないときは詰める (縦動画の既定値で起きる / §9.0-b)
+    # キャンバスに収まらないときは詰める (§9.0-b)。
+    # resolve.md §5 案A で幅が実測になり、縦動画の既定値 (14 文字) では
+    # もう渢れないため、確実に入らない長さで測る。
     def test_background_clamped_when_too_wide(self):
-        box = comment_decor.background_box(_comment(), _vertical_cfg(), 1080, 1920)
+        long_line = _comment(text="あ" * 40)
+        box = comment_decor.background_box(long_line, _vertical_cfg(), 1080, 1920)
         self.assertTrue(box["clamped"])
         self.assertLessEqual(box["x"] + box["w"], 1080)
 

@@ -11,6 +11,7 @@ import sys
 import unicodedata
 
 from ..utils.logger import get_logger
+from . import font_advance
 
 _logger = get_logger(__name__)
 
@@ -101,37 +102,82 @@ def _font_size(item, eff_cfg):
     return _to_int((eff_cfg or {}).get("font_size"), 48) or 48
 
 
+# 字幕 1 件のフォント名 (個別指定 > 設定の既定)
+def _font_family(item, eff_cfg):
+    name = str((item or {}).get("font", "") or "").strip()
+    if name:
+        return name
+    return str((eff_cfg or {}).get("font_family", "") or "").strip()
+
+
+# フォントから読んだ送り幅 (docs/error/20261023/resolve.md §5 案A)。
+# 読めない / 設定で切った場合は None を返し、従来の固定係数へ落ちる。
+def _font_metrics(item, eff_cfg):
+    if not (eff_cfg or {}).get("comment_bg_measure_font", True):
+        return None
+    # 太字は ASS Style の Bold と同じ設定を渡す (太字の書髒を持つフォントでは
+    # 英数字の送り幅がウェイトで違うため)
+    return font_advance.metrics_for(
+        _font_family(item, eff_cfg), eff_cfg,
+        bold=bool((eff_cfg or {}).get("bold", False)))
+
+
+# 縁取りが字形の左右へ張り出す量 (px / resolve.md §4 原因C)
+# ASS の Outline は字形の外側へ付くため、送り幅だけでは箱が足りない。
+def _outline_bleed(eff_cfg):
+    if not (eff_cfg or {}).get("comment_bg_include_outline", True):
+        return 0.0
+    return max(_to_float((eff_cfg or {}).get("outline_width"), 0.0), 0.0)
+
+
 # 表示される行の一覧 (ASS の改行 \N / \n と実改行をすべて改行として扱う)
 def _lines(text):
     normalized = str(text or "").replace("\\N", "\n").replace("\\n", "\n")
     return normalized.split("\n")
 
 
-# 文字の外接矩形を推定する (§3 D-10)
-# 【重要】実測ではなく推定。文字の実寸を決めるのは libass で Python からは測れないため、
-#   日本語ゴシックが全角 = 1em の等幅に近いことを利用して font_size 比で見積もる。
-#   プレビュー(Qt)も焼き込みも「この推定値だけ」を見るので、両者は必ず一致する。
-#   ASS ヘッダは WrapStyle: 2 (自動折り返し無し) のため、行数は \N の数 + 1 で厳密。
-# 戻り値 {"width": px, "height": px, "lines": 行数}
+# 文字の外接矩形を求める (§3 D-10 / docs/error/20261023/resolve.md §5 案A)
+#
+# 幅はフォントファイルから読んだ送り幅で求める:
+#     Σ送り幅(em) x (unitsPerEm / (usWinAscent + usWinDescent)) x font_size
+# 第 2 項は libass の縮尺である。libass は「usWinAscent + usWinDescent が
+# Fontsize になる」ようスケールするため、Fontsize = em ではない
+# (resolve.md §3-1)。この式は libass の実出力と +2〜+10px
+# (= わずかに広い側) で一致する。
+#
+# フォントを読めない / comment_bg_measure_font=false のときは、従来どおり
+# 固定係数 (comment_bg_char_width_full / _half) で見積もる。固定係数は
+# フォントごとに必要な値が 1.5 倍違うため、合わないフォントでは
+# 文字が背景からはみ出る (報告された不具合そのもの / resolve.md §3-2)。
+#
+# プレビュー(Qt)も焼き込みも「ここで求めた値だけ」を見るので、両者は必ず一致する。
+# ASS ヘッダは WrapStyle: 2 (自動折り返し無し) のため、行数は改行の数 + 1 で厳密。
+# 戻り値 {"width": px, "height": px, "lines": 行数, "measured": 実測で求めたか}
 def text_extent(item, eff_cfg, text=None):
     raw = text if text is not None else (item or {}).get("text", "")
     lines = _lines(raw)
     size = _font_size(item, eff_cfg)
-    full = _to_float((eff_cfg or {}).get("comment_bg_char_width_full"), 1.0)
-    half = _to_float((eff_cfg or {}).get("comment_bg_char_width_half"), 0.5)
     ratio = _to_float((eff_cfg or {}).get("comment_bg_line_height_ratio"), 1.2)
+    metrics = _font_metrics(item, eff_cfg)
 
     widest = 0.0
-    for line in lines:
-        em = 0.0
-        for char in line:
-            em += full if _is_full_width(char) else half
-        widest = max(widest, em * size)
-    # 推定は必ず切り上げる (狭い側に外すと文字が背景からはみ出して見えるため)
+    if metrics is not None:
+        for line in lines:
+            widest = max(widest, metrics.text_width(line, size))
+    else:
+        full = _to_float((eff_cfg or {}).get("comment_bg_char_width_full"), 1.0)
+        half = _to_float((eff_cfg or {}).get("comment_bg_char_width_half"), 0.5)
+        for line in lines:
+            em = 0.0
+            for char in line:
+                em += full if _is_full_width(char) else half
+            widest = max(widest, em * size)
+    # 必ず切り上げる (狭い側に外すと文字が背景からはみ出て見えるため)
     return {
         "width": int(math.ceil(widest)),
         "height": int(math.ceil(len(lines) * size * ratio)),
         "lines": len(lines),
+        "measured": metrics is not None,
     }
 
 
@@ -221,9 +267,11 @@ def _background_box_raw(item, eff_cfg, canvas_w, canvas_h, text=None):
     text_left, text_mid = _text_anchor(item, eff_cfg, canvas_w, canvas_h, extent)
     icon = _icon_box_raw(item, eff_cfg, canvas_w, canvas_h)
 
-    # 中身 (アイコン + 文字) の外接矩形を求めてから内側余白を足す
-    left = min(icon["x"], text_left) if icon else text_left
-    right = text_left + extent["width"]
+    # 中身 (アイコン + 文字) の外接矩形を求めてから内側余白を足す。
+    # 文字は縁取りのぶん字形の左右へ張り出す (resolve.md §4 原因C)。
+    bleed = _outline_bleed(eff_cfg)
+    left = min(icon["x"], text_left - bleed) if icon else text_left - bleed
+    right = text_left + extent["width"] + bleed
     half = max(extent["height"] / 2.0, (icon["size"] / 2.0) if icon else 0.0)
     x = left - pad
     y = text_mid - half - pad

@@ -216,6 +216,11 @@ DEFAULT_SETTINGS = {
         # 追加フォント格納ディレクトリ (resolve16 §4.5)。SETTINGS_DIR 相対で解決する。
         # 既定 "fonts" = settings/fonts。全実行で共有する。
         "custom_fonts_dir": "fonts",
+        # フォントファイルの追加の探索先 (絶対パスの一覧 /
+        # docs/error/20261023/resolve.md §5 案A)。
+        # comment_bg_measure_font が送り幅を読むときに、custom_fonts_dir と
+        # OS のフォントフォルダの次に見る。既定は空。
+        "font_file_dirs": [],
         # 改行設定 (request11): BudouX による文節改行を既定とし、下限〜上限で折り返す
         "wrap_engine": "budoux",
         "min_line_length": 15,
@@ -258,15 +263,25 @@ DEFAULT_SETTINGS = {
         "comment_bg_color": "&H80000000",  # 黒・透明度50% (ASS &HAABBGGRR / AA=80)
         "comment_bg_radius_px": 24,
         "comment_bg_padding_px": 24,
-        # 文字幅の推定係数 (libass の実寸は測れないため font_size 比で見積もる)
-        # 既定は同梱の既定フォント (Yu Gothic UI) で実測した値。
-        # 1 文字あたりの実測値 (font_size 比 / フォントサイズ48で計測):
-        #   Yu Gothic UI  全角 0.55(かな)〜0.75(漢字) / 半角 0.33〜0.41
-        #   Yu Gothic     全角 0.75〜0.77           / 半角 0.35〜0.48
-        #   Meiryo        全角 0.65〜0.67           / 半角 0.32〜0.42
-        #   MS Gothic     全角 0.97〜0.99           / 半角 0.48〜0.50 ← 等幅なので要調整
-        # 背景が文字より狭くなる (文字がはみ出す) 場合はこの値を上げる。
-        # MS ゴシック等の等幅フォントを使うときは 1.0 / 0.5 にする。
+        # 文字幅をフォントファイルから読んで求める
+        # (docs/error/20261023/resolve.md §5 案A)。
+        # true = 送り幅 (hmtx) と libass の縮尺
+        #        (unitsPerEm / (usWinAscent + usWinDescent)) から計算する。
+        # false = 下の固定係数で見積もる (従来の動き)。
+        "comment_bg_measure_font": True,
+        # 縁取り (outline_width) が字形の左右へ張り出すぶんを箱に入れる
+        "comment_bg_include_outline": True,
+        # 文字幅の推定係数 (comment_bg_measure_font=false 、または
+        # フォントファイルを読めなかったときのふしどころ)。
+        #
+        # この係数は**フォントごとに必要な値が 1.5 倍違う**ため、
+        # 全フォントで正しい値は存在しない (resolve.md §3-2)。
+        # 全角に必要な値 = unitsPerEm / (usWinAscent + usWinDescent):
+        #   07にくまるフォント 0.926 / 游ゴシック 0.777
+        #   メイリオ           0.667 / MS ゴシック 1.000
+        # 半角は英数字がプロポーショナルなフォントでは文字ごとに違う
+        # (にくまるフォントの W は 0.926em、i は 0.366em)。
+        # 既定は游ゴシック向けの値。背景が文字より狭くなる場合は上げる。
         "comment_bg_char_width_full": 0.78,
         "comment_bg_char_width_half": 0.45,
         "comment_bg_line_height_ratio": 1.2,
