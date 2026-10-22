@@ -12,6 +12,7 @@ from datetime import datetime
 from ..exceptions import TimelineError
 from ..i18n import tr
 from ..utils.logger import get_logger
+from .builder import recent_key, recent_path
 from .model import (
     BASE_AUDIO_TRACK_ID,
     MediaRef,
@@ -914,16 +915,16 @@ def delete_project(path, timeline_cfg=None, delete_media_dir=True, use_trash=Tru
 # 履歴 (recent / recent_archive) からパスを取り除く。戻り値: 変更があったか
 def forget_recent(settings, path, new_path=None):
     project_cfg = (settings or {}).setdefault("timeline", {}).setdefault("project", {})
-    target = os.path.normcase(os.path.abspath(str(path)))
+    target = recent_key(path)
     changed = False
     for key in ("recent", "recent_archive"):
         entries = [str(p) for p in (project_cfg.get(key) or []) if p]
         updated = []
         for entry in entries:
-            if os.path.normcase(os.path.abspath(entry)) == target:
+            if recent_key(entry) == target:
                 changed = True
                 if new_path:
-                    updated.append(os.path.abspath(new_path))
+                    updated.append(recent_path(new_path))
                 continue
             updated.append(entry)
         if changed:

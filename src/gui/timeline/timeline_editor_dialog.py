@@ -43,6 +43,7 @@ from ...i18n import tr
 from ...services import config as services_config
 from ...settings.settings_window import save_settings
 from ...timeline import commands, media_sidecar, project_io
+from ...timeline.builder import dedupe_recent, recent_path
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
 from ...version import __version__
@@ -860,6 +861,9 @@ class TimelineEditorDialog(QDialog):
                    suffix=suffix))
             if not target:
                 return False
+        # QFileDialog は Windows でも "/" 区切りで返すため、ここで書き方をそろえる
+        # (そのまま覚えると履歴に "/" 版と "\" 版の 2 行が並ぶ / resolve.md §9-8)
+        target = recent_path(target)
         if self._created_at is None:
             # 初回保存の時刻を覚え、2 回目以降の上書きで作成時刻が動かないようにする
             self._created_at = datetime.now().isoformat(timespec="seconds")
@@ -1089,8 +1093,9 @@ class TimelineEditorDialog(QDialog):
             project_cfg = self._settings.setdefault("timeline", {}).setdefault("project", {})
             key = ("recent_archive" if self._project_kind() == project_io.KIND_ARCHIVE
                    else "recent")
-            recent = [p for p in (project_cfg.get(key) or []) if p and p != path]
-            recent.insert(0, path)
+            # 区切り文字・大文字小文字の違いで同じプロジェクトを二重に積まない
+            # (既に入っている重複もここで畳まれる / resolve.md §9-8)
+            recent = dedupe_recent([path] + list(project_cfg.get(key) or []))
             limit = max(int(self._project_cfg["recent_limit"]), 1)
             project_cfg[key] = recent[:limit]
             save_settings(self._settings)

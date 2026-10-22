@@ -292,6 +292,43 @@ def _dock_area(value):
 
 
 # timeline セクションの設定を既定値で補完して返す (§9)
+# ------------------------------------------------------------------
+# 最近使ったプロジェクトの履歴 (docs/error/fromUser/resolve.md §9-8)
+# ------------------------------------------------------------------
+#
+# QFileDialog は Windows でも "/" 区切りのパスを返す。そのまま履歴へ積むと、
+# パイプラインが os.path.join で組んだ "\" 区切りのパスと別物に見えてしまい、
+# 同じプロジェクトが 2 行並ぶ (2026-10-22 の setting.json で実際に起きていた)。
+# 覚えるときに書き方をそろえ、突き合わせは大文字小文字も無視する
+# (Windows のパスは大文字小文字を区別しない)。
+
+
+# 履歴へ積む形へそろえたパス
+def recent_path(path):
+    return os.path.normpath(os.path.abspath(str(path or "")))
+
+
+# 同じプロジェクトかを突き合わせるための鍵
+def recent_key(path):
+    return os.path.normcase(recent_path(path))
+
+
+# 履歴の一覧から重複を落として書き方をそろえる (並び順はそのまま)
+def dedupe_recent(entries):
+    seen = set()
+    result = []
+    for entry in (entries or []):
+        if not entry:
+            continue
+        full = recent_path(entry)
+        key = os.path.normcase(full)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(full)
+    return result
+
+
 def timeline_config(settings):
     cfg = (settings or {}).get("timeline", {}) or {}
     ui = cfg.get("ui", {}) or {}
@@ -338,6 +375,10 @@ def timeline_config(settings):
             # アーカイブ切り抜き用の keep_media (resolve.md §6-6)。
             # 既定 true = クリップ映像もプロジェクトの隣へ置き、元 VOD へ依存させない。
             "archive_keep_media": bool(project.get("archive_keep_media", True)),
+            # 保存時にイントロカードの素も隣へ残す (resolve.md §9-7)。
+            # 既定 true = 元 VOD を手放してもイントロカードを作れる。
+            "archive_keep_intro_source": bool(
+                project.get("archive_keep_intro_source", True)),
             "media_dir_suffix": str(project.get("media_dir_suffix", ".media")
                                     or ".media"),
             "autosave_suffix": str(project.get("autosave_suffix", ".autosave.json")
@@ -347,10 +388,10 @@ def timeline_config(settings):
                                      if str(project.get("missing_media_policy", "")).strip()
                                      == "use_source" else "renormalize"),
             "recent_limit": _positive_int(project.get("recent_limit"), 10),
-            "recent": [str(p) for p in (project.get("recent") or []) if p],
+            "recent": dedupe_recent(project.get("recent")),
             # アーカイブ切り抜き用の保存・一覧 (ver3 resolve9 §3-4 / §3-5)
             "archive_suffix": str(project.get("archive_suffix", ".archive") or ".archive"),
-            "recent_archive": [str(p) for p in (project.get("recent_archive") or []) if p],
+            "recent_archive": dedupe_recent(project.get("recent_archive")),
             # 保存時に正規化済み音声をプロジェクトの隣へ残す (ver3 resolve9 §3-1 案D)
             "keep_audio": bool(project.get("keep_audio", True)),
             "sidecar_tolerance_sec": _positive_float(

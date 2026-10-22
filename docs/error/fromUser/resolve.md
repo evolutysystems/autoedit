@@ -1059,6 +1059,369 @@ else:
 上記の修正で孤児は新たに生まれないため、現時点では不要と判断した
 （必要になれば「保存時にゴミ箱へ送る」形になるが、削除を伴うため改めて確認を取る）。
 
+### 9-6. 実機確認で見つかった不具合（自己完結プロジェクトが開けない / 2026-10-22）
+
+#### 症状
+
+アーカイブ切り抜きを**新規に実行して保存**し、あらためて「編集の続き」から
+同じプロジェクトを開くと「**素材が見つかりません**」の画面が出て先へ進めない。
+
+利用者が「参照...」で確かめたところ、素材はすべて揃っていた:
+
+```
+%LOCALAPPDATA%\Stretheus\archive_work\
+  vod_2905853277.archive.timeline.json          287 KB
+  vod_2905853277.archive.media\
+    m1_normalized.mp4   39.0 MB
+    m2_normalized.mp4  115.9 MB
+    m3_normalized.mp4   38.7 MB
+    m4_normalized.mp4   77.3 MB
+    m5_normalized.mp4   38.8 MB
+    m6_normalized.mp4   38.8 MB
+    m7_normalized.mp4   38.7 MB        ← m1〜m7 すべて実在
+```
+
+プロジェクト JSON を読み直して突き合わせると、`media_pool` の 7 件は
+**全件そのままのパスで実在する**（参照切れ 0 件）。
+無いのは元 VOD 1 本だけだった:
+
+```
+source.input_path       = …\archive_work\vod_2905853277.mp4   → 存在しない
+source.archive.vod_path = …\archive_work\vod_2905853277.mp4   → 存在しない
+```
+
+#### 原因（§6-6 の副作用。素材の問題ではない）
+
+`archive/project_resume.py` は、**素材を復旧する前に元 VOD を必須にしている**。
+
+```python
+# _run_from_archive_project
+timeline, meta = project_io.load_project(load_path, …, validate_timeline=False)
+…
+# 元 VOD が見つからなければ差し替えを尋ねる (無いと映像を復元できない)
+_ensure_vod(timeline, relink_callback)        # ← ここで止まる
+…
+media_recovery.recover(timeline, …)           # ← ここまで到達しない
+```
+
+`_ensure_vod` は VOD が無いと `relink_callback` を呼ぶ。GUI では
+`MediaRelinkBridge` → `MissingMediaDialog` で、この画面の見出しが
+「素材が見つかりません」である。つまり**素材ではなく VOD を尋ねていた**のに、
+文言のうえでは素材が足りないように見えていた。
+
+VOD が消えているのは不具合ではなく、§6-6 でそう決めたとおりの動きである。
+
+1. 保存時に `archive_keep_media`（既定 `true`）が `.media/` へ映像素材を複製する
+2. `vod_retention.is_self_contained()` が「`.media/` に映像がある = 自己完結」と判定する
+3. 次の起動で `archive_tab._sweep_old_sources()` が元 VOD をゴミ箱へ送る
+
+```
+# 判定の根拠は .media/ の中身（音声サイドカーだけでは不足）
+return any(name.lower().endswith(_VIDEO_SUFFIXES) for name in names)
+```
+
+**「元 VOD を手放せるようにするために素材を隣へ置く」のに、
+置いた素材を見る前に元 VOD を要求していた**ため、§6-6 を入れた環境では
+新規実行 → 保存 → 再起動 → 「編集の続き」が必ずこの画面で止まる。
+
+`_ensure_vod` が書かれた時点（ver3 resolve9 §5.7）の既定は `keep_audio`
+（音声だけ保存・映像は開くときに VOD から切り直す）だったため、
+「VOD が無ければ何も復元できない」は当時は正しかった。
+`archive_keep_media` を既定にした §6-6 で前提が変わったが、ここが追従していない。
+
+#### 被害
+
+- 自己完結プロジェクト（= §6-6 の狙いどおりに運用した場合）が**一切開けない**
+- 画面に出るのは「素材が見つかりません」で、利用者には理由が分からない
+- `MissingMediaDialog` は実在する任意の動画を受け付けるため、
+  ここで `.media\m1_normalized.mp4` を選ぶと**それを元 VOD として切り直す**
+  （区間が合わず、別のクリップの中身が入った素材が出来る）。
+  利用者の「参照すると .media の中にファイルがある」という確認は、
+  まさにこの誤選択の一歩手前だった。
+
+#### 修正: 元 VOD は「要るときだけ」尋ねる
+
+開く前の必須チェックをやめ、**実際に VOD から切り直す素材が出てきた時点で**
+初めて解決する（遅延評価 + 記憶）。判定順は `media_recovery.recover` が既に持っている:
+
+```
+① media.path がそのまま在る        → .media/ の複製はここで終わる（VOD 不要）
+② プロジェクトからの相対パスで在る → フォルダごと移した場合もここ（VOD 不要）
+③' source_recover (= 本件)         → ここで初めて VOD が要る
+```
+
+`project_resume.py`:
+
+- `_run_from_archive_project` から `_ensure_vod` の事前呼び出しを外す
+- `make_vod_resolver(timeline, relink_callback)` を追加する
+  （1 回目の呼び出しで `_ensure_vod` を通し、結果を覚える。
+  解決できなければ従来と同じ `InputError` を投げる）
+- `make_media_recover(..., vod_resolver=None)` を追加し、
+  `recover_one` の中で `_vod_path(source)` の代わりに呼ぶ
+  （`vod_resolver` 未指定なら従来どおり。CLI・テストの既存呼び出しは無改造で動く）
+
+```python
+def recover_one(media, source):
+    entry = archive_timeline.archive_media_entry(timeline, media.id)
+    if entry is None:
+        return None                 # アーカイブのクリップ素材ではない
+    vod = vod_resolver() if vod_resolver is not None else _vod_path(source)
+```
+
+これで
+
+- 自己完結プロジェクト（`archive_keep_media`）→ VOD を尋ねずに開ける
+- `keep_audio` だけのプロジェクト → 従来どおり VOD を尋ね、無ければ
+  「元の配信アーカイブ（VOD）が見つかりません」で止まる（文言も従来どおり）
+
+#### あわせて直す: VOD が無いときのイントロカード
+
+テーマ付きクリップのイントロカードは、クリップ開始の `buffer_sec` 秒**手前**の
+映像から作る（`clip_writer._build_intro_card`）。この区間は素材（`vod_start` 始まり）
+には含まれないため、**元 VOD が無いと作れない**。
+
+現状は ffmpeg が失敗し `_decorate_clip` が例外を握りつぶすため、
+ログにはスタックトレースだけが残り、理由が読み取れない。
+入力が無いことを先に見て、理由の分かる INFO を出して省略する。
+
+本編・左上テーマタグ・字幕・結合はすべて素材だけで作れるため、
+**失われるのはイントロカードだけ**である。
+
+> **追記（2026-10-22）**: 利用者の指示により、**保存済みプロジェクトでも
+> イントロカードを作れるようにした**（→ §9-7）。保存時にイントロの素
+> （クリップ開始の直前 `buffer_sec` 秒 / 約 3 MB）だけを `.media/` へ控え、
+> 元 VOD が無ければそちらを使う。省略へ落ちるのは、控えも元 VOD も無い
+> （この修正より前に保存した）プロジェクトだけになった。
+
+#### 残る確認事項（推測実装しない）
+
+- ~~イントロカードを保存済みプロジェクトでも作りたい場合~~
+  → **§9-7 で対応済み**（保存時にイントロ用の数秒だけ別ファイルで残す案を採った）。
+- `MissingMediaDialog` で「元 VOD」を尋ねるとき、素材用の文言のままでよいか
+  （本修正でこの画面が VOD のために出るのは `keep_audio` 運用だけになる）。
+
+#### 回帰テスト
+
+`tests/test_archive_resume_without_vod.py`
+
+- `.media/` に素材が揃っていれば、元 VOD が無くても開ける（再リンクを 1 度も尋ねない）
+- 素材が無いプロジェクトは従来どおり VOD を尋ね、答えが無ければ `InputError`
+- 尋ねた答えは `source.input_path` と `archive.vod_path` の両方へ書き戻る（回答 Q7 のまま）
+
+### 9-7. 保存済みプロジェクトでもイントロカードを作る（2026-10-22）
+
+#### §9-6 で先送りした「残る確認事項」への回答
+
+利用者の指示: **保存済みプロジェクトでもイントロカードを作れるようにする。**
+
+あわせて「イントロカードは Timeline 画面の決定ボタン押下後に作っていたのでは?」
+という確認を受けた。**その認識は正しい。** 作るのは決定ボタンの後である:
+
+```
+result_callback (= Timeline 画面) が返る            ← 決定ボタン
+  → clip_writer.finish_clips(input_path, …)
+      → _render_clips / _burn_clips
+          → _decorate_clip(input_path, …)
+              → _build_intro_card(source=input_path, clip_start=clip["start"], …)
+                    ffmpeg -ss (clip_start - buffer_sec) -t buffer_sec -i <input_path>
+```
+
+§9-6 で問題にしたのは**タイミングではなく素 (入力)** である。
+`source` は `input_path` = **元 VOD** で、`clip_start` は **VOD 内の絶対秒**。
+つまりイントロカードは「VOD のクリップ開始より手前」を切って作っており、
+その区間は**クリップ素材に 1 フレームも入っていない**。
+
+```
+VOD    ───────────┬──────────────────────┬───────────────
+                  │                      │
+         vod_start - buffer_sec      vod_start            vod_end
+                  └─ イントロの素 ──────┘└─ クリップ素材 (cut_region) ──┘
+                     (素材には入らない)
+```
+
+そのため、決定ボタンの後に作っていても、元 VOD を手放した時点で素が無くなる。
+
+#### 方針: 保存時に「その数秒だけ」控えておく
+
+音声サイドカー（§3-1 案D）と同じ考え方で、**イントロの素だけ**を
+`<プロジェクト名>.media/<media_id>_intro.mp4` へ残す。
+既定 `buffer_sec = 3.0` 秒ぶんなので、素材 1 本（39〜116 MB の実測）に対して
+**3 MB 程度**で済む。
+
+採らなかった案:
+
+- **切り出しを `buffer_sec` 秒手前からにする**（素材の先頭にイントロ区間を含める）
+  → `archive.media.vod_start` は素材の先頭 = VOD の時刻という前提で、
+  `media_vod_ranges` / 無音カットの区間 / ぼかし / 字幕がすべてこれに乗っている。
+  全素材の時間軸が `buffer_sec` ずれるため、保存済みプロジェクトとの互換も壊れる。
+- **保存時に完成したイントロカードを作る**
+  → テーマは保存後にも変えられるため、作り直しの口が無くなる。
+
+#### 実装
+
+**① 控えを作る（`src/archive/clip_writer.py`）**
+
+```python
+INTRO_SOURCE_SUFFIX = config.INTRO_SOURCE_SUFFIX     # "_intro.mp4"
+
+def intro_source_path(media_dir, media_id): …        # 置き場を組む
+def existing_intro_source(media_dir, media_id): …    # 既に在れば返す (0 バイトは無効)
+def export_intro_source(vod_path, clip_start, buffer_sec, dest, ffmpeg_cfg): …
+```
+
+`export_intro_source` は `cut_region`（`-c copy`）ではなく**再エンコード**する。
+`-c copy` はキーフレームまでしか戻れず、開始位置と尺が前後して
+「クリップ開始の直前 `buffer_sec` 秒」にならない。
+`-ss` を `-i` の前に置いた再エンコードはキーフレームから復号して捨てるため、
+元 VOD から直接切るのと**同じ区間がフレーム正確に**得られる。
+
+実測（`testsrc` 12 秒 / GOP 60 / clip_start=5.0 / buffer_sec=3.0）:
+
+```
+控えの尺                       : 3.000 s (期待 3.000)
+控えの先頭 vs VOD の 2.0 秒     : PSNR 54.99 dB   ← 一致 (差は再エンコードぶんだけ)
+控えの先頭 vs VOD の 2.5 秒     : PSNR 20.52 dB   ← 別フレーム
+控えの 2.9 秒 vs VOD の 4.9 秒  : PSNR 50.11 dB   ← 一致
+控えの 2.9 秒 vs VOD の 5.4 秒  : PSNR 18.84 dB   ← 別フレーム
+```
+
+**② 保存時に残す（`src/gui/timeline/`）**
+
+`save_project` に種別ごとのフックを足す（既定は何もしない）:
+
+```python
+if self._keep_media_for_kind():
+    self._copy_media_beside_project(target)
+    self._keep_extra_beside_project(target)      # ← 追加
+```
+
+`ArchiveTimelineDialog._keep_extra_beside_project` が素材 1 本ごとに
+`archive.media` の `vod_start` を引いて控えを作る。
+既に在るものは作り直さない（保存のたびに ffmpeg を回さない / §9-5 と同じ考え方）。
+元 VOD が既に無いときは何もしない（既存の控えはそのまま使う）。
+
+**③ 書き出しで使う（`src/archive/`）**
+
+```python
+# _build_intro_card: 素は ① 元 VOD → ② 保存しておいた控え の順
+if source and os.path.exists(source):
+    input_args = ["-ss", f"{start_buf:.3f}", "-i", source, "-t", f"{length:.3f}"]
+elif intro_source and os.path.exists(intro_source):
+    input_args = ["-i", intro_source, "-t", f"{length:.3f}"]   # 既にその区間だけ
+else:
+    …省く (§9-6 の文言つき INFO)
+```
+
+控えのパスは `rebuild_prepared(timeline, media_dir=…)` が
+`prepared["intro_source"]` へ載せ、`clip_meta` 経由で `_decorate_clip` へ渡る。
+**新規実行では元 VOD が在るため従来どおり元 VOD から切る**（挙動は変えない）。
+
+**④ 自己完結の判定から除く（`src/archive/vod_retention.py`）**
+
+`is_self_contained` は `.media/` に `.mp4` が 1 つでもあれば自己完結と判定していた。
+`_intro.mp4` もこれに当たるため、**素材の複製が失敗してイントロの控えだけが
+出来た状態**を自己完結と誤判定し、まだ要る元 VOD を捨てる危険があった。
+`_intro.mp4` は数えないようにする。
+
+#### 設定
+
+`timeline.project.archive_keep_intro_source`（既定 `true`）。
+`archive_keep_media` が `false` のときは何もしない（元 VOD が残るため要らない）。
+`archive.intro_card.enabled` が `false` / `buffer_sec` が 0 のときも作らない。
+
+#### 既にある 2 つのプロジェクトについて
+
+`vod_2904967242` / `vod_2905853277` は、この修正より前に保存したため控えが無い。
+元 VOD は**ゴミ箱にある**ので、戻してから一度上書き保存すれば控えが作られる
+（戻さない場合、この 2 つのイントロカードだけは作れない。本編・左上テーマタグ・
+字幕・結合は素材だけで作れるため影響しない）。
+
+#### 残る確認事項（推測実装しない）
+
+- セクションを削除しても `.media/<media_id>_intro.mp4` は残る（1 件 3 MB 程度）。
+  §9-5 と同じ方針で、参照されていない `.media` 内のファイルを自動で片付ける
+  仕組みは入れていない（削除を伴うため、必要になれば改めて確認する）。
+
+#### 回帰テスト
+
+`tests/test_archive_intro_source.py`（18 件 / ffmpeg はモック）
+
+- 置き場の組み立てと「0 バイトは無効」
+- クリップ開始の直前 `buffer_sec` 秒を**再エンコードで**取ること
+  （`-ss` の値 / `-c copy` でないこと）
+- VOD の先頭でバッファが取れない・`buffer_sec` が 0・元 VOD が無い場合は作らないこと
+- ffmpeg が失敗しても保存を止めず、書きかけを残さないこと
+- `_build_intro_card` が ①元 VOD → ②控え の順で素を選び、どちらも無ければ省くこと
+- イントロの控えだけを自己完結と誤判定しないこと
+- 保存フックが素材 1 本ごとに控えを作り、2 回目の保存では作り直さないこと
+
+`tests/test_archive_resume_without_vod.py` に 2 件追加
+（控えがあれば `prepared["intro_source"]` へ載る / `media_dir` 省略でも壊れない）
+
+---
+
+### 9-8. 「編集の続き」の履歴に同じプロジェクトが 2 行並ぶ（2026-10-22）
+
+#### 症状
+
+`setting.json` の `timeline.project.recent_archive` に同じプロジェクトが 2 行:
+
+```json
+"recent_archive": [
+    "C:/Users/evolu/AppData/Local/Stretheus/archive_work/vod_2905853277.archive.timeline.json",
+    "C:\Users\evolu\AppData\Local\Stretheus\archive_work\vod_2905853277.archive.timeline.json",
+    "C:\Users\evolu\AppData\Local\Stretheus\archive_work\vod_2904967242.archive.timeline.json"
+]
+```
+
+「編集の続き」のコンボ（`project_resume_row._recent`）は設定を直に読むため、
+**同じ名前が 2 行並ぶ**。履歴の枠（`recent_limit`、既定 10）も 1 つ無駄に埋まる。
+
+#### 原因
+
+`QFileDialog` は Windows でも **"/" 区切り**のパスを返す。
+`save_project(ask=True)`（「名前を付けて保存」）で選んだパスはそのまま
+`_remember_recent` へ渡り、突き合わせは**文字列の完全一致**だった。
+
+```python
+recent = [p for p in (project_cfg.get(key) or []) if p and p != path]
+```
+
+パイプラインが `os.path.join` で組んだ "\" 区切りのパスとは別物に見えるため、
+同じプロジェクトが 2 行積まれる。
+
+#### 修正
+
+突き合わせ用の助けを `src/timeline/builder.py` へ置く
+（`project_io` は `builder` を読む側のため、共通の置き場は `builder` になる）。
+
+```python
+def recent_path(path):   # 履歴へ積む形 (normpath + abspath)
+def recent_key(path):    # 突き合わせの鍵 (normcase。Windows は大文字小文字を区別しない)
+def dedupe_recent(entries):  # 重複を落として書き方をそろえる (並び順はそのまま)
+```
+
+適用先:
+
+| 場所 | 変更 |
+|---|---|
+| `save_project` | 保存先を `recent_path()` でそろえる（"/" を持ち込ませない） |
+| `_remember_recent` | `dedupe_recent([path] + 既存)` で積む（**既存の重複もここで畳まれる**） |
+| `timeline_config` | `recent` / `recent_archive` を読む時点で畳む |
+| `project_resume_row._recent` | 生の設定ではなく `timeline_config` 経由で読む |
+| `project_io.forget_recent` | 同じ鍵で突き合わせ、リネーム先も `recent_path()` で書く |
+
+`setting.json` に既に入っていた重複 1 件は、確認のうえ削除した（3 行 → 2 行）。
+
+#### 回帰テスト
+
+`tests/test_recent_project_paths.py`（8 件）
+
+- 区切り文字・大文字小文字の違いを同じプロジェクトとして畳むこと
+- 先に出てきたものを残すこと（新しい順の並びを崩さない）
+- `timeline_config` が読む時点で畳むこと
+- `forget_recent` が区切り文字をまたいで突き合わせ、正規化したパスを書くこと
+
 ---
 
 ## 10. 実装順序（レビュー後）

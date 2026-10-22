@@ -41,11 +41,13 @@ def archive_section(timeline):
 # ------------------------------------------------------------------
 
 # media_recovery.recover へ渡す復旧関数を作る
-# workdir  : 復元先の作業ディレクトリ (クリップごとのサブフォルダを掘る)
-# media_dir: 音声サイドカーの置き場 (<プロジェクト名>.media/。無ければ空文字)
+# workdir     : 復元先の作業ディレクトリ (クリップごとのサブフォルダを掘る)
+# media_dir   : 音声サイドカーの置き場 (<プロジェクト名>.media/。無ければ空文字)
+# vod_resolver: 元 VOD を「要るときだけ」解決するフック (make_vod_resolver / resolve §9-6)。
+#               未指定なら従来どおり source からそのまま引く (CLI・テスト経路)。
 # 戻り値: callable(media, source) -> 復旧したパス / None
 def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=None,
-                       stats=None):
+                       stats=None, vod_resolver=None):
     ffmpeg_cfg = settings.get("ffmpeg", {})
     project_cfg = timeline_config(settings)["project"]
     tolerance = float(project_cfg["sidecar_tolerance_sec"])
@@ -68,7 +70,9 @@ def make_media_recover(timeline, settings, workdir, media_dir="", progress_cb=No
         if entry is None:
             return None                 # アーカイブのクリップ素材ではない (画像など)
 
-        vod = _vod_path(source)
+        # 元 VOD はここで初めて要る。切り直す素材が 1 本も無ければ尋ねない
+        # (自己完結プロジェクトは ① / ② で復旧が終わる / resolve §9-6)。
+        vod = vod_resolver() if vod_resolver is not None else _vod_path(source)
         if not vod:
             _logger.warning("元 VOD が見つからないため素材 %s を復元できません", media.id)
             return None
@@ -151,7 +155,9 @@ def _sidecar_for(media_dir, media_id, ffmpeg_cfg):
 # ダイアログと書き出しが要る prepared 相当を Timeline から組み直す (§5.13)
 # items / eff_cfg / keep_segments / profile は入れない (字幕は Timeline 側にあり、
 # Resolve 出力の eff_cfg は resolve_export が既定設定から組み直すため)。
-def rebuild_prepared(timeline):
+# media_dir: 素材フォルダ (<プロジェクト名>.media/)。渡すとイントロカードの素の
+#            控えを拾い、元 VOD を手放した後でもイントロを作れる (resolve.md §9-7)。
+def rebuild_prepared(timeline, media_dir=""):
     prepared = []
     for entry in (archive_section(timeline).get("clips") or []):
         media = timeline.media_by_id(str(entry.get("media_id", "") or ""))
@@ -170,6 +176,9 @@ def rebuild_prepared(timeline):
             # このキーが無いため既定 (False/空) で補う。
             "marker": bool(entry.get("marker")),
             "marker_labels": [str(label) for label in (entry.get("marker_labels") or [])],
+            # イントロカードの素の控え (無ければ空文字 = 元 VOD から作る / §9-7)
+            "intro_source": clip_writer.existing_intro_source(
+                media_dir, str(entry.get("media_id", "") or "")),
         })
     prepared.sort(key=lambda p: p["index"] if p["index"] is not None else 0)
     return prepared
@@ -256,8 +265,12 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
             tr("アーカイブ切り抜き用のプロジェクトではありません。"
             "クリップ用タブの「編集の続き」から開いてください。"))
 
-    # 元 VOD が見つからなければ差し替えを尋ねる (無いと映像を復元できない)
-    _ensure_vod(timeline, relink_callback)
+    # 元 VOD はここでは確かめない (resolve.md §9-6)。
+    # archive_keep_media で保存したプロジェクトは <プロジェクト>.media/ に映像素材を
+    # 持っており、元 VOD 無しで開ける (vod_retention がそれを見てゴミ箱へ送る)。
+    # 開く前に必須にすると、要らないのに「素材が見つかりません」で止まってしまう。
+    # 実際に切り直す素材が出てきた時点で尋ねる (vod_resolver)。
+    vod_resolver = make_vod_resolver(timeline, relink_callback)
 
     media_dir = project_io.media_dir_path(
         project_path, cfg["project_suffix"], cfg["project"]["media_dir_suffix"])
@@ -288,14 +301,15 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
             relink_callback=relink_callback,
             source_recover=make_media_recover(
                 timeline, settings, workdir, media_dir=media_dir,
-                progress_cb=recover_progress, stats=stats))
+                progress_cb=recover_progress, stats=stats,
+                vod_resolver=vod_resolver))
         project_io.validate(timeline, min_clip_sec=cfg["min_clip_sec"])
         _log_recovery(stats)
         if progress_cb:
             progress_cb(0.55, tr("素材の復元が完了しました"))
 
         # ② 編集画面 (未注入の CLI/テスト経路は全件そのまま採用)
-        prepared = rebuild_prepared(timeline)
+        prepared = rebuild_prepared(timeline, media_dir=media_dir)
         if not prepared:
             raise InputError(tr("復元できたクリップがありません（元 VOD を確認してください）"))
         curve = list(archive_section(timeline).get("curve") or [])
@@ -326,6 +340,25 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
             timeline.source.get("input_path", ""), settings, clip_settings, timeline,
             edited, prepared, workdir, ffmpeg_cfg=ffmpeg_cfg, progress_cb=progress_cb,
             watermark_required=watermark_required)
+
+
+# 元 VOD を「要るときだけ」解決する遅延フックを作る (resolve.md §9-6)
+#
+# 素材の復旧は ① そのまま在る → ② 相対パスで在る → ③' VOD から切り直す の順で、
+# VOD が要るのは ③' だけである。archive_keep_media で保存したプロジェクトは
+# <プロジェクト>.media/ に映像素材を持つため ① で終わり、元 VOD は一度も要らない。
+# 1 回目の呼び出しで解決して覚え、2 本目以降は同じパスを返す (何度も尋ねない)。
+# 解決できなければ従来と同じ InputError を投げる (文言も従来どおり)。
+def make_vod_resolver(timeline, relink_callback=None):
+    resolved = {}
+
+    def resolve():
+        if "path" not in resolved:
+            _ensure_vod(timeline, relink_callback)      # 無ければ尋ねる / 駄目なら InputError
+            resolved["path"] = _vod_path(timeline.source or {})
+        return resolved["path"]
+
+    return resolve
 
 
 # 元 VOD の実在を確かめ、無ければ差し替えを尋ねる (§5.7 ②)
@@ -386,6 +419,7 @@ __all__ = [
     "archive_section",
     "is_archive_project",
     "make_media_recover",
+    "make_vod_resolver",
     "rebuild_prepared",
     "recorded_vod_path",
     "run_from_archive_project",

@@ -421,6 +421,16 @@ DEFAULT_SETTINGS = {
             # 元 VOD は不要になる (= プロジェクトを消せば一緒に消える)。
             # 開き直しも「切り直し」が無くなるぶん速くなる。
             "archive_keep_media": True,
+            # 保存時にイントロカードの素 (クリップ開始直前の
+            # archive.intro_card.buffer_sec 秒) もプロジェクトの隣へ残す
+            # (docs/error/fromUser/resolve.md §9-7)。
+            #
+            # イントロカードはクリップ開始の**手前**の映像から作るため、クリップ
+            # 素材には入っておらず、元 VOD だけが素だった。archive_keep_media で
+            # 元 VOD を手放せるようにした結果、開き直して書き出すとイントロカード
+            # だけが作れなくなっていた。数秒ぶんなので置いても小さい。
+            # archive_keep_media が false のときは何もしない (元 VOD が残るため)。
+            "archive_keep_intro_source": True,
             # 複製先フォルダの接尾辞 (<プロジェクト名> + これ)
             "media_dir_suffix": ".media",
             # 素材が見つからないときの方針

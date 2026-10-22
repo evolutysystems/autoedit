@@ -238,6 +238,7 @@ CATALOG = {
     'アーカイブ切り抜き用のプロジェクトではありません。クリップ用タブの「編集の続き」から開いてください。': 'This is not an archive clipping project. Open it from "Resume" on the Clips tab.',
     'アーカイブ用': 'Archive',
     'イントロの音声を無音化する': 'Mute the intro audio',
+    'イントロ用の映像を保存しています…': 'Saving the video for the intro card…',
     'イントロ音声': 'Intro audio',
     'エラー': 'Error',
     'エラーで停止しました': 'Stopped with an error',

@@ -117,9 +117,10 @@ class ProjectResumeRow(QWidget):
         return ("recent_archive" if self._kind == project_io.KIND_ARCHIVE
                 else "recent")
 
+    # 履歴は timeline_config 経由で読む (重複と区切り文字の違いがここで畳まれる /
+    # resolve.md §9-8)。生の setting.json を直に読むと "/" 版と "\" 版が 2 行並ぶ。
     def _recent(self):
-        project_cfg = (self._settings.get("timeline", {}) or {}).get("project", {}) or {}
-        return [p for p in (project_cfg.get(self._recent_key()) or []) if p]
+        return list(self._timeline_cfg()["project"][self._recent_key()] or [])
 
     # 呼び出し側が設定を読み直した場合に差し替える
     def set_settings(self, settings_ref):

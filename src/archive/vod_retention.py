@@ -21,7 +21,12 @@ from ..timeline import project_io
 from ..timeline.builder import timeline_config
 from ..utils import trash
 from ..utils.logger import get_logger
-from .config import download_config, resolve_work_dir, source_usage
+from .config import (
+    INTRO_SOURCE_SUFFIX,
+    download_config,
+    resolve_work_dir,
+    source_usage,
+)
 
 _logger = get_logger(__name__)
 
@@ -44,6 +49,9 @@ def project_path_for(vod_path, settings):
 # プロジェクトが自己完結しているか (元 VOD 無しで開けるか) を判定する。
 # <プロジェクト>.media/ に映像ファイルが 1 つでも在れば自己完結とみなす。
 # 音声サイドカーしか無い場合は、開くときに元 VOD から切り直すため**不足**である。
+# イントロカードの素 (<media_id>_intro.mp4) も .mp4 だが、これはクリップ本体では
+# ないため数えない。数えると「素材の複製に失敗したのにイントロの控えだけは出来た」
+# 状態を自己完結と誤判定し、まだ要る元 VOD を捨ててしまう (resolve.md §9-7)。
 def is_self_contained(project_path, settings):
     if not project_path or not os.path.isfile(project_path):
         return False
@@ -56,7 +64,9 @@ def is_self_contained(project_path, settings):
         names = os.listdir(media_dir)
     except OSError:
         return False
-    return any(name.lower().endswith(_VIDEO_SUFFIXES) for name in names)
+    return any(name.lower().endswith(_VIDEO_SUFFIXES)
+               and not name.lower().endswith(INTRO_SOURCE_SUFFIX.lower())
+               for name in names)
 
 
 # 不要になった VOD を探す。

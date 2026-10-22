@@ -153,6 +153,7 @@
             "recent": [],
             "archive_suffix": ".archive",
             "recent_archive": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2905853277.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2904967242.archive.timeline.json"
             ],
             "keep_audio": true,
@@ -175,7 +176,8 @@
                 "thumbnail_cache_limit": 200
             },
             "keep_blur_cache": true,
-            "archive_keep_media": true
+            "archive_keep_media": true,
+            "archive_keep_intro_source": true
         },
         "min_clip_sec": 0.05,
         "default_subtitle_sec": 2.0,

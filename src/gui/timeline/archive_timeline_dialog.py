@@ -12,6 +12,7 @@ import os
 
 from PySide6.QtCore import QByteArray, Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -193,6 +194,56 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             if media is not None:
                 media_list.append(media)
         return media_list
+
+    # 保存時にイントロカードの素をプロジェクトの隣へ残す
+    # (docs/error/fromUser/resolve.md §9-7)
+    #
+    # イントロカードはクリップ開始の buffer_sec 秒**手前**の映像から作るため、
+    # クリップ素材 (vod_start 始まり) には入っておらず、元 VOD だけが素だった。
+    # §6-6 で元 VOD を手放せるようにした結果、開き直して書き出すと
+    # イントロカードだけが作れなくなっていた。数秒ぶんをここで控えておく。
+    # 失敗しても保存そのものは続ける (元 VOD があるうちは元 VOD から作れる)。
+    def _keep_extra_beside_project(self, project_path):
+        if not bool(self._project_cfg["archive_keep_intro_source"]):
+            return
+        card = archive_config.intro_card_config(self._settings)
+        if not card["enabled"] or card["buffer_sec"] <= 0:
+            return              # イントロカードを使わない設定
+        vod = project_resume.recorded_vod_path(self.controller.timeline)
+        if not vod or not os.path.exists(vod):
+            # 元 VOD を手放した後の上書き保存。既に在る控えはそのまま残る
+            _logger.info("元 VOD が無いためイントロカードの素は作れません "
+                         "(既存の控えはそのまま使います)")
+            return
+        folder = self._media_dir(project_path)
+        ffmpeg_cfg = self._settings.get("ffmpeg", {})
+        timeline = self.controller.timeline
+        saved = 0
+        try:
+            for media in self._media_to_copy():
+                if media is None:
+                    continue
+                entry = archive_timeline.archive_media_entry(timeline, media.id)
+                if entry is None:
+                    continue    # 復元情報が無い素材 (D&D で足した画像など)
+                if clip_writer.existing_intro_source(folder, media.id):
+                    saved += 1
+                    continue    # 前回の保存で作ってある (作り直さない)
+                dest = clip_writer.intro_source_path(folder, media.id)
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    self.preview.set_status(tr("イントロ用の映像を保存しています…"))
+                    if clip_writer.export_intro_source(
+                            vod, float(entry.get("vod_start", 0.0)),
+                            card["buffer_sec"], dest, ffmpeg_cfg):
+                        saved += 1
+                finally:
+                    QApplication.restoreOverrideCursor()
+        except OSError:
+            _logger.exception("イントロカードの素の保存に失敗しました (保存は続行します)")
+            return
+        if saved:
+            _logger.info("イントロカードの素を %d 件そろえました: %s", saved, folder)
 
     # クリップ選択・使用可否・テーマの行 (§3-4)
     def _build_clip_bar(self):

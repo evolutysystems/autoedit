@@ -19,6 +19,13 @@ _logger = get_logger(__name__)
 # 消してよいのは「取り直せるもの」= 取得した動画とチャットだけである。
 _SOURCE_NAME_RE = re.compile(r"^(?:vod_\d+\.mp4|chat_\d+\.json)$")
 
+# イントロカードの素の控えのファイル名の末尾
+# (<素材フォルダ>/<media_id>_intro.mp4 / docs/error/fromUser/resolve.md §9-7)。
+#
+# clip_writer (作る側) と vod_retention (自己完結の判定で**除外する**側) の
+# 両方が要る。clip_writer は renderer まで引き込むため、軽いここに置く。
+INTRO_SOURCE_SUFFIX = "_intro.mp4"
+
 
 # src/settings ディレクトリの絶対パスを返す (work_dir/トークン等の相対解決の基準)。
 # settings_window.SETTINGS_DIR と同一だが、PySide 依存を避けるため独立に算出する。

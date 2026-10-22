@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import time
 
+from ..exceptions import DiskSpaceError, FFmpegError
 from ..i18n import tr
 from ..modules import (
     comment_decor,
@@ -72,6 +73,88 @@ def cut_region(input_path, start, end, dest, ffmpeg_cfg):
     ]
     ffmpeg_runner.execute(cmd, total_duration=duration)
     return dest
+
+
+# ------------------------------------------------------------------
+# イントロカードの素 (docs/error/fromUser/resolve.md §9-7)
+# ------------------------------------------------------------------
+#
+# イントロカードはクリップ開始の buffer_sec 秒**手前**の映像から作る。この区間は
+# クリップ素材 (vod_start 始まり) に入っていないため、従来は元 VOD だけが素だった。
+# §6-6 で元 VOD を手放せるようにしたので、保存時にこの数秒だけ控えとして残し、
+# 元 VOD が無くても同じイントロカードを作れるようにする。
+# 長さは buffer_sec (既定 3 秒) ぶんだけで、素材 1 本 (数十〜百 MB) に比べて小さい。
+
+# 控えのファイル名の末尾 (<素材フォルダ>/<media_id>_intro.mp4)。
+# vod_retention も「自己完結の判定から除くもの」として要るため config に置いている。
+INTRO_SOURCE_SUFFIX = config.INTRO_SOURCE_SUFFIX
+
+
+# メディア 1 件ぶんのイントロ素材のパスを組む (素材フォルダが無ければ空文字)
+def intro_source_path(media_dir, media_id):
+    if not media_dir or not media_id:
+        return ""
+    return os.path.join(media_dir, f"{media_id}{INTRO_SOURCE_SUFFIX}")
+
+
+# 既に在るイントロ素材のパスを返す (無ければ空文字)
+def existing_intro_source(media_dir, media_id):
+    path = intro_source_path(media_dir, media_id)
+    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    return ""
+
+
+# イントロカードの素を元 VOD から切り出して残す (保存時に呼ぶ)
+# clip_start   : クリップ開始の VOD 内の秒
+# buffer_sec   : イントロの尺 (archive.intro_card.buffer_sec)
+# 戻り値: 書き出したパス / 作れなかった場合は None
+#
+# cut_region (-c copy) ではなく**再エンコード**する。-c copy はキーフレームまでしか
+# 戻れないため、開始位置と尺が前後して「クリップ開始の直前 buffer_sec 秒」にならない。
+# -ss を -i の前に置いた再エンコードはキーフレームから復号して捨てるため、
+# フレーム正確に同じ区間が取れる (_build_intro_card が元 VOD から取るのと同じ区間)。
+def export_intro_source(vod_path, clip_start, buffer_sec, dest, ffmpeg_cfg):
+    length = float(buffer_sec or 0.0)
+    start = float(clip_start or 0.0) - length
+    if length < 0.1 or start < 0.0:
+        return None             # VOD の先頭でバッファを確保できない (イントロも出ない)
+    if not vod_path or not os.path.exists(vod_path):
+        return None
+    ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg or {})
+    os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+    cmd = [
+        ffmpeg, "-y", "-hide_banner",
+        "-ss", f"{start:.3f}",
+        "-i", vod_path,
+        "-t", f"{length:.3f}",
+        *ffmpeg_runner.build_encode_options(ffmpeg_cfg or {}),
+        dest,
+    ]
+    try:
+        ffmpeg_runner.execute(cmd, total_duration=length)
+    except DiskSpaceError:
+        _remove_file(dest)
+        raise                   # 容量不足は継続しない (resolve.md §6-9)
+    except FFmpegError:
+        # 作れなくても保存そのものは続ける (元 VOD があるうちは元 VOD から作れる)
+        _logger.warning("イントロカードの素を作れませんでした (保存は続行します): %s", dest)
+        _remove_file(dest)
+        return None
+    if not os.path.exists(dest) or os.path.getsize(dest) <= 0:
+        _remove_file(dest)
+        return None
+    _logger.info("イントロカードの素を保存しました: %s (%.1f MB)",
+                 dest, os.path.getsize(dest) / 1024 / 1024)
+    return dest
+
+
+def _remove_file(path):
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 # クリップ処理用の設定コピーを作る (OP/ED は付けない・出力は一時領域・無音カット/レビューは設定に従う)
@@ -200,11 +283,25 @@ def _write_tag_ass(path, theme, card, subtitle_cfg, w, h, end_sec):
 # 元 VOD の [max(0,start-buffer), start] を切り出し、出力キャンバスへ正規化した上で
 # ブラー+黒帯(全幅・上下余白)+中央テーマを焼く。バッファを確保できない(素材端)なら None。
 def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
-                      ffmpeg_cfg, fonts_dir, workdir, index):
+                      ffmpeg_cfg, fonts_dir, workdir, index, intro_source=""):
     start_buf = max(0.0, clip_start - card["buffer_sec"])
     length = clip_start - start_buf
     if length < 0.1:
         _logger.info("clip%d: 開始前バッファを確保できないためイントロを省略", index)
+        return None
+    # 素は ① 元 VOD (新規実行。VOD 内の時刻で切る) → ② 保存しておいた控え
+    # (元 VOD を手放した後。既にその区間だけが入っているため先頭から取る) の順
+    # (docs/error/fromUser/resolve.md §9-7)。
+    if source and os.path.exists(source):
+        input_args = ["-ss", f"{start_buf:.3f}", "-i", source, "-t", f"{length:.3f}"]
+    elif intro_source and os.path.exists(intro_source):
+        _logger.info("clip%d: 保存しておいたイントロ素材を使います: %s",
+                     index, os.path.basename(intro_source))
+        input_args = ["-i", intro_source, "-t", f"{length:.3f}"]
+    else:
+        _logger.info(
+            "clip%d: 元 VOD もイントロ素材が無いためイントロカードを省略します "
+            "(元 VOD: %s)", index, source)
         return None
     w, h, fps = _canvas(ffmpeg_cfg)
     ass_path = os.path.join(workdir, f"intro{index}.ass")
@@ -222,8 +319,7 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
     cmd = [
         ffmpeg, "-y", "-hide_banner",
-        "-ss", f"{start_buf:.3f}", "-t", f"{length:.3f}",
-        "-i", source,
+        *input_args,
         "-vf", filter_spec,
     ]
     if card["mute_intro"]:
@@ -285,7 +381,8 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
     # イントロカード (開始前 buffer_sec)
     try:
         intro = _build_intro_card(source, clip["start"], theme, card, subtitle_cfg,
-                                  ffmpeg_cfg, fonts_dir, workdir, index)
+                                  ffmpeg_cfg, fonts_dir, workdir, index,
+                                  intro_source=clip.get("intro_source", ""))
     except Exception:  # noqa: BLE001
         _logger.exception("clip%d: イントロ生成に失敗 → タグ付き本編のみで継続", index)
         intro = None
@@ -591,7 +688,9 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
             out = _watermark_one(out, prepared, settings, ffmpeg_cfg)
         theme = (ed.get("theme") or "").strip()
         clip_meta = {"index": prepared["index"], "start": prepared["start"],
-                     "end": prepared["end"]}
+                     "end": prepared["end"],
+                     # 元 VOD を手放した後のイントロカード用 (resolve.md §9-7)
+                     "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
             input_path, out, clip_meta, theme, card, subtitle_cfg,
             ffmpeg_cfg, fonts_dir, workdir)
@@ -652,7 +751,9 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
 
         theme = (entry.get("theme") or "").strip()
         clip_meta = {"index": prepared["index"], "start": prepared["start"],
-                     "end": prepared["end"]}
+                     "end": prepared["end"],
+                     # 元 VOD を手放した後のイントロカード用 (resolve.md §9-7)
+                     "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
             input_path, out, clip_meta, theme, card, subtitle_cfg,
             ffmpeg_cfg, fonts_dir, workdir)
