@@ -445,6 +445,11 @@ def timeline_config(settings):
             # (ver8 resolve2 §3-1)。False にすると閉じたままを覚える。
             "archive_graph_dock_always_show": bool(
                 ui.get("archive_graph_dock_always_show", True)),
+            # 切り離した採点グラフが画面に出ていない / 画面外のとき、
+            # ドック位置へ戻して必ず見えるようにするか (2026-10-23 の報告)。
+            # False にすると記憶した切り離し位置をそのまま使う。
+            "archive_graph_dock_redock_when_hidden": bool(
+                ui.get("archive_graph_dock_redock_when_hidden", True)),
             # 画面の大きさ・位置・表示していたモニターの記憶 (ver8 resolve3 §3-1)。
             # false にすると毎回 window_width / window_height で開く。
             "remember_window_geometry": bool(

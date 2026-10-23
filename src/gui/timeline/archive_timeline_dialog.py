@@ -11,6 +11,7 @@ import base64
 import os
 
 from PySide6.QtCore import QByteArray, Qt, QThread, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -81,6 +82,8 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._current = self._prepared[0]["index"] if self._prepared else None
         self._syncing = False
         self._dock_host = None
+        # ドック配置を復元したか (画面が出たとき 1 回だけ / 2026-10-23 の報告)
+        self._dock_restored = False
         # セクション追加 (ver3 resolve13)
         self._clip_workdir = clip_workdir
         self._clip_settings = clip_settings
@@ -126,12 +129,11 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self.graph_dock.setMinimumHeight(int(ui_cfg["archive_graph_dock_height_px"]))
 
         self._dock_host = host
-        self._restore_dock_state(ui_cfg)
-        # 記憶した配置に「閉じた」状態が入っていても採点グラフは出し直す
-        # (ver8 resolve2 §3-1)。閉じたまま覚えると、出し直す口が
-        # 画面のどこにも無くなってしまうため。
-        if bool(ui_cfg["archive_graph_dock_always_show"]):
-            self.graph_dock.show()
+        # 配置の復元は**画面が出てから**行う (showEvent / 2026-10-23 の報告)。
+        # ここは host がまだこの画面へ入っていない (親なし = それ自体が
+        # トップレベル) ため、記憶が「切り離し」だと浮いた窓がこの時点で作られ、
+        # 直後の親付け替えで画面へ出ないまま残る。Qt 側の可視フラグだけが
+        # True になるので show() もトグルも効かず、二度と出せなくなる。
         self._bind_graph_toggle()
         return host
 
@@ -653,6 +655,59 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     # ドック配置の保存・復元 (§7)
     # ------------------------------------------------------------------
 
+    # 画面が出てからドック配置を戻す (2026-10-23 の報告)。
+    #
+    # この時点なら host はこの画面の中に入っているため、記憶が「切り離し」でも
+    # 浮いた窓が正しく画面へ出る。復元は 1 回だけで、2 度目以降の表示
+    # (最小化からの復帰など) では利用者が動かした配置をそのまま残す。
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._restore_dock_once()
+
+    # 画面が出た最初の 1 回だけ配置を戻す
+    def _restore_dock_once(self):
+        if self._dock_restored:
+            return
+        self._dock_restored = True
+        ui_cfg = self.controller.cfg["ui"]
+        self._restore_dock_state(ui_cfg)
+        # 記憶した配置に「閉じた」状態が入っていても採点グラフは出し直す
+        # (ver8 resolve2 §3-1)。閉じたまま覚えると、出し直す口が
+        # 画面のどこにも無くなってしまうため。
+        if bool(ui_cfg["archive_graph_dock_always_show"]):
+            self._ensure_graph_visible()
+
+    # 採点グラフを「実際に見える」状態にする (2026-10-23 の報告)。
+    #
+    # 閉じていれば開き、切り離したまま画面へ出ていない / 画面外にある場合は
+    # ドック領域へ戻す。可視フラグだけ True で画面に無い状態は利用者からは
+    # 「押しても出ない」としか見えず、復帰する手段が無くなるため。
+    def _ensure_graph_visible(self):
+        self.graph_dock.show()
+        if not self.graph_dock.isFloating():
+            return
+        if (bool(self.controller.cfg["ui"]["archive_graph_dock_redock_when_hidden"])
+                and not self._dock_on_screen()):
+            _logger.info("採点グラフが画面に出ていないためドック位置へ戻します")
+            self.graph_dock.setFloating(False)
+            self.graph_dock.show()
+            return
+        self.graph_dock.raise_()
+
+    # 切り離した採点グラフが実際に画面へ出ているか (_pull_into_screen と同じ考え方)。
+    # 窓そのものが作られていない / どのモニターにも見える幅が無いときは False。
+    def _dock_on_screen(self):
+        handle = self.graph_dock.windowHandle()
+        if handle is None or not handle.isVisible():
+            return False
+        margin = max(int(self.controller.cfg["ui"]["window_min_visible_px"]), 1)
+        frame = self.graph_dock.frameGeometry()
+        for screen in QGuiApplication.screens():
+            shown = screen.availableGeometry().intersected(frame)
+            if shown.width() >= margin and shown.height() >= margin:
+                return True
+        return False
+
     # クリップバーのトグルとドックの表示状態をつなぐ (ver8 resolve2 §3-2)
     #
     # ドック側の toggleViewAction を介すため、× で閉じた・ショートカットで
@@ -663,9 +718,20 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self.graph_dock.toggleViewAction().toggled.connect(
             self.graph_toggle.setChecked)
         self.graph_toggle.toggled.connect(self.graph_dock.setVisible)
+        # 「実際に見える場所へ出す」は**利用者が押したときだけ**通す。
+        # toggled は配置替え (切り離し) の途中にも流れるため、そこへ繋ぐと
+        # 意図して切り離した直後にドックへ戻してしまう。clicked は
+        # 押下操作だけで、setChecked() の追従では流れない (2026-10-23 の報告)。
+        self.graph_toggle.clicked.connect(self._on_graph_clicked)
         key = str(self.controller.cfg["shortcuts"].get("toggle_score_graph", ""))
         tip = tr("採点グラフの表示を切り替えます")
         self.graph_toggle.setToolTip("%s (%s)" % (tip, key) if key else tip)
+
+    # トグルを押して ON にしたとき。浮いたまま画面に無い状態でも
+    # 1 クリックで戻せるようにする (2026-10-23 の報告)。
+    def _on_graph_clicked(self, checked):
+        if checked:
+            self._ensure_graph_visible()
 
     # 採点グラフの表示切替キー (ver8 resolve2 §3-3)。
     # 基底のフック経由で登録するため、文字入力中は無効化される。
@@ -674,7 +740,10 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
 
     # ドックの表示 / 非表示を 1 打鍵で入れ替える (ボタン側は結線で追従する)
     def _toggle_graph_dock(self):
-        self.graph_dock.setVisible(not self.graph_dock.isVisible())
+        if self.graph_dock.isVisible():
+            self.graph_dock.setVisible(False)
+        else:
+            self._ensure_graph_visible()
 
     def _restore_dock_state(self, ui_cfg):
         state = str(ui_cfg.get("archive_dock_state") or "")
@@ -699,6 +768,14 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         except Exception:  # noqa: BLE001 (配置の記憶に失敗しても画面は閉じる)
             _logger.exception("ドック配置の保存に失敗しました (処理は続行します)")
             return False
+        # 画面へ出ていない切り離し位置は覚えない (2026-10-23 の報告)。
+        # そのまま覚えると「出ない状態」を起動のたびに再現してしまう。
+        # 空で覚え直し、次回は既定の配置 (上部) で開く。
+        if (self.graph_dock.isFloating() and self.graph_dock.isVisible()
+                and not self._dock_on_screen()):
+            _logger.info("画面に出ていない採点グラフの位置は覚えません "
+                         "(次回は既定の配置で開きます)")
+            state = ""
         if store.get("archive_dock_state") == state:
             return False
         store["archive_dock_state"] = state

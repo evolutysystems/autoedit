@@ -563,6 +563,9 @@ DEFAULT_SETTINGS = {
             "archive_dock_state": "",
             # 閉じた状態を覚えていても採点グラフを出し直す (ver8 resolve2 §3-1)
             "archive_graph_dock_always_show": True,
+            # 切り離した採点グラフが画面に出ていない / 画面外なら
+            # ドック位置へ戻す (2026-10-23 の報告)。浮いた窓は復帰の口が無いため。
+            "archive_graph_dock_redock_when_hidden": True,
             # Timeline 編集画面の大きさ・位置・モニターを覚える (ver8 resolve3 §3-1)。
             # window_geometry は画面の種別 ("clip"/"archive") ごとの控え。
             "remember_window_geometry": True,

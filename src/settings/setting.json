@@ -216,6 +216,7 @@
             "archive_graph_dock_height_px": 220,
             "archive_clip_selector_width_px": 260,
             "archive_graph_dock_always_show": true,
+            "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
                 "archive": "AdnQywADAAAAAAUvAAAAaQAACqwAAASGAAAFLwAAAIgAAAqsAAAEhgAAAAAAAAAADXAAAAUvAAAAiAAACqwAAASG",
