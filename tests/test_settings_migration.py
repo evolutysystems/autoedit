@@ -7,6 +7,7 @@
 #     アプリ側 (DEFAULT_SETTINGS + 起動時の補完) で自己修復できることを守る。
 #   ・利用者が意図して入れた値は上書きしないこと。
 import copy
+import io
 import os
 import unittest
 from unittest import mock
@@ -242,7 +243,8 @@ class ProxySettingsTest(unittest.TestCase):
     def test_default_settings_has_the_proxy_section(self):
         proxy = sw.DEFAULT_SETTINGS["timeline"]["preview"]["proxy"]
 
-        self.assertEqual(proxy["mode"], "tile")
+        # 既定は "off" (ver8 resolve8 §24-7 / 再生中の暗転の回避)
+        self.assertEqual(proxy["mode"], "off")
         self.assertEqual(proxy["scale"], 0.5)
         self.assertEqual(proxy["tile_sec"], 4.0)
 
@@ -259,7 +261,7 @@ class ProxySettingsTest(unittest.TestCase):
 
         self.assertTrue(changed, "補完した場合は永続化のため True を返すこと")
         self.assertIn("proxy", merged["timeline"]["preview"])
-        self.assertEqual(merged["timeline"]["preview"]["proxy"]["mode"], "tile")
+        self.assertEqual(merged["timeline"]["preview"]["proxy"]["mode"], "off")
 
     # 利用者が変えた値は温存する (補完で上書きしない)
     def test_user_values_are_kept(self):
@@ -276,6 +278,73 @@ class ProxySettingsTest(unittest.TestCase):
         self.assertEqual(proxy["scale"], 0.25)
         # 足りないキーだけが既定で埋まる
         self.assertEqual(proxy["tile_sec"], 4.0)
+
+
+# 旧既定 ("tile") から "off" への 1 回きりの移行 (ver8 resolve8 §24-7 / §24-8)
+#
+# "tile" は再生中にタイルの継ぎ目で 4 秒ごとに画面が暗転する。更新インストールでは
+# インストーラが旧 setting.json を復元するため、DEFAULT_SETTINGS を変えただけでは
+# 既存利用者に届かない。この設定は設定画面に出していないため自力で直す口も無い。
+class ProxyBlackoutMigrationTest(unittest.TestCase):
+
+    def _settings(self, **proxy_overrides):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"]["preview"] = copy.deepcopy(data["timeline"]["preview"])
+        proxy = dict(data["timeline"]["preview"]["proxy"], **proxy_overrides)
+        proxy.pop("blackout_migrated", None)        # 旧ファイルにはフラグが無い
+        data["timeline"]["preview"]["proxy"] = proxy
+        return data
+
+    def _proxy(self, merged):
+        return merged["timeline"]["preview"]["proxy"]
+
+    # 旧既定のまま残っている既存利用者は "off" へ寄る
+    def test_legacy_tile_is_migrated(self):
+        merged = sw._merge_with_defaults(self._settings(mode="tile"))
+        # マージだけでは既存値が残る (キーが在るため既定が届かない)
+        self.assertEqual(self._proxy(merged)["mode"], "tile")
+        self.assertTrue(sw._normalize_legacy_values(merged))
+        self.assertEqual(self._proxy(merged)["mode"], "off")
+        self.assertTrue(self._proxy(merged)["blackout_migrated"])
+
+    # 移行後に利用者が意図して "tile" へ戻した場合は二度と触らない
+    def test_tile_after_migration_is_kept(self):
+        data = self._settings(mode="tile")
+        data["timeline"]["preview"]["proxy"]["blackout_migrated"] = True
+        merged = sw._merge_with_defaults(data)
+        sw._normalize_legacy_values(merged)
+        self.assertEqual(self._proxy(merged)["mode"], "tile")
+
+    # 2 度目は何も変えない (起動のたびに保存し直さない)
+    def test_migration_is_idempotent(self):
+        merged = sw._merge_with_defaults(self._settings(mode="tile"))
+        self.assertTrue(sw._migrate_preview_proxy_mode(merged))
+        self.assertFalse(sw._migrate_preview_proxy_mode(merged))
+
+    # 既に "off" の環境ではモードを変えずフラグだけ立てる
+    def test_already_off_only_marks_the_flag(self):
+        merged = sw._merge_with_defaults(self._settings(mode="off"))
+        self.assertTrue(sw._migrate_preview_proxy_mode(merged))
+        self.assertEqual(self._proxy(merged)["mode"], "off")
+        self.assertTrue(self._proxy(merged)["blackout_migrated"])
+
+    # proxy セクションごと無い壊れた setting.json でも落ちない
+    def test_missing_proxy_section_is_ignored(self):
+        self.assertFalse(sw._migrate_preview_proxy_mode({"timeline": {"preview": {}}}))
+        self.assertFalse(sw._migrate_preview_proxy_mode({"timeline": {}}))
+        self.assertFalse(sw._migrate_preview_proxy_mode({}))
+
+    # 配布 setting.json も "off" であること (新規インストールと既存で揃える)
+    def test_shipped_settings_is_off(self):
+        import json
+        with io.open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "src", "settings", "setting.json"),
+                     encoding="utf-8-sig") as handle:
+            shipped = json.load(handle)
+        self.assertEqual(
+            shipped["timeline"]["preview"]["proxy"]["mode"], "off",
+            "配布 setting.json の proxy.mode が DEFAULT_SETTINGS と揃っていません")
 
 
 if __name__ == "__main__":

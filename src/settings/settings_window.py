@@ -649,7 +649,17 @@ DEFAULT_SETTINGS = {
             # 一致させたまま滑らかに動かす。"off" にすると従来の近似描画へ戻る。
             "proxy": {
                 # "tile" = タイル差分レンダ / "off" = 従来の近似描画のみ
-                "mode": "tile",
+                #
+                # 既定は "off" (ver8 resolve8 §24-7)。"tile" は再生中に
+                # タイルの継ぎ目で setSource() が映像面を空にするため、
+                # 4 秒ごとに画面が暗転してチカチカする。暗転は目に見える不具合で、
+                # 一方の代償 (再生中の絵が出力と完全一致ではなくなる) は
+                # §5-§7 のフォントメトリクス換算で字幕の大きさ・行送り・字間が
+                # 揃ったぶん小さくなった。停止中は従来どおりタイルの絵を使う。
+                "mode": "off",
+                # 旧既定 ("tile") からの寄せを済ませたか (1 回きり / §24-8)。
+                # 寄せたあとに利用者が "tile" へ戻した場合は二度と触らない。
+                "blackout_migrated": False,
                 # 本番キャンバスに対する比 (0.25〜1.0)。1080x1920 なら 0.5 で 540x960。
                 # 画質ではなく「見え方の確認」が目的なので原寸は要らない。
                 "scale": 0.5,
@@ -1217,6 +1227,8 @@ def _normalize_legacy_values(merged):
         changed = True
     if _migrate_ripple_delete(merged):
         changed = True
+    if _migrate_preview_proxy_mode(merged):
+        changed = True
     return changed
 
 
@@ -1371,6 +1383,33 @@ def _migrate_ripple_delete(merged):
     timeline["ripple_delete_migrated"] = True
     if timeline.get("ripple_delete") is False:
         timeline["ripple_delete"] = True
+    return True
+
+
+# プレビューのプロキシを旧既定 ("tile") から "off" へ寄せる 1 回きりの移行
+# (ver8 resolve8 §24-7 / §24-8)
+# 背景: "tile" はタイルの継ぎ目で 4 秒ごとに画面が暗転する。DEFAULT_SETTINGS を
+#   "off" にしただけでは、更新インストールで旧 setting.json が復元される既存利用者に
+#   届かない (キーが在れば _merge_with_defaults が既存値を温存するため)。
+#   この設定は設定画面に出していないため、利用者が自力で直す口も無い。
+#   移行済みフラグを持たせ、寄せたあとに意図して "tile" へ戻した場合
+#   (継ぎ目の切り分けなど) は再び書き換えない。
+def _migrate_preview_proxy_mode(merged):
+    timeline = merged.get("timeline")
+    if not isinstance(timeline, dict):
+        return False
+    preview = timeline.get("preview")
+    if not isinstance(preview, dict):
+        return False
+    proxy = preview.get("proxy")
+    if not isinstance(proxy, dict):
+        return False
+    if proxy.get("blackout_migrated"):
+        return False
+    proxy["blackout_migrated"] = True
+    if str(proxy.get("mode", "")).strip().lower() == "tile":
+        proxy["mode"] = DEFAULT_SETTINGS["timeline"]["preview"]["proxy"]["mode"]
+        _logger.info("プレビューのプロキシを off へ寄せました (再生中の暗転の回避)")
     return True
 
 

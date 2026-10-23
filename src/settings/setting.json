@@ -281,7 +281,8 @@
                 "cache_tiles": 64,
                 "audio_bitrate": "96k",
                 "coverage_bar": true,
-                "draft_overlay": true
+                "draft_overlay": true,
+                "blackout_migrated": true
             }
         },
         "shortcuts": {
