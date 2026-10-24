@@ -283,7 +283,8 @@ def _write_tag_ass(path, theme, card, subtitle_cfg, w, h, end_sec):
 # 元 VOD の [max(0,start-buffer), start] を切り出し、出力キャンバスへ正規化した上で
 # ブラー+黒帯(全幅・上下余白)+中央テーマを焼く。バッファを確保できない(素材端)なら None。
 def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
-                      ffmpeg_cfg, fonts_dir, workdir, index, intro_source=""):
+                      ffmpeg_cfg, fonts_dir, workdir, index, intro_source="",
+                      gain_db=None):
     start_buf = max(0.0, clip_start - card["buffer_sec"])
     length = clip_start - start_buf
     if length < 0.1:
@@ -325,6 +326,14 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
     if card["mute_intro"]:
         # 音声ストリームは残しつつ無音化する (結合時の音声ストリーム整合を保つ)
         cmd += ["-af", "volume=0"]
+    elif card.get("match_body_level", True) and gain_db is not None:
+        # イントロは元 VOD から直接切り出すため正規化を通らない。
+        # 本編に掛けた線形ゲインと同じ量を掛け、本編と連続した音量にする
+        # (docs/quality/resolve1.md §4.3 F8)。
+        # 3 秒では loudnorm の測定自体が信頼できないため、測り直さず本編の値を流用する。
+        cmd += ["-af", f"volume={float(gain_db):.2f}dB"]
+        _logger.info("clip%d: イントロへ本編と同じゲイン %+.2f dB を適用 (F8)",
+                     index, float(gain_db))
     cmd += [
         *ffmpeg_runner.build_encode_options(ffmpeg_cfg),
         "-fps_mode", "cfr", "-r", str(fps),
@@ -367,7 +376,7 @@ def _build_tag_overlay(body_in, theme, card, subtitle_cfg,
 # 戻り値: (parts, body) — parts=結合用の時系列パーツ列 / body=個別出力用の本編パス。
 # 演出の途中失敗はクリップ全損を避けるため握りつぶし、可能な範囲で継続する。
 def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
-                   ffmpeg_cfg, fonts_dir, workdir):
+                   ffmpeg_cfg, fonts_dir, workdir, gain_db=None):
     index = clip["index"]
     if not theme or not card["enabled"]:
         return [out], out
@@ -382,7 +391,8 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
     try:
         intro = _build_intro_card(source, clip["start"], theme, card, subtitle_cfg,
                                   ffmpeg_cfg, fonts_dir, workdir, index,
-                                  intro_source=clip.get("intro_source", ""))
+                                  intro_source=clip.get("intro_source", ""),
+                                  gain_db=gain_db)
     except Exception:  # noqa: BLE001
         _logger.exception("clip%d: イントロ生成に失敗 → タグ付き本編のみで継続", index)
         intro = None
@@ -394,12 +404,69 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
 # prepare フェーズ (R2 flow17): 全クリップを切り出し→無音カット→文字起こし
 # ------------------------------------------------------------------
 
+# VOD 全体を 1 回だけ解析し、全クリップで共有する値を返す (docs/quality/resolve1.md F7/F9)
+#
+# 従来はクリップごとに
+#   ・カット閾値 (analyze_min_speech_db)
+#   ・ラウドネス  (loudnorm 1 パス目)
+# を測り直していた。短いクリップでは測定区間が少なく閾値が崩壊しやすく (§2.2 A8)、
+# ラウドネスはクリップごとに -14 LUFS へ揃うため盛り上がりの差が潰れていた (§4.2 E1)。
+#
+# 1 本にまとめて出力する運用では「VOD 全体で 1 回」が正しい (§9.1 Q3)。
+# 戻り値: {"cut_db": int|None, "measured": dict|None}
+#   どちらも取れなければ None を入れ、呼び出し側はクリップ単位へ落ちる (安全側)。
+def analyze_vod(input_path, settings, progress_cb=None):
+    pipe = config.clip_pipeline_config(settings)
+    result = {"cut_db": None, "measured": None}
+
+    if pipe["cut_db_scope"] == "vod":
+        if progress_cb:
+            progress_cb(tr("音量解析 (VOD 全体)"))
+        try:
+            analysis = volume_analyzer.analyze_min_speech_db(input_path, settings)
+        except Exception:  # noqa: BLE001 (失敗してもクリップ単位へ落ちる)
+            _logger.exception("VOD 全体の音量解析に失敗 → クリップごとの解析へ落ちます")
+        else:
+            measured_db = analysis.get("min_db")
+            if measured_db is not None:
+                result["cut_db"] = int(measured_db)
+                _logger.info(
+                    "VOD 全体のカット閾値 %d dB を全クリップで共有 (測定 %d/%d 区間 / F7)",
+                    result["cut_db"], analysis.get("measured_count", 0),
+                    analysis.get("region_count", 0))
+
+    if pipe["loudness_scope"] == "vod":
+        cfg = loudness_normalizer.loudness_config(settings)
+        ffmpeg_cfg = settings.get("ffmpeg", {})
+        if cfg["enabled"] and cfg["two_pass"]:
+            # 進捗の文言は実際に測るときだけ出す。音量調節を切っていると
+            # (設定画面の「音量調節」/ ver9 request1) 何もしないため出さない。
+            if progress_cb:
+                progress_cb(tr("ラウドネス解析 (VOD 全体)"))
+            try:
+                duration = ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg)
+            except Exception:  # noqa: BLE001 (進捗の総尺は取れなくてもよい)
+                duration = 0.0
+            measured = loudness_normalizer.measure_loudness(
+                input_path, cfg, ffmpeg_cfg, duration)
+            if measured is None:
+                _logger.warning(
+                    "VOD 全体のラウドネス測定に失敗 → クリップごとの測定へ落ちます")
+            else:
+                result["measured"] = measured
+                _logger.info(
+                    "VOD 全体のラウドネス I=%.1f LUFS を全クリップで共有 (F9)",
+                    measured["input_i"])
+    return result
+
+
 # 音量解析でクリップごとのカット閾値を確定する (pipeline_runner._apply_volume_analysis の
 # ダイアログ無し版)。測定した最低dBをそのまま last_cut_db へ採用し、確認ダイアログは出さない。
 # clip_settings は deepcopy のため setting.json の保存値は変更しない (当該実行のみ有効)。
 # saved_db: 元設定の保存済み閾値。解析失敗/算出不能時はこの値へ戻して無音カットへ進む
 # (前クリップの測定値を引きずらないため毎回リセットする)。
-def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index):
+def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index,
+                           fixed_db=None, scope="per_clip"):
     # 無音カット無効時は閾値確認自体が不要のためスキップ (クリップ用と同一ルール)
     if not clip_settings.get("silence_cut", {}).get("enabled", True):
         return
@@ -409,6 +476,16 @@ def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index):
         return
     if saved_db is not None:
         va_cfg["last_cut_db"] = int(saved_db)
+
+    # VOD 全体で 1 回測った閾値を共有する (F7)。クリップ間でカットの強さが揃う。
+    if scope == "vod" and fixed_db is not None:
+        va_cfg["last_cut_db"] = int(fixed_db)
+        _logger.info("clip%d: VOD 全体のカット閾値 %d dB を使用 (F7)", index, int(fixed_db))
+        return
+    # 保存済みの値を固定で使う (F7 "saved")
+    if scope == "saved":
+        _logger.info("clip%d: 保存済みカット閾値 %s dB を使用 (F7)", index, saved_db)
+        return
     try:
         analysis = volume_analyzer.analyze_min_speech_db(prepared_path, clip_settings)
     except Exception:  # noqa: BLE001 (解析失敗でクリップを失わない → 保存値で継続)
@@ -510,11 +587,15 @@ def _transcribe(prepared_path, settings, eff_cfg):
 # saved_db     : 元設定の保存済みカット閾値 (None なら settings から引く)
 # 戻り値: prepared 1 件ぶんの辞書 (_prepare_clips の要素と同一構成)
 def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
-                     use_timeline=False, progress_cb=None, saved_db=None):
+                     use_timeline=False, progress_cb=None, saved_db=None,
+                     vod_analysis=None):
     subtitle_cfg = clip_settings.get("subtitle", {})
     vertical_cfg = settings.get("vertical", {})
     if saved_db is None:
         saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
+    # VOD 全体の解析結果 (F7 / F9)。未指定ならクリップ単位で測る (従来)。
+    vod = vod_analysis or {}
+    pipe = config.clip_pipeline_config(settings)
 
     if progress_cb:
         progress_cb(tr("音声正規化"))
@@ -525,12 +606,23 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
     cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
     # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
     # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
+    #
+    # loudness_scope="vod" のときは VOD 全体で測った実測値を渡し、
+    # 全クリップへ同じゲインを掛ける。クリップごとに -14 LUFS へ揃えると
+    # 静かな場面と山場が同じ音量になり、切り抜きの起伏が消えるため
+    # (docs/quality/resolve1.md §4.2 E1 / §9.1 Q3)。
+    loudness_details = {}
     normalized = loudness_normalizer.normalize_file(
-        raw, os.path.join(clip_dir, "normalized.mp4"), settings)
+        raw, os.path.join(clip_dir, "normalized.mp4"), settings,
+        details=loudness_details,
+        measured_override=(vod.get("measured")
+                           if pipe["loudness_scope"] == "vod" else None))
     # 音量解析: 正規化後のクリップからカット閾値を確定する (ダイアログ無し)
     if progress_cb:
         progress_cb(tr("音量解析"))
-    _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"])
+    _apply_volume_analysis(normalized, clip_settings, saved_db, clip["index"],
+                           fixed_db=vod.get("cut_db"),
+                           scope=pipe["cut_db_scope"])
     if use_timeline:
         # Timeline 経路: 実カットしない。字幕の時間軸を Timeline の軸へ一致させる (§4-2)
         if progress_cb:
@@ -571,6 +663,11 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         # 無効・音声無し・測定失敗のとき入力パスをそのまま返すためパスで判別できる。
         # 開き直すときに音声サイドカーを貼るかどうかの判断に使う。
         "media_role": "normalized" if normalized != raw else "original",
+        # 本編へ実際に掛かった正規化ゲイン (dB / docs/quality/resolve1.md §4.3 F8)。
+        # イントロカードは元 VOD から直接切り出して正規化を通らないため、
+        # 同じゲインを掛けて本編と連続した音量にする。
+        # 線形で適用できなかった (ダイアログへ落ちた) 場合は None = 従来どおり素の音量。
+        "gain_db": loudness_details.get("gain_db"),
         # ストリームマーカー由来を含むセクションか (ver3 resolve16 §5.8)。
         # Timeline の clip_meta まで運び、保存プロジェクトにも残す。
         "marker": bool(clip.get("marker")),
@@ -594,6 +691,10 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
     total = len(used)
     # 元設定の保存済みカット閾値 (クリップごとの音量解析が失敗した場合の戻し先)
     saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
+    # VOD 全体の解析は 1 回だけ (F7 / F9)。スコープが per_clip なら何もしない。
+    vod_analysis = analyze_vod(
+        input_path, settings,
+        progress_cb=(lambda label: progress_cb(0.0, label)) if progress_cb else None)
     for pos, clip in enumerate(used, 1):
         # 工程名だけを受け取り、ここで進捗率と文言を組み立てる (文言は従来と同一)
         def phase(label, _pos=pos):
@@ -602,7 +703,8 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
                             f"クリップ {_pos}/{total} を準備中…（{label}）")
         prepared.append(prepare_one_clip(
             input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
-            use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db))
+            use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db,
+            vod_analysis=vod_analysis))
     return prepared
 
 
@@ -612,17 +714,20 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
 
 # 編集済み items を焼き込み対象タイムラインへ整形する (_review_timeline 相当)。
 # 使用チェックのみ残し、wrap_lines を再適用。役割/個別フォントは保持。
-def _finalize_timeline(items, eff_cfg):
+def _finalize_timeline(items, eff_cfg, canvas_width=0):
     min_len = int(eff_cfg.get("min_line_length", 15))
     max_len = int(eff_cfg.get("max_line_length", 20))
     engine = str(eff_cfg.get("wrap_engine", "budoux")).strip().lower()
+    # 認識時と同じ物差しで折る (G5 / docs/quality/resolve1.md §3.4 G5)
+    measure = subtitle_generator.build_text_measure(eff_cfg, canvas_width)
     used = []
     for e in items:
         if not e.get("use", True):
             continue
         used.append({
             "start": e["start"], "end": e["end"],
-            "text": subtitle_generator.wrap_lines(e.get("text", ""), min_len, max_len, engine),
+            "text": subtitle_generator.wrap_lines(
+                e.get("text", ""), min_len, max_len, engine, measure=measure),
             "role": e.get("role", "streamer"),
             "font": e.get("font", ""),
             "font_size": e.get("font_size"),
@@ -635,7 +740,8 @@ def _finalize_timeline(items, eff_cfg):
 def _burn_one(prepared, items, settings, ffmpeg_cfg, fonts_dir):
     eff_cfg = prepared["eff_cfg"]
     profile = prepared["profile"]
-    used_timeline = _finalize_timeline(items, eff_cfg)
+    used_timeline = _finalize_timeline(items, eff_cfg,
+                                       canvas_width=int(profile.get("width") or 0))
     src = prepared["prepared_path"]
     if not used_timeline:
         _logger.info("clip%d 使用字幕0件 → 焼き込みスキップ", prepared["index"])
@@ -693,7 +799,9 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
                      "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
             input_path, out, clip_meta, theme, card, subtitle_cfg,
-            ffmpeg_cfg, fonts_dir, workdir)
+            ffmpeg_cfg, fonts_dir, workdir,
+            # 本編と同じゲインをイントロへ掛ける (F8)
+            gain_db=prepared.get("gain_db"))
         burned.append({"clip": clip_meta, "body": body, "parts": parts})
     return burned
 
@@ -756,7 +864,9 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
                      "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
             input_path, out, clip_meta, theme, card, subtitle_cfg,
-            ffmpeg_cfg, fonts_dir, workdir)
+            ffmpeg_cfg, fonts_dir, workdir,
+            # 本編と同じゲインをイントロへ掛ける (F8)
+            gain_db=prepared.get("gain_db"))
         burned.append({"clip": clip_meta, "body": body, "parts": parts})
     return burned
 

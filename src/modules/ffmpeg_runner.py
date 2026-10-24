@@ -310,6 +310,32 @@ def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=
     return returncode
 
 
+# execute と同じだが stderr の末尾も返す (docs/quality/resolve1.md §4.3 F13)
+# loudnorm の測定 JSON のように「成功時の stderr を読みたい」場合に使う。
+# 失敗時の扱い (例外・容量不足の判定) は execute と完全に同一。
+def execute_capture(command, total_duration=0.0, on_progress=None, progress_timeout_sec=0):
+    returncode, stderr_tail = run_ffmpeg_progress(
+        command,
+        total_duration=total_duration,
+        on_progress=on_progress,
+        progress_timeout_sec=progress_timeout_sec,
+    )
+    if returncode != 0:
+        _logger.error("FFmpeg 失敗 (code=%s): %s", returncode, stderr_tail)
+        if disk.looks_like_no_space(stderr_tail):
+            path = _output_path_of(command)
+            raise DiskSpaceError(
+                disk.shortage_message(path, disk.free_bytes(path), None),
+                path=path, free=disk.free_bytes(path))
+        raise FFmpegError(
+            tr("FFmpeg 実行失敗 (returncode={code})", code=returncode),
+            command=command,
+            stderr_tail=stderr_tail,
+            returncode=returncode,
+        )
+    return returncode, stderr_tail
+
+
 # 出力品質オプションを setting.json の ffmpeg セクションから構築する
 def build_encode_options(ffmpeg_settings):
     return [
@@ -317,7 +343,22 @@ def build_encode_options(ffmpeg_settings):
         "-preset", ffmpeg_settings.get("preset", "medium"),
         "-crf", str(ffmpeg_settings.get("crf", 20)),
         "-c:a", ffmpeg_settings.get("audio_codec", "aac"),
+        *audio_bitrate_options(ffmpeg_settings),
     ]
+
+
+# 音声ビットレート指定 (-b:a) を返す (docs/quality/resolve1.md §4.3 F11)
+# 指定が無いと FFmpeg の aac 既定 (ステレオで概ね 128kbps) になり、
+# 投稿用の素材としては明確な劣化になる。空文字・0 では従来どおり指定しない。
+# 非可逆でないコーデック (pcm_*) には付けない (無意味なうえ警告が出る)。
+def audio_bitrate_options(ffmpeg_settings, audio_codec=None):
+    codec = str(audio_codec or (ffmpeg_settings or {}).get("audio_codec", "aac") or "")
+    if codec.startswith("pcm_") or codec in ("copy", "flac", "alac"):
+        return []
+    bitrate = str((ffmpeg_settings or {}).get("audio_bitrate", "") or "").strip()
+    if not bitrate:
+        return []
+    return ["-b:a", bitrate]
 
 
 # 中間ファイル (連結前の部品) 用のエンコード設定を返す (20260812 resolve3 §5.2)
@@ -326,11 +367,17 @@ def build_encode_options(ffmpeg_settings):
 # 最終出力は焼き込み (または最終化) の 1 回だけ AAC 化されるので、遅延も 1 回しか乗らない。
 # audio_codec が空 / None のときは build_encode_options と完全に同一の内容を返す (切り戻し経路)。
 def build_intermediate_encode_options(ffmpeg_settings, audio_codec=None):
-    options = build_encode_options(ffmpeg_settings)
     if not audio_codec:
-        return options
-    # 末尾の "-c:a <codec>" の値だけを差し替える
-    return options[:-1] + [str(audio_codec)]
+        return build_encode_options(ffmpeg_settings)
+    # 映像の指定までは共通で、音声は指定のコーデックへ差し替える。
+    # ビットレートは差し替え後のコーデックで判断する (pcm_* には付けない / F11)。
+    return [
+        "-c:v", ffmpeg_settings.get("video_codec", "libx264"),
+        "-preset", ffmpeg_settings.get("preset", "medium"),
+        "-crf", str(ffmpeg_settings.get("crf", 20)),
+        "-c:a", str(audio_codec),
+        *audio_bitrate_options(ffmpeg_settings, audio_codec),
+    ]
 
 
 # 中間ファイルの拡張子を決める (20260812 resolve3 §5.2)

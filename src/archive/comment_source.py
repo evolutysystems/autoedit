@@ -46,6 +46,34 @@ def count_w_chars(text, runs_only=True):
     return total
 
 
+# 日本語配信の笑い表現を数える (docs/quality/resolve1.md §2.3 F4)
+# ｗ/w だけでは「草」「笑」を取りこぼす。重複カウントを避けるため、
+# 長い語から順に数えて消していく (「くさ」と「草」が二重に効かないように)。
+def count_laugh_words(text, words):
+    body = str(text or "")
+    if not body or not words:
+        return 0
+    total = 0
+    for word in sorted((str(w) for w in words if str(w)), key=len, reverse=True):
+        found = body.count(word)
+        if found:
+            total += found
+            body = body.replace(word, "")
+    return total
+
+
+# 笑いエモートの数を数える (F4)
+# comment_source は emotes を正規化して持っているのに採点では使っていなかった。
+# Twitch のエモート ID は大小が混ざるため、突き合わせは小文字へそろえて行う。
+def count_laugh_emotes(emotes, names):
+    if not emotes or not names:
+        return 0
+    wanted = {str(n).strip().lower() for n in names if str(n).strip()}
+    if not wanted:
+        return 0
+    return sum(1 for e in emotes if str(e).strip().lower() in wanted)
+
+
 # twitch-dl の 1 コメント(dict)を内部正規化フォーマットへ変換する。
 # 期待キー: contentOffsetSeconds / commenter.displayName / message.fragments[].text / .emote.emoteID
 def _normalize_twitchdl_comment(comment):
@@ -139,7 +167,8 @@ def average_comments_per_min(comments, duration_sec):
 # 正規化コメントを各セルへ集計し、cells[i] の "w_count"/"comment_count" を更新する (in-place)。
 # セル添字はセル幅 cell_sec からの割り当て (offset // cell_sec)。範囲外は端セルへクランプ。
 # runs_only は count_w_chars に渡す (笑い連なりのみカウントするか)。
-def aggregate_into_cells(comments, cells, cell_sec, runs_only=True):
+def aggregate_into_cells(comments, cells, cell_sec, runs_only=True,
+                         laugh_words=None, laugh_emotes=None):
     if not comments or not cells or cell_sec <= 0:
         return cells
     n = len(cells)
@@ -151,4 +180,12 @@ def aggregate_into_cells(comments, cells, cell_sec, runs_only=True):
             idx = n - 1
         cells[idx]["comment_count"] = cells[idx].get("comment_count", 0) + 1
         cells[idx]["w_count"] = cells[idx].get("w_count", 0) + count_w_chars(c["text"], runs_only)
+        # 日本語の笑い表現と笑いエモート (docs/quality/resolve1.md §2.3 F4)。
+        # 未指定なら 0 のまま = 従来と完全に同一の集計になる。
+        cells[idx]["laugh_word_count"] = (
+            cells[idx].get("laugh_word_count", 0)
+            + count_laugh_words(c["text"], laugh_words))
+        cells[idx]["laugh_emote_count"] = (
+            cells[idx].get("laugh_emote_count", 0)
+            + count_laugh_emotes(c.get("emotes"), laugh_emotes))
     return cells

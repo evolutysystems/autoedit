@@ -90,7 +90,25 @@
         "split_min_piece_sec": 0.3,
         "align_to_cut_head": true,
         "align_tolerance_sec": 0.6,
-        "hold_across_cut": false
+        "hold_across_cut": false,
+        "subtitle_min_chars": 16,
+        "split_min_pause_sec": 0.35,
+        "merge_max_pause_sec": 0.2,
+        "split_max_pause_sec": 1.0,
+        "split_on_phrase_boundary": true,
+        "wrap_mode": "width",
+        "min_line_ratio": 0.5,
+        "initial_prompt": "",
+        "initial_prompt_from_vod": true,
+        "hotwords": "",
+        "vocabulary": [],
+        "replacements": [],
+        "low_confidence_logprob": -0.6,
+        "low_confidence_word_prob": 0.4,
+        "speaker_filter": "off",
+        "speaker_threshold": 0.45,
+        "speaker_core_ratio": 0.5,
+        "speaker_min_sec": 0.6
     },
     "silence_cut": {
         "enabled": true,
@@ -109,17 +127,22 @@
         "base_min_silence_sec": 0.3,
         "min_region_sec": 0.8,
         "max_regions": 100,
-        "metric": "mean",
+        "metric": "percentile",
+        "percentile": 10,
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -20
     },
     "loudness": {
-        "enabled": true,
+        "enabled": false,
         "target_i": -14.0,
-        "target_tp": -1.0,
+        "target_tp": -1.5,
         "target_lra": 11.0,
         "two_pass": true,
-        "audio_bitrate": "192k"
+        "audio_bitrate": "192k",
+        "min_duration_sec": 5.0,
+        "verify_output": true,
+        "correct_output": true,
+        "correct_tolerance_lu": 0.5
     },
     "preview": {
         "enabled": true,
@@ -156,6 +179,7 @@
             "recent": [],
             "archive_suffix": ".archive",
             "recent_archive": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2887226037.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2905853277.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2904967242.archive.timeline.json"
             ],
@@ -219,7 +243,7 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAUvAAAAaQAACqwAAASGAAAFLwAAAIgAAAqsAAAEhgAAAAAAAAAADXAAAAUvAAAAiAAACqwAAASG",
+                "archive": "AdnQywADAAAAAAQoAAAAkQAACaUAAASuAAAEKAAAALAAAAmlAAAErgAAAAAAAAAADXAAAAQoAAAAsAAACaUAAASu",
                 "clip": "AdnQywADAAAAAAQuAAAA9gAACS0AAARIAAAELgAAARUAAAktAAAESAAAAAAAAAAADXAAAAQuAAABFQAACS0AAARI"
             },
             "splitter_state": {
@@ -312,7 +336,8 @@
             "copy": "Ctrl+C",
             "paste": "Ctrl+V",
             "align_subtitles": "Ctrl+Shift+A",
-            "toggle_score_graph": "G"
+            "toggle_score_graph": "G",
+            "merge_subtitles": "Ctrl+M"
         },
         "paste": {
             "ripple_scope": "base_syncs_all",
@@ -369,6 +394,7 @@
         "output_height": 1080,
         "output_fps": 60,
         "audio_sample_rate": 48000,
+        "audio_bitrate": "256k",
         "progress_timeout_sec": 600
     },
     "vertical": {
@@ -445,8 +471,24 @@
                 },
                 "comment": {
                     "w_point_per_char": 1,
-                    "rate_spike_bonus": 10
-                }
+                    "rate_spike_bonus": 10,
+                    "laugh_emotes": [
+                        "LUL",
+                        "KEKW",
+                        "OMEGALUL",
+                        "Pog",
+                        "PogChamp",
+                        "4Head"
+                    ],
+                    "emote_point": 1,
+                    "laugh_words": [
+                        "草",
+                        "笑",
+                        "くさ"
+                    ],
+                    "laugh_word_point": 1
+                },
+                "normalize_weights": true
             }
         },
         "markers": {
@@ -469,7 +511,9 @@
         "clip_pipeline": {
             "silence_cut": true,
             "subtitle_review": true,
-            "volume_dialog": false
+            "volume_dialog": false,
+            "cut_db_scope": "vod",
+            "loudness_scope": "vod"
         },
         "combine": {
             "enabled": true,
@@ -494,7 +538,8 @@
             "tag_bg_opacity": 0.8,
             "tag_margin_l": 40,
             "tag_margin_v": 20,
-            "mute_intro": false
+            "mute_intro": false,
+            "match_body_level": true
         }
     },
     "export": {

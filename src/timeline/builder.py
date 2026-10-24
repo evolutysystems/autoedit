@@ -772,6 +772,30 @@ def _append_subtitles(timeline, subtitle_track, items, body_offset, keep_segment
             origin["source_start"] = round(source_start[1], 3)
         if source_end is not None:
             origin["source_end"] = round(source_end[1], 3)
+        # 生成時の認識結果をそのまま控える (docs/quality/resolve1.md §6.1)。
+        # 利用者が手直しした text と見比べれば「無修正テロップ率」が
+        # 保存済みプロジェクトから自動で算出でき、専用の評価素材が要らなくなる。
+        origin["asr_text"] = item.get("text", "")
+        # 信頼度 (B2)。編集画面で「どこが怪しいか」を色分けするために使う。
+        for key in ("confidence", "word_confidence", "no_speech_prob"):
+            if item.get(key) is not None:
+                origin[key] = round(float(item[key]), 4)
+        # 話者照合の結果 (F15 / docs/quality/resolve1.md §12.5)。
+        # speaker_other=True は「配信者以外の声とみなした」= 編集画面で色分けする。
+        if item.get("speaker_score") is not None:
+            origin["speaker_score"] = round(float(item["speaker_score"]), 4)
+        if item.get("speaker_other"):
+            origin["speaker_other"] = True
+        # 単語の時刻 (G4)。テロップを分割するとき本文を語の境界で分けるために使う。
+        words = item.get("words")
+        if words:
+            origin["words"] = [
+                {"start": round(float(w["start"]), 3),
+                 "end": round(float(w["end"]), 3),
+                 "text": str(w.get("text", ""))}
+                for w in words
+                if w.get("start") is not None and w.get("end") is not None
+            ]
 
         role = item.get("role", DEFAULT_ROLE)
         # コメント役割は専用トラック (既定 S2) へ振り分ける (ver3 resolve11 §5.3)。

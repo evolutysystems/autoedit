@@ -104,9 +104,9 @@ def analyze_min_speech_db(input_path, settings):
         _logger.info("測定区間を標本化: %d → %d 区間 (長い順)", len(regions), len(sampled))
         regions = sampled
 
-    # 各区間の代表音量を測定し最小値を採る (= 最も静かに発話している区間の音量)
-    min_db = None
-    measured_count = 0
+    # 各区間の代表音量を測定して集める
+    # metric="mean"/"max" は従来どおり最小値を採り、"percentile" は下側分位点を採る。
+    values = []
     for (s, e) in regions:
         result = measure_region_volume(input_path, s, e, ffmpeg_cfg)
         if result is None:
@@ -115,17 +115,23 @@ def analyze_min_speech_db(input_path, settings):
         value = max_db if metric == "max" else mean_db
         if value is None:
             continue
-        measured_count += 1
-        if min_db is None or value < min_db:
-            min_db = value
+        values.append(value)
 
-    if min_db is None:
+    measured_count = len(values)
+    if not values:
         _logger.warning("全区間の音量測定に失敗したため最低dBを算出できません")
         return {"min_db": None, "region_count": region_count, "measured_count": 0}
 
-    rounded = int(round(min_db))
+    if metric == "percentile":
+        percentile = _to_float(va_cfg.get("percentile"), 10.0)
+        representative = _percentile(values, percentile)
+    else:
+        # 従来: 最も静かに発話している区間の音量 (最小値)
+        representative = min(values)
+
+    rounded = int(round(representative))
     _logger.info(
-        "発話区間の最低dB=%d (%s, 測定 %d/%d 区間)",
+        "発話区間の代表dB=%d (%s, 測定 %d/%d 区間)",
         rounded, metric, measured_count, region_count,
     )
     return {
@@ -133,3 +139,25 @@ def analyze_min_speech_db(input_path, settings):
         "region_count": region_count,
         "measured_count": measured_count,
     }
+
+# 下側分位点を返す (docs/quality/resolve1.md §2.3 F7)
+#
+# 従来の「最小値」は 1 区間でも静かなものがあると閾値がノイズフロアまで落ち、
+# カットが一切効かなくなっていた (実測: 最低dB=-41 → 無音 0 件)。
+# 分位点なら外れ値 1 件では動かない。
+# percentile は 0..100 (%)。0 で最小値、100 で最大値と同じになる。
+def _percentile(values, percentile):
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    ratio = min(max(float(percentile) / 100.0, 0.0), 1.0)
+    index = int(round(ratio * (len(ordered) - 1)))
+    return ordered[index]
+
+
+# 設定値を float へ寄せる (不正値は既定へ)
+def _to_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)

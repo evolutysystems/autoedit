@@ -419,6 +419,8 @@ def _finalize_base(timeline, context, video_path, ffmpeg_cfg):
         "-i", video_path,
         "-c:v", "copy",
         "-c:a", ffmpeg_cfg.get("audio_codec", "aac"),
+        # 最終化もビットレートを明示する (docs/quality/resolve1.md §4.3 F11)
+        *ffmpeg_runner.audio_bitrate_options(ffmpeg_cfg),
         "-ar", str(sample_rate), "-ac", "2",
         output_path,
     ]

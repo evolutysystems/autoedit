@@ -1,0 +1,2897 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quality resolve1 — アーカイブ用切り抜きの品質改善設計</title>
+<link rel="stylesheet" href="resolve1.css">
+</head>
+<body>
+<header class="site-header" id="top">
+    <h1>アーカイブ用切り抜きの品質改善設計</h1>
+    <p class="subtitle">自動カット / 自動文字起こし / 音量調整 — quality resolve1</p>
+    <p class="meta">
+        対象: <code>autoedit</code> (Stretheus クライアント) の<strong>アーカイブ用切り抜き経路のみ</strong>
+        (<code>src/archive/</code> + <code>archive.clip_pipeline.timeline_review=true</code>)<br>
+        要望元: <code>docs/quality/qua1.md</code> ／ 作成日: 2026-10-23 (main <code>e38e085</code>)<br>
+        関連: <code>ver8/resolve6.md</code> (テロップ単位) ／
+        <code>20260811/resolve.md</code> §2-3・§4-2 (切り抜きの字幕軸) ／
+        <code>20260626/resolve.md</code> (幻聴字幕) ／
+        <code>ver3/resolve16.md</code> (ストリームマーカー) ／
+        <code>ver3/resolve19.md</code> (テーマ演出・イントロカード)
+    </p>
+</header>
+
+<section class="scope-note">
+    <p>
+        <strong>本書の範囲</strong>: 通常の 1 本編集 (<code>pipeline_runner</code>) ではなく、
+        <strong>アーカイブタブから VOD を採点して TOP クリップを切り抜く経路</strong>だけを対象とする。
+        切り抜き経路は本流と同じ <code>silence_cutter</code> / <code>subtitle_generator</code> /
+        <code>loudness_normalizer</code> を呼ぶが、<strong>呼び方と順序が違う</strong>ため、
+        本流には無い固有の問題が重なっている。
+    </p>
+</section>
+
+<nav class="toc">
+    <h2>目次</h2>
+    <ol>
+        <li><a href="#conclusion">結論</a> — <a href="#decisions"><strong>回答に基づく決定事項</strong></a></li>
+        <li><a href="#overview">対象経路の全体像</a></li>
+        <li><a href="#score-now">区間選定 (採点) の現状</a></li>
+        <li><a href="#score-issue">区間選定 — 問題点 (A1〜A8)</a></li>
+        <li><a href="#score-fix">区間選定 — 改善案 (F1〜F7・F14)</a></li>
+        <li><a href="#qa-ser"><strong>補足: 感情認識は発話区間のみで実行できるか</strong></a></li>
+        <li><a href="#asr-now">文字起こし — 現状</a></li>
+        <li><a href="#asr-issue">認識精度 — 問題点と改善案 (B1〜B5)</a></li>
+        <li><a href="#split-issue">テロップ区切り — 問題点 (C1〜C4)</a></li>
+        <li><a href="#split-fix">テロップ区切り — 改善案 (G1〜G4)</a></li>
+        <li><a href="#loud-now">音量調整 — 現状</a></li>
+        <li><a href="#loud-issue">音量調整 — 問題点 (E1〜E7)</a></li>
+        <li><a href="#loud-fix">音量調整 — 改善案 (F8〜F13)</a></li>
+        <li><a href="#matrix">問題と改善案の対応表</a></li>
+        <li><a href="#priority">優先順位</a></li>
+        <li><a href="#eval">評価 — まず測れるようにする</a></li>
+        <li><a href="#risk">リスクと切り戻し</a></li>
+        <li><a href="#keys">追加予定の設定キー</a></li>
+        <li><a href="#unknown">不明点 (要判断)</a></li>
+        <li><a href="#refs">参照した実装箇所</a></li>
+        <li><a href="#future"><strong>今後の課題 (保留)</strong></a></li>
+        <li><a href="#verify"><strong>検証結果 (2026-10-23)</strong></a> — <a href="#verify-3">ゲーム内ボイスへの回答</a> / <a href="#verify-7"><strong>話者照合の実測</strong></a></li>
+    </ol>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="conclusion">
+    <h2>0. 結論</h2>
+    <p>
+        切り抜き経路の品質は「<strong>どの区間を選ぶか (採点)</strong>」で決まり、その採点が
+        <strong>音量だけで盛り上がりを判定している</strong>ため、要望の 3 点はいずれもここに帰着します。
+    </p>
+
+    <table>
+        <thead><tr><th>#</th><th>要望</th><th>切り抜き経路での答え</th><th>根本原因</th></tr></thead>
+        <tbody>
+            <tr>
+                <td class="num">1</td>
+                <td>発話を認識し、配信者が喋っているタイミングで切れているか</td>
+                <td class="ng">できていない</td>
+                <td>採点の「感情点」は正規化した <code>mean_db</code> の平均 + 大声セル加点 − 無音セル減点のみ。声か否かを区別しない (<a href="#f-a1">A1</a>)</td>
+            </tr>
+            <tr>
+                <td class="num">2</td>
+                <td>ゲームや他の音声を含めていないか</td>
+                <td class="ng">区別していない。むしろゲーム音が高得点を取る</td>
+                <td>45 秒セルの <code>max_db</code> は単発の効果音で決まり、<code>silence_ratio</code> はゲーム音で常に 0 になるため減点が効かない (<a href="#f-a2">A2</a>)</td>
+            </tr>
+            <tr>
+                <td class="num">3</td>
+                <td>文字起こしの精度向上に必要なものは何か</td>
+                <td class="mid">(a) 固有名詞辞書 (b) 信頼度の可視化 (c) 置換辞書</td>
+                <td>faster-whisper の精度系パラメータを既定のまま使っている (<a href="#asr-issue">§3.2</a>)</td>
+            </tr>
+            <tr>
+                <td class="num">4</td>
+                <td>テロップの区切りがおかしい (結合・分割の手作業)</td>
+                <td class="ng">設定 1 つの二重用途で区切りが崩れている</td>
+                <td>切り抜きも <code>recognize_for_timeline</code> を共有するため、<code>subtitle.min_line_length=5</code> がテロップ下限まで下げている (<a href="#f-c1">C1</a>)</td>
+            </tr>
+            <tr>
+                <td class="num">5</td>
+                <td>YouTube に合わせた最適な音量調節ができているか</td>
+                <td class="mid">クリップ単位では合うが、出来上がった 1 本では合っていない</td>
+                <td>正規化が<strong>クリップごと個別</strong>。イントロカード・OP/ED は未正規化で、結合後は一度も測っていない (<a href="#loud-issue">§4.2</a>)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>0.1 切り抜き経路だけに存在する重大な不具合</h3>
+    <table>
+        <thead><tr><th>記号</th><th>症状</th><th>影響</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#f-a3"><strong>A3</strong></a></td>
+                <td><code>emotion_points</code> の <code>big_laugh</code> / <code>surprise</code> / <code>cry</code> / <code>anger</code> が <code>setting.json</code> にあるのに<strong>コードが読んでいない</strong></td>
+                <td class="ng">笑い・驚きは一切検出されていない。設定を触っても何も起きない</td></tr>
+            <tr><td><a href="#f-a4"><strong>A4</strong></a></td>
+                <td>コメントの <code>emotes</code> を正規化しているのに<strong>採点で使っていない</strong>。「草」「笑」も未カウント</td>
+                <td class="ng">Twitch の笑いエモート (LUL / KEKW 等) が盛り上がり判定に効かない</td></tr>
+            <tr><td><a href="#f-e2"><strong>E2</strong></a></td>
+                <td>イントロカードの音声が<strong>正規化を通っていない</strong> (元 VOD の生音量)</td>
+                <td class="ng">テーマを付けた全クリップで、<strong>イントロが本編より約 5 dB 大きい</strong> (実測 I=-9.2 → 目標 -14)</td></tr>
+            <tr><td><a href="#f-e1"><strong>E1</strong></a></td>
+                <td>ラウドネス正規化が<strong>クリップごと個別</strong></td>
+                <td class="ng">静かなクリップと盛り上がったクリップが同じ音量に揃えられ、<strong>切り抜きの山場が潰れる</strong></td></tr>
+            <tr><td><a href="#f-a6"><strong>A6</strong></a></td>
+                <td><code>cut_region</code> が <code>-c copy</code></td>
+                <td class="mid">採点した区間と実際の切り抜き区間が<strong>最大 1 GOP (配信 VOD では概ね 2 秒) ずれる</strong></td></tr>
+        </tbody>
+    </table>
+
+    <h3>0.2 最優先で入れるべき 3 件 (費用対効果の順)</h3>
+    <div class="top3">
+        <div class="item">
+            <span class="rank">1</span><h3>イントロカードを正規化経路に乗せる</h3>
+            <p>
+                <a href="#fix-f8">F8</a> — 数行。
+                テーマ付き切り抜きで必ず起きている音量段差が消える。
+            </p>
+        </div>
+        <div class="item">
+            <span class="rank">2</span><h3>テロップ下限文字数を独立キーへ分離</h3>
+            <p>
+                <a href="#fix-g1">G1</a> — 1 行。
+                「認識セグメントそのまま」の細かさが直り、結合の手作業が激減する。
+            </p>
+        </div>
+        <div class="item">
+            <span class="rank">3</span><h3>採点を「声」ベースへ寄せる</h3>
+            <p>
+                <a href="#fix-f1">F1</a> — 中規模。
+                同梱済みの Silero VAD で発話率を特徴に加えるだけで、
+                「ゲーム音が大きいだけの区間」が上位から落ちる。
+            </p>
+        </div>
+    </div>
+
+    <h3 id="status">0.3 実装と検証の状況 (2026-10-23)</h3>
+    <p>
+        段 0〜段 2 を実装し、実際の VOD 1 本で動作を確認しました。
+        <strong>結果と、そこで見つけた不具合・新しい問題は
+        <a href="#verify">§12</a> にまとめています。</strong>
+    </p>
+    <table>
+        <thead><tr><th>区分</th><th>内容</th></tr></thead>
+        <tbody>
+            <tr><td>実装済み</td>
+                <td>段 0 (計測の埋め込み) / 段 1 全件 / 段 2 のうち F6 以外</td></tr>
+            <tr><td>動作確認済み</td>
+                <td class="ok">G5 (実寸折り返し) / G1 (テロップ下限) / F9 (VOD 単位の正規化) /
+                    F13 (適用方式の記録) — <a href="#verify-1">§12.1</a></td></tr>
+            <tr><td>未通過</td>
+                <td class="mid">F8 / F10 / F11 は焼き込み・出力の工程のため、
+                    出力まで回すと検証できる</td></tr>
+            <tr><td><strong>見つけた不具合</strong></td>
+                <td class="ng"><strong><a href="#verify-2-1"><code>origin</code> の実装漏れ</a> /
+                    <a href="#verify-2-2">テロップが 76.8 秒に伸びる回帰</a></strong>
+                    — いずれも修正済み</td></tr>
+            <tr><td><strong>新しい問題</strong></td>
+                <td class="ng"><strong><a href="#verify-3">A9 ゲーム内ボイスがテロップになる</a></strong>
+                    — F1 (VAD) では解決しない</td></tr>
+            <tr><td>残課題</td>
+                <td class="ok"><a href="#verify-4">H1 3 行になるテロップ</a> — <strong>修正済み</strong></td></tr>
+            <tr><td><strong>実装したが不採用</strong></td>
+                <td class="ng"><strong><a href="#fix-f15">F15 話者照合</a></strong>
+                    — ONNX モデル (WeSpeaker) まで入れて実測したが、
+                    <strong>この素材では成立しない</strong>ことが確定
+                    (<a href="#verify-7">§12.7</a>)。
+                    <strong>ONNX 実装は取り除きました</strong>
+                    (<a href="#verify-8">§12.8</a>)。枠組みと MFCC 方式だけ残し、
+                    既定は <code>off</code></td></tr>
+            <tr><td><strong>対策を入れないと決めた</strong></td>
+                <td class="ng"><strong><a href="#f-a9">A9 ゲーム内ボイス</a></strong>
+                    — F15 (話者照合) は実測で不成立 (<a href="#verify-7">§12.7</a>)、
+                    <strong>F16 (音量で要確認マーク) は不採用</strong>
+                    (<a href="#verify-9">§12.9</a>)。
+                    当面は<strong>編集画面で手で落とす運用</strong>になります</td></tr>
+        </tbody>
+    </table>
+
+    <h3 id="decisions">0.4 回答に基づく決定事項 (2026-10-23)</h3>
+    <p>
+        §9 の不明点のうち Q1〜Q7・Q9 に回答を得たため、本書の方針を以下に確定します。
+        未回答は <strong>Q8 (音声ビットレートの目標値)</strong> の 1 件のみで、
+        これも未回答のまま <strong>256k 既定</strong>で進められます
+        (現状の約 128kbps より確実に改善するため)。
+    </p>
+    <table>
+        <thead><tr><th>#</th><th>回答</th><th>本書への反映</th></tr></thead>
+        <tbody>
+            <tr><td><strong>Q1</strong></td>
+                <td class="ok">配信タイトル・ゲーム名を <code>initial_prompt</code> へ差し込んでよい</td>
+                <td><strong>採用</strong>。B1 を「Twitch API の取得値を自動で種にする」前提で確定
+                    (<a href="#fix-b1">§3.2 B1</a>)</td></tr>
+            <tr><td><strong>Q2</strong></td>
+                <td class="ok"><strong>案 B′</strong> (発話区間の擬似感情特徴)</td>
+                <td><strong>採用</strong>。案 B (SER モデル) は<strong>不採用</strong>、案 C は見送り
+                    (<a href="#fix-f3">§2.3 F3</a> / <a href="#qa-245">§2.4.5</a>)</td></tr>
+            <tr><td><strong>Q3</strong></td>
+                <td class="ok"><strong>1 本にまとめて出力</strong>し、手直しを経てそのまま YouTube へ上げる</td>
+                <td><code>loudness_scope="vod"</code> を既定とし、
+                    <strong>F10 (最終出力の測定・補正) を必須</strong>へ格上げ
+                    (<a href="#fix-f9">§4.3 F9</a> / <a href="#fix-f10">F10</a>)</td></tr>
+            <tr><td><strong>Q4</strong></td>
+                <td class="ok">テロップの結合 / 分割は <strong>Timeline 編集画面だけ</strong></td>
+                <td><strong>確定</strong>。ArchiveResultWindow には出さない = G4 の実装が半分になる
+                    (<a href="#fix-g4">§3.4 G4</a>)</td></tr>
+            <tr><td><strong>Q5</strong></td>
+                <td class="ok">「2 行で画面外に出ないこと」が条件。
+                    <strong>フォント次第なので文字数ではなくテロップ(実寸)次第</strong></td>
+                <td><strong>ご指摘どおりです</strong>。文字数は代理指標にすぎません。
+                    <strong><a href="#fix-g5">G5 (実寸 px での折り返し) を新設</a></strong>し、
+                    G1 の文字数下限は px 化までの暫定とします</td></tr>
+            <tr><td><strong>Q6</strong></td>
+                <td class="mid"><code>cut_region</code> の精度は<strong>今後の課題として後回し</strong></td>
+                <td>F5 を <strong><a href="#future-1">§11 今後の課題へ退避</a></strong>。実施しない</td></tr>
+            <tr><td><strong>Q7</strong></td>
+                <td class="ok">評価セットは<strong>実装してテストした後に報告でよい</strong></td>
+                <td><strong>ブロッカーから外す</strong>。素材の事前提供は求めず、
+                    <strong><a href="#qa-q7">計測を実装へ埋め込む</a></strong> (§6.0 / §6.1)。
+                    <code>origin["asr_text"]</code> を 1 行足すだけで
+                    普段の編集が正解データになる</td></tr>
+            <tr><td><strong>Q9</strong></td>
+                <td class="mid">入力は <strong><code>twitch-dl</code> 取得の VOD が主</strong></td>
+                <td>音声はミックス 1 本のみ → <strong>F14 (トラック選択) は効かないため保留</strong>、
+                    案 B (SER) も<strong>不採用</strong>が確定
+                    (<a href="#future-2">§11-2</a>)</td></tr>
+        </tbody>
+    </table>
+    <div class="callout">
+        <strong>Q3 の回答で音量の設計が変わります。</strong>
+        「1 本にまとめてそのまま YouTube へ」なら、聴き手が体験するのは
+        <strong>結合後の 1 本</strong>だけです。クリップごとに -14 LUFS へ揃える現状
+        (<a href="#f-e1">E1</a>) は目的と噛み合わず、かつ
+        <strong>誰も最終ファイルを測っていない</strong> (<a href="#f-e3">E3</a>) 状態で
+        公開されることになります。<code>"vod"</code> スコープ + F10 の最終測定が揃って初めて
+        「YouTube に合わせた音量」が保証されます。
+    </div>
+
+    <h3>0.5 調査方法</h3>
+    <ul>
+        <li>実装読解: <code>src/archive/{pipeline,features,scoring,comment_source,clip_writer,config}.py</code>、
+            <code>src/modules/{silence_cutter,volume_analyzer,subtitle_generator,loudness_normalizer,concat_processor}.py</code></li>
+        <li>設定実値: <code>src/settings/setting.json</code> の <code>archive</code> / <code>subtitle</code> /
+            <code>volume_analysis</code> / <code>loudness</code> / <code>ffmpeg</code></li>
+        <li>実行ログ: <code>logs/autoedit_2026*.log</code> (閾値・区間数・ラウドネス実測値)</li>
+        <li>依存の実機確認: faster-whisper <strong>1.2.1</strong> / <code>WhisperModel.transcribe</code> が
+            受け付ける 34 引数と <code>VadOptions</code> の既定値を実環境で列挙</li>
+    </ul>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第1部 — 対象経路の全体像</h2>
+    <p>切り抜きが本流とどこで違うのか / 固有問題の源はどこか</p>
+</div>
+
+<section id="overview">
+    <h2>1. 処理の流れ</h2>
+<pre class="code-block"><span class="k">[採点フェーズ]</span>  archive/pipeline.analyze()
+  VOD/ローカル mp4
+    ↓ features.extract_cells()               45 秒セルごとに mean_db / max_db / 無音率
+    ↓ comment_source.aggregate_into_cells()  セルごとの ｗ数・コメント数
+    ↓ scoring.score_window()                 180 秒窓 (= 4 セル) を採点
+    ↓ scoring.select_top_events()            TOP10 を貪欲選択 → 連続/重なりを統合
+  クリップ候補 (= 切り抜く区間)
+
+<span class="k">[prepare フェーズ]</span>  archive/clip_writer.prepare_one_clip()  <span class="c">← クリップごとに繰り返す</span>
+    ↓ cut_region()                           <span class="bad">★ -c copy で区間切り出し</span>
+    ↓ loudness_normalizer.normalize_file()   <span class="bad">★ クリップ単位で -14 LUFS へ</span>
+    ↓ _apply_volume_analysis()               <span class="bad">★ クリップ単位でカット閾値を測り直す</span>
+    ↓ _prepare_edit_points()                 silence_cutter.detect_edit_points()
+                                             + subtitle_generator.recognize_for_timeline()
+  編集点 + 字幕 items
+
+<span class="k">[レビュー]</span>  Timeline 編集画面 / ArchiveResultWindow
+
+<span class="k">[burn フェーズ]</span>  archive/clip_writer._render_clips() / _burn_clips()
+    ↓ renderer.render()                      字幕焼き込み・合成
+    ↓ _build_tag_overlay()                   左上テーマタグ
+    ↓ _build_intro_card()                    <span class="bad">★ 元 VOD から 3 秒 (正規化を通らない)</span>
+    ↓ _build_combine_parts()                 OP + クリップ群 + ED
+    ↓ concat_processor.concat()               <span class="bad">★ 全再エンコード (-b:a 指定なし)</span>
+  最終 1 本</pre>
+    <p class="legend"><span class="badge danger">★</span> = 本流 (<code>pipeline_runner</code>) と異なる、切り抜き固有の扱い</p>
+
+    <h3>1.2 本流との違い (ここが固有問題の源)</h3>
+    <table>
+        <thead><tr><th>項目</th><th>本流 (1 本編集)</th><th>切り抜き</th></tr></thead>
+        <tbody>
+            <tr><td>ラウドネス正規化</td><td>素材 1 本に 1 回</td><td class="ng">クリップごとに個別 (<code>clip_writer.py:528</code>)</td></tr>
+            <tr><td>カット閾値の確定</td><td>ダイアログで利用者が確認</td><td class="ng">ダイアログ無し・クリップごとに自動採用</td></tr>
+            <tr><td>区間の切り出し</td><td><code>extract_segment</code> (再エンコード・フレーム正確)</td><td class="ng"><code>cut_region</code> (<code>-c copy</code>・キーフレーム単位)</td></tr>
+            <tr><td>最終結合</td><td><code>renderer</code> が PCM 中間で 1 回だけ AAC 化</td><td class="ng"><code>concat_processor.concat</code> が全パーツを再エンコード</td></tr>
+            <tr><td>OP/ED</td><td>本流と同じ</td><td>クリップには付けず結合時に 1 回 (<code>build_clip_settings</code>)</td></tr>
+            <tr><td>固有の追加要素</td><td>—</td><td class="ng">イントロカード / 左上テーマタグ (正規化外)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>1.3 現在の設定実値</h3>
+    <table class="compact">
+        <thead><tr><th>セクション</th><th>キー</th><th>値</th></tr></thead>
+        <tbody>
+            <tr><td rowspan="7"><code>archive.scoring</code></td><td><code>window_sec</code> / <code>slide_sec</code></td><td>180 / 45</td></tr>
+            <tr><td><code>top_n</code></td><td>10</td></tr>
+            <tr><td><code>clip_pad_sec</code></td><td>0</td></tr>
+            <tr><td><code>loud_percentile</code></td><td>0.8</td></tr>
+            <tr><td><code>silence_ratio_threshold</code></td><td>0.6</td></tr>
+            <tr><td><code>method_a.weights</code></td><td>emotion 0.55 / comment 0.45</td></tr>
+            <tr><td><code>method_a.emotion_points</code></td><td>loud 10 / long_silence -8 / <span class="ng">big_laugh 15・surprise 8・cry 15・anger 12 (未使用)</span></td></tr>
+            <tr><td><code>archive.clip_pipeline</code></td><td><code>silence_cut</code> / <code>timeline_review</code></td><td>true / true (既定)</td></tr>
+            <tr><td><code>archive.markers</code></td><td><code>before_sec</code> / <code>after_sec</code></td><td>120 / 120</td></tr>
+            <tr><td><code>archive.intro_card</code></td><td><code>buffer_sec</code> / <code>mute_intro</code></td><td>3.0 / <span class="ng">false</span></td></tr>
+            <tr><td><code>volume_analysis</code></td><td><code>last_cut_db</code> / <code>metric</code> / <code>min_region_sec</code></td><td>-20 / mean / 0.8</td></tr>
+            <tr><td><code>subtitle</code></td><td><code>min_line_length</code> / <code>max_line_length</code> / <code>subtitle_max_lines</code></td><td><span class="ng">5</span> / 20 / 2</td></tr>
+            <tr><td><code>loudness</code></td><td><code>target_i</code> / <code>target_tp</code> / <code>audio_bitrate</code></td><td>-14.0 / -1.0 / "192k"</td></tr>
+            <tr><td><code>ffmpeg</code></td><td><code>audio_codec</code> / (ビットレート)</td><td>aac / <span class="ng">指定なし</span></td></tr>
+        </tbody>
+    </table>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第2部 — 切り抜き区間の選定と自動カット</h2>
+    <p>
+        切り抜きにおける「自動カット」は 2 段階ある。<strong>① どの 3 分を切り抜くか (採点)</strong> と
+        <strong>② その中の無音をどう詰めるか (無音カット)</strong>。
+        要望①②は①に対する問いであり、②は本流と同じ仕組みを使っている。
+    </p>
+</div>
+
+<section id="score-now">
+    <h2>2.1 ① 区間選定 (採点) の現状</h2>
+    <p><code>scoring.score_window()</code> が 1 窓 (180 秒 = 4 セル) を採点する式は以下だけです。</p>
+<pre class="code-block">base    = (窓内セルの正規化 mean_db の平均) * 100.0              <span class="c"># 0..100</span>
+loud    = loud_points * (max_db &gt;= 80 パーセンタイル のセル数)    <span class="c"># +10/セル</span>
+silent  = long_silence_points * (silence_ratio &gt;= 0.6 のセル数)   <span class="c"># -8/セル</span>
+emotion = clamp(base + loud + silent, 0, 100)
+
+comment = clamp(ｗ総数 * 1 + 急増ボーナス 10, 0, 100)
+
+total   = emotion * 0.55 + comment * 0.45</pre>
+    <div class="callout">
+        つまり <strong>感情点 = 音量そのもの</strong>です。コードのコメントにも
+        「R1 は大声/無音のみ検出可能」と明記されています (<code>scoring.py</code>)。
+    </div>
+</section>
+
+<section id="score-issue">
+    <h2>2.2 問題点 (区間選定)</h2>
+
+    <div class="finding" id="f-a1">
+        <h3><span class="id">A1</span>「声」を判定していない — 要望①の答え: できていない</h3>
+        <p>
+            <code>mean_db</code> / <code>max_db</code> は <code>volume_analyzer.measure_region_volume()</code>
+            (= FFmpeg <code>volumedetect</code>) の出力で、<strong>音の大きさしか表しません</strong>。
+            配信者の声・ゲーム BGM・効果音・配信 BGM がすべて同じ 1 本のミックスに混ざったまま、
+            区別なく点になります。
+        </p>
+        <table class="compact">
+            <thead><tr><th>状況</th><th>現状の採点</th><th>望ましい採点</th></tr></thead>
+            <tbody>
+                <tr><td>配信者が静かに喋る + ゲームが静か</td><td class="ng">低得点 (選ばれない)</td><td>内容次第で選ぶ</td></tr>
+                <tr><td>配信者が黙っている + ゲームの戦闘 BGM が大きい</td><td class="ng">高得点 (選ばれる)</td><td>選ばない</td></tr>
+                <tr><td>配信者が叫ぶ + ゲーム音も大きい</td><td class="mid">高得点 (正しいが偶然)</td><td>選ぶ</td></tr>
+            </tbody>
+        </table>
+        <div class="callout">
+            現状の切り抜きは「<strong>音が大きい 3 分</strong>」を選んでおり、要望の
+            「<strong>配信者が盛り上がっている 3 分</strong>」を選んでいません。
+        </div>
+        <div class="callout">
+            <strong>訂正 (<a href="#verify-3-1">§12.3-1</a>)</strong>:
+            この項目を当初「<strong>声かゲーム音か</strong>を区別していない」問題として
+            書きましたが、実際にはもう 1 つ別の区分がありました。
+            <strong>ゲーム内のボイスは音響的には人の声そのもの</strong>なので、
+            F1 (VAD) を入れても「配信者の声」と「ゲーム内の声」は分かれません。
+            採点の歪み (A1) と、テロップがゲーム内ボイスを拾う問題
+            (<strong><a href="#f-a9">A9</a></strong>) は
+            <strong>別の問題</strong>として扱います。
+        </div>
+    </div>
+
+    <div class="finding" id="f-a2">
+        <h3><span class="id">A2</span>ゲーム音が「大声加点」と「無音減点」の両方を無効化する</h3>
+        <h4>(a) 大声加点 (<code>loud</code>) が常に入る</h4>
+        <p>
+            <code>loud_threshold()</code> は全セルの <code>max_db</code> の 80 パーセンタイルを
+            しきい値にします。<code>max_db</code> は <strong>45 秒セル内のピーク 1 点</strong>なので、
+            効果音・銃声・爆発音・通知音が 1 回鳴れば満たされます。
+            ゲーム実況では<strong>ほぼ全セルが「大声セル」</strong>になり、加点が区間の差を付けません。
+        </p>
+        <h4>(b) 無音減点 (<code>long_silence</code>) が一度も入らない</h4>
+        <p>
+            <code>silence_ratio</code> は <code>volume_analysis.base_noise_db = -30 dB</code> 固定の
+            <code>silencedetect</code> 結果からの按分です。ゲーム音が鳴っていれば -30 dB を
+            下回らないため <strong><code>silence_ratio</code> はほぼ 0</strong>、
+            <code>&gt;= 0.6</code> の条件は成立しません。
+            つまり「配信者が黙っている 45 秒」はゲーム音があるだけで減点されません。
+        </p>
+        <div class="callout">
+            結果、<code>emotion</code> は実質 <code>base</code> (= 音量平均) 1 本になります。
+        </div>
+    </div>
+
+    <div class="finding" id="f-a3">
+        <h3><span class="id">A3</span>感情点の設定が死んでいる</h3>
+        <p><code>setting.json</code> には以下があります。</p>
+<pre class="code-block"><span class="s">"emotion_points"</span>: {
+  <span class="s">"big_laugh"</span>: 15, <span class="s">"loud"</span>: 10, <span class="s">"surprise"</span>: 8,
+  <span class="s">"cry"</span>: 15, <span class="s">"anger"</span>: 12, <span class="s">"long_silence"</span>: -8
+}</pre>
+        <p>
+            ところが <code>scoring.score_window()</code> が読むのは
+            <strong><code>loud</code> と <code>long_silence</code> の 2 つだけ</strong>です。
+        </p>
+<pre class="code-block">loud_points          = float(points.get(<span class="s">"loud"</span>, 10))
+long_silence_points  = float(points.get(<span class="s">"long_silence"</span>, -8))
+<span class="bad"># big_laugh / surprise / cry / anger はどこからも参照されない</span></pre>
+        <div class="callout">
+            <strong>笑い・驚き・泣き・怒りは一切検出されていません。</strong>
+            設定画面や <code>setting.json</code> でこれらを変えても出力は 1 ビットも変わりません。
+            「設定があるのに効かない」状態は、利用者が調整を試みるほど混乱するため、
+            検出を実装するか、<strong>少なくとも未実装であることをコメント・UI で明示</strong>すべきです。
+        </div>
+    </div>
+
+    <div class="finding" id="f-a4">
+        <h3><span class="id">A4</span>コメントの笑いエモートと「草」が未カウント</h3>
+        <p><code>comment_source</code> は Twitch のエモート ID を正規化して <code>emotes</code> に持っています。</p>
+<pre class="code-block"><span class="k">return</span> {<span class="s">"offset_sec"</span>: ..., <span class="s">"user"</span>: ..., <span class="s">"text"</span>: ..., <span class="s">"emotes"</span>: emotes}</pre>
+        <p>
+            しかし <code>aggregate_into_cells()</code> が集計するのは <code>comment_count</code> と
+            <code>count_w_chars(text)</code> の 2 つだけで、<strong><code>emotes</code> はどこでも使われません</strong>。
+        </p>
+<pre class="code-block">cells[idx][<span class="s">"comment_count"</span>] += 1
+cells[idx][<span class="s">"w_count"</span>]       += count_w_chars(c[<span class="s">"text"</span>], runs_only)
+<span class="bad"># emotes は捨てられる</span></pre>
+        <p>
+            <code>count_w_chars()</code> 自体はよくできており (全角ｗを常に笑い扱い /
+            <code>world</code> のような英単語を除外)、ここは評価できます。足りないのは:
+        </p>
+        <ul>
+            <li><strong>笑いエモート</strong> (LUL / KEKW / Pog など) — <code>emotes</code> にあるのに未使用</li>
+            <li><strong>「草」「笑」「くさ」</strong> — 日本語配信の笑い表現の主力なのに未カウント</li>
+            <li><strong>連続投稿の勢い</strong> — <code>comment_count</code> は急増ボーナス (一律 +10) にしか使われない</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="f-a5">
+        <h3><span class="id">A5</span>ローカル入力ではスコアが音量 100% になり、満点が 55 になる</h3>
+        <p>
+            チャットを取得できない入力 (ローカル mp4 / 取得失敗) では <code>comments</code> が空なので
+            <code>comment = 0</code> に固定されます。
+        </p>
+<pre class="code-block">total = emotion * 0.55 + comment * 0.45   <span class="c"># comment=0 → total = emotion * 0.55</span></pre>
+        <ul>
+            <li><strong>順位付けは音量のみ</strong>になる (A1 の問題がそのまま出る)</li>
+            <li><strong>表示スコアの上限が 55 点</strong>になる。v1.6.0 で出せるようにした採点グラフも
+                同じ値域になるため、「満点でも 55」という読み取りにくい目盛りになっている</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="f-a6">
+        <h3><span class="id">A6</span><code>cut_region</code> が <code>-c copy</code> で、採点した区間とずれる</h3>
+<pre class="code-block">cmd = [ffmpeg, <span class="s">"-y"</span>, <span class="s">"-ss"</span>, f<span class="s">"{start:.3f}"</span>, <span class="s">"-i"</span>, input_path,
+       <span class="s">"-t"</span>, f<span class="s">"{duration:.3f}"</span>, <span class="bad">"-c", "copy"</span>,
+       <span class="s">"-avoid_negative_ts"</span>, <span class="s">"make_zero"</span>, dest]</pre>
+        <p>
+            <code>-c copy</code> は<strong>キーフレームより細かく切れません</strong>。
+            <code>-ss</code> を <code>-i</code> の前に置いているため実際の開始は
+            <strong>要求時刻の直前のキーフレーム</strong>になり、<code>-t</code> もそこから数えられます。
+            配信 VOD のキーフレーム間隔は概ね 2 秒なので、
+            <strong>切り抜きの頭と尻が最大 2 秒前へずれます</strong>。
+        </p>
+        <p>
+            ストリームマーカー由来の区間 (前後 120 秒) では相対的に無害ですが、
+            <code>archive.section_add.min_length_sec = 1.0</code> で 1 秒のセクションを足せる仕様では
+            <strong>区間長と同じオーダーのずれ</strong>になります。
+        </p>
+        <p class="note">
+            なお <code>-c copy</code> は「同じ引数なら出力が決定的になる」ことを狙った意図的な選択で
+            (プロジェクト再開時の素材復旧で同じ関数を使うため / <code>ver3 resolve9</code> §3-1)、
+            単純に再エンコードへ変えると再開時の互換を壊します。<a href="#fix-f5">F5</a> で両立案を示します。
+        </p>
+    </div>
+
+    <div class="finding" id="f-a7">
+        <h3><span class="id">A7</span>特徴抽出がセルごとに FFmpeg プロセスを起こす</h3>
+<pre class="code-block"><span class="k">for</span> i <span class="k">in</span> range(n_cells):
+    result = volume_analyzer.measure_region_volume(input_path, start, end, ffmpeg_cfg)
+    <span class="c"># ↑ この中で subprocess.run が走る</span></pre>
+        <ul>
+            <li>2 時間 VOD / <code>slide_sec=45</code> → <code>n_cells = 160</code> →
+                <strong>FFmpeg 160 プロセス</strong></li>
+            <li>加えて全長 1 パスの <code>silencedetect</code> が 1 回</li>
+        </ul>
+        <p>
+            <code>astats</code> + <code>metadata=print</code> を使えば
+            <strong>全セルの RMS/ピークを 1 パス</strong>で取れます。
+            採点は「切り抜きを始める前の待ち時間」そのものなので、ここは体感に直結します。
+        </p>
+    </div>
+
+    <div class="finding" id="f-a8">
+        <h3><span class="id">A8</span>② クリップ内の無音カットは閾値がクリップごとに変わる</h3>
+        <p>
+            <code>_apply_volume_analysis()</code> は<strong>クリップごとに</strong>
+            <code>analyze_min_speech_db()</code> を実行し、測定値をそのまま採用します
+            (本流と違いダイアログは出さない)。
+        </p>
+<pre class="code-block">va_cfg[<span class="s">"last_cut_db"</span>] = int(measured)
+_logger.info(<span class="s">"clip%d: 音量解析によりカット閾値 %d dB を採用 (…ダイアログ無し)"</span>, ...)</pre>
+        <h4>(a) 閾値がクリップ間で揃わない</h4>
+        <p>
+            同じ 1 本の出力に入る 10 クリップが、それぞれ別の閾値でカットされます。
+            クリップ A は息継ぎまで詰まり、クリップ B は全く詰まらない、という不統一が起きます。
+        </p>
+        <h4>(b) 短いクリップでは測定が崩壊しやすい</h4>
+        <p>
+            <code>analyze_min_speech_db()</code> は <code>min_region_sec = 0.8</code> 超の区間を測り、
+            <strong>代表値の最小値</strong>を閾値にします。180 秒クリップでは区間数が少なく、
+            1 つ静かな区間があるだけで閾値がノイズフロアまで落ちます。
+        </p>
+        <span class="evidence-label">根拠 — logs/autoedit_20260917.log (本流での同じ崩壊)</span>
+<div class="evidence">2026-09-17 09:31:33 発話区間の最低dB=-41 (mean, 測定 3/3 区間)
+2026-09-17 09:31:46 編集点検出: 無音 0 件 / 残す区間 1 件 (閾値=-41dB, 最小無音=0.60s, 総尺=17.8s)</div>
+        <p>
+            同じ素材で閾値 -24 dB のときは「無音 4 件 / 残す区間 3 件」でした。
+            <strong>閾値の決め方が結果を支配している</strong>ことが分かります。
+            区間数がさらに少ない切り抜きクリップでは、この崩壊がより起きやすくなります。
+        </p>
+    </div>
+
+    <div class="finding" id="f-a9">
+        <h3><span class="id">A9</span>ゲーム内のボイスがテロップになる (2026-10-23 の検証で判明)</h3>
+        <p>
+            実測で <strong>111 件のテロップのうち 24 件が明らかにゲーム内音声</strong>でした
+            (無線通信・カットシーンの台詞)。詳細と実測データは
+            <strong><a href="#verify-3">§12.3</a></strong> にあります。
+        </p>
+        <ul>
+            <li>ゲーム内ボイスは<strong>人の声そのもの</strong>なので、
+                F1 (VAD) も音源分離も効きません。</li>
+            <li>VOD 入力では音声がミックス 1 本しか無いため、
+                F14 (トラック選択) も使えません。</li>
+            <li>切り分けの手掛かりを 3 つ実測し、<strong>区間音量だけが有効</strong>
+                (17 dB の差) でした (ステレオ定位・帯域はいずれも重なって使えない /
+                <a href="#verify-3-2">§12.3-2</a>)。</li>
+            <li>対策として <strong><a href="#fix-f15">F15</a></strong> (話者照合) と
+                <strong><a href="#fix-f16">F16</a></strong> (音量で要確認マーク) を
+                検討しましたが、<strong>F15 は実測で不成立
+                (<a href="#verify-7">§12.7</a>)、F16 は不採用
+                (<a href="#verify-9">§12.9</a>)</strong> となりました。
+                当面は編集画面で手で落とす運用になります。</li>
+        </ul>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<section id="score-fix">
+    <h2>2.3 改善案 (区間選定と自動カット)</h2>
+
+    <div class="fix key" id="fix-f1">
+        <h3><span class="id">F1</span>採点に「発話率」を加える (最重要)</h3>
+        <p>
+            Silero VAD は <strong>faster-whisper 1.2.1 に同梱</strong>されており
+            (<code>faster_whisper.vad.VadOptions</code>)、依存の追加なしに使えます
+            (<code>docs/claude.md</code> の「不要なライブラリを追加しない」を満たす)。
+        </p>
+        <div class="compare">
+            <div class="col now">
+                <h4>現状のセル特徴</h4>
+                <ul><li><code>mean_db</code> / <code>max_db</code> / <code>silence_ratio</code> /
+                    <code>w_count</code> / <code>comment_count</code></li></ul>
+            </div>
+            <div class="col next">
+                <h4>提案</h4>
+                <ul><li>上記 + <code>speech_ratio</code> (VAD が発話と判定した時間の割合)</li></ul>
+            </div>
+        </div>
+        <ul>
+            <li><code>features.extract_cells()</code> に <strong>1 回だけ</strong> VAD を走らせ
+                (全長 16kHz モノラル)、発話区間をセルへ按分する
+                (<code>_silence_overlap()</code> と同じ按分ロジックを再利用)。</li>
+        </ul>
+<pre class="code-block">speech_points = float(points.get(<span class="s">"speech"</span>, 20))     <span class="c"># 新設定</span>
+speech_ratio  = 窓内セルの speech_ratio の平均
+<span class="good">emotion = base + loud*loud_cells + long_silence*silent_cells + speech_points*speech_ratio</span></pre>
+        <ul>
+            <li>さらに <strong>音量ベースを「発話区間だけの音量」へ差し替える</strong>のが本筋です。
+                セル内の VAD 発話区間の RMS を <code>mean_db</code> の代わりに使えば、
+                ゲーム音の大小が <code>base</code> を動かさなくなります。
+                新設定 <code>archive.scoring.method_a.loudness_source</code>:
+                <code>"cell"</code> (従来) / <code>"speech"</code> (発話区間のみ)。</li>
+            <li>新設定 <code>archive.scoring.vad</code>: <code>enabled</code> (true)、
+                <code>threshold</code> (0.5)、<code>min_speech_ms</code> (250)、
+                <code>min_silence_ms</code> (600)。</li>
+        </ul>
+        <p class="note">
+            注意: 2 時間素材で数十秒〜数分かかります。<a href="#fix-f6">F6</a> の 1 パス化と
+            合わせて実装し、進捗を必ず返すこと
+            (<code>run_ffmpeg_progress</code> の対象外のため、セル数ベースの自前進捗)。
+        </p>
+    </div>
+
+    <div class="fix" id="fix-f2">
+        <h3><span class="id">F2</span>大声加点と無音減点を直す</h3>
+        <ul>
+            <li><strong>大声加点</strong>: <code>max_db</code> (セル内ピーク 1 点) ではなく
+                <strong>「<code>max_db</code> がしきい値を超えた時間の割合」</strong>で測る。
+                <code>astats</code> の 1 秒刻み <code>Peak_level</code> を使えば
+                <a href="#fix-f6">F6</a> の 1 パス化で同時に取れます。
+                新設定 <code>archive.scoring.loud_ratio_threshold</code> (既定 0.2 = セルの 2 割以上)。</li>
+            <li><strong>無音減点</strong>: 固定 -30 dB ではなく <strong>VAD の <code>speech_ratio</code></strong>
+                で判定する。<code>silence_ratio_threshold</code> の意味を「無音率」から「非発話率」へ
+                移すのが素直です (既存キーは <code>silence_ratio</code> のまま残し、
+                <code>silence_source: "vad"</code> で切り替える)。</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f3">
+        <h3><span class="id">F3</span>感情点を実装するか、未実装を明示する</h3>
+        <p>
+            <code>big_laugh</code> / <code>surprise</code> / <code>cry</code> / <code>anger</code> の
+            4 つは<strong>現状どこからも読まれていません</strong>。取り得る道は 4 つあり、
+            <strong>判断を仰ぎます</strong> (<a href="#q2">Q2</a>)。
+        </p>
+        <table class="compact">
+            <thead><tr><th>案</th><th>内容</th><th>規模</th><th>新規依存</th></tr></thead>
+            <tbody>
+                <tr><td>案 A</td>
+                    <td>コメント側の特徴で代替する。<code>big_laugh</code> = ｗ/草/笑いエモートの急増、
+                        <code>surprise</code> = 「えっ」「うそ」等の語の急増</td>
+                    <td><span class="badge size-s">小</span></td>
+                    <td class="ok">なし</td></tr>
+                <tr><td class="ok">案 B′ (推奨)</td>
+                    <td><strong>発話区間の擬似感情特徴</strong> (ピッチ上昇・発話音量の突出・
+                        立ち上がりの急峻さ)。同梱の <code>torchaudio</code> で完結する
+                        (<a href="#qa-ser">§2.4</a>)</td>
+                    <td><span class="badge size-m">中</span></td>
+                    <td class="ok"><strong>なし</strong></td></tr>
+                <tr><td>案 B</td>
+                    <td>音声感情認識 (SER) モデルを導入する。<strong>発話区間のみで実行する</strong>
+                        (<a href="#qa-ser">§2.4</a>)</td>
+                    <td><span class="badge size-m">中〜大</span></td>
+                    <td class="mid">モデル重み 1 つ</td></tr>
+                <tr><td>案 C</td>
+                    <td>4 キーを <code>setting.json</code> から外し、未実装であることを明示する</td>
+                    <td><span class="badge size-xs">極小</span></td>
+                    <td class="ok">なし</td></tr>
+            </tbody>
+        </table>
+        <p class="note">
+            いずれにせよ<strong>現状の「設定があるのに効かない」状態は解消すべき</strong>です。
+            案 A と案 B′ は<strong>併用できます</strong>
+            (コメント = 視聴者の反応 / 擬似感情特徴 = 配信者の反応)。
+        </p>
+        <div class="callout good">
+            <strong>決定 (Q2 の回答)</strong>: <strong>案 B′ を採用</strong>します。
+            案 B (SER モデル) は Q9 の回答 (入力は VOD が主 = 音声はミックス 1 本) により
+            <strong>精度が出ないため不採用</strong>です (<a href="#qa-243">§2.4.3</a>)。
+            <code>archive.scoring.emotion.mode = "pseudo"</code> を目標の既定とし、
+            案 A (コメント特徴) は <a href="#fix-f4">F4</a> と一緒に入れて併用します。
+        </div>
+    </div>
+
+    <div class="fix" id="fix-f4">
+        <h3><span class="id">F4</span>コメント採点を強化する</h3>
+        <ul>
+            <li><strong>笑いエモートを数える</strong> (A4): <code>emotes</code> を捨てずにセルへ集計する。
+                新設定 <code>archive.scoring.method_a.comment.laugh_emotes</code>
+                (既定 <code>["LUL","KEKW","OMEGALUL","Pog","PogChamp","4Head"]</code> / 配列・大小区別なし)。
+                <code>emote_point</code> (既定 1) で点に換算。</li>
+            <li><strong>「草」「笑」を数える</strong> (A4): <code>count_w_chars()</code> と同じ層に
+                <code>count_laugh_words(text, words)</code> を足す。
+                新設定 <code>comment.laugh_words</code> (既定 <code>["草","笑","くさ","ｗｗ"]</code>)。</li>
+            <li><strong>重みを正規化する</strong> (A5): コメントが無いときは
+                <code>total = emotion</code> (= 0〜100) へ寄せる。</li>
+        </ul>
+<pre class="code-block">w_e = float(weights.get(<span class="s">"emotion"</span>, 0.55))
+w_c = float(weights.get(<span class="s">"comment"</span>, 0.45))
+<span class="good">if not cfg.get("comment_spike", False):     # コメント未取得</span>
+<span class="good">    w_e, w_c = 1.0, 0.0                     # 音量のみで 0..100 へ正規化</span>
+total = emotion * w_e + comment * w_c</pre>
+        <p>
+            新設定 <code>archive.scoring.method_a.normalize_weights</code> (既定 true / false で従来挙動)。
+            採点グラフの目盛りが 0〜100 で読めるようになります。
+        </p>
+    </div>
+
+    <div class="fix" id="fix-f5">
+        <h3><span class="id">F5</span>切り抜き区間をフレーム正確にする (再開互換を保ったまま)</h3>
+        <p>
+            <code>cut_region</code> を <code>-c copy</code> から変える際は、プロジェクト再開時の素材復旧
+            (<code>project_resume</code>) が<strong>同じ関数で同じ出力を再現する</strong>前提を
+            壊さないことが条件です。
+        </p>
+        <ul>
+            <li>新設定 <code>archive.cut_mode</code>: <code>"copy"</code> (従来 / 既定) /
+                <code>"accurate"</code> (再エンコード)。</li>
+            <li><code>"accurate"</code> では <code>extract_segment()</code> 相当
+                (<code>-ss</code> を <code>-i</code> の前・再エンコード・<code>-fps_mode cfr</code>) を使う。
+                本流が既に使っている関数なので挙動は実証済み。</li>
+            <li><strong>プロジェクトへ <code>cut_mode</code> を記録</strong>し、再開時はその値で復旧する
+                (記録が無い既存プロジェクトは <code>"copy"</code> とみなす = 完全後方互換)。</li>
+            <li>代償: 切り出しに時間がかかります。既定を <code>"copy"</code> のままにし、
+                「区間を正確に切る」チェックとして UI へ出すのが無難です。</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f6">
+        <h3><span class="id">F6</span>特徴抽出を 1 パスへまとめる</h3>
+        <div class="compare">
+            <div class="col now">
+                <h4>現状</h4>
+                <ul><li><code>silencedetect</code> 1 パス</li>
+                    <li>+ <code>volumedetect</code> × セル数 (2 時間で 160 プロセス)</li></ul>
+            </div>
+            <div class="col next">
+                <h4>提案</h4>
+                <ul><li><code>astats</code> (metadata) 1 パスで RMS/ピークを 1 秒刻み取得 → セルへ按分</li>
+                    <li>+ (F1 を入れる場合) VAD 1 パス</li></ul>
+            </div>
+        </div>
+        <ul>
+            <li><code>-af astats=metadata=1:reset=&lt;cell_sec&gt;,ametadata=print:file=-</code> で
+                セル単位の <code>RMS_level</code> / <code>Peak_level</code> が 1 パスで取れます。</li>
+            <li>新設定 <code>archive.scoring.feature_mode</code>:
+                <code>"per_cell"</code> (従来) / <code>"single_pass"</code> (新)。</li>
+            <li>効果: 採点の待ち時間が目に見えて縮みます (プロセス起動 160 回 → 1〜2 回)。</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f7">
+        <h3><span class="id">F7</span>クリップ間でカット閾値を揃える</h3>
+        <p>A8 への対処です。</p>
+        <ul>
+            <li>新設定 <code>archive.clip_pipeline.cut_db_scope</code>:
+                <ul>
+                    <li><code>"per_clip"</code> (従来): クリップごとに測る</li>
+                    <li><code>"vod"</code> (推奨の新既定候補): <strong>VOD 全体で 1 回</strong>測った閾値を
+                        全クリップへ使う</li>
+                    <li><code>"saved"</code>: <code>volume_analysis.last_cut_db</code> を固定で使う</li>
+                </ul>
+            </li>
+            <li><code>"vod"</code> は採点フェーズで既に VOD 全長を解析しているため、
+                <strong>F6 の 1 パスで得た分布から分位点を取るだけ</strong>で追加コストがほぼゼロです。</li>
+            <li>併せて <code>volume_analysis.metric</code> に <code>"percentile"</code> を追加し
+                (<code>percentile</code> 既定 10)、<strong>最小値採用による崩壊</strong>を止めます。
+                これは本流と共通の修正ですが、区間数が少ない切り抜きでは効果がより大きいです。</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f14">
+        <h3><span class="id">F14</span>音声トラックの選択を設定に出す (ローカル複数トラック入力のみ有効)</h3>
+        <p>採点・無音カット・波形表示・音声ソースのすべてが <strong><code>0:a:0</code> 決め打ち</strong>です。</p>
+<pre class="code-block">src/modules/silence_cutter.py:571   <span class="bad">-map 0:a:0</span>
+src/timeline/audio_source.py:253    <span class="bad">-map 0:a:0</span>
+src/gui/timeline/waveform.py:198    <span class="bad">-map 0:a:0</span>
+src/archive/features.py             detect_silence / measure_region_volume 経由で <span class="bad">[0:a]</span></pre>
+        <ul>
+            <li>新設定 <code>general.audio_track_index</code> (既定 0 = 従来) と、入力選択時の
+                「音声トラック」選択 (<code>ffprobe</code> のトラック一覧を出す)。</li>
+            <li><strong><code>0:a:0</code> の決め打ちを 1 か所のヘルパ
+                (<code>ffmpeg_runner.audio_map_spec(settings)</code>) に集約</strong>してから
+                差し替えるのが安全。</li>
+            <li><strong>Twitch VOD には効きません</strong> (ミックス 1 本しか無い /
+                <a href="#qa-243">§2.4.3</a>)。OBS の複数トラック録画をローカル入力する運用でのみ
+                意味を持ちます。その運用があるなら、マイク単独トラックを選べるだけで
+                <a href="#f-a1">A1</a> (声を区別しない) が
+                <strong>F1 を入れる前に大きく改善します</strong>。<a href="#q9">Q9</a> の回答次第。</li>
+        </ul>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<section id="qa-ser">
+    <h2>2.4 補足 — 音声感情認識は発話区間のみで実行できるか (質問への回答)</h2>
+    <div class="question">
+        <span class="q-label">質問</span>
+        <p>2.3 <a href="#fix-f3">F3</a> の音声感情認識 (案 B) は、発話区間のみ実行できるか？</p>
+    </div>
+
+    <h3 id="qa-241">2.4.1 結論</h3>
+    <div class="callout good">
+        <strong>できます。むしろ発話区間のみに限定するのが実装の前提条件です。</strong><br>
+        ただし<strong>それだけではゲーム音の混入は解決しません</strong> (<a href="#qa-243">§2.4.3</a>)。
+    </div>
+
+    <h3 id="qa-242">2.4.2 発話区間のみに限定すべき 3 つの理由</h3>
+
+    <h4>(1) SER モデルの入力粒度がそもそも発話単位</h4>
+    <p>
+        音声感情認識のモデルは <strong>1〜4 秒程度の発話単位</strong>で学習されています。
+        45 秒のセルを丸ごと入力するのは設計上の誤りで、
+    </p>
+    <ul>
+        <li>1 つのセルに複数の感情が混ざり、出力が平均化されて意味を失う</li>
+        <li>セルの大半が無音・ゲーム音のみなら、そちらに引きずられる</li>
+    </ul>
+    <p>
+        <a href="#fix-f1">F1</a> (Silero VAD) が返す発話区間は、
+        <strong>ちょうどモデルが期待する入力粒度</strong>になります。
+        つまり F1 を入れることが案 B の前提であり、F1 を入れたなら発話区間は既に手元にあります。
+    </p>
+
+    <h4>(2) 計算量が実用域に落ちる</h4>
+    <p>
+        2 時間 VOD の全長 7200 秒を推論するのは非現実的です。
+        発話区間のみ + セルごとの代表サンプルに絞れば、推論量は桁で落ちます。
+    </p>
+    <table class="compact">
+        <thead><tr><th>方式</th><th>推論対象の音声長 (2 時間 VOD)</th></tr></thead>
+        <tbody>
+            <tr><td>全長を推論</td><td class="ng">7,200 秒</td></tr>
+            <tr><td>発話区間のみ (発話率 50% と仮定)</td><td class="mid">約 3,600 秒</td></tr>
+            <tr><td><strong>発話区間のみ + セルごとに最長 3 本 × 各 4 秒</strong></td>
+                <td class="ok"><strong>約 1,920 秒</strong> (160 セル × 12 秒)</td></tr>
+        </tbody>
+    </table>
+    <p>
+        採点はセル単位の代表値しか要らないため、<strong>セル内の全発話を推論する必要はありません</strong>。
+        「そのセルで最も長い発話 N 本」を採れば、セルの性格は十分に表せます。
+    </p>
+    <ul>
+        <li>新設定 <code>archive.scoring.emotion.max_samples_per_cell</code> (既定 3)</li>
+        <li>新設定 <code>archive.scoring.emotion.sample_max_sec</code> (既定 4.0)</li>
+        <li>新設定 <code>archive.scoring.emotion.min_sample_sec</code> (既定 1.0) —
+            これ未満の発話は推論しない (SER モデルが短すぎる入力で不安定になるのを避ける)</li>
+    </ul>
+
+    <h4>(3) 無音への誤検出が構造的に消える</h4>
+    <p>
+        無音・ゲーム音のみの区間に感情ラベルが付くことがなくなります。
+        これは <a href="#f-a2">A2</a> (ゲーム音が大声加点を常に入れてしまう) と同じ構造の問題を、
+        <strong>最初から作らない</strong>という意味を持ちます。
+    </p>
+
+    <h3 id="qa-243">2.4.3 ただし — 発話区間に限定しても解決しない問題</h3>
+    <div class="callout">
+        <strong>VAD は「いつ声があるか」しか教えません。「声だけが鳴っているか」は教えません。</strong>
+    </div>
+    <p>
+        発話区間として切り出した音声も、<strong>ゲーム音・BGM・効果音と混ざったまま</strong>です。
+        SER は背景音・特に音楽に非常に弱く、混入した音声では学習時の分布から外れて
+        精度が落ちます。つまり:
+    </p>
+    <table class="compact">
+        <thead><tr><th>問題</th><th>発話区間のみに限定すると</th></tr></thead>
+        <tbody>
+            <tr><td>計算量が非現実的</td><td class="ok">解決する (§2.4.2-2)</td></tr>
+            <tr><td>無音に感情ラベルが付く</td><td class="ok">解決する (§2.4.2-3)</td></tr>
+            <tr><td>入力粒度がモデルと合わない</td><td class="ok">解決する (§2.4.2-1)</td></tr>
+            <tr><td><strong>ゲーム音・BGM が声に混ざる</strong></td><td class="ng"><strong>解決しない</strong></td></tr>
+        </tbody>
+    </table>
+    <p>そして<strong>切り抜き経路では、この最後の 1 行を解く手段がほぼありません</strong>。</p>
+    <table class="compact">
+        <thead><tr><th>入力</th><th>音声の構成</th><th>マイク分離</th></tr></thead>
+        <tbody>
+            <tr><td><strong>Twitch VOD (<code>twitch-dl</code> 取得)</strong></td>
+                <td>HLS の <strong>ミックス 1 本 (AAC ステレオ)</strong></td>
+                <td class="ng"><strong>原理的に不可能</strong></td></tr>
+            <tr><td>ローカル mp4 (OBS 複数トラック録画)</td>
+                <td>Track1=ミックス / Track2=マイク / …</td>
+                <td class="mid">可能だが<strong>現状コードが <code>0:a:0</code> 固定</strong></td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li>VOD を入力する運用では、配信時点で既にミックスされているため
+            <strong>マイクだけを取り出す道がありません</strong>。残るのは音源分離
+            (新規依存・数百 MB・実行時間大 / 本書では採用を提案していません) だけです。</li>
+        <li>ローカルの複数トラック録画を入力する運用なら分離は不要ですが、
+            <code>silence_cutter</code> / <code>features</code> / <code>waveform</code> /
+            <code>audio_source</code> が<strong>すべて <code>0:a:0</code> 決め打ち</strong>なので
+            トラック選択の実装が先に必要です (<a href="#fix-f14">F14</a>)。</li>
+    </ul>
+    <div class="callout">
+        <strong>したがって、VOD を入力する運用では案 B (SER) に着手すべきではありません。</strong>
+        精度が出ない前提で重みファイルを足すことになります。
+        この判断は <a href="#q9">Q9</a> (どの入力を使う運用か) の回答に依存します。
+    </div>
+
+    <h3 id="qa-244">2.4.4 依存コストの再評価 (当初の記述を訂正)</h3>
+    <p>
+        本書の初版では案 B を「新規依存 + 数百 MB」と書きましたが、実装を調べた結果
+        <strong>もっと軽いことが分かりました</strong>。
+    </p>
+    <table>
+        <thead><tr><th>要素</th><th>状況</th></tr></thead>
+        <tbody>
+            <tr><td>推論ランタイム</td>
+                <td class="ok"><code>onnxruntime</code> (32 MB) は既に配布物へ同梱済み</td></tr>
+            <tr><td>ランタイムの作法</td>
+                <td class="ok"><code>src/blur/models.py</code> に完成している — 遅延 import /
+                    セッション共有 (ロック付き) / モデルが無ければ機能を落として理由を画面へ出す</td></tr>
+            <tr><td>モデルの置き場</td>
+                <td class="ok"><code>src/models/</code> が既に存在
+                    (<code>yolox_tiny.onnx</code> 20 MB ほか計 63 MB + README)</td></tr>
+            <tr><td>追加で必要なもの</td>
+                <td class="mid"><strong>モデル重みファイル 1 つだけ</strong></td></tr>
+        </tbody>
+    </table>
+    <p>
+        つまり案 B は「推論基盤の新規導入」ではなく、
+        <strong>既にある ONNX 基盤へモデルを 1 つ足すだけ</strong>です。
+        <code>blur/models.py</code> の <code>load_session()</code> / <code>resolve_path()</code> /
+        <code>availability()</code> をそのまま流用でき、<code>blur</code> と同じく
+        「モデルが無ければ感情点 0 で続行」にできます。
+    </p>
+<pre class="code-block"><span class="c"># 流用できる既存の作法 (src/blur/models.py)</span>
+session = models.load_session(models.resolve_path(cfg[<span class="s">"emotion"</span>][<span class="s">"model"</span>]),
+                              cfg[<span class="s">"emotion"</span>][<span class="s">"providers"</span>])
+<span class="k">if</span> session <span class="k">is</span> <span class="k">None</span>:
+    <span class="k">return</span> 0.0          <span class="c"># モデルが無ければ感情点を 0 にして続行 (blur と同じ)</span></pre>
+    <ul>
+        <li>新設定 <code>archive.scoring.emotion.model</code>
+            (既定 <code>"models/ser.onnx"</code> / 空で無効)</li>
+        <li>新設定 <code>archive.scoring.emotion.providers</code>
+            (既定 <code>[]</code> = CPU。<code>blur.model.providers</code> と同じ形)</li>
+    </ul>
+    <p class="note">
+        なお <code>torch</code> (322 MB) も配布物に入っていますが、
+        <strong><code>src/</code> のどこからも import されていません</strong>
+        (<code>grep -rn "import torch" src --exclude-dir=dist</code> が 0 件)。
+        blur も含めて推論は全て <code>onnxruntime</code> で行っているため、
+        <strong>PyTorch 版の SER を持ち込む必要はありません</strong>。ONNX で統一するのが筋です。
+    </p>
+
+    <h3 id="qa-245">2.4.5 案 B′ — モデルを足さずに発話区間から「擬似感情特徴」を作る (推奨)</h3>
+    <p>
+        案 B の前提 (F14 または音源分離) が満たせない場合でも、<strong>発話区間だけを使って
+        「配信者が盛り上がっているか」を測る特徴は、モデル無しで作れます</strong>。
+    </p>
+    <p>
+        同梱の <code>torchaudio</code> で以下が使えることを実機で確認しました
+        (torch 2.11.0+cpu / torchaudio 2.11.0+cpu)。
+    </p>
+    <table class="compact">
+        <thead><tr><th>API</th><th>用途</th><th>確認</th></tr></thead>
+        <tbody>
+            <tr><td><code>torchaudio.functional.detect_pitch_frequency</code></td><td>基本周波数 (F0) の推定</td><td class="ok">利用可</td></tr>
+            <tr><td><code>torchaudio.functional.loudness</code></td><td>ITU-R BS.1770 ラウドネス</td><td class="ok">利用可</td></tr>
+            <tr><td><code>torchaudio.transforms.MFCC</code> / <code>MelSpectrogram</code></td><td>スペクトル特徴</td><td class="ok">利用可</td></tr>
+        </tbody>
+    </table>
+    <p>これを使った擬似感情特徴は 3 つです。いずれも<strong>発話区間のみで計算</strong>します。</p>
+    <table>
+        <thead><tr><th>特徴</th><th>定義</th><th>何を捉えるか</th></tr></thead>
+        <tbody>
+            <tr><td><strong>ピッチ上昇</strong></td>
+                <td>発話区間の F0 中央値 − 配信者全体の F0 中央値 (半音換算)</td>
+                <td>興奮・驚き (声が高くなる)</td></tr>
+            <tr><td><strong>発話音量の突出</strong></td>
+                <td>発話区間の RMS − 発話区間全体の RMS 平均 (dB)</td>
+                <td>叫び・大声 (自分の平常比)</td></tr>
+            <tr><td><strong>立ち上がりの急峻さ</strong></td>
+                <td>発話頭 300ms の RMS 傾き</td>
+                <td>驚き・笑いの開始</td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li><strong>ゲーム音の混入に強い</strong>: F0 は声の基本周波数なので、BGM が乗っても
+            声の帯域 (概ね 80〜400 Hz) に絞れば比較的追えます。
+            「発話区間の RMS − 自分の平均」という<strong>相対値</strong>で見るため、
+            ゲーム音による底上げも相殺されます。
+            <a href="#f-a1">A1</a> で指摘した「絶対音量で測るから壊れる」問題を
+            構造的に避けられます。</li>
+        <li><strong>モデル重みも新規依存もゼロ</strong>。<code>torchaudio</code> は同梱済みで、
+            <code>blur/models.py</code> と同じ遅延 import にすれば起動時間も増えません。</li>
+        <li>新設定 <code>archive.scoring.emotion.mode</code>:
+            <code>"none"</code> (従来 / 既定) / <code>"pseudo"</code> (案 B′) / <code>"ser"</code> (案 B)</li>
+        <li>新設定 <code>archive.scoring.method_a.emotion_points.pitch_up</code> (既定 8) /
+            <code>loud_burst</code> (既定 10) / <code>onset</code> (既定 5)</li>
+    </ul>
+    <div class="callout good">
+        <strong>推奨する順序</strong>: <a href="#fix-f1">F1</a> (VAD) → 案 B′ (擬似感情特徴) まで
+        入れて評価し、それで不足し、かつ <a href="#fix-f14">F14</a> でマイク単独トラックが
+        取れる運用なら案 B (SER) へ進む。
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第3部 — 自動文字起こし (切り抜き経路)</h2>
+    <p>文字起こしの精度向上に必要なものは何か / テロップの区切りと結合・分割の手作業</p>
+</div>
+
+<section id="asr-now">
+    <h2>3.1 現状</h2>
+    <p>
+        <code>archive.clip_pipeline.timeline_review</code> は既定 <code>true</code>、
+        <code>timeline.enabled</code> も <code>true</code> なので、切り抜きは
+        <strong>Timeline 経路</strong>を通ります (<code>config.use_timeline_review()</code>)。
+    </p>
+<pre class="code-block">_prepare_edit_points(normalized, clip_settings, clip_dir, profile)
+  ├ silence_cutter.detect_edit_points(ctx)        → keep_segments (クリップ相対)
+  └ subtitle_generator.recognize_for_timeline(ctx, keep_segments)
+        ├ extract_audio_segments()                → プレビュー用音声
+        ├ text_source.extract(クリップ全長)        → 素材時間の認識結果
+        ├ regroup_items_by_length()               → テロップ単位を文字数で再構成
+        ├ map_items_to_timeline()                 → 詰めた軸へ写像
+        ├ align_items_to_cut_heads()              → カット頭へ整列
+        └ adjust_display_timing()                 → 表示タイミング整形</pre>
+    <p>
+        <strong>本流と完全に同じ関数</strong>を通るため、認識精度・テロップ単位の課題は共通です。
+        切り抜き固有の違いは「対象が 180 秒のクリップである」ことだけで、これは有利に働きます
+        (全長 2 時間を認識しないため、<code>clip_timestamps</code> による範囲限定の必要性は本流より低い)。
+    </p>
+    <p class="note">
+        従来画面経路 (<code>timeline_review=false</code>) では <code>_transcribe()</code> が使われ、
+        <strong><code>regroup_items_by_length()</code> を通りません</strong>。つまりテロップ単位は
+        「認識セグメントそのまま」になります。既定では通らない退路ですが、
+        切り替えると区切りの挙動が変わる点は把握しておく必要があります。
+    </p>
+    <p>認識パラメータは <code>WhisperTextSource</code> が渡す 7 つだけです。</p>
+    <table class="compact">
+        <thead><tr><th>引数</th><th>値</th><th>出所</th></tr></thead>
+        <tbody>
+            <tr><td><code>language</code></td><td>"ja"</td><td><code>subtitle.language</code></td></tr>
+            <tr><td><code>beam_size</code></td><td>8</td><td><code>subtitle.whisper_beam_size</code></td></tr>
+            <tr><td><code>condition_on_previous_text</code></td><td class="ng">False</td><td><code>subtitle.whisper_condition_on_previous_text</code></td></tr>
+            <tr><td><code>no_speech_threshold</code></td><td>0.6</td><td><code>subtitle.whisper_no_speech_threshold</code></td></tr>
+            <tr><td><code>word_timestamps</code></td><td>True</td><td><code>subtitle.word_timestamps</code></td></tr>
+            <tr><td><code>vad_filter</code></td><td>True</td><td><code>subtitle.whisper_vad_filter</code></td></tr>
+            <tr><td><code>vad_parameters</code></td><td><code>min_silence_duration_ms=500</code>, <code>speech_pad_ms=100</code></td><td>後者は定数 <code>_VAD_SPEECH_PAD_MS</code></td></tr>
+        </tbody>
+    </table>
+    <p>モデルは <code>large-v3</code> / CPU / <code>int8</code>。</p>
+</section>
+
+<section id="asr-issue">
+    <h2>3.2 問題点と改善案 (認識精度)</h2>
+
+    <div class="fix key" id="fix-b1">
+        <h3><span class="id">B1</span>ドメイン知識をモデルに渡していない → <code>initial_prompt</code> / <code>hotwords</code></h3>
+        <p>faster-whisper 1.2.1 は 34 引数を受け付けますが、<strong>精度に直結する以下が未使用</strong>です。</p>
+        <table class="compact">
+            <thead><tr><th>未使用の引数</th><th>何に効くか</th></tr></thead>
+            <tbody>
+                <tr><td><code>initial_prompt</code></td><td>文体・表記・固有名詞の事前提示</td></tr>
+                <tr><td><code>hotwords</code></td><td>固有名詞・ゲーム用語の強制候補化</td></tr>
+                <tr><td><code>hallucination_silence_threshold</code></td><td>無音区間の幻聴を落とす</td></tr>
+                <tr><td><code>repetition_penalty</code> / <code>no_repeat_ngram_size</code></td><td>反復ループの抑止</td></tr>
+                <tr><td><code>prompt_reset_on_temperature</code></td><td>文脈引き継ぎの安全弁</td></tr>
+            </tbody>
+        </table>
+        <p>
+            ゲーム実況の誤認識は<strong>固有名詞・ゲーム用語・配信者特有の言い回し</strong>が大半です。
+            <code>initial_prompt</code> と <code>hotwords</code> が
+            <strong>最も安く効く精度改善</strong>になります。
+        </p>
+        <ul>
+            <li>新設定 <code>subtitle.initial_prompt</code> (文字列 / 空で無効)、
+                <code>subtitle.hotwords</code> (空白区切りの 1 文字列)、
+                <code>subtitle.vocabulary</code> (配列 → <code>hotwords</code> へ結合)</li>
+            <li>実装: <code>WhisperTextSource.__init__</code> で読み、<code>_transcribe()</code> の
+                <code>kwargs</code> へ追加 (空文字なら渡さない = 従来と完全一致)</li>
+        </ul>
+        <div class="callout good">
+            <strong>切り抜きでは Twitch API から配信タイトル・ゲーム名が取れる</strong>ため、
+            <code>twitch_source</code> の取得値を <code>initial_prompt</code> の種として
+            自動で差し込めます。これは本流には無い、切り抜き固有の有利な点です。
+        </div>
+        <div class="callout good">
+            <strong>決定 (Q1 の回答)</strong>: <strong>差し込みます</strong>。
+            認識側の設定として <code>subtitle.initial_prompt_from_vod</code> (既定 true) を置き、
+            「<code>&lt;配信タイトル&gt;</code>。ゲーム: <code>&lt;ゲーム名&gt;</code>。」の形で
+            <code>initial_prompt</code> の先頭へ付けます。
+            利用者が <code>subtitle.initial_prompt</code> に書いた文は
+            <strong>その後ろへ連ねる</strong> (両方効く)。
+            取得できなかった場合は何も付けない = 従来と同一の挙動へ落ちます。
+        </div>
+    </div>
+
+    <div class="fix key" id="fix-b2">
+        <h3><span class="id">B2</span>信頼度を捨てている → 直す場所が分からない</h3>
+        <p>
+            faster-whisper は各セグメントに <code>avg_logprob</code> / <code>no_speech_prob</code> /
+            <code>compression_ratio</code>、各単語に <code>probability</code> を返しますが、
+            <code>_recognize()</code> は <code>text</code> / <code>start</code> / <code>end</code> /
+            <code>words</code> だけを拾い、<strong>すべて捨てています</strong>。
+        </p>
+        <div class="callout">
+            切り抜きは <strong>1 回の出力で 10 クリップ分の字幕をまとめてレビューする</strong>作りなので、
+            「どこが怪しいか」が分からないと確認の手間が本流の 10 倍になります。
+        </div>
+        <ul>
+            <li><code>entry["confidence"] = avg_logprob</code>、<code>entry["no_speech_prob"]</code>、
+                単語ごとの <code>probability</code> を保持する</li>
+            <li><code>regroup_items_by_length()</code> で束ねた単語の確率の最小値・平均を引き継ぐ</li>
+            <li><code>SubtitleClip.origin["confidence"]</code> へ保存 (<code>origin</code> は dict で
+                そのまま JSON へ入るため <code>project_io</code> は無改修)</li>
+            <li><strong>ArchiveResultWindow / Timeline 編集画面で低信頼度のテロップを色分け</strong>し、
+                「要確認だけ表示」フィルタと「次の要確認へジャンプ」を付ける</li>
+            <li>閾値 <code>subtitle.low_confidence_logprob</code> (既定 -0.6) /
+                <code>subtitle.low_confidence_word_prob</code> (0.4)</li>
+        </ul>
+    </div>
+
+    <div class="fix key" id="fix-b3">
+        <h3><span class="id">B3</span>置換辞書が無い → 同じ誤りを毎回直している</h3>
+        <p>
+            認識後のテキストへの置換が一切ありません (<code>strip_fillers</code> によるフィラー除去のみ)。
+            配信者名・ゲーム名・専門用語の誤認識は<strong>毎回同じ形で出る</strong>ため、辞書 1 つで消えます。
+            切り抜きは同じ配信者の VOD を繰り返し処理するため、<strong>本流より効果が大きい</strong>項目です。
+        </p>
+        <ul>
+            <li>新設定 <code>subtitle.replacements</code>:
+                <code>[{"from": "...", "to": "...", "regex": false}, ...]</code></li>
+            <li>適用箇所: <code>_item_from_words()</code> / <code>WhisperTextSource._recognize()</code> の
+                本文整形 (<code>strip_fillers</code> と同じ層 = <code>_refine()</code>)。
+                <strong>改行より前</strong>に適用すること</li>
+            <li>B1 の <code>hotwords</code> が「認識前の予防」、これが「認識後の治療」</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-b4">
+        <h3><span class="id">B4</span>計算精度が <code>int8</code> 固定</h3>
+        <p>
+            <code>_resolve_compute_type()</code> は <code>float16</code> を <code>int8</code> へ
+            丸めるだけで、CPU でも使える <code>int8_float32</code> / <code>int16</code> /
+            <code>float32</code> を<strong>選べなくしています</strong>。
+        </p>
+        <ul>
+            <li><code>int8_float32</code> / <code>int16</code> / <code>float32</code> を通し、
+                <code>float16</code> のみ <code>int8_float32</code> へ正規化</li>
+            <li>既定は <code>int8</code> のまま (互換)。GUI に「認識精度 (速度優先 / 標準 / 精度優先)」の 3 択</li>
+            <li>切り抜きは 1 クリップ 180 秒 × 10 本 = 30 分相当なので、
+                <strong>全長 2 時間を認識する本流より精度優先モードが現実的</strong>です</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-b5">
+        <h3><span class="id">B5</span>文脈を切っているため同音異義・漢字選択が弱い</h3>
+        <p>
+            <code>condition_on_previous_text=False</code> は反復ループ対策で入ったものですが、
+            <strong>文脈に基づく漢字変換・同音異義の判断を捨てています</strong>。
+        </p>
+        <ul>
+            <li><code>condition_on_previous_text=True</code> へ戻し、同時に
+                <code>prompt_reset_on_temperature=0.5</code> (既定)、
+                <code>hallucination_silence_threshold</code>
+                (新設定 <code>whisper_hallucination_silence_sec</code>, 2.0)、
+                <code>no_repeat_ngram_size</code> (新設定, 既定 0) を入れる</li>
+        </ul>
+        <p class="note">
+            <strong>A/B 評価が必須</strong>です (<a href="#eval">§6</a>)。切り戻せるよう設定キーのままにする。
+        </p>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<section id="split-issue">
+    <h2>3.3 問題点 (テロップの区切り)</h2>
+
+    <div class="finding" id="f-c1">
+        <h3><span class="id">C1</span><code>min_line_length</code> の二重用途で下限が壊れている — 結合の手作業の主因</h3>
+        <p>
+            <code>recognize_for_timeline()</code> は <code>subtitle.min_line_length</code> を
+            「<strong>改行の下限</strong>」と「<strong>テロップの下限文字数</strong>」の両方に使っています。
+        </p>
+<pre class="code-block">min_len   = int(eff_cfg.get(<span class="s">"min_line_length"</span>, 15))   <span class="c"># 改行の下限</span>
+...
+min_chars = max(min(min_len, max_chars), 0)            <span class="bad"># テロップの下限 ← 同じ値</span></pre>
+        <p>
+            <code>DEFAULT_SETTINGS</code> は 15 ですが、現在の <code>setting.json</code> は <strong>5</strong>。
+            <code>regroup_items_by_length()</code> の判定は
+        </p>
+<pre class="code-block"><span class="k">if</span> over <span class="k">or</span> far <span class="k">or</span> (enough <span class="k">and</span> (crossed <span class="k">or</span> ended <span class="k">or</span> boundary)):
+    flush()</pre>
+        <p>
+            で、<code>enough = buf_len &gt;= min_chars</code> が 5 文字でほぼ常に真、
+            <code>boundary</code> (認識セグメントの先頭) も常に真です。したがって
+        </p>
+        <div class="callout">
+            <strong>実質「認識セグメントそのまま」= <code>subtitle_unit="segment"</code> と
+            同じ細かさになっている</strong>
+        </div>
+        <span class="evidence-label">根拠 — logs/autoedit_20261020.log (実効値)</span>
+<div class="evidence">2026-10-20 19:55:26 テロップ単位を文字数で再構成: 2 件 (下限 5 / 上限 40 文字)</div>
+    </div>
+
+    <div class="finding" id="f-c2">
+        <h3><span class="id">C2</span>間 (ポーズ) を区切りの判断に使っていない</h3>
+        <p>
+            単語タイムスタンプを持っているのに、<strong>語と語の間の時間</strong>が区切り判定に
+            入っていません。<code>far</code> の <code>merge_max_cut_gap_sec</code> だけが時間を見ますが、
+        </p>
+        <ul>
+            <li>既定 <strong>0.0 で無効</strong></li>
+            <li>見ているのは「<strong>取り除かれた無音</strong>の長さ」だけで、
+                残った 0.3〜0.5 秒の息継ぎは無視</li>
+        </ul>
+        <p>人が「ここで切る」と感じる最大の手掛かりは<strong>間</strong>です。</p>
+    </div>
+
+    <div class="finding" id="f-c3">
+        <h3><span class="id">C3</span>上限超過時の切り方が「文字数ハード分割」</h3>
+        <p>
+            上限 (<code>max_line_length</code> 20 × <code>subtitle_max_lines</code> 2 = 40 文字) を
+            超えると次の単語から新テロップになります。単語境界ではあるものの
+            <strong>文節境界ではありません</strong>。BudouX は <code>wrap_lines()</code> の中
+            (= 1 テロップ内の改行) でしか使われず、
+            <strong>テロップの切り目選びには使われていません</strong>。
+        </p>
+    </div>
+
+    <div class="finding" id="f-c4">
+        <h3><span class="id">C4</span>編集画面にテロップの「結合」「分割」が無い</h3>
+        <ul>
+            <li><strong>結合コマンドが存在しません</strong>
+                (<code>timeline/commands.py</code> に <code>Merge*</code> 系なし)。
+                2 本を 1 本にするには、片方を削除 → 残りを伸ばす → 本文を打ち直す手順になります。</li>
+            <li><strong>分割は本文を複製します</strong>。<code>split_clip_at()</code> は
+                <code>SubtitleClip</code> を <code>copy()</code> して尺を割るだけなので、
+                <strong>両方のクリップに全文が入ります</strong>。</li>
+        </ul>
+<pre class="code-block"><span class="k">if</span> isinstance(clip, SubtitleClip):
+    new_clip = clip.copy()          <span class="bad"># ← 本文がそのまま複製される</span>
+    new_clip.timeline_start = at_sec
+    new_clip.duration = clip.duration - offset
+    clip.duration = offset</pre>
+        <div class="callout">
+            要望の「テロップを結合したり、分割する作業」は、<strong>UI 側に専用操作が無いこと</strong>が
+            相当部分を占めています。自動生成の質とは<strong>独立に</strong>直せます。
+        </div>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<section id="split-fix">
+    <h2>3.4 改善案 (テロップの区切り)</h2>
+
+    <div class="fix key" id="fix-g1">
+        <h3><span class="id">G1</span>テロップ下限文字数を独立キーへ分離 (最優先・最小の変更 / G5 までの暫定)</h3>
+<pre class="code-block"><span class="c"># 変更前</span>
+<span class="bad">min_chars = max(min(min_len, max_chars), 0)</span>
+<span class="c"># 変更後</span>
+<span class="good">min_chars = int(eff_cfg.get("subtitle_min_chars", max(min_len, 12)))</span>
+<span class="good">min_chars = max(min(min_chars, max_chars), 0)</span></pre>
+        <ul>
+            <li>新設定 <code>subtitle.subtitle_min_chars</code>
+                (既定 16 を提案 / 未設定時は従来式へフォールバック)</li>
+            <li>影響: <code>tests/test_subtitle_length_units.py</code> の期待値を見直す</li>
+        </ul>
+        <div class="callout good">
+            <strong>これだけで「1 文が息継ぎの数だけ裁断される」症状が止まります。</strong>
+        </div>
+        <p class="note">
+            <strong>位置づけ (Q5 の回答を受けて)</strong>:
+            これは<strong>1 行で効く暫定の手当て</strong>です。本質的な解は
+            <a href="#fix-g5">G5</a> の実寸 (px) 制御で、そちらが入れば既定値 16 は
+            <strong>px 下限から逆算される</strong>ようになります。
+            G1 を先に入れる価値は、「結合の手作業が今すぐ減る」ことと
+            「G5 のフォールバック経路になる」ことの 2 点です。
+        </p>
+    </div>
+
+    <div class="fix key" id="fix-g5">
+        <h3><span class="id">G5</span>折り返しと上限を「文字数」から「実寸 (px)」へ移す (Q5 の回答)</h3>
+        <div class="callout good">
+            <strong>ご指摘のとおりです。</strong> 文字数は実寸の代理指標にすぎず、
+            フォントによって 1 文字の送り幅は <strong>1.5 倍も違います</strong>。
+        </div>
+        <p><code>docs/error/20261023/resolve.md</code> §3-2 の実測:</p>
+        <table class="compact">
+            <thead><tr><th>フォント</th><th>全角 1 文字の送り幅 (em)</th></tr></thead>
+            <tbody>
+                <tr><td>07にくまるフォント</td><td class="num">0.926</td></tr>
+                <tr><td>MS ゴシック</td><td class="num">1.000</td></tr>
+                <tr><td>游ゴシック</td><td class="num">0.777</td></tr>
+                <tr><td>メイリオ</td><td class="num">0.667</td></tr>
+            </tbody>
+        </table>
+        <p>
+            つまり同じ「20 文字」でも、メイリオと MS ゴシックでは<strong>実寸が 1.5 倍違います</strong>。
+            さらに英数字がプロポーショナルなフォントでは「半角 = 全角の半分」も成り立ちません
+            (にくまるフォントの <code>W</code> は 0.926em で、固定係数 0.45 の 2 倍を超える)。
+            <code>subtitle.font_size</code> は現在 <strong>130</strong> なので、
+            この差はそのまま画面外へのはみ出しになります。
+        </p>
+
+        <h4>既に実寸計測の仕組みがあります</h4>
+        <p>
+            <code>src/modules/font_advance.py</code> が
+            <strong>本日 (2026-10-23) のコメント背景の修正で入っており</strong>
+            (<code>docs/error/20261023/resolve.md</code> §5 案A)、そのまま流用できます。
+        </p>
+<pre class="code-block"><span class="c"># 文字列が ASS Fontsize=size で描かれたときの幅 (px)</span>
+metrics  = font_advance.metrics_for(family, eff_cfg, bold=bool(eff_cfg.get(<span class="s">"bold"</span>)))
+width_px = metrics.text_width(text, font_size)</pre>
+        <ul>
+            <li><strong>libass の実出力と +2〜+10px で一致</strong>し、
+                <strong>常にわずかに広い側へ外れる</strong> (= 文字がはみ出さない側へ外れる)
+                ことが確認済みです。</li>
+            <li><strong>Qt にも ffmpeg にも依存しない純 Python</strong>で、読めないフォントでは
+                <code>None</code> を返し呼び出し側が従来の係数へ落ちる作法になっています。</li>
+            <li>現在の利用者は <code>comment_decor</code> (コメント背景の箱の幅) だけです。</li>
+        </ul>
+
+        <h4>提案</h4>
+        <p>
+            折り返しと上限を px で決め、文字数キーは
+            <strong>フォントが読めないときのフォールバック</strong>に降格します。
+        </p>
+<pre class="code-block"><span class="c"># 1 行に使える幅 (px)</span>
+<span class="good">usable       = canvas_w - margin_l - margin_r - outline_width * 2</span>
+<span class="c"># 1 本のテロップに使える幅 = 1 行の幅 × 最大行数</span>
+<span class="good">max_width_px = usable * subtitle_max_lines</span></pre>
+        <ul>
+            <li>新設定 <code>subtitle.wrap_mode</code>:
+                <code>"length"</code> (従来 / 既定) / <code>"width"</code> (新・px 基準)</li>
+            <li>新設定 <code>subtitle.min_line_ratio</code> (既定 0.5) —
+                1 行の下限を「使える幅のこの割合」で決める (短すぎる行を避ける。
+                現 <code>min_line_length</code> の px 版)</li>
+            <li><code>wrap_by_budoux()</code> の <code>len(line) &lt;= max_line_length</code> 判定を
+                <code>metrics.text_width(line, size) &lt;= usable</code> へ差し替える
+                (文節境界で折る規則は変えない)</li>
+            <li><code>regroup_items_by_length()</code> の <code>over</code> 判定も同じく px へ移す
+                (= <a href="#fix-g3">G3</a> の文節境界で切る規則と自然に噛み合う)</li>
+            <li><code>metrics</code> が <code>None</code> (フォントが読めない) のときは
+                <a href="#fix-g1">G1</a> の文字数経路へ落ちる</li>
+        </ul>
+
+        <h4>副次的な利点</h4>
+        <ul>
+            <li><strong>縦動画の上書きが不要になります</strong>。
+                <code>_VERTICAL_OVERRIDE_KEYS</code> は現在 <code>min_line_length</code> /
+                <code>max_line_length</code> を縦用の値で差し替えていますが、px 基準なら
+                <strong>キャンバス幅から自動で決まる</strong>ため、
+                この 2 キーを上書き対象から外せます (request14 の設定が 2 つ減る)。</li>
+            <li><strong>フォントを変えても画面外に出ません</strong>。要望の条件
+                「2 行で表示したときに画面外に出ないこと」が、設定の調整ではなく
+                <strong>仕様として保証されます</strong>。</li>
+            <li>プレビュー (<code>gui/timeline/preview_items.py</code>) と焼き込みが
+                同じ <code>font_advance</code> を基準にすれば、
+                <strong>プレビュー一致の精度も上がります</strong>。</li>
+        </ul>
+
+        <h4>留意点</h4>
+        <ul>
+            <li><code>font_advance.metrics_for()</code> はフォントファイルを探して読むため、
+                <strong>初回はフォルダ走査のコストがかかります</strong> (結果はキャッシュされます)。
+                テロップ 1 本ごとに呼ばず、<strong>認識開始時に 1 回取得して使い回すこと</strong>。</li>
+            <li>縁取り (<code>outline_width</code> = 現在 <strong>10</strong>) は字形の外側へ
+                張り出すため、<code>comment_decor._outline_bleed()</code> と同じ考え方で
+                左右に 2 倍ぶん引くこと。</li>
+            <li>行間 (<code>comment_bg_line_height_ratio</code> = 1.2) は<strong>高さ</strong>の話なので、
+                2 行が縦にも収まるかは別途確認が必要です
+                (<code>font_size</code> 130 × 1.2 × 2 行 = 312px / 1080 なので現状は余裕があります)。</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-g2">
+        <h3><span class="id">G2</span>間 (ポーズ) を第一の区切り信号にする</h3>
+        <ul>
+            <li>新設定 <code>subtitle.split_min_pause_sec</code> (0.35):
+                下限達成後、語間がこれ以上空いたら切る</li>
+            <li>新設定 <code>subtitle.merge_max_pause_sec</code> (0.20):
+                これ未満の間では<strong>切らない</strong></li>
+        </ul>
+<pre class="code-block">pause  = float(word[<span class="s">"start"</span>]) - last_end <span class="k">if</span> last_end <span class="k">is not</span> <span class="k">None</span> <span class="k">else</span> 0.0
+<span class="good">paused = pause &gt;= split_min_pause_sec</span>
+<span class="good">glued  = pause &lt; merge_max_pause_sec        # 間が無い = 切らない</span>
+<span class="k">if</span> over <span class="k">or</span> far <span class="k">or</span> (enough <span class="k">and</span> <span class="k">not</span> glued <span class="k">and</span> (paused <span class="k">or</span> crossed <span class="k">or</span> ended <span class="k">or</span> boundary)):
+    flush()</pre>
+    </div>
+
+    <div class="fix" id="fix-g3">
+        <h3><span class="id">G3</span>上限超過は文節境界で切る</h3>
+        <ul>
+            <li><code>over</code> で <code>flush()</code> する前に
+                <strong>BudouX の文節境界まで戻る</strong>。<code>_get_budoux_parser()</code> は
+                既にあるので、積んだ本文を <code>parse()</code> して最後の文節境界以降の単語を
+                次のテロップへ繰り越す</li>
+            <li>新設定 <code>subtitle.split_on_phrase_boundary</code> (既定 True)</li>
+            <li>単語列と文節列は<strong>文字数の累積で突き合わせる</strong>のが単純かつ確実</li>
+        </ul>
+    </div>
+
+    <div class="fix key" id="fix-g4">
+        <h3><span class="id">G4</span>テロップの「結合」「分割」コマンドを追加</h3>
+        <ul>
+            <li><strong><code>MergeSubtitles</code></strong> (Undo 可): 選択した 2 本以上を 1 本にする。
+                時刻は最初の <code>timeline_start</code> 〜 最後の <code>timeline_end</code>、
+                本文は時間順に連結して <code>wrap_lines()</code> で再改行、
+                役割・色は先頭クリップを採用、<code>origin["merged_from"]</code> に元 ID を残す</li>
+            <li><strong><code>SplitSubtitle</code></strong> (Undo 可): 再生ヘッド位置で本文も分ける。
+                <strong><code>SubtitleClip.origin["words"]</code> に単語列を保存</strong>しておき、
+                再生ヘッド以前/以降で本文を分割して再改行する。
+                単語列が無い (手入力) 場合は文字数按分 + 確認</li>
+            <li>ショートカット: 結合 <code>Ctrl+M</code> /
+                分割は既存の分割キーを字幕トラックで本文対応に</li>
+            <li>雛形: <code>EditSubtitle</code> / <code>EditSubtitles</code> /
+                <code>AlignSubtitlesToCutHeads</code></li>
+        </ul>
+        <div class="callout good">
+            <strong>決定 (Q4 の回答)</strong>: <strong>Timeline 編集画面だけに出します</strong>。
+            ArchiveResultWindow には実装しません。コマンド
+            (<code>MergeSubtitles</code> / <code>SplitSubtitle</code>) は Timeline の
+            <code>CommandStack</code> に乗る前提で書けるため、
+            <strong>実装は当初見積りの半分</strong>になります
+            (結果画面向けの別実装と、2 画面で挙動を揃える手間が不要)。
+        </div>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第4部 — 音量調整 (切り抜き経路)</h2>
+    <p>現状の YouTube に合わせた最適な音量調節ができているか</p>
+</div>
+
+<section id="loud-now">
+    <h2>4.1 現状</h2>
+    <div class="flowchart">
+        <div class="node start">クリップ区間</div>
+        <div class="arrow">▼</div>
+        <div class="node issue">cut_region (-c copy)<br><small>キーフレーム単位でしか切れない</small></div>
+        <div class="arrow">▼</div>
+        <div class="node issue">normalize_file (クリップ単位)<br><small>I=-14.0 / TP=-1.0 / 2 パス linear / -c:a aac -b:a 192k</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">無音カット・字幕焼き込み・テーマタグ</div>
+        <div class="arrow">▼</div>
+        <div class="node issue">イントロカード (元 VOD から 3 秒)<br><small>正規化を通らない = 生音量のまま</small></div>
+        <div class="arrow">▼</div>
+        <div class="node issue">結合 [OP] + [intro + 本編] × N + [ED]<br><small>OP/ED も未正規化 / concat が全再エンコード (-b:a なし)</small></div>
+        <div class="arrow">▼</div>
+        <div class="node issue">最終 1 本<br><small>ラウドネスを一度も測らない</small></div>
+    </div>
+    <span class="evidence-label">実測ログ例</span>
+<div class="evidence">入力ラウドネス: I=-9.2 LUFS / TP=-0.3 dBTP / LRA=5.1 LU → 目標 I=-14.0 LUFS / TP=-1.0 dBTP (offset 0.4 dB)</div>
+    <p>→ 本編には <strong>-4.8 dB</strong> のゲインが掛かります。</p>
+</section>
+
+<section id="loud-issue">
+    <h2>4.2 問題点</h2>
+
+    <div class="finding" id="f-e1">
+        <h3><span class="id">E1</span>クリップごとに個別正規化され、切り抜きの山場が潰れる</h3>
+        <p>
+            <code>normalize_file()</code> は<strong>クリップ 1 本ずつ</strong>に対して走ります
+            (<code>clip_writer.py:528</code>)。各クリップが独立に -14 LUFS へ揃えられるため:
+        </p>
+        <table class="compact">
+            <thead><tr><th>クリップ</th><th>元の性格</th><th>正規化後</th></tr></thead>
+            <tbody>
+                <tr><td>静かな会話 (元 -20 LUFS)</td><td>落ち着いた場面</td><td class="ng">+6 dB されて -14</td></tr>
+                <tr><td>絶叫・盛り上がり (元 -8 LUFS)</td><td>山場</td><td class="ng">-6 dB されて -14</td></tr>
+            </tbody>
+        </table>
+        <div class="callout">
+            <strong>「盛り上がって切り抜いた」という編集意図が音量から消えます。</strong>
+            切り抜き集では、1 本の中での相対的な起伏が残っている方が自然です。
+        </div>
+        <p>
+            本流 (1 本編集) は素材 1 本に 1 回しか掛けないため、この問題は<strong>切り抜き固有</strong>です。
+        </p>
+    </div>
+
+    <div class="finding" id="f-e2">
+        <h3><span class="id">E2</span>イントロカードが正規化を通らず、本編より約 5 dB 大きい</h3>
+        <p>
+            <code>_build_intro_card()</code> は<strong>元 VOD (または保存した控え) から直接</strong>
+            切り出します。
+        </p>
+<pre class="code-block"><span class="k">if</span> source <span class="k">and</span> os.path.exists(source):
+    input_args = [<span class="s">"-ss"</span>, f<span class="s">"{start_buf:.3f}"</span>, <span class="s">"-i"</span>, source, <span class="s">"-t"</span>, f<span class="s">"{length:.3f}"</span>]
+...
+<span class="k">if</span> card[<span class="s">"mute_intro"</span>]:
+    cmd += [<span class="s">"-af"</span>, <span class="s">"volume=0"</span>]      <span class="bad"># mute_intro=false なら音声はそのまま</span></pre>
+        <p>
+            現在の設定は <code>archive.intro_card.mute_intro = false</code> なので、
+            <strong>イントロの 3 秒は元 VOD の生音量のまま</strong>流れます。
+            一方で本編は -14 LUFS へ下げられています。
+        </p>
+        <div class="callout">
+            実測例 (VOD I=-9.2 / 目標 -14) では、<strong>イントロが本編より約 4.8 dB 大きい</strong>。
+            テーマを付けた全クリップの頭で、毎回この段差が起きます。
+        </div>
+        <p>
+            これは聴感上はっきり分かる差で、<strong>テーマ演出を使うほど目立つ</strong>不具合です。
+        </p>
+    </div>
+
+    <div class="finding" id="f-e3">
+        <h3><span class="id">E3</span>OP/ED も正規化を通らず、結合後は一度も測っていない</h3>
+        <p>
+            <code>_build_combine_parts()</code> は <code>general.opening_video</code> /
+            <code>ending_video</code> を<strong>そのままパーツ列へ追加</strong>します。
+            OP/ED は固定素材なので一度合わせれば済みますが、現状は合わせる仕組みが無く、
+            <strong>本編 -14 LUFS との差が出たままになります</strong>。
+        </p>
+        <p>さらに結合後の最終ファイルのラウドネスを<strong>測る工程がありません</strong>。</p>
+        <ul>
+            <li>YouTube は「-14 LUFS より大きい動画を<strong>下げる</strong>」だけで、
+                小さい動画は<strong>上げません</strong>。最終値が -16 LUFS なら、
+                他の動画より小さく聞こえたまま公開されます。</li>
+            <li>1 本の中で OP → 本編 → ED の段差があっても気付けません。</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="f-e4">
+        <h3><span class="id">E4</span>最終 AAC のビットレート指定が抜けている</h3>
+        <p>
+            <code>loudness.audio_bitrate = "192k"</code> が効くのは
+            <strong>破棄される中間ファイル</strong>だけです
+            (<code>loudness_normalizer.py:213</code>)。その音声は後で再デコードされ、
+            最終結合で改めて AAC へエンコードされますが、
+            <code>concat_processor.concat()</code> が使う <code>build_encode_options()</code> は
+            <strong><code>-b:a</code> を渡していません</strong>。
+        </p>
+        <span class="evidence-label">根拠 — リポジトリ全文検索</span>
+<div class="evidence">$ grep -rn '"-b:a"' src --include=*.py
+src/modules/loudness_normalizer.py:213      ← 破棄される中間ファイル
+src/timeline/proxy_render.py:431            ← プレビュー用</div>
+<pre class="code-block"><span class="k">def</span> build_encode_options(ffmpeg_settings):
+    <span class="k">return</span> [<span class="s">"-c:v"</span>, ..., <span class="s">"-preset"</span>, ..., <span class="s">"-crf"</span>, ..., <span class="s">"-c:a"</span>, <span class="s">"aac"</span>]   <span class="bad"># -b:a が無い</span></pre>
+        <p>
+            最終出力は FFmpeg の <code>aac</code> 既定ビットレート
+            (ステレオで概ね 128kbps) になります。
+            <strong>切り抜き経路は結合で必ず全再エンコードが走るため、本流より確実に
+            この経路を通ります。</strong>
+            <code>loudness.audio_bitrate</code> という設定が<strong>事実上死んでいる</strong>のも
+            設計の不整合です。
+        </p>
+    </div>
+
+    <div class="finding" id="f-e5">
+        <h3><span class="id">E5</span>短いクリップでは loudnorm の測定が信頼できない</h3>
+        <p>
+            EBU R128 の Integrated は一定の長さを要します。
+            <code>archive.section_add.min_length_sec = 1.0</code> で
+            <strong>1 秒のセクション</strong>を足せる仕様では、そのクリップの
+            <code>loudnorm</code> 測定はほぼ無意味です
+            (ゲート後に有効なブロックが残らず、極端なゲインが掛かる恐れがある)。
+        </p>
+    </div>
+
+    <div class="finding" id="f-e6">
+        <h3><span class="id">E6</span><code>linear=true</code> が実際に線形適用されたか記録していない</h3>
+        <p>
+            <code>loudnorm</code> は線形ゲインが True Peak 目標を破る場合に
+            <strong>黙ってダイナミックモードへ落ちます</strong>。2 パス目の出力を解析していないため、
+            <strong>ダイナミック処理が掛かったことに気付けません</strong>
+            (= 意図せず音の質感が変わる)。
+        </p>
+    </div>
+
+    <div class="finding" id="f-e7">
+        <h3><span class="id">E7</span>True Peak 目標 -1.0 dBTP は AAC には少し強気</h3>
+        <p>
+            AAC エンコード後は符号化誤差で True Peak が 0.5〜1 dB 程度<strong>上振れ</strong>し得ます。
+            切り抜き経路は<strong>結合でもう一度 AAC を通る</strong>ため、
+            本流より上振れの機会が多いです。
+        </p>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<section id="loud-fix">
+    <h2>4.3 改善案 (音量調整)</h2>
+
+    <div class="fix key" id="fix-f8">
+        <h3><span class="id">F8</span>イントロカードを正規化経路に乗せる (最優先・数行)</h3>
+        <p>E2 への対処です。選べる実装が 3 つあります。</p>
+        <table class="compact">
+            <thead><tr><th>案</th><th>内容</th><th>規模</th></tr></thead>
+            <tbody>
+                <tr><td>案 A</td>
+                    <td><code>_build_intro_card()</code> の出力へ
+                        <code>loudness_normalizer.normalize_file()</code> を掛ける</td>
+                    <td><span class="badge size-s">小</span></td></tr>
+                <tr><td class="ok">案 B (推奨)</td>
+                    <td>本編の正規化で得た <code>offset</code> (ゲイン dB) を控えておき、
+                        イントロへ <code>volume=&lt;同じ dB&gt;</code> を掛ける</td>
+                    <td><span class="badge size-s">小</span></td></tr>
+                <tr><td>案 C</td>
+                    <td><code>mute_intro</code> の既定を <code>true</code> にする</td>
+                    <td><span class="badge size-xs">極小 (演出が変わる)</span></td></tr>
+            </tbody>
+        </table>
+        <div class="callout good">
+            <strong>案 B が最も素直</strong>です。イントロは本編と同じ VOD の数秒前なので、
+            本編に掛けたゲインをそのまま適用すれば<strong>本編と完全に連続した音量</strong>になります
+            (3 秒では <code>loudnorm</code> の測定自体が信頼できないため、案 A より適切)。
+        </div>
+        <ul>
+            <li><code>prepare_one_clip()</code> で <code>normalize_file()</code> の適用ゲインを
+                <code>prepared["gain_db"]</code> へ控える
+                (<code>loudness_normalizer</code> が <code>measured</code> と <code>target_i</code> から
+                算出できる値を返すようにする)</li>
+            <li><code>_build_intro_card()</code> に <code>gain_db</code> を渡し、
+                <code>-af volume=&lt;gain_db&gt;dB</code> を付ける</li>
+            <li>新設定 <code>archive.intro_card.match_body_level</code> (既定 true / false で従来挙動)</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f9">
+        <h3><span class="id">F9</span>正規化の単位を選べるようにする</h3>
+        <p>E1 への対処です。</p>
+        <ul>
+            <li>新設定 <code>archive.clip_pipeline.loudness_scope</code>:
+                <ul>
+                    <li><code>"per_clip"</code> (従来): クリップごとに -14 LUFS へ揃える</li>
+                    <li><code>"vod"</code> (推奨の新既定候補): <strong>VOD 全体で 1 回</strong>測ったゲインを
+                        全クリップへ適用する → クリップ間の相対的な起伏が保たれる</li>
+                    <li><code>"output"</code>: クリップは触らず、<strong>結合後の 1 本</strong>に対して
+                        正規化する → 最も素直だが、結合後にもう 1 パス必要</li>
+                </ul>
+            </li>
+            <li><code>"vod"</code> は採点フェーズで全長を既に読んでいるため、
+                そこで <code>ebur128</code> を同時に取れば追加コストがほぼゼロです
+                (<a href="#fix-f6">F6</a> の 1 パスに同乗できる)。</li>
+        </ul>
+        <div class="callout good">
+            <strong>決定 (Q3 の回答)</strong>: 切り抜きは
+            <strong>1 本にまとめて出力し、そのまま YouTube へ</strong>上げる運用のため、
+            <strong><code>loudness_scope = "vod"</code> を目標の既定</strong>とします。
+            聴き手が体験するのは結合後の 1 本だけで、クリップごとに -14 LUFS へ揃える現状
+            (<a href="#f-e1">E1</a>) は<strong>山場を潰すだけで誰の役にも立ちません</strong>。
+            <code>"output"</code> (結合後に 1 回) も正しい答えですが、<code>"vod"</code> なら
+            クリップ間の起伏が残り、かつ F10 の最終測定で出力の絶対値も保証できるため、
+            <strong><code>"vod"</code> + F10 の組み合わせ</strong>を推します。
+        </div>
+    </div>
+
+    <div class="fix key" id="fix-f10">
+        <h3><span class="id">F10</span>最終出力を測って必要なら補正する (Q3 の回答により必須)</h3>
+        <p>E3 への対処です。</p>
+        <div class="callout good">
+            <strong>決定 (Q3 の回答)</strong>: 「手直しを経てそのまま YouTube へ上がる」運用では、
+            <strong>出力されたファイルがそのまま公開物になります</strong>。
+            現状は OP/ED・イントロを含む結合後のラウドネスを<strong>誰も測っていない</strong>ため、
+            -14 LUFS から外れたまま公開され得ます。
+            よって F10 は「あると良い」ではなく<strong>必須</strong>として扱い、段 2 へ繰り上げます。
+        </div>
+        <ul>
+            <li>新設定 <code>loudness.verify_output</code> (既定 true): 結合後に
+                <code>ebur128</code> / <code>loudnorm</code> 1 パスで測定し、
+                <strong>結果をログと結果画面へ出す</strong></li>
+            <li>新設定 <code>loudness.correct_output</code> (既定 true): 目標との差が
+                <code>loudness.correct_tolerance_lu</code> (既定 0.5 LU) を超えたら
+                <code>volume=&lt;diff&gt;dB</code> + <code>alimiter</code> で
+                <strong>音声のみ再エンコード</strong>して合わせる
+                (<code>-c:v copy</code> なので映像は無劣化・短時間)</li>
+            <li>新設定 <code>loudness.normalize_op_ed</code> (既定 false):
+                OP/ED にも同じ目標で正規化を掛ける</li>
+        </ul>
+    </div>
+
+    <div class="fix key" id="fix-f11">
+        <h3><span class="id">F11</span>最終 AAC のビットレートを設定から渡す</h3>
+        <p>E4 への対処です。</p>
+        <ul>
+            <li>新設定 <code>ffmpeg.audio_bitrate</code> (既定 <code>"256k"</code> を提案)</li>
+            <li><code>build_encode_options()</code> / <code>burn_subtitle()</code> /
+                <code>renderer._finalize_base()</code> から渡す
+                (切り抜きの結合は <code>build_encode_options()</code> を通るため、
+                1 箇所の修正で効きます)</li>
+            <li><code>loudness.audio_bitrate</code> はこれを参照するだけにして重複を消す</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f12">
+        <h3><span class="id">F12</span>短いクリップの正規化を飛ばす</h3>
+        <p>E5 への対処です。</p>
+        <ul>
+            <li>新設定 <code>loudness.min_duration_sec</code> (既定 5.0): これ未満の素材は
+                正規化をスキップし、その旨をログへ出す (<code>normalize_file()</code> の冒頭で判定)</li>
+            <li><a href="#fix-f9">F9</a> の <code>"vod"</code> スコープを既定にすれば、
+                この問題は自動的に解消します (測定対象が VOD 全体になるため)</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f13">
+        <h3><span class="id">F13</span>2 パス目の測定 JSON も解析する / TP 目標を下げる</h3>
+        <ul>
+            <li><strong>E6</strong>: 2 パス目にも <code>print_format=json</code> を付けて
+                <code>output_i</code> / <code>output_tp</code> / <code>normalization_type</code> を
+                ログへ出す。線形で適用できなかった場合は警告を 1 行</li>
+            <li><strong>E7</strong>: <code>loudness.target_tp</code> の既定を <strong>-1.5</strong> にする
+                (YouTube 推奨の -1.0 は「配信される最終形」の値。投稿素材側は余裕を取る)</li>
+        </ul>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第5部 — まとめ</h2>
+    <p>対応表 / 優先順位 / 評価 / リスク / 設定キー / 不明点</p>
+</div>
+
+<section id="matrix">
+    <h2>5. 問題と改善案の対応表</h2>
+    <table>
+        <thead><tr><th>記号</th><th>問題</th><th>改善案</th><th>段</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#f-a1">A1</a></td><td>採点が声を区別しない</td><td><a href="#fix-f1">F1</a> 発話率を特徴に加える / <a href="#fix-f14">F14</a> トラック選択</td><td><span class="stage stage-3">3</span></td></tr>
+            <tr><td><a href="#f-a2">A2</a></td><td>大声加点が常に入り、無音減点が入らない</td><td><a href="#fix-f2">F2</a> 加点/減点の判定を直す</td><td><span class="stage stage-3">3</span></td></tr>
+            <tr><td><a href="#f-a3">A3</a></td><td>感情点 4 キーが未実装のまま設定にある</td><td><a href="#fix-f3">F3</a> 案 A / 案 B′ (擬似感情特徴) / 案 C (<a href="#qa-ser">§2.4</a>)</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-a4">A4</a></td><td>笑いエモート・「草」が未カウント</td><td><a href="#fix-f4">F4</a> コメント採点の強化</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-a5">A5</a></td><td>ローカル入力でスコア上限が 55</td><td><a href="#fix-f4">F4</a> 重みの正規化</td><td><span class="stage stage-1">1</span></td></tr>
+            <tr><td><a href="#f-a6">A6</a></td><td><code>cut_region</code> が <code>-c copy</code> でずれる</td><td><a href="#fix-f5">F5</a> <code>cut_mode</code> の追加</td><td><strong><a href="#future-1">保留</a></strong></td></tr>
+            <tr><td><a href="#f-a7">A7</a></td><td>特徴抽出がセルごとにプロセス起動</td><td><a href="#fix-f6">F6</a> 1 パス化</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-a8">A8</a></td><td>カット閾値がクリップごとに変わる/崩壊する</td><td><a href="#fix-f7">F7</a> <code>cut_db_scope</code> + 分位点</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-a9"><strong>A9</strong></a></td><td><strong>ゲーム内のボイスがテロップになる</strong> (<a href="#verify-3">§12.3</a>)</td><td><a href="#fix-f15">F15</a> 話者照合 = <strong>実測で不成立</strong> (<a href="#verify-7">§12.7</a>) / <a href="#fix-f16">F16</a> 音量で要確認 = <strong>不採用</strong> (<a href="#verify-9">§12.9</a>)</td><td class="ng"><strong>対策なし</strong></td></tr>
+            <tr><td><a href="#fix-b1">B1</a></td><td>固有名詞を渡していない</td><td><code>initial_prompt</code> / <code>hotwords</code></td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#fix-b2">B2</a></td><td>信頼度を捨てている</td><td>保持 + 編集画面で色分け</td><td><span class="stage stage-1">1</span></td></tr>
+            <tr><td><a href="#fix-b3">B3</a></td><td>置換辞書が無い</td><td><code>subtitle.replacements</code></td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#fix-b4">B4</a></td><td><code>int8</code> 固定</td><td>精度の選択肢を通す</td><td><span class="stage stage-4">4</span></td></tr>
+            <tr><td><a href="#fix-b5">B5</a></td><td>文脈を切っている</td><td>A/B 評価のうえ戻す</td><td><span class="stage stage-4">4</span></td></tr>
+            <tr><td><a href="#f-c1"><strong>C1</strong></a></td><td><strong>テロップ下限が改行下限と同一キー</strong></td><td><a href="#fix-g1"><strong>G1</strong></a> 独立キーへ分離 (暫定) → <a href="#fix-g5"><strong>G5</strong></a> 実寸へ</td><td><span class="stage stage-1">1</span></td></tr>
+            <tr><td><strong>C5</strong></td><td><strong>文字数制御がフォント依存の実寸を無視している</strong> (<a href="#q5">Q5</a>)</td><td><a href="#fix-g5"><strong>G5</strong></a> 折り返しを px へ移す</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-c2">C2</a></td><td>間を区切りに使っていない</td><td><a href="#fix-g2">G2</a> ポーズ判定</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-c3">C3</a></td><td>上限超過が文字数ハード分割</td><td><a href="#fix-g3">G3</a> 文節境界 + <strong><a href="#fix-g5">G5</a> 実寸 (px)</strong></td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-c4">C4</a></td><td>結合/分割コマンドが無い</td><td><a href="#fix-g4">G4</a> コマンド追加</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-e1">E1</a></td><td>クリップごと個別正規化</td><td><a href="#fix-f9">F9</a> <code>loudness_scope</code></td><td><span class="stage stage-3">3</span></td></tr>
+            <tr><td><a href="#f-e2"><strong>E2</strong></a></td><td><strong>イントロが本編より約 5 dB 大きい</strong></td><td><a href="#fix-f8"><strong>F8</strong></a> 本編ゲインを合わせる</td><td><span class="stage stage-1">1</span></td></tr>
+            <tr><td><a href="#f-e3">E3</a></td><td>OP/ED 未正規化・結合後未測定</td><td><a href="#fix-f10">F10</a> 最終測定・補正</td><td><span class="stage stage-3">3</span></td></tr>
+            <tr><td><a href="#f-e4"><strong>E4</strong></a></td><td><strong>最終 AAC が 128kbps</strong></td><td><a href="#fix-f11"><strong>F11</strong></a> <code>ffmpeg.audio_bitrate</code></td><td><span class="stage stage-1">1</span></td></tr>
+            <tr><td><a href="#f-e5">E5</a></td><td>短いクリップの測定が不正確</td><td><a href="#fix-f12">F12</a> 下限尺でスキップ</td><td><span class="stage stage-2">2</span></td></tr>
+            <tr><td><a href="#f-e6">E6</a></td><td>線形/ダイナミックの記録が無い</td><td><a href="#fix-f13">F13</a> 2 パス目を解析</td><td><span class="stage stage-4">4</span></td></tr>
+            <tr><td><a href="#f-e7">E7</a></td><td>TP -1.0 が強気</td><td><a href="#fix-f13">F13</a> -1.5 へ</td><td><span class="stage stage-4">4</span></td></tr>
+            <tr><td><strong>H1</strong></td><td><strong>3 行になるテロップがある</strong> (<a href="#verify-4">§12.4</a>)</td><td>折り返し後の行数で切り直す</td><td class="ok"><strong>完了</strong></td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="priority">
+    <h2>5.1 優先順位 (推奨の実施順)</h2>
+    <table>
+        <thead><tr><th>段</th><th>内容</th><th>規模</th><th>期待効果</th></tr></thead>
+        <tbody>
+            <tr><td><span class="stage stage-0">0</span></td><td><a href="#embed-metrics">§6.1</a> 計測の埋め込み (<code>origin["asr_text"]</code> + 信頼度 + 単語列)</td><td><span class="badge size-xs">極小</span></td><td class="ok">普段の編集が正解データになる。B2 / G4 と同じ場所なのでまとめて入れる</td></tr>
+            <tr><td><span class="stage stage-1">1</span></td><td><a href="#fix-f8">F8</a> イントロの音量を本編へ合わせる</td><td><span class="badge size-xs">極小</span></td><td class="ok">聴いて分かる段差が消える</td></tr>
+            <tr><td><span class="stage stage-1">1</span></td><td><a href="#fix-g1">G1</a> テロップ下限の分離</td><td><span class="badge size-xs">極小</span></td><td class="ok">結合の手作業が激減</td></tr>
+            <tr><td><span class="stage stage-1">1</span></td><td><a href="#fix-f11">F11</a> 最終 AAC ビットレート</td><td><span class="badge size-xs">極小</span></td><td class="ok">音質の明確な改善</td></tr>
+            <tr><td><span class="stage stage-1">1</span></td><td><a href="#fix-f4">F4</a> 重みの正規化 (A5)</td><td><span class="badge size-xs">極小</span></td><td class="ok">採点グラフが 0〜100 で読める</td></tr>
+            <tr><td><span class="stage stage-1">1</span></td><td><a href="#fix-b2">B2</a> 信頼度の保持 + 編集画面の色分け</td><td><span class="badge size-m">中</span></td><td class="ok">10 クリップ分の確認が軽くなる</td></tr>
+            <tr><td>—</td><td><a href="#fix-f16">F16</a> 音量で要確認マーク</td><td><span class="badge size-s">小</span></td><td class="ng"><strong>不採用 (<a href="#verify-9">§12.9</a>)</strong></td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-f6">F6</a> 特徴抽出の 1 パス化</td><td><span class="badge size-m">中</span></td><td>採点の待ち時間が縮む</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-f7">F7</a> カット閾値を VOD 単位 + 分位点へ</td><td><span class="badge size-m">中</span></td><td>クリップ間のカットが揃う</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-f4">F4</a> 笑いエモート・「草」の集計</td><td><span class="badge size-s">小</span></td><td>盛り上がり判定が日本語配信に合う</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-f3">F3</a> 感情点の扱いを決める (案 C なら極小)</td><td><span class="badge size-s">小</span></td><td>「効かない設定」を解消</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-b1">B1</a> <code>initial_prompt</code> / <code>hotwords</code> + <a href="#fix-b3">B3</a> 置換辞書</td><td><span class="badge size-m">中</span></td><td>固有名詞の誤りが消える</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-g2">G2</a> ポーズによる区切り + <a href="#fix-g3">G3</a> 文節境界</td><td><span class="badge size-m">中</span></td><td>区切りが自然になる</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-g4">G4</a> 結合 / 分割コマンド</td><td><span class="badge size-m">中</span></td><td>残る手作業そのものを軽くする</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><a href="#fix-f12">F12</a> 短いクリップの正規化スキップ</td><td><span class="badge size-xs">極小</span></td><td>1 秒セクションの暴走を防ぐ</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><strong><a href="#fix-g5">G5</a> 折り返しを実寸 (px) へ</strong> (<a href="#q5">Q5</a>)</td><td><span class="badge size-m">中</span></td><td class="ok">フォントを変えても画面外に出ない</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><strong><a href="#fix-f9">F9</a> 正規化を VOD 単位へ</strong> (<a href="#q3">Q3</a>)</td><td><span class="badge size-m">中</span></td><td>切り抜きの起伏が残る</td></tr>
+            <tr><td><span class="stage stage-2">2</span></td><td><strong><a href="#fix-f10">F10</a> 最終出力の測定・補正</strong> (<a href="#q3">Q3</a> により必須)</td><td><span class="badge size-m">中</span></td><td class="ok">YouTube 上の音量が保証される</td></tr>
+            <tr><td><span class="stage stage-3">3</span></td><td><a href="#fix-f1">F1</a> 発話率を採点へ + <a href="#fix-f2">F2</a> 加点/減点の修正</td><td><span class="badge size-l">大</span></td><td class="ok">「盛り上がり」の判定が成立する</td></tr>
+            <tr><td><span class="stage stage-3">3</span></td><td><a href="#qa-245">F3 案 B′</a> 擬似感情特徴 (ピッチ・音量の突出 / <a href="#q2">Q2</a> で採用)</td><td><span class="badge size-m">中</span></td><td>叫び・興奮を声から捉える (依存ゼロ)</td></tr>
+            <tr><td>—</td><td><a href="#fix-f15">F15</a> 話者照合</td><td><span class="badge size-l">大</span></td><td class="ng"><strong>実測で不採用 (<a href="#verify-7">§12.7</a>)</strong>。実装は残す</td></tr>
+            <tr><td><span class="stage stage-4">4</span></td><td><a href="#fix-b4">B4</a> / <a href="#fix-b5">B5</a> / <a href="#fix-f13">F13</a></td><td><span class="badge size-m">中</span></td><td>仕上げ</td></tr>
+            <tr><td>—</td><td><a href="#fix-f5">F5</a> <code>cut_mode</code> / <a href="#fix-f14">F14</a> トラック選択 / <a href="#fix-f3">F3</a> 案 B (SER)</td><td>—</td><td class="mid"><strong><a href="#future">保留 (§11)</a></strong></td></tr>
+        </tbody>
+    </table>
+    <div class="callout good">
+        段 1 は <strong>F8 + G1 + F11 + F4(重み) で合計 1 日以内</strong>に入り、
+        聴感・手作業・画面表示の 3 方面で効果が分かります。
+    </div>
+</section>
+
+<section id="eval">
+    <h2>6. 評価 — 計測を実装に埋め込む (Q7 の回答を反映)</h2>
+    <div class="callout">
+        要望に「<strong>1 テロップが問題なく完了しているのは全体の 30% 未満</strong>」という
+        数字があります。これは現在、<strong>人の体感でしか測れません</strong>。切り抜きは
+        1 回の実行で採点 → 10 クリップ分の準備まで走るため、目視確認のコストが特に高い経路です。
+    </div>
+
+    <h3 id="qa-q7">6.0 結論 — 評価セットの事前提供は不要です (Q7)</h3>
+    <div class="question">
+        <span class="q-label">質問</span>
+        <p>9.2 の Q7 は実装してテストした後に報告でよいか？</p>
+    </div>
+    <div class="callout good">
+        <strong>はい。Q7 はブロッカーから外します。</strong>
+        ただし改善項目は 2 種類に分かれ、扱いが違います。
+    </div>
+
+    <h4>(A) 評価セット不要 — 合否が数値・テストで決まるもの → 実装 → テスト → 報告でよい</h4>
+    <p>
+        段 1・段 2 のほぼ全部がここに入ります。理由は単純で、これらは
+        <strong>「良くなったか」ではなく「仕様違反が直ったか」</strong>だからです。
+        合否が客観的に決まります。
+    </p>
+    <table>
+        <thead><tr><th>項目</th><th>合否の決め方</th><th>必要なもの</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#fix-f8">F8</a> イントロ段差</td>
+                <td>出力の intro / 本編頭を <code>ebur128</code> で測り差が 1 LU 未満</td>
+                <td class="ok">出力 1 本</td></tr>
+            <tr><td><a href="#fix-f11">F11</a> ビットレート</td>
+                <td><code>ffprobe</code> で <code>bit_rate</code> を見る</td>
+                <td class="ok">出力 1 本</td></tr>
+            <tr><td><a href="#fix-f10">F10</a> 最終ラウドネス</td>
+                <td>出力の Integrated が -14 ± 0.5 LU</td>
+                <td class="ok">出力 1 本</td></tr>
+            <tr><td><strong><a href="#fix-g5">G5</a> px 折り返し</strong></td>
+                <td><strong>全テロップの全行で <code>text_width(line) &lt;= usable</code></strong></td>
+                <td class="ok"><strong>単体テスト (フォント数種)</strong></td></tr>
+            <tr><td><a href="#fix-g1">G1</a> テロップ下限</td>
+                <td>既存 <code>test_subtitle_length_units.py</code> を拡張</td>
+                <td class="ok">単体テスト</td></tr>
+            <tr><td><a href="#fix-f4">F4</a> 重みの正規化</td>
+                <td><code>score_window</code> の純関数テスト (満点 100 になる)</td>
+                <td class="ok">単体テスト</td></tr>
+            <tr><td><a href="#fix-f6">F6</a> 1 パス化</td>
+                <td>旧経路とセル特徴が一致 + 実時間を比較</td>
+                <td class="ok">VOD 1 本 (自己比較)</td></tr>
+            <tr><td><a href="#fix-f7">F7</a> 閾値</td>
+                <td>「無音 0 件」の崩壊が起きないこと</td>
+                <td class="ok">VOD 1 本</td></tr>
+            <tr><td><a href="#fix-g4">G4</a> 結合 / 分割</td>
+                <td>Undo / Redo と本文の分かれ方</td>
+                <td class="ok">単体テスト</td></tr>
+            <tr><td><a href="#fix-b1">B1</a> / <a href="#fix-b2">B2</a> / <a href="#fix-b3">B3</a></td>
+                <td>プロンプト組み立て・信頼度の引き継ぎ・置換</td>
+                <td class="ok">単体テスト</td></tr>
+            <tr><td><a href="#fix-f12">F12</a> / <a href="#fix-f13">F13</a></td>
+                <td>短尺スキップ・2 パス目のログ・TP 目標</td>
+                <td class="ok">単体テスト + 出力 1 本</td></tr>
+        </tbody>
+    </table>
+    <div class="callout good">
+        とくに <strong>Q5 の条件「2 行で画面外に出ない」は述語 (真偽が決まる命題)</strong> なので、
+        評価セットを見て判断するものではなく <strong>テストで固定するのが適切</strong>です。
+        <code>font_advance</code> が libass と +2〜+10px で一致することは既に確認済みなので、
+        「はみ出さないこと」をそのまま assert できます。
+    </div>
+
+    <h4>(B) 判断材料が要るもの — ただし「先に正解データを作る」必要はない</h4>
+    <table class="compact">
+        <thead><tr><th>項目</th><th>なぜ数値だけで決まらないか</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#fix-f1">F1</a> 発話率を採点へ</td><td>「どの 3 分が良いか」は編集上の判断</td></tr>
+            <tr><td><a href="#fix-f2">F2</a> 大声加点 / 無音減点のしきい値</td><td><code>loud_ratio_threshold</code> 0.2 等は当て推量</td></tr>
+            <tr><td><a href="#qa-245">F3 案 B′</a> の重み</td><td><code>pitch_up</code> 8 / <code>loud_burst</code> 10 / <code>onset</code> 5 は当て推量</td></tr>
+            <tr><td><a href="#fix-b5">B5</a> 文脈の引き継ぎを戻す</td><td>精度向上と反復ループのトレードオフ</td></tr>
+        </tbody>
+    </table>
+    <p>
+        この 4 つも<strong>事前に正解データを用意する必要はありません</strong>。
+        実装して<strong>いつもの VOD を 1 本流し、Before / After を並べて報告 → 見て判断</strong>で
+        足ります。重みの調整はその結果を受けて 2 周目に回します。
+    </p>
+
+    <h3 id="embed-metrics">6.1 Q7 を「素材の提供」から「計測の埋め込み」へ置き換える</h3>
+    <p>さらに踏み込むと、<strong>普段の編集作業をそのまま正解データにできます</strong>。</p>
+    <p>
+        現状 <code>_append_subtitles()</code> (<code>src/timeline/builder.py:767</code>) が
+        <code>origin</code> に残すのは <code>{type, source_start, source_end}</code> だけで、
+        <strong>元の認識テキストを保存していません</strong>。
+    </p>
+<pre class="code-block">origin = {<span class="s">"type"</span>: ORIGIN_ASR}
+origin[<span class="s">"source_start"</span>] = ...
+origin[<span class="s">"source_end"</span>]   = ...
+<span class="bad"># ← 認識結果そのもの (item["text"]) は残らない</span></pre>
+    <p>ここに <strong>1 行足すだけ</strong>で、利用者が手直しした結果が自動的に正解データになります。</p>
+<pre class="code-block"><span class="good">origin["asr_text"] = item.get("text", "")   # 生成時の認識結果を控える</span></pre>
+    <p>これで以下が<strong>保存済みプロジェクト JSON から自動で算出できます</strong>。</p>
+    <table>
+        <thead><tr><th>指標</th><th>算出方法</th><th>専用素材</th></tr></thead>
+        <tbody>
+            <tr><td><strong>無修正テロップ率</strong></td>
+                <td><code>clip.text == clip.origin["asr_text"]</code> の割合</td>
+                <td class="ok"><strong>不要</strong></td></tr>
+            <tr><td>文字単位の修正量</td><td>2 つの文字列の編集距離</td><td class="ok">不要</td></tr>
+            <tr><td>採用率</td><td>クリップの <code>use</code> フラグ</td><td class="ok">不要</td></tr>
+            <tr><td>結合 / 分割の回数</td><td><code>CommandStack</code> のラベル集計</td><td class="ok">不要</td></tr>
+            <tr><td>最終 Integrated / TP</td><td>出力を <code>ebur128</code> で測る (F10 で実装)</td><td class="ok">不要</td></tr>
+            <tr><td>区間一致率 (IoU)</td><td>自動 TOP10 と、手で残した区間の比較</td><td class="ok">不要</td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li><strong>保存場所は <a href="#fix-b2">B2</a> (<code>origin["confidence"]</code>) と
+            <a href="#fix-g4">G4</a> (<code>origin["words"]</code>) と同じ</strong>なので、
+            3 つまとめて入れれば追加コストはほぼゼロです。</li>
+        <li><code>origin</code> は dict でそのまま JSON へ入るため <code>project_io</code> は無改修
+            (<a href="#refs">§10</a> 参照)。</li>
+        <li><strong>使うほどデータが溜まります</strong>。評価セットを作る手間が消え、
+            「30% 未満」が改善しているかを<strong>実作業の記録から継続的に追える</strong>ようになります。</li>
+    </ul>
+    <div class="callout good">
+        <strong>したがって Q7 への回答は</strong>: 素材の事前提供は求めません。
+        上記 1 行 + F10 の測定を実装に含め、<strong>実装 → テスト → 報告</strong>で進めます。
+        (B) の 4 項目だけ、報告時に Before / After を並べてご判断いただきます。
+    </div>
+
+    <h3>6.1.1 旧案: 専用の評価セット (参考として残す)</h3>
+    <ul>
+        <li>代表 VOD 2〜3 本 (ゲーム音が大きい / 雑談中心 / 複数人) + チャット JSON</li>
+        <li>各 VOD の<strong>正解切り抜き区間</strong>と<strong>正解テロップ</strong></li>
+        <li>動画自体はリポジトリへ入れず、<code>tests/fixtures/quality/</code> 相当にメタのみ置く</li>
+    </ul>
+    <p class="note">
+        §6.1 の計測で足りなくなった場合 (例: F1 の重み調整を自動探索したい) に戻ってきます。
+    </p>
+
+    <h3>6.2 指標</h3>
+    <table>
+        <thead><tr><th>指標</th><th>定義</th><th>対象</th></tr></thead>
+        <tbody>
+            <tr><td>区間一致率 (IoU)</td><td>自動 TOP10 と正解区間の重なり</td><td>採点 (第2部)</td></tr>
+            <tr><td>採用率</td><td>結果画面で <code>use=True</code> のまま出力されたクリップの割合</td><td>採点の実用性</td></tr>
+            <tr><td><strong>無修正テロップ率</strong></td><td>1 文字も直さず通ったテロップ / 全テロップ</td><td>要望の「30%」を直接測る</td></tr>
+            <tr><td>CER / WER</td><td>文字・単語誤り率</td><td>認識精度 (第3部)</td></tr>
+            <tr><td>区切り F1</td><td>正解の区切り時刻と ±0.3 秒で一致した割合</td><td>テロップ単位 (第3部)</td></tr>
+            <tr><td>結合 / 分割操作数</td><td>編集画面での結合・分割の回数</td><td>手作業の実コスト</td></tr>
+            <tr><td>最終 Integrated / TP</td><td>結合後ファイルの実測</td><td>音量 (第4部)</td></tr>
+            <tr><td><strong>イントロ/本編の段差</strong></td><td>イントロ 3 秒と本編頭 10 秒の Momentary 差</td><td><a href="#f-e2">E2</a> の検証</td></tr>
+            <tr><td>採点所要時間</td><td>VOD 尺に対する採点フェーズの実時間比</td><td><a href="#fix-f6">F6</a> の検証</td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.3 仕組み</h3>
+    <ul>
+        <li><code>tools/eval_archive.py</code> を 1 本置く (VOD + 正解 → 指標を CSV 出力)。
+            既存 <code>tools/</code> を踏襲</li>
+        <li>編集画面の操作回数は <code>src/services/telemetry.py</code> に乗せられますが、
+            <strong>送信ではなくローカル集計</strong>で十分です</li>
+    </ul>
+</section>
+
+<section id="risk">
+    <h2>7. リスクと切り戻し</h2>
+    <ul>
+        <li><strong>すべての新機能を <code>setting.json</code> のキーで ON/OFF 可能にする</strong>。
+            既定値は「従来と完全一致」から始め、評価 (<a href="#eval">§6</a>) で改善が確認できた
+            ものだけ既定を変える (<code>docs/claude.md</code> の
+            「既存実装を破壊しない」「ハードコード禁止」)。</li>
+        <li><strong>G1 は既定値の変更</strong>なので
+            <code>tests/test_subtitle_length_units.py</code> の期待値が変わります。
+            旧挙動は <code>subtitle_min_chars</code> を旧式に設定したケースとして
+            別テストで保持してください。</li>
+        <li><strong>F5 (<code>cut_mode</code>)</strong> はプロジェクト再開時の素材復旧
+            (<code>project_resume</code>) の前提 (同じ引数で同じ出力が再現できる) に触れます。
+            <strong>プロジェクトへ <code>cut_mode</code> を記録</strong>し、
+            記録が無い既存プロジェクトは <code>"copy"</code> とみなしてください。</li>
+        <li><strong>F9 (<code>loudness_scope="vod"</code>)</strong> は
+            <code>prepared["media_role"]</code> の判定
+            (<code>normalized != raw</code> で正規化を通ったか判断している) に影響します。
+            スコープを変えるときは <code>media_role</code> の決め方も合わせて見直すこと
+            (音声サイドカーの貼り直し判断に使われています)。</li>
+        <li><strong>F1 / F6</strong> は採点の実行時間とメモリに影響します。2 時間 VOD で必ず実測し、
+            進捗が止まって見えないこと (watchdog に殺されないこと) を確認してください。</li>
+        <li><strong>B5 (<code>condition_on_previous_text=True</code>)</strong> は
+            <code>docs/error/20260626/resolve.md</code> の反復ループ対策を緩める変更です。
+            評価セットで反復が出ないことを確認するまで<strong>既定は False のまま</strong>に
+            してください。</li>
+        <li><strong>F3 案 C (4 キーを削除)</strong> は既存 <code>setting.json</code> との互換に触れます。
+            <code>_merge_with_defaults</code> は未知キーを残すため害はありませんが、
+            設定画面に出ている場合は表示も消す必要があります。</li>
+        <li><strong>F3 案 B (SER モデル)</strong> は <a href="#qa-243">§2.4.3</a> のとおり
+            <strong>入力がミックス 1 本だと精度が出ません</strong>。
+            重みファイルを足す前に <a href="#q9">Q9</a> を確定させてください。
+            実装するときは <code>blur/models.py</code> と同じ
+            「モデルが無ければ機能を落として続行」に倒し、
+            <strong>感情点 0 で採点が完走すること</strong>をテストで固定すること
+            (blur の前例に倣う)。</li>
+        <li><strong>F14 (トラック選択)</strong> は <code>0:a:0</code> の決め打ちを
+            4 ファイルから 1 ヘルパへ集約する変更です。
+            波形表示・プレビュー音声・採点・無音カットが
+            <strong>同じトラックを見ていること</strong>が崩れると
+            「波形と音が違う」類の分かりにくい不整合になります。
+            集約と差し替えは 1 コミットで行い、既存プロジェクトは索引 0 とみなしてください。</li>
+    </ul>
+</section>
+
+<section id="keys">
+    <h2>8. 追加予定の設定キー (一覧)</h2>
+    <table>
+        <thead><tr><th>セクション</th><th>キー</th><th>型</th><th>既定</th><th>説明</th><th>対応</th></tr></thead>
+        <tbody>
+            <tr><td><code>general</code></td><td>audio_track_index</td><td>int</td><td>0</td><td>使用する音声トラック (VOD には効かない)</td><td class="new-cell">F14</td></tr>
+            <tr><td><code>archive</code></td><td>cut_mode</td><td>string</td><td>"copy"</td><td class="mid">保留 (<a href="#future-1">§11-1</a>)。当面は "copy" のまま</td><td class="new-cell">F5</td></tr>
+
+            <tr><td rowspan="12"><code>archive.scoring</code></td><td>feature_mode</td><td>string</td><td>"per_cell"</td><td>"single_pass" で astats 1 パス</td><td class="new-cell">F6</td></tr>
+            <tr><td>loud_ratio_threshold</td><td>float</td><td>0.2</td><td>大声を「時間の割合」で見る</td><td class="new-cell">F2</td></tr>
+            <tr><td>silence_source</td><td>string</td><td>"level"</td><td>"vad" で非発話率へ</td><td class="new-cell">F2</td></tr>
+            <tr><td>vad.enabled / threshold</td><td>bool / float</td><td>true / 0.5</td><td>Silero VAD の有効化としきい値</td><td class="new-cell">F1</td></tr>
+            <tr><td>vad.min_speech_ms / min_silence_ms</td><td>int / int</td><td>250 / 600</td><td>最小発話長 / 最小無音長</td><td class="new-cell">F1</td></tr>
+            <tr><td>method_a.loudness_source</td><td>string</td><td>"cell"</td><td>"speech" で発話区間のみの音量</td><td class="new-cell">F1</td></tr>
+            <tr><td>method_a.normalize_weights</td><td>bool</td><td>true</td><td>コメント無しなら 0..100 へ正規化</td><td class="new-cell">F4</td></tr>
+            <tr><td>method_a.emotion_points.speech</td><td>float</td><td>20</td><td>発話率への加点</td><td class="new-cell">F1</td></tr>
+            <tr><td>method_a.comment.laugh_emotes / emote_point / laugh_words</td><td>array / float / array</td><td>["LUL","KEKW",…] / 1 / ["草","笑","くさ"]</td><td>笑いエモート・笑い語のカウント</td><td class="new-cell">F4</td></tr>
+            <tr><td>method_a.emotion_points.pitch_up / loud_burst / onset</td><td>float × 3</td><td>8 / 10 / 5</td><td>擬似感情特徴への加点 (案 B′)</td><td class="new-cell">F3</td></tr>
+            <tr><td>emotion.mode</td><td>string</td><td>"none"</td><td class="ok">"pseudo"=案 B′ (<a href="#q2">Q2</a> で採用 / 目標既定)</td><td class="new-cell">F3</td></tr>
+            <tr><td>emotion.max_samples_per_cell / sample_max_sec / min_sample_sec</td><td>int / float / float</td><td>3 / 4.0 / 1.0</td><td>セルごとに推論する発話の本数と尺</td><td class="new-cell">F3</td></tr>
+
+            <tr><td rowspan="2"><code>archive.clip_pipeline</code></td><td>cut_db_scope</td><td>string</td><td>"per_clip"</td><td>"vod" で VOD 単位の閾値</td><td class="new-cell">F7</td></tr>
+            <tr><td>loudness_scope</td><td>string</td><td class="ok">"vod"</td><td class="ok"><a href="#q3">Q3</a> により "vod" を目標の既定とする</td><td class="new-cell">F9</td></tr>
+
+            <tr><td><code>archive.intro_card</code></td><td><strong>match_body_level</strong></td><td>bool</td><td>true</td><td><strong>本編のゲインをイントロへ合わせる (★最優先)</strong></td><td class="new-cell">F8</td></tr>
+
+            <tr><td rowspan="2"><code>volume_analysis</code></td><td>metric</td><td>string</td><td>"percentile"</td><td>既存キーに値を追加</td><td class="new-cell">F7</td></tr>
+            <tr><td>percentile</td><td>int</td><td>10</td><td>下側分位点 (%)</td><td class="new-cell">F7</td></tr>
+
+            <tr><td rowspan="13"><code>subtitle</code></td><td>initial_prompt / hotwords / vocabulary</td><td>string / string / array</td><td>"" / "" / []</td><td>前提テキスト・優先語・語彙リスト</td><td class="new-cell">B1</td></tr>
+            <tr><td>whisper_hallucination_silence_sec</td><td>float</td><td>2.0</td><td>幻聴抑止のしきい値 (秒)</td><td class="new-cell">B5</td></tr>
+            <tr><td>whisper_no_repeat_ngram_size</td><td>int</td><td>0</td><td>反復抑止 (0 で無効)</td><td class="new-cell">B5</td></tr>
+            <tr><td>low_confidence_logprob</td><td>float</td><td>-0.6</td><td>要確認とみなす avg_logprob</td><td class="new-cell">B2</td></tr>
+            <tr><td>low_confidence_word_prob</td><td>float</td><td>0.4</td><td>要確認とみなす単語確率</td><td class="new-cell">B2</td></tr>
+            <tr><td>replacements</td><td>array</td><td>[]</td><td>置換辞書 (from / to / regex)</td><td class="new-cell">B3</td></tr>
+            <tr><td><strong>subtitle_min_chars</strong></td><td>int</td><td>16</td><td><strong>テロップの下限文字数 (★最優先 / G5 までの暫定)</strong></td><td class="new-cell">G1</td></tr>
+            <tr><td><strong>wrap_mode / min_line_ratio</strong></td><td>string / float</td><td>"length" / 0.5</td><td><strong>"width" で実寸 (px) 折り返し / 1 行の下限割合 (<a href="#q5">Q5</a>)</strong></td><td class="new-cell">G5</td></tr>
+            <tr><td>initial_prompt_from_vod</td><td>bool</td><td>true</td><td>配信タイトル・ゲーム名を自動で種にする (<a href="#q1">Q1</a>)</td><td class="new-cell">B1</td></tr>
+            <tr><td>split_min_pause_sec / merge_max_pause_sec / split_on_phrase_boundary</td><td>float / float / bool</td><td>0.35 / 0.20 / true</td><td>間で切る / 間が無ければ繋ぐ / 文節境界で切る</td><td class="new-cell">G2 G3</td></tr>
+            <tr><td><strong>split_max_pause_sec</strong></td><td>float</td><td>1.0</td><td><strong>下限に関わらず切る間の上限 (<a href="#verify-2-2">§12.2-2</a> の回帰修正)</strong></td><td class="new-cell">G2</td></tr>
+            <tr><td>speaker_filter</td><td>string</td><td>"off"</td><td>"flag" (印を付ける) / "drop" (落とす)。実測で分離できず既定は off (<a href="#verify-7">§12.7</a>)</td><td class="new-cell">F15</td></tr>
+            <tr><td>speaker_threshold / speaker_core_ratio / speaker_min_sec</td><td>float × 3</td><td>0.45 / 0.5 / 0.6</td><td>類似度の下限 / 代表を求める際に残す割合 / 判定する最短の発話</td><td class="new-cell">F15</td></tr>
+
+            <tr><td><code>ffmpeg</code></td><td><strong>audio_bitrate</strong></td><td>string</td><td>"256k"</td><td><strong>最終出力の音声ビットレート (★)</strong></td><td class="new-cell">F11</td></tr>
+
+            <tr><td rowspan="4"><code>loudness</code></td><td>verify_output / correct_output</td><td>bool / bool</td><td>true / true</td><td>最終出力を測定 / 差を補正</td><td class="new-cell">F10</td></tr>
+            <tr><td>correct_tolerance_lu / normalize_op_ed</td><td>float / bool</td><td>0.5 / false</td><td>補正のしきい値 (LU) / OP・ED も正規化</td><td class="new-cell">F10</td></tr>
+            <tr><td>min_duration_sec</td><td>float</td><td>5.0</td><td>これ未満は正規化をスキップ</td><td class="new-cell">F12</td></tr>
+            <tr><td>target_tp</td><td>float</td><td>-1.5</td><td>TP 目標の既定変更</td><td class="new-cell">F13</td></tr>
+        </tbody>
+    </table>
+    <p class="note">
+        <code>whisper_compute_type</code> は既存キーのまま、受け付ける値を
+        <code>int8</code> / <code>int8_float32</code> / <code>int16</code> / <code>float32</code> へ
+        広げます (B4)。
+    </p>
+</section>
+
+<section id="unknown">
+    <h2>9. 不明点と回答 (2026-10-23 時点)</h2>
+
+    <h3>9.1 回答済み (方針確定)</h3>
+    <table>
+        <thead><tr><th>#</th><th>内容</th><th>回答</th><th>反映先</th></tr></thead>
+        <tbody>
+            <tr id="q1"><td><strong>Q1</strong></td>
+                <td>配信タイトル・ゲーム名を <code>initial_prompt</code> の種に自動で差し込んでよいか</td>
+                <td class="ok">差し込んでよい</td>
+                <td><a href="#fix-b1">§3.2 B1</a> (<code>subtitle.initial_prompt_from_vod</code>)</td></tr>
+            <tr id="q2"><td><strong>Q2</strong></td>
+                <td>感情点 4 キーの扱い (案 A / B′ / B / C)</td>
+                <td class="ok">案 B′ (発話区間の擬似感情特徴)</td>
+                <td><a href="#fix-f3">§2.3 F3</a> / <a href="#qa-245">§2.4.5</a>。案 B は不採用</td></tr>
+            <tr id="q3"><td><strong>Q3</strong></td>
+                <td>ラウドネス正規化の単位</td>
+                <td class="ok"><strong>1 本にまとめて出力し、そのまま YouTube へ</strong>
+                    → <code>"vod"</code> + F10 必須</td>
+                <td><a href="#fix-f9">§4.3 F9</a> / <a href="#fix-f10">F10</a></td></tr>
+            <tr id="q4"><td><strong>Q4</strong></td>
+                <td>結合 / 分割操作をどの画面に出すか</td>
+                <td class="ok">Timeline 編集画面だけ</td>
+                <td><a href="#fix-g4">§3.4 G4</a> (実装が半分に)</td></tr>
+            <tr id="q5"><td><strong>Q5</strong></td>
+                <td>テロップ 1 本の目安文字数</td>
+                <td class="ok"><strong>「2 行で画面外に出ないこと」。フォント次第なので
+                    文字数ではなくテロップ(実寸)次第</strong></td>
+                <td><strong><a href="#fix-g5">§3.4 G5 を新設</a></strong> (px 折り返し)。G1 は暫定へ</td></tr>
+            <tr id="q6"><td><strong>Q6</strong></td>
+                <td><code>cut_region</code> の精度 (F5)</td>
+                <td class="mid">今後の課題として後回し</td>
+                <td><strong><a href="#future-1">§11-1 へ退避</a></strong> (実施しない)</td></tr>
+            <tr id="q7"><td><strong>Q7</strong></td>
+                <td>評価セット用の VOD を事前に提供いただけますか</td>
+                <td class="ok"><strong>実装・テストの後に報告でよい</strong> (事前提供は不要)</td>
+                <td><strong><a href="#qa-q7">§6.0 / §6.1</a></strong> — 計測を実装へ埋め込む方式へ変更</td></tr>
+            <tr id="q9"><td><strong>Q9</strong></td>
+                <td>切り抜きの入力</td>
+                <td class="mid"><code>twitch-dl</code> 取得の VOD が主</td>
+                <td><strong><a href="#future-2">§11-2 へ退避</a></strong> (F14 保留 / 案 B 不採用)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>9.2 未回答 (判断待ち)</h3>
+    <table>
+        <thead><tr><th>#</th><th>内容</th><th>影響</th><th>備考</th></tr></thead>
+        <tbody>
+            <tr id="q8"><td><strong>Q8</strong></td>
+                <td>最終出力の音声ビットレート (F11) の目標値。YouTube 投稿なら 256k / 384k
+                    いずれでも実害はありませんが、ファイルサイズとの兼ね合いで決めてください</td>
+                <td><a href="#fix-f11">F11</a> (段 1)</td>
+                <td class="mid">未回答でも <strong>256k 既定</strong>で進められます
+                    (現状の約 128kbps より確実に改善するため)</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="refs">
+    <h2>10. 参照した実装箇所</h2>
+    <table class="compact">
+        <thead><tr><th>機能</th><th>ファイル:行</th><th>内容</th></tr></thead>
+        <tbody>
+            <tr><td>採点の統括</td><td class="path">src/archive/pipeline.py:18-82</td><td><code>analyze</code> (特徴 → 採点 → TOP 選択)</td></tr>
+            <tr><td>セル特徴抽出</td><td class="path">src/archive/features.py:28-72</td><td><code>extract_cells</code> (セルごとに <code>volumedetect</code>)</td></tr>
+            <tr><td>窓の採点</td><td class="path">src/archive/scoring.py:52-110</td><td><code>score_window</code> (<code>loud</code> / <code>long_silence</code> のみ使用)</td></tr>
+            <tr><td>大声しきい値</td><td class="path">src/archive/scoring.py:34-41</td><td><code>loud_threshold</code> (<code>max_db</code> の 80 パーセンタイル)</td></tr>
+            <tr><td>TOP 選択・統合</td><td class="path">src/archive/scoring.py:170-237</td><td><code>select_top_events</code></td></tr>
+            <tr><td>コメント集計</td><td class="path">src/archive/comment_source.py:138-154</td><td><code>aggregate_into_cells</code> (<code>emotes</code> 未使用)</td></tr>
+            <tr><td>笑いカウント</td><td class="path">src/archive/comment_source.py:27-46</td><td><code>count_w_chars</code></td></tr>
+            <tr><td>区間切り出し</td><td class="path">src/archive/clip_writer.py:62-77</td><td><code>cut_region</code> (<code>-c copy</code>)</td></tr>
+            <tr><td>クリップ準備</td><td class="path">src/archive/clip_writer.py:513-582</td><td><code>prepare_one_clip</code> (正規化 → 閾値 → 編集点)</td></tr>
+            <tr><td>クリップ正規化</td><td class="path">src/archive/clip_writer.py:528</td><td><code>normalize_file</code> (クリップ単位)</td></tr>
+            <tr><td>カット閾値</td><td class="path">src/archive/clip_writer.py:403-425</td><td><code>_apply_volume_analysis</code> (ダイアログ無し)</td></tr>
+            <tr><td>編集点と字幕</td><td class="path">src/archive/clip_writer.py:447-467</td><td><code>_prepare_edit_points</code></td></tr>
+            <tr><td>従来画面の認識</td><td class="path">src/archive/clip_writer.py:470-492</td><td><code>_transcribe</code> (<code>regroup</code> を通らない)</td></tr>
+            <tr><td>イントロカード</td><td class="path">src/archive/clip_writer.py:282-335</td><td><code>_build_intro_card</code> (正規化外)</td></tr>
+            <tr><td>結合パーツ</td><td class="path">src/archive/clip_writer.py:984-1011</td><td><code>_build_combine_parts</code> / <code>_combine</code></td></tr>
+            <tr><td>経路の判定</td><td class="path">src/archive/config.py:245-262</td><td><code>clip_pipeline_config</code> / <code>use_timeline_review</code></td></tr>
+            <tr><td>採点設定</td><td class="path">src/archive/config.py:37-55</td><td><code>method_a_config</code></td></tr>
+            <tr><td>結合の再エンコード</td><td class="path">src/modules/concat_processor.py:30-78</td><td><code>concat</code> (<code>-b:a</code> が無い)</td></tr>
+            <tr><td>エンコード設定</td><td class="path">src/modules/ffmpeg_runner.py:314-320</td><td><code>build_encode_options</code> (<code>-b:a</code> が無い)</td></tr>
+            <tr><td>閾値解析</td><td class="path">src/modules/volume_analyzer.py:68-140</td><td><code>analyze_min_speech_db</code> (mean の最小値)</td></tr>
+            <tr><td>認識パラメータ</td><td class="path">src/modules/subtitle_generator.py:363-517</td><td><code>WhisperTextSource</code></td></tr>
+            <tr><td>認識結果の取り込み</td><td class="path">src/modules/subtitle_generator.py:417-441</td><td><code>_recognize</code> (信頼度を捨てている)</td></tr>
+            <tr><td>テロップ単位</td><td class="path">src/modules/subtitle_generator.py:1681-1744</td><td><code>regroup_items_by_length</code></td></tr>
+            <tr><td>実効値の決定</td><td class="path">src/modules/subtitle_generator.py:1855-1880</td><td><code>min_chars</code> の二重用途</td></tr>
+            <tr><td>正規化</td><td class="path">src/modules/loudness_normalizer.py:130-230</td><td>2 パス loudnorm</td></tr>
+            <tr><td>字幕分割</td><td class="path">src/timeline/commands.py:270-303</td><td><code>split_clip_at</code> (本文を複製)</td></tr>
+            <tr><td>字幕クリップ</td><td class="path">src/timeline/model.py:285-380</td><td><code>origin</code> は dict でそのまま JSON へ入る</td></tr>
+        </tbody>
+    </table>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+
+
+<!-- ============================================================ -->
+<section id="future">
+    <h2>11. 今後の課題 (保留 / 本書では実施しない)</h2>
+    <p class="note">
+        回答を受けて<strong>意図的に見送った項目</strong>の控えです。
+        後から「なぜ入れなかったのか」を辿れるようにするため、根拠ごと残します。
+    </p>
+
+    <div class="finding" id="future-1">
+        <h3><span class="id">11-1</span>切り抜き区間のフレーム精度 (F5 / A6) — Q6 により後回し</h3>
+        <ul>
+            <li><strong>症状</strong>: <code>cut_region</code> が <code>-c copy</code> のため、
+                採点した区間と実際の切り抜きが
+                <strong>最大 1 GOP (配信 VOD では概ね 2 秒) 前へずれる</strong>
+                (<a href="#f-a6">§2.2 A6</a>)。</li>
+            <li><strong>保留の理由</strong>: Q6 の回答により今後の課題とする。
+                前後 120 秒のマーカー区間や 180 秒の採点区間では相対的に影響が小さく、
+                再エンコードへ変えると切り出し時間が増えるうえ、
+                <strong>プロジェクト再開時の素材復旧 (<code>project_resume</code>) の決定性</strong>にも
+                触れるため。</li>
+            <li><strong>着手するときの条件</strong>:
+                <code>archive.section_add.min_length_sec</code> (現在 1.0) のような
+                <strong>短い区間を日常的に使い始めたら</strong>、
+                ずれが区間長と同じオーダーになるため優先度が上がります。</li>
+            <li><strong>着手するときの設計</strong>: <a href="#fix-f5">§2.3 F5</a> に記載済み
+                (<code>archive.cut_mode</code> の追加 + プロジェクトへの <code>cut_mode</code> 記録に
+                よる後方互換)。</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="future-2">
+        <h3><span class="id">11-2</span>音声トラックの選択 (F14) — Q9 により保留</h3>
+        <ul>
+            <li><strong>保留の理由</strong>: 入力が <code>twitch-dl</code> 取得の VOD であるため、
+                <strong>音声は配信時点でミックスされた 1 本 (AAC ステレオ) しか存在しません</strong>。
+                トラックを選べるようにしても選ぶ対象がありません
+                (<a href="#qa-243">§2.4.3</a>)。</li>
+            <li><strong>着手するときの条件</strong>:
+                OBS の複数トラック録画をローカル入力する運用を始めたとき。
+                そのときは <code>0:a:0</code> 決め打ちを 1 ヘルパへ集約する
+                <a href="#fix-f14">F14</a> が<strong>最も安い勝ち筋</strong>になります
+                (マイク単独トラックを選べるだけで <a href="#f-a1">A1</a> がほぼ解消する)。</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="future-3">
+        <h3><span class="id">11-3</span>音声感情認識 (F3 案 B / SER モデル) — Q2・Q9 により不採用</h3>
+        <ul>
+            <li><strong>不採用の理由</strong>: 発話区間のみでの実行は可能で、
+                <code>onnxruntime</code> と <code>src/blur/models.py</code> の作法も揃っているため
+                <strong>実装コストは低い</strong> (<a href="#qa-244">§2.4.4</a>)。
+                しかし入力がミックス 1 本では
+                <strong>ゲーム音・BGM が声に重なったまま</strong>モデルへ入り、
+                SER は背景音に弱いため精度が出ません (<a href="#qa-243">§2.4.3</a>)。</li>
+            <li><strong>代替</strong>: 案 B′ (ピッチ上昇・発話音量の突出・立ち上がりの急峻さ) を採用。
+                相対値で測るためゲーム音の底上げを相殺でき、依存も増えません
+                (<a href="#qa-245">§2.4.5</a>)。</li>
+            <li><strong>着手するときの条件</strong>: 11-2 と同じ
+                (マイク単独トラックが取れる運用になったとき)。</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="future-4">
+        <h3><span class="id">11-4</span>音源分離 — 本書では提案しない</h3>
+        <ul>
+            <li>新規依存・数百 MB・実行時間大で <code>docs/claude.md</code> の
+                「不要なライブラリを追加しない」に触れます。</li>
+            <li>VOD 入力で声を分離する唯一の手段ではありますが、
+                案 B′ で「相対値で測る」ことにより<strong>分離せずに済ませる</strong>方針を採ります。</li>
+        </ul>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+<!-- ============================================================ -->
+<div class="part">
+    <h2>第6部 — 検証結果 (2026-10-23)</h2>
+    <p>実装したアプリで実際の VOD を処理し、確認できたこと・見つけた不具合・新しい問題</p>
+</div>
+
+<section id="verify">
+    <h2>12. 検証結果 (2026-10-23 / <code>docs/quality/kensyou</code>)</h2>
+    <p>
+        段 0〜段 2 を実装したアプリで実際の VOD を 1 本処理し、
+        Timeline 画面まで到達した状態のプロジェクトを検証しました。
+    </p>
+    <table class="compact">
+        <thead><tr><th>項目</th><th>値</th></tr></thead>
+        <tbody>
+            <tr><td>素材</td><td><code>vod_2887226037.mp4</code> (Twitch VOD / 1,747 秒 / 1920×1080 / 60fps)</td></tr>
+            <tr><td>音声</td><td class="mid"><strong>AAC ステレオ 1 本のみ</strong> (Q9 の前提どおり。マイク単独トラックは存在しない)</td></tr>
+            <tr><td>採点結果</td><td>10 クリップ / スコア 41.0 など</td></tr>
+            <tr><td>生成テロップ</td><td><strong>111 件</strong></td></tr>
+            <tr><td>ゲーム内容</td><td>空戦ゲーム (無線通信・カットシーンの音声が常時流れる)</td></tr>
+        </tbody>
+    </table>
+
+    <h3 id="verify-1">12.1 効いていることを確認できた実装</h3>
+    <table>
+        <thead><tr><th>項目</th><th>確認方法</th><th>結果</th></tr></thead>
+        <tbody>
+            <tr><td><strong><a href="#fix-g5">G5</a></strong> 実寸 (px) 折り返し</td>
+                <td>出力テロップの 1 行の文字数</td>
+                <td class="ok">中央値 <strong>17 文字</strong> / 最大 25 文字 = 1820px 基準で折れている
+                    (文字数モードなら一律 20 文字)</td></tr>
+            <tr><td><strong><a href="#fix-g1">G1</a></strong> テロップ下限</td>
+                <td>1 テロップの文字数</td>
+                <td class="ok">中央値 <strong>22 文字</strong> (下限 16 文字が効いている)</td></tr>
+            <tr><td><strong><a href="#fix-f9">F9</a></strong> VOD 単位の正規化</td>
+                <td>ログ</td>
+                <td class="ok">「ラウドネス測定を省略し VOD 全体の実測値を使用 (F9): I=-9.2 LUFS」</td></tr>
+            <tr><td><strong><a href="#fix-f13">F13</a></strong> 適用方式の記録</td>
+                <td>ログ</td>
+                <td class="ok">「適用ゲイン: <strong>-4.80 dB</strong> (線形)」=
+                    F8 がイントロへ渡す値が取れている</td></tr>
+        </tbody>
+    </table>
+    <p class="note">
+        F8 / F10 / F11 は焼き込み・出力の工程で働くため、
+        <strong>今回の実行 (Timeline 画面まで) ではまだ通っていません</strong>。
+        出力まで回していただければ検証できます (<a href="#qa-q7">§6.0 (A)</a> の表)。
+    </p>
+
+    <h3 id="verify-2">12.2 検証で見つけた不具合 2 件 (いずれも修正済み)</h3>
+
+    <div class="finding" id="verify-2-1">
+        <h3><span class="id">12.2-1</span><code>origin</code> に新フィールドが入っていなかった (実装漏れ)</h3>
+        <p>
+            <code>asr_text</code> / <code>confidence</code> / <code>word_confidence</code> /
+            <code>words</code> が <strong>111 件すべてで 0 件</strong>でした。
+        </p>
+        <ul>
+            <li><strong>原因</strong>: 切り抜きは <code>src/archive/timeline_builder.py</code> で
+                Timeline を組むのに、<a href="#embed-metrics">§6.1</a> / <a href="#fix-b2">B2</a> の
+                実装を <code>src/timeline/builder.py</code> (本流) 側にしか入れていなかった。</li>
+            <li><strong>影響</strong>: 信頼度の色分け (B2)・無修正テロップ率の計測 (§6.1)・
+                テロップ分割の語境界 (G4) がいずれも働かない。</li>
+            <li><strong>対策</strong>: <code>archive/timeline_builder.py</code> の
+                <code>_append_subtitles</code> へ本流と同じ内容を追加。</li>
+        </ul>
+    </div>
+
+    <div class="finding" id="verify-2-2">
+        <h3><span class="id">12.2-2</span>テロップが最大 76.8 秒に伸びていた (G1 による回帰)</h3>
+<pre class="code-block"><span class="bad">76.8s / 17 文字  「22発あぶねーってパルコネルを撃沈」</span>
+<span class="bad">51.2s / 17 文字  「いいよマジか当たると思ったのにでも」</span>
+<span class="bad">46.1s / 18 文字  「くらった広告代理店の方すごい大変そう」</span>
+→ 表示尺 中央値 7.6 秒 / 最大 76.8 秒 / 10 秒超が 42 件 (111 件中)</pre>
+        <ul>
+            <li><strong>原因</strong>: <code>regroup_items_by_length</code> の区切り判定が
+                <code>if over or far or (enough and soft)</code> の形で、
+                <strong>文字数の下限 (<code>enough</code>) を満たすまで間・文末・カット境界の
+                どれも効かない</strong>。G1 で下限を 5 → 16 文字へ上げたため、疎な発話が
+                「16 文字たまるまで」何十秒でも 1 本へ繋がるようになった。
+                (下限 5 文字の頃も同じ穴はあったが、すぐ下限に達するため目立たなかった)</li>
+            <li><strong>対策</strong>: <code>subtitle.split_max_pause_sec</code>
+                (既定 <strong>1.0 秒</strong>) を追加し、
+                <strong>下限文字数に関わらず、間がこれ以上空いたら必ず切る</strong>ようにした。
+                回帰テスト 4 件付き
+                (<code>tests/test_quality_resolve1.py::PauseCeilingTest</code>)。</li>
+        </ul>
+    </div>
+
+    <h3 id="verify-3">12.3 ゲーム内ボイスがテロップになる (新規の問題 A9)</h3>
+    <div class="question">
+        <span class="q-label">利用者の指摘</span>
+        <p>Timeline 画面で見た限りでは、ゲーム内のボイスに反応してテロップが
+            生成されています。これは仕方ないことなのでしょうか？</p>
+    </div>
+    <p>
+        111 件のテロップのうち、内容から判別できたものは
+        <strong>ゲーム内音声 24 件 / 配信者 14 件</strong>
+        (残り 73 件は両者が混ざるなどで判別困難)。実例:
+    </p>
+<pre class="code-block"><span class="bad">ゲーム  「ジョーカー隊、着艦せよジョーカー1、レーダーを発進した着艦体制に入れ」</span>
+<span class="bad">ゲーム  「こちらは近距離通信のみ使用可能こちらホワイトバレー基地オーディンだ」</span>
+<span class="bad">ゲーム  「任せろり同直消火器が敵編隊らしきものを捕捉対空戦闘、空襲に備えよ」</span>
+<span class="good">配信者  「東京ゲームショーの時に思ったけど結構重いんだよな」</span>
+<span class="good">配信者  「いやーもうF14でしょこれはこれはもうF14しかねえ」</span></pre>
+
+    <h4 id="verify-3-1">12.3-1 本書 §2.2 A1 の枠組みが不十分だった (訂正)</h4>
+    <div class="callout">
+        A1 を「<strong>声かゲーム音か</strong>を区別していない」問題として書きましたが、
+        実際に起きているのは「<strong>配信者の声かゲーム内の声か</strong>」という
+        別の区分でした。ゲーム内のボイスは<strong>音響的には人の声そのもの</strong>です。
+    </div>
+    <table>
+        <thead><tr><th>対策</th><th>ゲーム内ボイスに効くか</th><th>理由</th></tr></thead>
+        <tbody>
+            <tr><td><strong><a href="#fix-f1">F1</a></strong> Silero VAD (発話検出)</td>
+                <td class="ng"><strong>効かない</strong></td>
+                <td>声なので発話として検出される</td></tr>
+            <tr><td>音源分離 (<a href="#future-4">§11-4</a>)</td>
+                <td class="ng"><strong>効かない</strong></td>
+                <td>声なので分離しても残る</td></tr>
+            <tr><td><strong><a href="#fix-f14">F14</a></strong> マイクトラック選択</td>
+                <td class="ng">効くが<strong>VOD では不可能</strong></td>
+                <td>ミックス 1 本しか無い (Q9 / <a href="#future-2">§11-2</a>)</td></tr>
+        </tbody>
+    </table>
+    <div class="callout">
+        <strong>F1 を入れてもこの問題は解決しません。</strong>
+        A1 (ゲーム音が盛り上がりの採点を歪める) と A9 (ゲーム内ボイスがテロップになる) は
+        <strong>別の問題</strong>として扱う必要があります。
+    </div>
+
+    <h4 id="verify-3-2">12.3-2 切り分けの手掛かりを 3 つ実測した</h4>
+    <table>
+        <thead><tr><th>手掛かり</th><th>ゲーム</th><th>配信者</th><th>判定</th></tr></thead>
+        <tbody>
+            <tr><td><strong>ステレオ定位</strong> (サイド−ミッド)</td>
+                <td>平均 -20.0 dB / 範囲 -36.5〜-7.5</td>
+                <td>平均 -31.5 dB / 範囲 -38.1〜-26.1</td>
+                <td class="ng">重なりが大きく使えない</td></tr>
+            <tr><td><strong>帯域</strong> (低域−中域)</td>
+                <td>平均 -4.1 dB / 範囲 -9.6〜+6.0</td>
+                <td>平均 -1.7 dB / 範囲 -10.5〜+2.8</td>
+                <td class="ng">ほぼ同一。使えない</td></tr>
+            <tr><td><strong>帯域</strong> (高域−中域)</td>
+                <td>平均 -18.4 dB</td><td>平均 -19.5 dB</td>
+                <td class="ng">ほぼ同一。使えない</td></tr>
+            <tr><td><strong>区間音量</strong> (ミッドの mean)</td>
+                <td>中央値 <strong>-46.5 dB</strong> / 範囲 -54.6〜-25.6</td>
+                <td>中央値 <strong>-29.6 dB</strong> / 範囲 -61.3〜-20.5</td>
+                <td class="ok"><strong>17 dB の差。かなり効く</strong></td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li>ステレオ定位は「マイクは中央・ゲーム音は定位を持つ」という読みでしたが、
+            <strong>ゲームの無線通信も中央に定位している</strong>ため分かれませんでした。</li>
+        <li>帯域は「無線ボイスは帯域制限されている」という読みでしたが、
+            この作品のボイスは<strong>フルバンドの収録</strong>で加工が浅く、
+            分かれませんでした。</li>
+        <li>音量が効くのは、<strong>配信者がマイクをゲーム音より上に出して
+            ミックスしている</strong>ためです。</li>
+    </ul>
+
+    <h4 id="verify-3-3">12.3-3 音量のしきい値を振った分離性能</h4>
+<pre class="code-block">   閾値     配信者を残す   ゲームを除く
+  -50 dB      12/14 (86%)    3/24 (13%)
+  -46 dB      11/14 (79%)   13/24 (54%)
+  -42 dB      10/14 (71%)   17/24 (71%)
+  -38 dB      10/14 (71%)   17/24 (71%)
+<span class="good">  -34 dB       9/14 (64%)   22/24 (92%)   ← ゲームを最も多く除ける点</span>
+  -30 dB       7/14 (50%)   22/24 (92%)
+  -26 dB       1/14 ( 7%)   23/24 (96%)</pre>
+    <div class="callout">
+        <strong>自動で捨てるには危険</strong>です
+        (-34 dB でゲームの 92% を除ける一方、配信者も 36% 失う)。
+    </div>
+<pre class="code-block">ゲームなのに大きい  48:26 -25.6 dB 「マイガー敵変態が侵入なんとかしのいてくれ」
+                   46:24 -27.4 dB 「ジョーカー隊、着艦せよ」
+配信者なのに小さい  56:26 -61.3 dB 「対危なかったと思うんだけどな今の絶」
+                   56:32 -53.2 dB 「対しよかったでしょ出たーあーでもミサイル撃っちゃったな」</pre>
+    <p>
+        配信者側が小さく出るのは、<strong>テロップの区間全体を平均しているため</strong>です
+        (長いテロップは無音を含んで平均が下がる)。
+        発話区間に絞って測れば差は開きます。
+    </p>
+
+    <h3 id="verify-4">12.4 3 行になるテロップがある (H1 / 修正済み)</h3>
+    <div class="finding">
+        <h3><span class="id">H1</span><code>subtitle_max_lines = 2</code> なのに 3 行のテロップが 3 件</h3>
+<pre class="code-block">42文字 / 3行  「港中止クイーン隊、ジョーカー隊、\N緊急発艦AX、リーラー、まず出ろ続いて\Nクイーン1から」
+30文字 / 3行  「イーン隊早く帰ったらどうぞ1478兵隊集積所へ\N<span class="bad">の</span>\N攻撃を完了早」   ← 1 文字の行</pre>
+        <ul>
+            <li><strong>原因</strong>: 1 本のテロップに使える幅
+                (<code>measure.scaled(2)</code> = 1 行 × 2) と、実際の折り返し
+                (1 行ごとの幅) を<strong>独立に計算している</strong>ため。
+                テロップとしては 2 行分の幅に収まっていても、BudouX の文節境界が
+                早く来ると 1 行が短くなり、結果として 3 行に折れる。</li>
+            <li><strong>各行は上限 1820px に収まっている</strong>ので「画面外に出ない」という
+                要望の条件は満たしていますが、<code>subtitle_max_lines</code> の意図からは
+                外れています。</li>
+        </ul>
+        <h4>対策 (実施済み)</h4>
+        <ol>
+            <li><strong>行数そのもので上限を見る</strong>:
+                <code>regroup_items_by_length</code> の上限判定 (<code>_fits_within</code>) に、
+                整形関数を実際に走らせて<strong>折り返し後の行数</strong>を数える経路を
+                足しました。<code>subtitle_max_lines</code> を超えるならそこで切ります。
+                毎語ごとに BudouX を走らせると重いため、
+                <strong>最終行に入ってからだけ</strong>数えます
+                (<code>_near_last_line</code>)。</li>
+            <li><strong>短すぎる行を前の行へ寄せる</strong>:
+                <code>_merge_short_lines</code> を追加し、3 文字未満の行は前の行へ足します
+                (足して上限を超える場合は寄せません。無理に詰めて画面外へ出すより、
+                短い行で見せる方が害が小さいため)。</li>
+        </ol>
+        <ul>
+            <li>新設定は不要です (既存の <code>subtitle_max_lines</code> を使います)。</li>
+            <li><code>max_lines=0</code> を渡せば従来どおり幅だけで判断します (切り戻し経路)。</li>
+            <li>回帰テスト 6 件を追加
+                (<code>tests/test_quality_resolve1.py::MaxLinesTest</code> /
+                <code>ShortLineTest</code>)。</li>
+        </ul>
+    </div>
+
+    <h3 id="verify-5">12.5 A9 への対策案</h3>
+
+    <div class="fix" id="fix-f16">
+        <h3><span class="id">F16</span>音量を「要確認」の判定へ加える (不採用 — <a href="#verify-9">§12.9</a>)</h3>
+        <p>
+            <strong>自動では消さず</strong>、<a href="#fix-b2">B2</a> の色分けに音量を足して
+            利用者が一括で落とせるようにします。
+        </p>
+        <ul>
+            <li>認識時に、テロップの<strong>発話区間の音量</strong>
+                (単語の時刻で区切った区間の mean dB) を測り
+                <code>origin["speech_db"]</code> へ残す</li>
+            <li><code>subtitle.low_level_db</code> (既定 -38) を下回るテロップを
+                B2 と同じ色分けの対象にする</li>
+            <li>編集画面に「<strong>要確認だけ表示</strong>」フィルタと
+                「<strong>要確認を一括で使用しない</strong>」を足す</li>
+            <li>利点: 誤判定で配信者の声を失わない。ゲームの 7〜9 割に印が付く
+                (<a href="#verify-3-3">§12.3-3</a>)</li>
+            <li>新設定 <code>subtitle.low_level_db</code> /
+                <code>subtitle.flag_low_level</code> (既定 true)</li>
+        </ul>
+    </div>
+
+    <div class="fix" id="fix-f15">
+        <h3><span class="id">F15</span>話者照合で配信者以外を落とす (実装済み / この素材では不採用 — <a href="#verify-7">§12.7</a>)</h3>
+        <p>
+            配信者は VOD 全体で<strong>一貫した 1 人の声</strong>、ゲームは
+            <strong>多数の別人の声</strong>です。この非対称性を使うのが確実な解です。
+        </p>
+        <ol>
+            <li>発話区間ごとに<strong>声紋 (speaker embedding)</strong> を取る
+                (ECAPA-TDNN / x-vector 等)</li>
+            <li>埋め込みをクラスタリングし、
+                <strong>最も発話時間が長いクラスタ = 配信者</strong>とみなす</li>
+            <li>そのクラスタから遠い発話を落とす
+                (または「サブ」役割にして利用者へ委ねる)</li>
+        </ol>
+        <ul>
+            <li><strong>依存は ONNX モデル 1 つだけ</strong>です。
+                <code>onnxruntime</code> (32MB) は既に配布物へ入っており、
+                <code>src/blur/models.py</code> に遅延 import / セッション共有 /
+                モデルが無ければ機能を落とす作法が完成しています
+                (<a href="#qa-244">§2.4.4</a> と同じ条件)。</li>
+            <li><strong>感情認識 (案 B / <a href="#future-3">§11-3</a>) と違い、背景音に強い</strong>:
+                必要なのは「同じ声か違う声か」の相対判定で、しかも配信者の声は
+                VOD 全体で数百回聞けるため中心が安定します。</li>
+            <li>計算量は <a href="#qa-242">§2.4.2-2</a> と同じ考え方で絞れます
+                (発話区間のみ・セルごとに代表サンプル)。
+                埋め込みは SER より軽く、1 発話あたり数ミリ秒です。</li>
+            <li>新設定 <code>subtitle.speaker_filter</code>
+                (<code>"off"</code> / <code>"flag"</code> / <code>"drop"</code>)、
+                <code>subtitle.speaker_model</code>、
+                <code>subtitle.speaker_threshold</code></li>
+            <li>新設定 <code>subtitle.speaker_filter</code>
+                (<code>"off"</code> / <code>"flag"</code> / <code>"drop"</code>) /
+                <code>speaker_backend</code> / <code>speaker_model</code> /
+                <code>speaker_threshold</code> / <code>speaker_core_ratio</code> /
+                <code>speaker_min_sec</code></li>
+        </ul>
+        <div class="callout">
+            <strong>実装は完了しています</strong>
+            (<code>src/modules/speaker_filter.py</code> / 単体テスト 19 件)。
+            WeSpeaker の ONNX モデル (ECAPA512_LM / ResNet34_LM) まで入れて
+            実測しましたが、<strong>この素材 (VOD のミックス 1 本) では
+            成立しませんでした</strong> (<a href="#verify-7">§12.7</a>)。
+        </div>
+        <ul>
+            <li>同じ発話を前半と後半に割った声紋の一致 (自己一致) が
+                <strong>0.13〜0.40</strong> しか出ません (正常なら 0.85〜0.95)。
+                <strong>1 本のテロップの中ですら前半と後半が別人に見える</strong>ため、
+                話者を同定する手がかりがありません。
+                実装・特徴量・推論はいずれも正常です (同じ入力で +1.0000)。</li>
+            <li>さらに「配信者が多数派」という前提も崩れ、
+                <strong>ゲーム側が代表になりました</strong>。ゲームのボイスは
+                別人でも同じ収録・処理を通るため声紋空間で密集するためです。</li>
+        </ul>
+        <div class="callout">
+            <strong>既定は <code>off</code>、モデルは同梱しません。</strong> 実装は残します
+            (マイク単独トラックの録画へ移れば、設定を <code>"flag"</code> にするだけで
+            使えます)。モデルの要件と入手手順は
+            <code>src/models/README.md</code> にあります。
+        </div>
+    </div>
+
+    <h3 id="verify-6">12.6 F15 を実測した結果 — MFCC 方式では分離できない</h3>
+    <p>
+        「まず試してみる」ご指示を受けて実装し、<code>docs/quality/kensyou</code> の VOD と
+        人が判別したラベル (配信者 14 件 / ゲーム 24 件) で測りました。
+    </p>
+
+    <h4 id="verify-6-1">12.6-1 結果</h4>
+    <table>
+        <thead><tr><th>方式</th><th>配信者を残す</th><th>ゲームを除く</th></tr></thead>
+        <tbody>
+            <tr><td>MFCC そのまま (L2 正規化のみ)</td>
+                <td class="ng">7/14 (50%)</td><td class="mid">19/24 (79%)</td></tr>
+            <tr><td>MFCC + centering (全体平均を引く)</td>
+                <td class="ng">7/14 (50%)</td><td class="mid">17/24 (71%)</td></tr>
+            <tr><td>MFCC + centering + 白色化</td>
+                <td class="ok">13/14 (93%)</td><td class="ng">6/24 (25%)</td></tr>
+            <tr><td><strong>(比較) 区間音量による判定 = <a href="#fix-f16">F16</a></strong></td>
+                <td class="ok"><strong>9/14 (64%)</strong></td>
+                <td class="ok"><strong>22/24 (92%)</strong></td></tr>
+        </tbody>
+    </table>
+    <div class="callout">
+        <strong>MFCC 方式は音量による判定より劣ります。</strong> 類似度の分布も重なっていました。
+    </div>
+<pre class="code-block">配信者 14 件  類似度 中央値 +0.026 / 範囲 -0.660〜+0.476
+ゲーム 24 件  類似度 中央値 -0.257 / 範囲 -0.745〜+0.639
+
+<span class="bad">ゲームなのに配信者に近い  +0.63「マイガー敵変態が侵入なんとかしのいてくれ」</span>
+<span class="bad">配信者なのに遠い          -0.66「いや絶対完璧じゃなかった絶対フック引っかかってない」</span></pre>
+
+    <h4 id="verify-6-2">12.6-2 原因</h4>
+    <p>
+        <strong>背景にゲーム音が常に乗っているため、MFCC の統計量が
+        「ミックス全体の音色」に支配されます。</strong>
+        正規化しただけではどのベクトルも同じ方向を向き
+        (コサイン類似度が全件 0.97〜0.99)、話者の差が埋もれていました。
+    </p>
+    <p>
+        全体平均を引く (centering) と中央値の差は出ましたが
+        (配信者 +0.026 / ゲーム -0.257)、分布の重なりは残りました。
+        MFCC の統計量 (supervector) は<strong>クリーンな単独話者音声</strong>向けの手法で、
+        常時 BGM が乗った素材には向きません。
+    </p>
+
+    <h4 id="verify-6-3">12.6-3 実装でどう扱ったか</h4>
+    <ul>
+        <li><strong>既定の方式を <code>"onnx"</code> にしました。</strong>
+            モデルが無いときは<strong>MFCC へ勝手に落ちず、絞り込みを行いません</strong>
+            (ログに 1 行出る)。実測で分離できなかった方式を黙って使うと、
+            「話者照合を入れたのに効かない」という分かりにくい状態になるためです。</li>
+        <li><code>"mfcc"</code> を明示的に選んだときだけ使えます (選ぶと警告が 1 行出ます)。</li>
+        <li>centering は実装へ取り込みました (<code>_center</code>)。ONNX モデルでも
+            背景音の共通成分を除く効果があるため、方式に関わらず効かせます。</li>
+        <li><strong>既定は <code>speaker_filter="off"</code></strong> です。
+            モデルを置いて <code>"flag"</code> にすると印が付き、
+            精度を確かめてから <code>"drop"</code> へ上げられます。</li>
+    </ul>
+
+    <h4 id="verify-6-4">12.6-4 次に必要なもの</h4>
+    <div class="callout">
+        <strong>ONNX の話者照合モデル 1 つ</strong>です。要件は
+        「入力 <code>[1, T]</code> の 16kHz モノラル波形 → 出力 <code>[1, D]</code> の埋め込み」
+        だけで、ECAPA-TDNN / x-vector / ReDimNet のいずれでも構いません。
+    </div>
+    <ul>
+        <li>入手手順とライセンスの注意は <code>src/models/README.md</code> に書きました。</li>
+        <li>配置すれば <strong>設定を <code>"flag"</code> にするだけで動きます</strong>
+            (コード変更は不要)。</li>
+        <li>ネットワーク取得と配布ライセンスの確認が必要なため、
+            <strong>モデルの入手はご判断のうえお願いします。</strong></li>
+    </ul>
+    <div class="callout good">
+        なお <a href="#verify-3-3">§12.3-3</a> の実測どおり、区間音量による判定
+        (<a href="#fix-f16">F16</a>) は MFCC 方式より精度が高く
+        (ゲーム 92% 除去 / 配信者 64% 保持)、依存も増えません。
+        モデルを入れるまでの間、F16 を先に入れておく価値があります (段 1 / 小規模)。
+    </div>
+
+    <h3 id="verify-7">12.7 ONNX モデルを入れて実測した結果 — 話者照合はこの素材では成立しない</h3>
+    <p>
+        「ONNX モデルを入れてテストする」ご指示を受けて実行しました。
+    </p>
+    <div class="callout">
+        <strong>結論: 実装は正しく動いていますが、この素材では話者照合が成立しません。</strong>
+    </div>
+
+    <h4 id="verify-7-1">12.7-1 試したモデル</h4>
+    <table class="compact">
+        <thead><tr><th>モデル</th><th>由来</th><th>サイズ</th><th>入出力</th><th>ライセンス</th></tr></thead>
+        <tbody>
+            <tr><td><code>voxceleb_ECAPA512_LM.onnx</code></td>
+                <td><a href="https://github.com/wenet-e2e/wespeaker">WeSpeaker</a></td>
+                <td>24 MB</td>
+                <td>入力 <code>feats [B, T, 80]</code> → 出力 <code>embs [B, 192]</code></td>
+                <td>CC-BY-4.0 (VoxCeleb)</td></tr>
+            <tr><td><code>voxceleb_resnet34_LM.onnx</code></td><td>同上</td><td>26 MB</td>
+                <td>入力 <code>feats [B, T, 80]</code> → 出力 <code>embs [B, 256]</code></td>
+                <td>CC-BY-4.0 (VoxCeleb)</td></tr>
+        </tbody>
+    </table>
+    <p>
+        <strong>WeSpeaker の ONNX は波形ではなく 80 次元の fbank を取ります。</strong>
+        <code>speaker_filter.py</code> を
+        <code>torchaudio.compliance.kaldi.fbank</code> で特徴量を作る形へ直し、
+        WeSpeaker の <code>infer_onnx.py</code> と同じ設定
+        (25ms/10ms・hamming・dither 0・波形を <code>1&lt;&lt;15</code> 倍・
+        フレーム方向の平均を引く CMN) に合わせました。
+        入力が 3 次元かつ最後の次元が 80 なら fbank、そうでなければ波形を渡すため、
+        別の作りのモデルにも当たります。
+    </p>
+
+    <h4 id="verify-7-2">12.7-2 実装は正しく動いている</h4>
+    <table class="compact">
+        <thead><tr><th>確認項目</th><th>結果</th><th>意味</th></tr></thead>
+        <tbody>
+            <tr><td>同じ入力を 2 回</td><td class="ok"><strong>+1.0000</strong></td>
+                <td>実装は決定的で安定している</td></tr>
+            <tr><td>無音 vs 発話</td><td class="ok">+0.067</td>
+                <td>モデルは音を正しく見ている</td></tr>
+            <tr><td>声紋が取れた区間</td><td class="ok">111/111 件</td>
+                <td>特徴量・推論は全区間で成功</td></tr>
+            <tr><td>処理時間</td><td class="ok">111 区間で約 25 秒</td><td>実用的な速さ</td></tr>
+        </tbody>
+    </table>
+
+    <h4 id="verify-7-3">12.7-3 しかし声紋が話者を表していない</h4>
+    <p>
+        <strong>決定的なのは「自己一致」です。同じ発話を前半と後半に割って
+        声紋を比べました。</strong> 正常な話者照合なら同一話者なので
+        <strong>0.85〜0.95</strong> になるはずですが:
+    </p>
+<pre class="code-block">区間音量と自己一致 (同一発話の前半 vs 後半 / 107 区間)
+  小さい 1/3   音量 -46.7 dB → 自己一致 中央値 +0.402
+  中くらい     音量 -38.7 dB → 自己一致 中央値 +0.339
+<span class="bad">  大きい 1/3   音量 -30.0 dB → 自己一致 中央値 +0.133   ← 大きいほど悪い</span></pre>
+    <div class="callout">
+        <strong>同じ人が続けて喋っている 1 本のテロップの中ですら、
+        前半と後半が別人に見えています。</strong>
+        しかも音量が大きい区間ほど悪化します。大きい区間は
+        「配信者とゲーム音が同時に大きい場面」(戦闘・爆発・複数の声が重なる) だからです。
+    </div>
+    <table class="compact">
+        <thead><tr><th>組み合わせ</th><th>類似度の中央値</th></tr></thead>
+        <tbody>
+            <tr><td>配信者どうし</td><td>+0.309</td></tr>
+            <tr><td>ゲームどうし</td><td>+0.277</td></tr>
+            <tr><td>配信者 vs ゲーム</td><td>+0.167</td></tr>
+        </tbody>
+    </table>
+    <p>
+        <strong>配信者どうし (+0.309) が自己一致 (+0.293) とほぼ同じ</strong>で、
+        「同一話者」の信号が雑音に埋もれています。
+    </p>
+
+    <h4 id="verify-7-4">12.7-4 さらに「多数派 = 配信者」も成り立たなかった</h4>
+<pre class="code-block">代表との類似度 (centering なし): 配信者 +0.317 / ゲーム +0.511 → <span class="bad">ゲームが代表</span>
+代表との類似度 (centering あり): 配信者 -0.212 / ゲーム +0.039 → <span class="bad">ゲームが代表</span></pre>
+    <p>
+        ゲームのボイスは<strong>別人でも同じ収録・同じ処理を通っている</strong>ため、
+        声紋空間で密集します。一方、配信者の発話は場面ごとに背景が変わるため散らばります。
+        「多数派」を取ると密集しているゲーム側が選ばれてしまいます。
+    </p>
+    <table>
+        <thead><tr><th>方式</th><th>配信者を残す</th><th>ゲームを除く</th></tr></thead>
+        <tbody>
+            <tr><td>ECAPA512_LM (centering なし)</td>
+                <td class="ng">2/14 (14%)</td><td>23/24 (96%)</td></tr>
+            <tr><td>ECAPA512_LM (centering あり)</td>
+                <td class="ng">3/14 (21%)</td><td>21/24 (88%)</td></tr>
+            <tr><td>(参考) MFCC 方式</td><td class="ng">7/14 (50%)</td><td>17/24 (71%)</td></tr>
+            <tr><td><strong>(参考) 区間音量 = <a href="#fix-f16">F16</a></strong></td>
+                <td class="ok"><strong>9/14 (64%)</strong></td>
+                <td class="ok"><strong>22/24 (92%)</strong></td></tr>
+        </tbody>
+    </table>
+
+    <h4 id="verify-7-5">12.7-5 切り出し区間が正しいことの裏取り</h4>
+    <p>
+        「そもそも違う音を測っていないか」を確かめました。
+        <strong><a href="#verify-3-3">§12.3-3</a> の音量測定は、ここと同じ時刻計算</strong>
+        (<code>clip.vod_start + origin.source_start</code>) で切り出しています。
+        その測定で配信者とゲームが <strong>17 dB</strong> 分離できていたので、
+        切り出し区間はラベルどおりの音を指しています。
+        つまり時刻の対応ではなく、<strong>音そのものが混ざっている</strong>ことが原因です。
+    </p>
+
+    <h4 id="verify-7-6">12.7-6 結論と、実装をどう残したか</h4>
+    <div class="callout">
+        <strong>話者照合 (F15) は、VOD のミックス 1 本という入力では成立しません。</strong>
+        モデルの選択でも実装でもなく、
+        <strong>どの区間にも単一話者の綺麗な姿が無い</strong>ためです。
+        自己一致が 0.13〜0.40 しか出ない音声から話者を同定する方法はありません。
+    </div>
+    <ul>
+        <li><strong>ONNX 実装は取り除きました</strong> (<a href="#verify-8">§12.8</a>)。
+            効果が無いと確定した経路を残すと、「設定があるのに効かない」状態
+            (<a href="#f-a3">A3</a> と同じ) を新しく作ってしまうためです。</li>
+        <li><strong>枠組みと MFCC 方式は残します。</strong>
+            <code>src/modules/speaker_filter.py</code> は単体テスト 19 件つきで、
+            <strong>綺麗な音声なら動く</strong>作りです。
+            マイク単独トラックの録画 (<a href="#fix-f14">F14</a> /
+            <a href="#future-2">§11-2</a>) へ移る日が来れば、
+            設定を <code>"flag"</code> にするだけで試せます。</li>
+        <li><strong>既定は <code>speaker_filter="off"</code></strong> のままです。
+            有効にすると「実測では分離できていない」旨の警告が 1 行出ます。</li>
+        <li>検証中に <code>blur/models.py</code> のセッションキャッシュがパスだけを
+            鍵にしていたため、<strong>同じ名前でモデルを差し替えても古いセッションが
+            返る</strong>問題を見つけ、更新時刻とサイズを鍵へ加えて直しました
+            (2 つのモデルで数値が完全に一致する、という形で現れて気付きにくい問題でした)。</li>
+    </ul>
+
+    <h4 id="verify-7-7">12.7-7 残る道</h4>
+    <table>
+        <thead><tr><th>手段</th><th>見込み</th><th>条件</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#fix-f16">F16</a> 音量で要確認マーク</td>
+                <td>実測では最良 (ゲーム 92% / 配信者 64%)</td>
+                <td class="ng"><strong>不採用と決定 (<a href="#verify-9">§12.9</a>)</strong></td></tr>
+            <tr><td><a href="#fix-f14">F14</a> マイク単独トラック + F15</td>
+                <td>原理的に確実</td>
+                <td class="mid">OBS の複数トラック録画へ移る必要がある (Q9 で VOD 主と回答済み)</td></tr>
+            <tr><td>音源分離 → F15</td><td class="mid">不明</td>
+                <td class="ng">新規依存・数百 MB。分離後も「ゲーム内の声」は残るため効果は限定的</td></tr>
+        </tbody>
+    </table>
+    <div class="callout">
+        <strong>その後 F16 も不採用と決まりました
+        (<a href="#verify-9">§12.9</a>)。</strong>
+        A9 に対する自動の対策は入れません。
+    </div>
+
+    <h3 id="verify-8">12.8 ONNX 実装を取り除いた (2026-10-23)</h3>
+    <p>
+        <a href="#verify-7">§12.7</a> の実測で
+        「VOD のミックス 1 本では話者照合が成立しない」ことが確定したため、
+        <strong>ONNX モデルを読む経路だけを取り除きました</strong>。
+    </p>
+    <table>
+        <thead><tr><th>取り除いたもの</th><th>理由</th></tr></thead>
+        <tbody>
+            <tr><td><code>_onnx_embedder</code> / <code>_compute_fbank</code> (fbank 特徴量)</td>
+                <td>効果が無いと確定した経路。残すと「設定があるのに効かない」状態
+                    (<a href="#f-a3">A3</a> と同じ) を新しく作る</td></tr>
+            <tr><td>設定 <code>subtitle.speaker_backend</code> /
+                    <code>speaker_model</code> / <code>speaker_providers</code></td>
+                <td>同上</td></tr>
+            <tr><td><code>src/models/README.md</code> の話者照合モデルの節</td>
+                <td>同梱しないため (元の内容へ戻した)</td></tr>
+        </tbody>
+    </table>
+    <table>
+        <thead><tr><th>残したもの</th><th>理由</th></tr></thead>
+        <tbody>
+            <tr><td><code>src/modules/speaker_filter.py</code> の枠組みと MFCC 方式</td>
+                <td>綺麗な音声なら動く作り。マイク単独トラックへ移れば試せる
+                    (単体テスト 19 件)</td></tr>
+            <tr><td>設定 <code>speaker_filter</code> / <code>speaker_threshold</code> /
+                    <code>speaker_core_ratio</code> / <code>speaker_min_sec</code></td>
+                <td>同上。既定は <code>off</code></td></tr>
+            <tr><td><code>origin["speaker_score"]</code> /
+                    <code>origin["speaker_other"]</code> と編集画面の色分け</td>
+                <td>有効にしたときの表示経路。無効なら値が入らないため害は無い</td></tr>
+            <tr><td><strong><code>blur/models.py</code> のキャッシュ修正</strong></td>
+                <td class="ok"><strong>F15 とは独立した不具合の修正</strong>。
+                    パスだけを鍵にしていたため、同名でモデルを差し替えても
+                    古いセッションが返っていた (ぼかしのモデルでも起きる)</td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li>有効にすると「実測では分離できていない」旨の警告がログへ 1 行出ます。</li>
+        <li>ダウンロードした検証用モデル (24〜26 MB) は配布物へ入れず、削除しました。</li>
+        <li>テストは 1,694 件すべて通ります。</li>
+    </ul>
+
+    <h3 id="verify-9">12.9 F16 (音量で要確認マーク) は不採用 (2026-10-23)</h3>
+    <div class="callout">
+        <strong>利用者の判断により、音量で要確認マークを付ける対策 (F16) は入れません。</strong><br>
+        これにより、<strong>A9 (ゲーム内ボイスがテロップになる) に対する自動の対策は
+        無くなります。</strong>
+    </div>
+    <table>
+        <thead><tr><th>対策</th><th>状態</th></tr></thead>
+        <tbody>
+            <tr><td><a href="#fix-f1">F1</a> Silero VAD</td>
+                <td class="ng">ゲーム内ボイスは人の声なので<strong>効かない</strong>
+                    (<a href="#verify-3-1">§12.3-1</a>)</td></tr>
+            <tr><td><a href="#fix-f14">F14</a> マイクトラック選択</td>
+                <td class="ng">VOD はミックス 1 本のため<strong>使えない</strong>
+                    (<a href="#future-2">§11-2</a>)</td></tr>
+            <tr><td><a href="#fix-f15">F15</a> 話者照合</td>
+                <td class="ng">ONNX モデルまで入れて実測したが<strong>成立しない</strong>
+                    (<a href="#verify-7">§12.7</a>)。ONNX 実装は除去済み
+                    (<a href="#verify-8">§12.8</a>)</td></tr>
+            <tr><td><strong><a href="#fix-f16">F16</a> 音量で要確認マーク</strong></td>
+                <td class="ng"><strong>不採用 (本節)</strong></td></tr>
+            <tr><td>音源分離</td>
+                <td class="ng">提案していない。分離後も「ゲーム内の声」は残る
+                    (<a href="#future-4">§11-4</a>)</td></tr>
+        </tbody>
+    </table>
+
+    <h4 id="verify-9-1">12.9-1 これで何が残るか</h4>
+    <p>
+        ゲーム内ボイスのテロップは<strong>編集画面で手で落とす運用</strong>になります。
+        実測では 111 件のうち<strong>少なくとも 24 件</strong>が
+        明らかにゲーム内音声でした (<a href="#verify-3">§12.3</a>)。
+    </p>
+    <p>ただし、今回の実装で手作業そのものは軽くなっています。</p>
+    <table>
+        <thead><tr><th>実装済みの機能</th><th>A9 の手作業への効き方</th></tr></thead>
+        <tbody>
+            <tr><td><strong><a href="#fix-g4">G4</a> テロップの結合 / 分割</strong></td>
+                <td class="ok">不要なテロップを選んで落とす操作が素直になる
+                    (Ctrl+M / 本文も分かれる分割)</td></tr>
+            <tr><td><strong><a href="#fix-b2">B2</a> 信頼度の色分け</strong></td>
+                <td class="ok">ゲーム内ボイスは認識の信頼度も低く出やすいため、
+                    色が付くものが一部重なる</td></tr>
+            <tr><td><strong><a href="#fix-g1">G1</a> / <a href="#fix-g2">G2</a> /
+                    <a href="#fix-g5">G5</a> テロップ単位</strong></td>
+                <td class="ok">ゲーム内ボイスと配信者の声が
+                    <strong>1 本のテロップへ混ざりにくくなる</strong>ため、
+                    落とす判断がしやすい</td></tr>
+        </tbody>
+    </table>
+
+    <h4 id="verify-9-2">12.9-2 再検討するとしたら</h4>
+    <table class="compact">
+        <thead><tr><th>条件</th><th>見込み</th></tr></thead>
+        <tbody>
+            <tr><td><strong>OBS の複数トラック録画へ移る</strong></td>
+                <td class="ok">F14 + F15 で原理的に解決する。現在は VOD が主 (Q9)</td></tr>
+            <tr><td>ゲーム内ボイスの手作業が実際に重い</td>
+                <td class="mid">F16 を入れ直す。実装は小規模で、設計は
+                    <a href="#verify-5">§12.5</a> に残してある</td></tr>
+        </tbody>
+    </table>
+    <p class="note">
+        <strong>判断の記録</strong>: 自動で消す対策は誤判定で配信者の声を失う恐れがあり
+        (F16 のしきい値 -34 dB では配信者の 36% を失う /
+        <a href="#verify-3-3">§12.3-3</a>)、印を付けるだけでも画面の情報が増えます。
+        「自動で中途半端に判定するより、手で落とす」という選択です。
+    </p>
+
+    <div class="callout good">
+        <strong>結論 (利用者の問いへの答え)</strong>: <strong>仕方なくありません</strong>が、
+        <strong>F1 (VAD) でも F15 (話者照合) でも解決しませんでした</strong>
+        (<a href="#verify-7">§12.7</a>)。
+        <strong>F16 (音量で要確認マーク) も不採用</strong>
+        (<a href="#verify-9">§12.9</a>) となったため、
+        <strong>A9 に対する自動の対策は入れず、編集画面で手で落とす運用とします。</strong>
+    </div>
+    <a class="to-top" href="#top">▲ ページ先頭へ</a>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <p>autoedit / docs/quality/resolve1.md ベース / アーカイブ用切り抜き / ダークテーマ対応 / 2026-10-23</p>
+</footer>
+</body>
+</html>

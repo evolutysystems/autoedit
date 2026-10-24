@@ -25,6 +25,23 @@ _SAMPLE_STDERR = """\
 }"""
 
 
+# 適用パス (2パス目) の stderr 例。線形で適用できたケース (F13)
+_APPLIED_LINEAR = """\
+[Parsed_loudnorm_0 @ 000001c2f3b3c840]
+{
+\t"input_i" : "-9.20",
+\t"input_tp" : "-0.30",
+\t"input_lra" : "5.10",
+\t"input_thresh" : "-20.50",
+\t"output_i" : "-14.00",
+\t"output_tp" : "-5.10",
+\t"output_lra" : "5.00",
+\t"output_thresh" : "-25.30",
+\t"normalization_type" : "linear",
+\t"target_offset" : "0.40"
+}"""
+
+
 # テスト用設定 (loudness は既定値。ffmpeg は解決不能な実行ファイル名で実行を防ぐ)
 def _settings(**loudness_overrides):
     loudness = {"enabled": True}
@@ -107,7 +124,7 @@ class TestNormalizeFileSkip(unittest.TestCase):
     # 音声ストリーム無しはスキップ (§5.5)
     def test_no_audio_returns_input(self):
         with mock.patch.object(ln, "has_audio_stream", return_value=False), \
-                mock.patch.object(ln.ffmpeg_runner, "execute") as execute:
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture") as execute:
             result = ln.normalize_file("in.mp4", "out.mp4", _settings())
         self.assertEqual(result, "in.mp4")
         execute.assert_not_called()
@@ -117,7 +134,7 @@ class TestNormalizeFileSkip(unittest.TestCase):
         with mock.patch.object(ln, "has_audio_stream", return_value=True), \
                 mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=10.0), \
                 mock.patch.object(ln, "measure_loudness", return_value=None), \
-                mock.patch.object(ln.ffmpeg_runner, "execute") as execute:
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture") as execute:
             result = ln.normalize_file("in.mp4", "out.mp4", _settings())
         self.assertEqual(result, "in.mp4")
         execute.assert_not_called()
@@ -129,7 +146,7 @@ class TestNormalizeFileSkip(unittest.TestCase):
         with mock.patch.object(ln, "has_audio_stream", return_value=True), \
                 mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=10.0), \
                 mock.patch.object(ln, "measure_loudness", return_value=measured), \
-                mock.patch.object(ln.ffmpeg_runner, "execute",
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
                                   side_effect=FFmpegError("失敗")):
             result = ln.normalize_file("in.mp4", "out.mp4", _settings())
         self.assertEqual(result, "in.mp4")
@@ -144,7 +161,8 @@ class TestNormalizeFileSuccess(unittest.TestCase):
         with mock.patch.object(ln, "has_audio_stream", return_value=True), \
                 mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=10.0), \
                 mock.patch.object(ln, "measure_loudness", return_value=measured), \
-                mock.patch.object(ln.ffmpeg_runner, "execute", return_value=0) as execute:
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)) as execute:
             result = ln.normalize_file("in.mp4", "out.mp4", _settings())
         self.assertEqual(result, "out.mp4")
         cmd = execute.call_args[0][0]
@@ -166,13 +184,119 @@ class TestNormalizeFileSuccess(unittest.TestCase):
         with mock.patch.object(ln, "has_audio_stream", return_value=True), \
                 mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=10.0), \
                 mock.patch.object(ln, "measure_loudness") as measure, \
-                mock.patch.object(ln.ffmpeg_runner, "execute", return_value=0) as execute:
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)) as execute:
             result = ln.normalize_file("in.mp4", "out.mp4", _settings(two_pass=False))
         self.assertEqual(result, "out.mp4")
         measure.assert_not_called()
         af = execute.call_args[0][0]
         af = af[af.index("-af") + 1]
-        self.assertEqual(af, "loudnorm=I=-14:TP=-1:LRA=11")
+        self.assertEqual(af, "loudnorm=I=-14:TP=-1:LRA=11:print_format=json")
+
+
+# ------------------------------------------------------------------
+# docs/quality/resolve1.md 第4部 (F8 / F9 / F12 / F13) の追加検証
+# ------------------------------------------------------------------
+
+_MEASURED = {"input_i": -9.2, "input_tp": -0.3, "input_lra": 5.1,
+             "input_thresh": -20.5, "target_offset": 0.4}
+
+
+class TestMinDuration(unittest.TestCase):
+
+    # 下限尺未満はスキップし、測定も適用も呼ばない (F12)
+    # EBU R128 の Integrated は短すぎる素材では成り立たないため。
+    def test_too_short_skips(self):
+        details = {}
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=1.0), \
+                mock.patch.object(ln, "measure_loudness") as measure, \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture") as execute:
+            result = ln.normalize_file("in.mp4", "out.mp4",
+                                       _settings(min_duration_sec=5.0), details=details)
+        self.assertEqual(result, "in.mp4")
+        self.assertEqual(details["skipped"], "too_short")
+        measure.assert_not_called()
+        execute.assert_not_called()
+
+    # 下限尺ちょうどは適用する (境界)
+    def test_long_enough_applies(self):
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=5.0), \
+                mock.patch.object(ln, "measure_loudness", return_value=dict(_MEASURED)), \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)) as execute:
+            result = ln.normalize_file("in.mp4", "out.mp4",
+                                       _settings(min_duration_sec=5.0))
+        self.assertEqual(result, "out.mp4")
+        execute.assert_called_once()
+
+    # 0 で下限なし (従来挙動へ戻せる)
+    def test_zero_disables_floor(self):
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=0.5), \
+                mock.patch.object(ln, "measure_loudness", return_value=dict(_MEASURED)), \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)):
+            result = ln.normalize_file("in.mp4", "out.mp4",
+                                       _settings(min_duration_sec=0))
+        self.assertEqual(result, "out.mp4")
+
+
+class TestAppliedResult(unittest.TestCase):
+
+    # 適用パスの JSON を解析できる (F13)
+    def test_parse_output(self):
+        applied = ln.parse_loudnorm_output(_APPLIED_LINEAR)
+        self.assertEqual(applied["normalization_type"], "linear")
+        self.assertAlmostEqual(applied["output_i"], -14.0)
+        self.assertAlmostEqual(applied["output_tp"], -5.1)
+
+    def test_parse_output_invalid(self):
+        self.assertIsNone(ln.parse_loudnorm_output(""))
+        self.assertIsNone(ln.parse_loudnorm_output("frame=100 fps=60"))
+
+    # 線形で適用できたときは実ゲイン (output_i - input_i) が details へ入る (F8)
+    def test_linear_records_gain(self):
+        details = {}
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=60.0), \
+                mock.patch.object(ln, "measure_loudness", return_value=dict(_MEASURED)), \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)):
+            ln.normalize_file("in.mp4", "out.mp4", _settings(), details=details)
+        self.assertEqual(details["normalization_type"], "linear")
+        # -14.00 - (-9.20) = -4.80 dB
+        self.assertAlmostEqual(details["gain_db"], -4.8, places=2)
+
+    # ダイナミックへ落ちたら一定ゲインではないため gain_db を入れない (F8 の安全弁)
+    def test_dynamic_has_no_gain(self):
+        details = {}
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=60.0), \
+                mock.patch.object(ln, "measure_loudness", return_value=dict(_MEASURED)), \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _SAMPLE_STDERR)):
+            ln.normalize_file("in.mp4", "out.mp4", _settings(), details=details)
+        self.assertEqual(details["normalization_type"], "dynamic")
+        self.assertNotIn("gain_db", details)
+
+
+class TestMeasuredOverride(unittest.TestCase):
+
+    # measured_override を渡すと 1 パス目を省く (F9 の "vod" スコープ)
+    def test_override_skips_measurement(self):
+        with mock.patch.object(ln, "has_audio_stream", return_value=True), \
+                mock.patch.object(ln.ffmpeg_runner, "probe_duration", return_value=60.0), \
+                mock.patch.object(ln, "measure_loudness") as measure, \
+                mock.patch.object(ln.ffmpeg_runner, "execute_capture",
+                                  return_value=(0, _APPLIED_LINEAR)) as execute:
+            result = ln.normalize_file("in.mp4", "out.mp4", _settings(),
+                                       measured_override=dict(_MEASURED))
+        self.assertEqual(result, "out.mp4")
+        measure.assert_not_called()
+        cmd = execute.call_args[0][0]
+        self.assertIn("measured_I=-9.2", cmd[cmd.index("-af") + 1])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,572 @@
+/* ===== quality resolve1 スタイル (ダークテーマ) ===== */
+/* docs/design/design.css の変数・クラス体系を踏襲し、本書固有の要素のみ追加する */
+
+:root {
+    --bg: #0e1116;
+    --bg-elevated: #161b22;
+    --bg-elevated-2: #1f242c;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #7ee787;
+    --new: #f0883e;
+    --warn: #d29922;
+    --danger: #f85149;
+    --code-bg: #0a0d12;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Yu Gothic UI", "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    line-height: 1.65;
+    font-size: 15px;
+}
+
+/* ----- ヘッダ ----- */
+.site-header {
+    background: linear-gradient(135deg, #161b22 0%, #1f242c 100%);
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--border);
+}
+.site-header h1 {
+    margin: 0;
+    font-size: 28px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+}
+.site-header .subtitle {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+.site-header .meta {
+    margin: 12px 0 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.site-header .meta code { color: var(--accent-2); }
+
+/* ----- ナビ ----- */
+nav.toc {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 24px 48px;
+}
+nav.toc h2 {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+nav.toc ol {
+    columns: 2;
+    margin: 0;
+    padding-left: 20px;
+}
+nav.toc a {
+    color: var(--accent);
+    text-decoration: none;
+}
+nav.toc a:hover { text-decoration: underline; }
+
+/* ----- メイン ----- */
+main { padding: 0 48px 48px; max-width: 1200px; }
+
+section {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 32px;
+    margin: 24px 0;
+    box-shadow: var(--shadow);
+}
+section h2 {
+    margin-top: 0;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    font-size: 20px;
+}
+section h3 {
+    color: var(--accent-2);
+    margin: 20px 0 8px;
+    font-size: 16px;
+}
+section h4 {
+    color: var(--text);
+    margin: 14px 0 6px;
+    font-size: 14px;
+}
+
+/* ----- 本書の範囲 (ヘッダ直下の囲み) ----- */
+.scope-note {
+    background: rgba(240, 136, 62, 0.08);
+    border: 1px solid var(--new);
+    border-radius: 8px;
+    padding: 14px 24px;
+    margin: 24px 48px 0;
+    box-shadow: none;
+}
+.scope-note p { margin: 0; font-size: 14px; }
+.scope-note strong { color: var(--new); }
+
+/* ----- 部の見出し (第1部〜第5部の仕切り) ----- */
+.part {
+    margin: 40px 0 0;
+    padding: 14px 24px;
+    background: linear-gradient(135deg, #1f3b5c, #18324d);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+}
+.part h2 {
+    margin: 0;
+    border: none;
+    padding: 0;
+    font-size: 19px;
+    color: var(--accent);
+}
+.part p {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ----- カード ----- */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+.card {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+}
+.card h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.card p { margin: 0; font-weight: bold; }
+.card p small {
+    display: block;
+    font-weight: normal;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+/* ----- 結論カード (最優先 3 件) ----- */
+.top3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+.top3 .item {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent-2);
+    border-radius: 6px;
+    padding: 14px 16px;
+}
+.top3 .item .rank {
+    display: inline-block;
+    background: var(--accent-2);
+    color: #0e1116;
+    font-weight: bold;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    font-size: 13px;
+    margin-right: 6px;
+}
+.top3 .item h3 {
+    display: inline;
+    color: var(--text);
+    font-size: 15px;
+    margin: 0;
+}
+.top3 .item p {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ----- 質問ブロック (回答セクションの冒頭) ----- */
+.question {
+    background: linear-gradient(135deg, #1f3b5c, #18324d);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 16px 0 20px;
+}
+.question .q-label {
+    display: inline-block;
+    background: var(--accent);
+    color: #0e1116;
+    font-weight: bold;
+    font-size: 12px;
+    letter-spacing: 1px;
+    border-radius: 4px;
+    padding: 1px 10px;
+    margin-bottom: 8px;
+}
+.question p {
+    margin: 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--text);
+}
+
+/* ----- 所見ブロック (問題) ----- */
+.finding {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--danger);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 16px 0;
+}
+.finding > h3 {
+    margin: 0 0 8px;
+    color: var(--danger);
+    font-size: 15px;
+}
+.finding > h3 .id {
+    display: inline-block;
+    background: var(--danger);
+    color: #0e1116;
+    border-radius: 4px;
+    padding: 0 7px;
+    margin-right: 8px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    font-weight: bold;
+}
+.finding p:last-child { margin-bottom: 0; }
+
+/* ----- 改善案ブロック ----- */
+.fix {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent-2);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 16px 0;
+}
+.fix > h3 {
+    margin: 0 0 8px;
+    color: var(--accent-2);
+    font-size: 15px;
+}
+.fix > h3 .id {
+    display: inline-block;
+    background: var(--accent-2);
+    color: #0e1116;
+    border-radius: 4px;
+    padding: 0 7px;
+    margin-right: 8px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    font-weight: bold;
+}
+.fix.key { border-left-color: var(--new); }
+.fix.key > h3 { color: var(--new); }
+.fix.key > h3 .id { background: var(--new); }
+.fix p:last-child, .fix ul:last-child { margin-bottom: 0; }
+
+/* ----- 根拠 (ログ抜粋) ----- */
+.evidence {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--warn);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+}
+.evidence-label {
+    display: block;
+    font-family: "Yu Gothic UI", "Segoe UI", sans-serif;
+    color: var(--warn);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+/* ----- 現状 / 提案の対比 ----- */
+.compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 14px 0;
+}
+.compare .col {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+}
+.compare .col.now { border-top: 3px solid var(--danger); }
+.compare .col.next { border-top: 3px solid var(--accent-2); }
+.compare .col h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.compare .col.now h4 { color: var(--danger); }
+.compare .col.next h4 { color: var(--accent-2); }
+.compare .col ul { padding-left: 18px; margin: 0; }
+.compare .col li { font-size: 13.5px; }
+
+/* ----- フローチャート ----- */
+.flowchart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 16px 0;
+    gap: 4px;
+}
+.flowchart .node {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 20px;
+    min-width: 320px;
+    text-align: center;
+    box-shadow: var(--shadow);
+}
+.flowchart .node.start,
+.flowchart .node.end {
+    background: linear-gradient(135deg, #1f3b5c, #18324d);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: bold;
+    border-radius: 24px;
+    min-width: 140px;
+}
+.flowchart .node.process { border-left: 4px solid var(--accent-2); }
+.flowchart .node.issue {
+    border-left: 4px solid var(--danger);
+}
+.flowchart .node small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+}
+.flowchart .node.issue small { color: var(--danger); }
+.flowchart .arrow { color: var(--accent); font-size: 16px; }
+
+/* ----- コードブロック ----- */
+pre.code-block,
+pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+}
+pre .c { color: var(--text-muted); }          /* コメント */
+pre .k { color: var(--accent); }              /* キーワード */
+pre .s { color: var(--accent-2); }            /* 文字列 */
+pre .bad { color: var(--danger); }            /* 問題のある行 */
+pre .good { color: var(--accent-2); }         /* 修正後の行 */
+code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    color: var(--accent-2);
+}
+pre code { background: none; border: none; padding: 0; color: inherit; }
+
+/* ----- テーブル ----- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 14px;
+}
+thead th {
+    background: var(--bg-elevated-2);
+    color: var(--text-muted);
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--accent);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
+td.new-cell { color: var(--new); font-weight: bold; }
+td.num { text-align: right; font-family: "Consolas", monospace; }
+table.compact { font-size: 13.5px; }
+table.compact tbody td { padding: 6px 10px; }
+
+/* 判定マーク */
+.ng { color: var(--danger); font-weight: bold; }
+.ok { color: var(--accent-2); font-weight: bold; }
+.mid { color: var(--warn); font-weight: bold; }
+
+/* ----- バッジ ----- */
+.badge {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 8px;
+    margin: 0 2px;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.badge.new { border-color: var(--new); color: var(--new); }
+.badge.danger { border-color: var(--danger); color: var(--danger); }
+.badge.ok { border-color: var(--accent-2); color: var(--accent-2); }
+.badge.warn { border-color: var(--warn); color: var(--warn); }
+
+/* 規模バッジ */
+.size-xs { border-color: var(--accent-2); color: var(--accent-2); }
+.size-s  { border-color: var(--accent); color: var(--accent); }
+.size-m  { border-color: var(--warn); color: var(--warn); }
+.size-l  { border-color: var(--danger); color: var(--danger); }
+
+/* 段バッジ (優先順位) */
+.stage {
+    display: inline-block;
+    width: 26px;
+    height: 26px;
+    line-height: 26px;
+    text-align: center;
+    border-radius: 50%;
+    font-weight: bold;
+    font-family: monospace;
+    font-size: 13px;
+}
+.stage-0 { background: var(--text-muted); color: #0e1116; }
+.stage-1 { background: var(--accent-2); color: #0e1116; }
+.stage-2 { background: var(--accent); color: #0e1116; }
+.stage-3 { background: var(--warn); color: #0e1116; }
+.stage-4 { background: var(--bg-elevated-2); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ----- 凡例 ----- */
+.legend {
+    margin-top: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ----- 補足注釈 ----- */
+.note {
+    color: var(--text-muted);
+    font-size: 13px;
+    border-left: 3px solid var(--warn);
+    padding-left: 10px;
+    margin-top: 12px;
+}
+.callout {
+    background: rgba(248, 81, 73, 0.08);
+    border: 1px solid var(--danger);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 14px 0;
+    font-size: 14px;
+}
+.callout strong { color: var(--danger); }
+.callout.good {
+    background: rgba(126, 231, 135, 0.08);
+    border-color: var(--accent-2);
+}
+.callout.good strong { color: var(--accent-2); }
+
+/* ----- リスト ----- */
+ul { padding-left: 22px; }
+ul li { margin: 4px 0; }
+ol li { margin: 4px 0; }
+
+/* ----- 参照表の行 ----- */
+td .path {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12.5px;
+    color: var(--accent-2);
+}
+
+/* ----- ページトップへ ----- */
+.to-top {
+    display: inline-block;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-decoration: none;
+}
+.to-top:hover { color: var(--accent); }
+
+/* ----- フッタ ----- */
+.site-footer {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 24px;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+    font-size: 13px;
+}
+
+/* ----- レスポンシブ ----- */
+@media (max-width: 900px) {
+    .compare { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+    .site-header, main, nav.toc, .part, .scope-note {
+        padding-left: 16px;
+        padding-right: 16px;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    section { padding: 18px 16px; }
+    nav.toc ol { columns: 1; }
+    .flowchart .node { min-width: 200px; }
+    table { font-size: 13px; }
+}
+
+/* ----- 印刷 ----- */
+@media print {
+    html, body { background: #fff; color: #000; }
+    section, .card, .finding, .fix, .part { background: #fff; border-color: #ccc; box-shadow: none; }
+    .site-header { background: #fff; }
+    nav.toc { display: none; }
+}

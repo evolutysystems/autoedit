@@ -443,3 +443,40 @@ class BlurSettingsTest(unittest.TestCase):
         self.assertIn("sample_fps", collected["blur"]["track"])
         self.assertEqual(collected["blur"]["editor"]["frame_cache"], 32)
         del app
+
+    # 音量調節 (ラウドネス正規化) のチェックが読み書きできること (ver9 request1)。
+    # クリップ用・アーカイブ用はどちらも loudness.enabled を見るため、
+    # この 1 項目で両方の音量調節が切り替わる。
+    def test_loudness_checkbox_round_trip(self):
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        # 追加フォントを登録しない理由は test_settings_window_round_trip と同じ
+        with mock.patch.object(sw, "register_fonts_in_dir"):
+            window = sw.SettingsWindow()
+        try:
+            # 保存値 false が画面へ反映される
+            saved = copy.deepcopy(sw.DEFAULT_SETTINGS)
+            saved["loudness"] = dict(saved["loudness"], enabled=False)
+            window._load_to_ui(saved)
+            self.assertFalse(window.loudness_enabled_check.isChecked())
+            off = window._collect_settings()
+
+            # チェックを戻せば true で保存される
+            window.loudness_enabled_check.setChecked(True)
+            on = window._collect_settings()
+
+            # キーが無い設定では既定 (有効) で表示する
+            missing = copy.deepcopy(sw.DEFAULT_SETTINGS)
+            missing.pop("loudness")
+            window._load_to_ui(missing)
+            self.assertTrue(window.loudness_enabled_check.isChecked())
+        finally:
+            window.close()
+        self.assertFalse(off["loudness"]["enabled"])
+        self.assertTrue(on["loudness"]["enabled"])
+        # 画面に出していない目標値などは保存で消えない
+        self.assertEqual(off["loudness"]["target_i"], -14.0)
+        self.assertTrue(off["loudness"]["two_pass"])
+        self.assertEqual(off["loudness"]["audio_bitrate"], "192k")
+        del app

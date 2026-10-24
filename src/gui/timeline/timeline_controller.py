@@ -252,6 +252,39 @@ class TimelineController(QObject):
         changed = self.execute(command)
         return {"changed": changed, "aligned": command.aligned}
 
+    # 選択した字幕を 1 本へ結合する (G4 / docs/quality/resolve1.md §3.4 G4)
+    # 本文は時間順に連結し、改行は現在の設定で引き直す。
+    def merge_subtitles(self, clip_ids):
+        ids = [i for i in (clip_ids or []) if i]
+        if len(ids) < 2:
+            return False
+        return self.execute(commands.MergeSubtitles(ids, wrap=self._subtitle_wrap()))
+
+    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。本文も分かれる。
+    def split_subtitle(self, clip_id, at_sec=None):
+        at_sec = self._playhead if at_sec is None else at_sec
+        return self.execute(commands.SplitSubtitle(
+            clip_id, at_sec, self._cfg["min_clip_sec"]))
+
+    # 本文の整形関数 (改行の引き直し) を返す
+    # 結合すると行が長くなるため、現在の折り返し設定で引き直す必要がある。
+    def _subtitle_wrap(self):
+        from ...modules import subtitle_generator  # noqa: PLC0415 (重い import を遅らせる)
+
+        cfg = self._settings.get("subtitle", {})
+        profile = getattr(self._timeline, "output_profile", None) or {}
+        width = int(profile.get("width") or
+                    self._settings.get("ffmpeg", {}).get("output_width", 0) or 0)
+        measure = subtitle_generator.build_text_measure(cfg, width)
+        min_len = int(cfg.get("min_line_length", 15))
+        max_len = int(cfg.get("max_line_length", 20))
+        engine = str(cfg.get("wrap_engine", "budoux")).strip().lower()
+
+        def _wrap(text):
+            return subtitle_generator.wrap_lines(
+                text, min_len, max_len, engine, measure=measure)
+        return _wrap
+
     def set_clip_enabled(self, clip_id, enabled):
         return self.execute(commands.SetClipEnabled(clip_id, enabled))
 

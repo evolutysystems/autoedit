@@ -226,6 +226,28 @@ def append_subtitles(timeline, subtitle_track, items, offset, clip_duration,
             origin["source_start"] = round(source_start[1], 3)
         if source_end is not None:
             origin["source_end"] = round(source_end[1], 3)
+        # 生成時の認識結果・信頼度・単語列を控える (docs/quality/resolve1.md §6.1 / B2)。
+        # timeline/builder.py の本流と同じ内容を残す。切り抜き経路はこちらを通るため、
+        # ここに入れないと信頼度の色分けも無修正テロップ率の計測も働かない。
+        origin["asr_text"] = item.get("text", "")
+        for key in ("confidence", "word_confidence", "no_speech_prob"):
+            if item.get(key) is not None:
+                origin[key] = round(float(item[key]), 4)
+        # 話者照合の結果 (F15 / docs/quality/resolve1.md §12.5)。
+        # speaker_other=True は「配信者以外の声とみなした」= 編集画面で色分けする。
+        if item.get("speaker_score") is not None:
+            origin["speaker_score"] = round(float(item["speaker_score"]), 4)
+        if item.get("speaker_other"):
+            origin["speaker_other"] = True
+        words = item.get("words")
+        if words:
+            origin["words"] = [
+                {"start": round(float(w["start"]), 3),
+                 "end": round(float(w["end"]), 3),
+                 "text": str(w.get("text", ""))}
+                for w in words
+                if w.get("start") is not None and w.get("end") is not None
+            ]
         subtitle_track.clips.append(SubtitleClip(
             timeline.next_id("s"),
             timeline_start=start + offset,

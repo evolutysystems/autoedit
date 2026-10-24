@@ -59,6 +59,11 @@ _COLOR_OPENING = QColor(126, 87, 168)       # オープニング
 _COLOR_ENDING = QColor(96, 87, 168)         # エンディング
 _COLOR_OVERLAY = QColor(40, 132, 130)       # 追加メディア
 _COLOR_SUBTITLE = QColor(178, 130, 46)      # 字幕
+# 認識の信頼度が低い字幕 (docs/quality/resolve1.md §3.2 B2)。
+# 切り抜きは 1 回の出力で 10 クリップ分の字幕をまとめて確認するため、
+# 「どこが怪しいか」が分からないと全件を順に読むことになる。
+# 赤系にすると再生ヘッドと紛れるため、注意を引く橙寄りの色にする。
+_COLOR_SUBTITLE_LOW = QColor(186, 92, 46)
 _COLOR_AUDIO = QColor(56, 130, 78)          # 音声
 _COLOR_DISABLED = QColor(96, 96, 96)        # 無効化されたクリップ
 _COLOR_SELECTED_BORDER = QColor(255, 214, 92)   # 選択枠 (琥珀。赤にすると再生ヘッドと紛れる)
@@ -578,7 +583,12 @@ class TimelineView(QWidget):
         if isinstance(clip, AudioClip):
             return _COLOR_AUDIO if not clip.muted else _COLOR_DISABLED
         if isinstance(clip, SubtitleClip):
-            return _COLOR_SUBTITLE if clip.use else _COLOR_DISABLED
+            if not clip.use:
+                return _COLOR_DISABLED
+            # 信頼度が低いものを目立たせる (B2)。
+            # 信頼度を持たない字幕 (手入力・旧プロジェクト) は従来の色のまま。
+            return (_COLOR_SUBTITLE_LOW if self._is_low_confidence(clip)
+                    else _COLOR_SUBTITLE)
         if not clip.enabled:
             return _COLOR_DISABLED
         origin = clip.origin_type()
@@ -590,6 +600,36 @@ class TimelineView(QWidget):
         if base is not None and track.id == base.id:
             return _COLOR_BODY
         return _COLOR_OVERLAY
+
+    # 認識の信頼度が低い字幕か (B2 / docs/quality/resolve1.md §3.2 B2)
+    #
+    # origin に残した値で判断する:
+    #   confidence      = セグメントの avg_logprob (低いほど怪しい)
+    #   word_confidence = 束ねた単語の確率の最小値 (低いほど怪しい)
+    # どちらも無ければ False = 従来の色のまま (手入力・旧プロジェクト)。
+    def _is_low_confidence(self, clip):
+        origin = getattr(clip, "origin", None) or {}
+        cfg = (self._controller.settings or {}).get("subtitle", {})
+        # 話者照合で「配信者以外の声」とみなしたものも要確認として扱う
+        # (F15 / docs/quality/resolve1.md §12.5)。
+        # 自動では落とさず、ここで目立たせて利用者に判断してもらう。
+        if origin.get("speaker_other"):
+            return True
+        logprob = origin.get("confidence")
+        if logprob is not None:
+            try:
+                if float(logprob) < float(cfg.get("low_confidence_logprob", -0.6)):
+                    return True
+            except (TypeError, ValueError):
+                pass
+        word_prob = origin.get("word_confidence")
+        if word_prob is not None:
+            try:
+                if float(word_prob) < float(cfg.get("low_confidence_word_prob", 0.4)):
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
 
     def _clip_label(self, clip, track):
         if isinstance(clip, SubtitleClip):
@@ -928,11 +968,37 @@ class TimelineView(QWidget):
             if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)
         ] or [clip.id]
         menu.addSeparator()
+        # テロップの結合 / 分割 (G4 / docs/quality/resolve1.md §3.4 G4)。
+        # 結合コマンドが無かったため、2 本を 1 本にするには削除 → 伸ばす →
+        # 打ち直す手順が必要だった。分割は本文を複製していた。
+        merge = menu.addAction(
+            tr("テロップの結合\tCtrl+M") if len(ids) <= 2
+            else tr("選んだ {count} 件のテロップを結合\tCtrl+M", count=len(ids)),
+            lambda: self._merge_subtitles(ids))
+        merge.setEnabled(len(ids) >= 2)
+        menu.addAction(tr("ここでテロップを分割"),
+                       lambda: self._split_subtitle(clip.id))
+        menu.addSeparator()
         label = (tr("カット頭へ揃える") if len(ids) <= 1
                  else tr("選んだ {count} 件の字幕をカット頭へ揃える", count=len(ids)))
         menu.addAction(label, lambda: self._align_subtitles(ids))
         menu.addAction(tr("すべての字幕をカット頭へ揃える"),
                        lambda: self._align_subtitles(None))
+
+    # 選択した字幕を 1 本へ結合する (G4)
+    def _merge_subtitles(self, clip_ids):
+        if self._controller.merge_subtitles(clip_ids):
+            self.status_message.emit(
+                tr("{count} 件のテロップを結合しました", count=len(clip_ids)))
+            return
+        self.status_message.emit(tr("結合できるテロップが 2 件以上必要です"))
+
+    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。本文も分かれる。
+    def _split_subtitle(self, clip_id):
+        if self._controller.split_subtitle(clip_id):
+            self.status_message.emit(tr("テロップを分割しました"))
+            return
+        self.status_message.emit(tr("この位置ではテロップを分割できません"))
 
     # 字幕の開始を V1 クリップ (カット) の頭へ揃える
     # clip_ids=None で全字幕が対象。揃うものが無ければ状態表示で知らせる。

@@ -333,6 +333,74 @@ DEFAULT_SETTINGS = {
         "align_tolerance_sec": 0.6,
         # true で従来どおりカットを越えて表示を保持する (R3 を無効化)
         "hold_across_cut": False,
+        # ------------------------------------------------------------------
+        # テロップの区切りと折り返し (docs/quality/resolve1.md 第3部)
+        # ------------------------------------------------------------------
+        # 1 本のテロップの下限文字数 (G1)。
+        # 従来は min_line_length (改行の下限) を流用していたため、改行を短くすると
+        # テロップの下限まで下がり「認識セグメントそのまま」の細かさになっていた。
+        # None で従来式 (= min_line_length) へフォールバックする。
+        "subtitle_min_chars": 16,
+        # 語と語の間 (ポーズ) で区切る (G2)。下限達成後、語間がこれ以上空いたら切る。
+        # 0 で無効 (従来どおり文字数・カット境界・文末記号だけで決める)。
+        "split_min_pause_sec": 0.35,
+        # 語間がこれ未満なら切らない (G2)。記号やカット境界でも繋いで 1 本にする。
+        # 0 で無効。split_min_pause_sec 以下にすること。
+        "merge_max_pause_sec": 0.20,
+        # 語間がこれ以上なら、下限文字数に達していなくても必ず切る (G2)。
+        # 下限だけで区切りを塞ぐと、疎な発話が「下限がたまるまで」繋がり
+        # 1 本のテロップが何十秒にもなる (実測 76.8 秒 / docs/quality/kensyou)。
+        # 0 で無効 (= 下限優先のまま)。
+        "split_max_pause_sec": 1.0,
+        # 上限超過で切るとき、BudouX の文節境界まで戻して切る (G3)。
+        # False で従来どおり単語境界で切る。
+        "split_on_phrase_boundary": True,
+        # 折り返しと上限の決め方 (G5 / docs/quality/resolve1.md §3.4 G5)
+        #   "length" : 文字数で決める (従来)
+        #   "width"  : フォントの送り幅から実寸 (px) で決める。
+        #              「2 行で画面外に出ない」を仕様として保証する。
+        #              フォントを読めない環境では "length" へ自動で落ちる。
+        "wrap_mode": "width",
+        # 1 行の下限 (使える幅に対する割合 / G5)。0 で下限なし。
+        "min_line_ratio": 0.5,
+        # ------------------------------------------------------------------
+        # 音声認識の精度 (docs/quality/resolve1.md 第2部)
+        # ------------------------------------------------------------------
+        # 認識前にモデルへ渡す前提テキスト (B1)。空で無効。
+        "initial_prompt": "",
+        # 配信タイトル・ゲーム名を initial_prompt の先頭へ自動で差し込む (B1 / Q1)。
+        # 利用者が initial_prompt に書いた文はその後ろへ連ねる (両方効く)。
+        "initial_prompt_from_vod": True,
+        # 優先語 (B1)。空白区切りの 1 文字列として faster-whisper へ渡す。
+        "hotwords": "",
+        # 用語リスト (B1)。hotwords 文字列へ結合して渡す (1 要素 1 語)。
+        "vocabulary": [],
+        # 認識後の置換辞書 (B3)。[{"from","to","regex"}] の配列。
+        # 改行より前に適用する (置換で文字数が変われば改行位置も変わるため)。
+        "replacements": [],
+        # 要確認とみなす信頼度のしきい値 (B2)。編集画面の色分けに使う。
+        "low_confidence_logprob": -0.6,
+        "low_confidence_word_prob": 0.4,
+        # ------------------------------------------------------------------
+        # 話者照合 (F15 / docs/quality/resolve1.md §12.5)
+        # ------------------------------------------------------------------
+        # ゲーム内のボイスがテロップになる問題 (A9) への対策。
+        # 配信者が「VOD 全体で最も長く喋る 1 人」であることを使って絞り込む。
+        #
+        # 【実測で成立しなかった / docs/quality/resolve1.md §12.6・§12.7】
+        # ゲーム音が常時乗る VOD では声紋が話者を表さず (自己一致 0.13〜0.40)、
+        # 学習済みモデルを入れても分離できなかったため ONNX 経路は外した。
+        # 既定は "off"。マイク単独トラックのような綺麗な音声でのみ期待できる。
+        #   "off"  = 何もしない (既定)
+        #   "flag" = 別人とみなしたテロップへ印を付ける (落とさない)
+        #   "drop" = 別人とみなしたテロップを落とす
+        "speaker_filter": "off",
+        # 代表の声とのコサイン類似度の下限 (これを下回ると別人とみなす)
+        "speaker_threshold": 0.45,
+        # 代表の声を求めるときに残す割合 (配信者が占める想定の下限)
+        "speaker_core_ratio": 0.5,
+        # これより短い発話は声紋が安定しないため判定しない
+        "speaker_min_sec": 0.6,
     },
     "silence_cut": {
         # 無音カット ON/OFF (resolve12)。既定 True で従来挙動を維持する。
@@ -356,7 +424,13 @@ DEFAULT_SETTINGS = {
         "base_min_silence_sec": 0.3,
         "min_region_sec": 0.8,
         "max_regions": 100,
-        "metric": "mean",
+        # 区間の代表音量の採り方 (docs/quality/resolve1.md §2.3 F7)
+        #   "mean"       : 代表値の最小値を採る (従来)。1 区間静かだと閾値が崩壊する
+        #   "max"        : 最大音量の最小値を採る (従来)
+        #   "percentile" : 下側分位点を採る (推奨)。外れ値で崩壊しない
+        "metric": "percentile",
+        # metric="percentile" のときの分位点 (%)
+        "percentile": 10,
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -28,
     },
@@ -368,7 +442,18 @@ DEFAULT_SETTINGS = {
         "target_tp": -1.0,        # True Peak 目標 (dBTP)
         "target_lra": 11.0,       # Loudness Range 目標 (LU)
         "two_pass": True,         # true=2パス測定+線形適用 (精度優先) / false=1パス dynamic
-        "audio_bitrate": "192k",  # 適用パスの音声ビットレート
+        "audio_bitrate": "192k",  # 適用パスの音声ビットレート (中間ファイル用)
+        # 以下は docs/quality/resolve1.md 第4部
+        # これ未満の素材は正規化をスキップする (F12)。
+        # EBU R128 の Integrated は一定の長さを要するため、1 秒のセクションでは
+        # 測定が成り立たず極端なゲインが掛かる恐れがある。0 で無効。
+        "min_duration_sec": 5.0,
+        # 最終出力のラウドネスを測ってログ・画面へ出す (F10)
+        "verify_output": True,
+        # 目標との差が correct_tolerance_lu を超えたら補正する (F10)。
+        # 映像は -c:v copy なので無劣化・短時間で済む。
+        "correct_output": True,
+        "correct_tolerance_lu": 0.5,
     },
     # 字幕編集画面の動画プレビュー (resolve23) — 選択行の時刻から segment_sec 秒を
     # 字幕焼き込み付きの低解像度 mp4 として生成し QtMultimedia で再生する。
@@ -695,6 +780,8 @@ DEFAULT_SETTINGS = {
             "play_fast_forward": "E",
             "play_fast_backward": "Q",
             "split_alt": "Ctrl+B",
+            # 選択したテロップを 1 本へ結合する (docs/quality/resolve1.md §3.4 G4)
+            "merge_subtitles": "Ctrl+M",
             "delete": "Delete",
             "delete_alternate": "Shift+Delete",
             # 選択中のノードを削除するだけ (後続を詰めない / ver3 resolve2 R12)
@@ -774,6 +861,10 @@ DEFAULT_SETTINGS = {
         "output_height": 1080,
         "output_fps": 60,
         "audio_sample_rate": 48000,
+        # 最終出力の音声ビットレート (F11 / docs/quality/resolve1.md §4.3 F11)。
+        # 従来は指定が無く FFmpeg の aac 既定 (ステレオで概ね 128kbps) になっていた。
+        # 空文字にすると従来どおり指定しない。
+        "audio_bitrate": "256k",
     },
     # 縦動画(YouTube Shorts / TikTok)対応 (request14 / resolve14)
     # 縦検出時のみ有効。フォント/改行/配置/余白は横(subtitle)設定を上書きする。
@@ -888,7 +979,21 @@ DEFAULT_SETTINGS = {
                     "big_laugh": 15, "loud": 10, "surprise": 8,
                     "cry": 15, "anger": 12, "long_silence": -8,
                 },
-                "comment": {"w_point_per_char": 1, "rate_spike_bonus": 10},
+                "comment": {
+                    "w_point_per_char": 1, "rate_spike_bonus": 10,
+                    # 笑いエモートを数える (docs/quality/resolve1.md §2.3 F4)。
+                    # comment_source は emotes を正規化して持っているのに
+                    # 採点では使っていなかった。大小の違いは無視して突き合わせる。
+                    "laugh_emotes": ["LUL", "KEKW", "OMEGALUL", "Pog", "PogChamp", "4Head"],
+                    "emote_point": 1,
+                    # 日本語配信の笑い表現 (F4)。ｗ と同じ重みで数える。
+                    "laugh_words": ["草", "笑", "くさ"],
+                    "laugh_word_point": 1,
+                },
+                # コメントを取得できなかったときに重みを 0..100 へ正規化する (F4)。
+                # 従来は comment=0 のまま total = emotion * 0.55 となり、
+                # ローカル入力では満点が 55 点になって採点グラフが読めなかった。
+                "normalize_weights": True,
             },
         },
         # ストリームマーカー (ver3 resolve16)。Twitch VOD に打たれたマーカーの
@@ -928,6 +1033,16 @@ DEFAULT_SETTINGS = {
             "silence_cut": True,       # 各クリップで無音カットを行う
             "subtitle_review": True,   # 各クリップでテロップ編集画面を出す
             "volume_dialog": False,    # 音量/カット閾値ダイアログは出さない
+            # カット閾値をどの範囲で決めるか (docs/quality/resolve1.md §2.3 F7)
+            #   "per_clip" : クリップごとに測り直す (従来)。クリップ間で揃わない
+            #   "vod"      : VOD 全体で 1 回測り、全クリップへ同じ閾値を使う (推奨)
+            #   "saved"    : volume_analysis.last_cut_db を固定で使う
+            "cut_db_scope": "vod",
+            # ラウドネス正規化をどの範囲で行うか (§4.3 F9)
+            #   "per_clip" : クリップごとに -14 LUFS へ揃える (従来)。山場が潰れる
+            #   "vod"      : VOD 全体で 1 回測ったゲインを全クリップへ適用する (推奨)
+            # 1 本にまとめて出力する運用では "vod" が正しい (Q3)。
+            "loudness_scope": "vod",
         },
         # 結合 (request18): TOP5 を結合して 1 本にし、OP/ED を1回だけ付ける。
         "combine": {
@@ -941,6 +1056,10 @@ DEFAULT_SETTINGS = {
         # 本編全長には左上へ小さくテーマを焼く。未入力クリップは現行どおり。
         "intro_card": {
             "enabled": True,            # 機能全体のスイッチ (false でテーマ欄も出さない)
+            # 本編に掛けた正規化ゲインをイントロへも適用する (docs/quality/resolve1.md §4.3 F8)。
+            # イントロは元 VOD から直接切り出すため従来は正規化を通らず、
+            # 本編 (-14 LUFS) より数 dB 大きいまま流れていた。
+            "match_body_level": True,
             "buffer_sec": 1.5,          # 開始前に戻すバッファ秒数 (要望: 1.5)
             "blur_sigma": 18,           # 画面全体ブラーの強さ (gblur sigma)
             "margin_top_px": 300,       # 黒帯の上余白 (要望: 300)
@@ -1509,6 +1628,8 @@ class SettingsWindow(QWidget):
         self.output_dir_edit = None
         # 自動更新チェック ON/OFF (request_autoupdate.md)
         self.auto_update_check_check = None
+        # ラウドネス正規化 (YouTube 向け音量調節) ON/OFF (ver9 request1)
+        self.loudness_enabled_check = None
         # 無音カット関係ウィジェット参照
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
         # 無音カット ON/OFF (resolve12)
@@ -1758,6 +1879,22 @@ class SettingsWindow(QWidget):
         self.auto_update_check_check = QCheckBox(tr("起動時に更新を確認する"))
         grid.addWidget(self._make_column_label("自動更新"), row, 0)
         grid.addWidget(self.auto_update_check_check, row, 1)
+        row += 1
+
+        # ===== 音量調節 (loudness) =====
+        # YouTube 向けラウドネス正規化 ON/OFF (ver9 request1)。
+        # クリップ用・アーカイブ用の両方が loudness.enabled を見るため、
+        # ここ 1 つで両方の音量調節を切り替えられる。
+        self.loudness_enabled_check = QCheckBox(
+            tr("YouTube 向けに音量を自動調節する"))
+        grid.addWidget(self._make_column_label("音量調節"), row, 0)
+        grid.addWidget(self.loudness_enabled_check, row, 1)
+        row += 1
+        grid.addWidget(
+            self._make_note_label(
+                "クリップ用・アーカイブ用の両方で音量を -14 LUFS へ揃えます "
+                "(OFFで元の音量のまま出力します)"),
+            row, 1)
         row += 1
 
         # ===== 無音カット (silence_cut) =====
@@ -2569,6 +2706,7 @@ class SettingsWindow(QWidget):
         general = self._loaded_settings.get("general", {})
         subtitle = self._loaded_settings.get("subtitle", {})
         silence_cut = self._loaded_settings.get("silence_cut", {})
+        loudness = self._loaded_settings.get("loudness", {})
         vertical = self._loaded_settings.get("vertical", {})
         archive = self._loaded_settings.get("archive", {})
         intro_card = archive.get("intro_card", {})
@@ -2585,6 +2723,9 @@ class SettingsWindow(QWidget):
             _coerce_int(general.get("min_free_space_gb", 20), 20))
         self._update_work_dir_note()
         self.auto_update_check_check.setChecked(bool(general.get("auto_update_check", True)))
+
+        # 音量調節 (ラウドネス正規化 / ver9 request1)
+        self.loudness_enabled_check.setChecked(bool(loudness.get("enabled", True)))
 
         # 無音カット
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除
@@ -2844,6 +2985,11 @@ class SettingsWindow(QWidget):
             "work_directory": self.work_dir_edit.text().strip(),
             "min_free_space_gb": self.min_free_space_spin.value(),
             "auto_update_check": self.auto_update_check_check.isChecked(),
+        })
+        # 音量調節 (ラウドネス正規化 / ver9 request1)。
+        # 目標値などの詳細は UI に出さないため base からそのまま引き継ぐ。
+        settings.setdefault("loudness", {}).update({
+            "enabled": self.loudness_enabled_check.isChecked(),
         })
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除。
         # 既存値は base (load_settings) からそのまま引き継がれ上書きしない。

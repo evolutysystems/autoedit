@@ -82,6 +82,12 @@ def score_window(cells, norm, window, loud_thr, cfg):
     comment_cfg = cfg["comment"]
     w_total = sum(int(c.get("w_count", 0)) for c in slice_cells)
     comment = float(w_total) * float(comment_cfg.get("w_point_per_char", 1))
+    # 日本語の笑い表現 (「草」「笑」) と笑いエモート (LUL/KEKW 等) を足す
+    # (docs/quality/resolve1.md §2.3 F4)。集計が無い (= 従来の cells) なら 0 のまま。
+    laugh_words = sum(int(c.get("laugh_word_count", 0)) for c in slice_cells)
+    laugh_emotes = sum(int(c.get("laugh_emote_count", 0)) for c in slice_cells)
+    comment += float(laugh_words) * float(comment_cfg.get("laugh_word_point", 1))
+    comment += float(laugh_emotes) * float(comment_cfg.get("emote_point", 1))
     # 急増ボーナス: この窓のコメント数/分が動画全体の平均を上回るとき加点。
     # avg_comments_per_min は pipeline がコメント取得時に算出して cfg へ供給する。
     if cfg.get("comment_spike", False):
@@ -92,8 +98,7 @@ def score_window(cells, norm, window, loud_thr, cfg):
             comment += float(comment_cfg.get("rate_spike_bonus", 10))
     comment = _clamp(comment, 0.0, 100.0)
 
-    weights = cfg["weights"]
-    total = emotion * float(weights.get("emotion", 0.55)) + comment * float(weights.get("comment", 0.45))
+    total = _weighted_total(emotion, comment, cfg)
     return {
         "start": slice_cells[0]["start"],
         "end": slice_cells[-1]["end"],
@@ -101,6 +106,24 @@ def score_window(cells, norm, window, loud_thr, cfg):
         "comment": round(comment, 1),
         "total": round(total, 1),
     }
+
+
+# 感情点とコメント点を重み付けして合計する (docs/quality/resolve1.md §2.3 F4)
+#
+# コメントを取得できない入力 (ローカル mp4 / 取得失敗) では comment が常に 0 になり、
+# total = emotion * 0.55 で満点が 55 点にとどまっていた。順位付けは変わらないが、
+# 採点グラフの目盛りが 0..100 で読めず「満点でも 55」という状態だった。
+# normalize_weights=True のときはコメント側の重みを感情側へ寄せ、0..100 に収める。
+def _weighted_total(emotion, comment, cfg):
+    weights = cfg["weights"]
+    w_emotion = float(weights.get("emotion", 0.55))
+    w_comment = float(weights.get("comment", 0.45))
+    if cfg.get("normalize_weights", True) and not cfg.get("comment_spike", False):
+        # コメント未取得 = コメント点は常に 0。感情点だけで 0..100 へ正規化する。
+        total_weight = w_emotion + w_comment
+        if total_weight > 0:
+            w_emotion, w_comment = total_weight, 0.0
+    return emotion * w_emotion + comment * w_comment
 
 
 # 2区間が時間的に重なるか

@@ -74,11 +74,26 @@ def _import_runtime():
     return onnxruntime
 
 
-# ONNX セッションを作る (同じパスなら使い回す)。読めなければ None。
+# キャッシュの鍵を作る (パス + 更新時刻 + サイズ)
+#
+# パスだけを鍵にすると、同じ名前のモデルを差し替えても古いセッションが返る。
+# モデルを入れ替えて精度を比べるときに前のモデルの結果が出てしまい、
+# 「2 つのモデルで数値が完全に一致する」という形で現れて気付きにくい
+# (docs/quality/resolve1.md §12.7 の評価中に踏んだ)。
+def _session_key(model_path):
+    path = os.path.abspath(model_path)
+    try:
+        stat = os.stat(path)
+        return (path, int(stat.st_mtime_ns), int(stat.st_size))
+    except OSError:
+        return (path, 0, 0)
+
+
+# ONNX セッションを作る (同じモデルなら使い回す)。読めなければ None。
 def load_session(model_path, providers):
     if not model_path:
         return None
-    key = (os.path.abspath(model_path), tuple(providers or ()))
+    key = (_session_key(model_path), tuple(providers or ()))
     with _lock:
         if key in _sessions:
             return _sessions[key]

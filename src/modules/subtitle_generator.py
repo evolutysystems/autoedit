@@ -4,6 +4,7 @@
 # (設計書 10. 不明点 #2 は claude.md ② の指示により解決済。エンジンは参照元
 #  ../StreamPipeline/dev と同一の faster-whisper を既定採用)
 import os
+import re
 
 from ..exceptions import (
     AutoEditError,
@@ -16,7 +17,7 @@ from ..i18n import tr
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
-from . import comment_decor, ffmpeg_runner, silence_cutter
+from . import comment_decor, ffmpeg_runner, silence_cutter, speaker_filter
 
 _logger = get_logger(__name__)
 
@@ -31,6 +32,10 @@ _logger = get_logger(__name__)
 # 語頭の取りこぼしが出るようなら 200ms へ戻す (resolve8 §9 Q1)。
 # 設定項目としては出さない (要望 D3)。400 に戻せば従来の挙動へ完全に戻る。
 _VAD_SPEECH_PAD_MS = 100
+
+# これ未満の文字数の行は前の行へ寄せる (docs/quality/resolve1.md §12.4 H1)
+# 「の」だけの行が出ていたため。前の行へ足して上限を超える場合は寄せない。
+_MIN_LINE_CHARS = 3
 
 # 秒の比較に使う許容誤差 (ミリ秒精度で保持するため 1e-6 で十分 / timemap と同じ)
 _EPS = 1e-6
@@ -237,6 +242,65 @@ def strip_fillers(text, fillers=None):
     return text.strip()
 
 
+# 認識後の置換辞書を適用する (B3 / docs/quality/resolve1.md §3.2 B3)
+#
+# 配信者名・ゲーム名・専門用語の誤認識は毎回同じ形で出るため、辞書 1 つで消える。
+# 改行より前に適用すること (置換で文字数が変われば改行位置も変わる)。
+# rules = [{"from": "...", "to": "...", "regex": False}, ...]
+# 壊れた規則 1 件でテロップ全損にしないため、個別に握り潰して次へ進む。
+def apply_replacements(text, rules=None):
+    body = str(text or "")
+    for rule in (rules or []):
+        if not isinstance(rule, dict):
+            continue
+        src = str(rule.get("from", "") or "")
+        if not src:
+            continue
+        dst = str(rule.get("to", "") or "")
+        if rule.get("regex"):
+            try:
+                body = re.sub(src, dst, body)
+            except re.error as error:
+                _logger.warning("置換辞書の正規表現が不正です (飛ばします): %s (%s)",
+                                src, error)
+            continue
+        body = body.replace(src, dst)
+    return body
+
+
+# 用語リストと hotwords 文字列を 1 つの hotwords へまとめる (B1)
+# faster-whisper は空白区切りの 1 文字列を取るため、配列は空白で連結する。
+def build_hotwords(subtitle_cfg):
+    cfg = subtitle_cfg or {}
+    words = [str(w).strip() for w in (cfg.get("vocabulary") or []) if str(w).strip()]
+    base = str(cfg.get("hotwords", "") or "").strip()
+    if base:
+        words.insert(0, base)
+    return " ".join(words)
+
+
+# initial_prompt を組み立てる (B1 / Q1)
+#
+# 切り抜きでは Twitch API から配信タイトル・ゲーム名が取れる。
+# 配信者名・ゲーム名は認識精度に直結するため、取れたら先頭へ差し込み、
+# 利用者が initial_prompt に書いた文はその後ろへ連ねる (両方効く)。
+# 取れなかった場合は何も付けない = 従来と同一の挙動へ落ちる。
+def build_initial_prompt(subtitle_cfg, vod_title="", vod_game=""):
+    cfg = subtitle_cfg or {}
+    parts = []
+    if cfg.get("initial_prompt_from_vod", True):
+        title = str(vod_title or "").strip()
+        game = str(vod_game or "").strip()
+        if title:
+            parts.append(f"{title}。")
+        if game:
+            parts.append(f"ゲーム: {game}。")
+    manual = str(cfg.get("initial_prompt", "") or "").strip()
+    if manual:
+        parts.append(manual)
+    return "".join(parts)
+
+
 # テキストタイムラインのソース抽象
 # 実装クラスは extract(input_path, language) -> [{"start": float, "end": float, "text": str}] を返す
 class TextSource:
@@ -265,25 +329,157 @@ def _resolve_compute_type(configured_compute_type, device):
     return ct
 
 
+# ------------------------------------------------------------------
+# 行の長さを測る物差し (G5 / docs/quality/resolve1.md §3.4 G5)
+# ------------------------------------------------------------------
+# 文字数は実寸の代理指標にすぎない。フォントによって 1 文字の送り幅は
+# 0.667〜1.000 em と 1.5 倍も違うため (docs/error/20261023/resolve.md §3-2)、
+# 同じ「20 文字」でも実寸が 1.5 倍変わり、画面外へはみ出す。
+#
+# TextMeasure は「上限・下限」と「幅の測り方」を 1 つにまとめた値オブジェクトで、
+#   ・mode="length" : 幅 = 文字数     (従来と完全に同一の結果)
+#   ・mode="width"  : 幅 = 実寸 (px)  (font_advance でフォントから測る)
+# を同じ呼び出し側のコードで扱える。
+# フォントを読めない環境では build_text_measure が "length" へ落とす。
+class TextMeasure:
+
+    def __init__(self, limit, min_limit=0.0, width_of=None, mode="length"):
+        # 1 行の上限 (0 以下で上限なし)
+        self.limit = float(limit or 0.0)
+        # 1 行の下限 (これ未満の間は文節を足し続ける)
+        self.min_limit = float(min_limit or 0.0)
+        self.mode = str(mode or "length")
+        self._width_of = width_of
+
+    # 文字列の幅 (文字数 または px)
+    def width(self, text):
+        if self._width_of is None:
+            return float(len(str(text or "")))
+        return float(self._width_of(str(text or "")))
+
+    # 1 行に収まるか
+    def fits(self, text):
+        return self.limit <= 0 or self.width(text) <= self.limit
+
+    # 下限に達しているか
+    def reached_min(self, text):
+        return self.min_limit <= 0 or self.width(text) >= self.min_limit
+
+    # 1 本のテロップぶん (= 1 行 × max_lines) へ広げた物差しを返す
+    def scaled(self, max_lines):
+        lines = max(int(max_lines or 1), 1)
+        return TextMeasure(self.limit * lines, self.min_limit,
+                           self._width_of, self.mode)
+
+
+# 字幕設定と出力寸法から物差しを組み立てる (G5)
+#
+# wrap_mode="width" のとき、1 行に使える幅は
+#   キャンバス幅 − 左余白 − 右余白 − 縁取りの張り出し × 2
+# になる。縁取り (ASS の Outline) は字形の外側へ付くため、送り幅だけでは足りない
+# (comment_decor._outline_bleed と同じ考え方)。
+#
+# フォントを読めない / wrap_mode="length" のときは文字数の物差しを返すため、
+# 呼び出し側は分岐を持たなくてよい。
+def build_text_measure(subtitle_cfg, canvas_width=0):
+    cfg = subtitle_cfg or {}
+    min_chars = _to_int(cfg.get("min_line_length"), 15)
+    max_chars = _to_int(cfg.get("max_line_length"), 20)
+    length_measure = TextMeasure(max_chars, min_chars, None, "length")
+
+    mode = str(cfg.get("wrap_mode", "length") or "length").strip().lower()
+    if mode != "width":
+        return length_measure
+
+    width = float(canvas_width or 0)
+    if width <= 0:
+        _logger.info("出力幅が不明なため折り返しを文字数で行います (wrap_mode=width)")
+        return length_measure
+
+    family = str(cfg.get("font_family", "") or "").strip()
+    size = _to_int(cfg.get("font_size"), 48)
+    metrics = _font_metrics_for_wrap(family, cfg)
+    if metrics is None:
+        _logger.info(
+            "フォント '%s' の送り幅を読めないため折り返しを文字数で行います "
+            "(wrap_mode=width)", family)
+        return length_measure
+
+    margin_l = _to_int(cfg.get("margin_l"), 40)
+    margin_r = _to_int(cfg.get("margin_r"), 40)
+    outline = _to_int(cfg.get("outline_width"), 3)
+    usable = width - margin_l - margin_r - outline * 2
+    if usable <= 0:
+        _logger.warning(
+            "余白と縁取りが出力幅を超えているため折り返しを文字数で行います "
+            "(幅=%.0f / 余白=%d+%d / 縁=%d)", width, margin_l, margin_r, outline)
+        return length_measure
+
+    ratio = _to_float(cfg.get("min_line_ratio"), 0.5)
+    ratio = min(max(ratio, 0.0), 1.0)
+    _logger.info(
+        "テロップの折り返しを実寸で行います: 1 行 %.0fpx (フォント %s / サイズ %d / G5)",
+        usable, family or "(既定)", size)
+    return TextMeasure(usable, usable * ratio,
+                       lambda s: metrics.text_width(s, size), "width")
+
+
+# 折り返し用のフォントメトリクスを取る (読めなければ None)
+# comment_decor と同じ font_advance を使い、定義元を 1 つに保つ。
+def _font_metrics_for_wrap(family, subtitle_cfg):
+    if not family:
+        return None
+    try:
+        from . import font_advance      # noqa: PLC0415 (任意依存と同じ遅延 import)
+        return font_advance.metrics_for(
+            family, subtitle_cfg, bold=bool((subtitle_cfg or {}).get("bold", False)))
+    except Exception:  # noqa: BLE001 (読めなくても折り返しは続ける)
+        _logger.warning("フォントの送り幅を読めませんでした: %s", family)
+        return None
+
+
+# float へ寄せる (不正値は既定へ)
+def _to_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 # テキストを最大文字数で改行 (ASS の \\N) する
 # 既存の \\N は「手動/強制改行」として尊重し、各区間をさらに max_line_length ごとに
 # 分割して連結する (手動改行 + 15文字自動ラップの併用)。
-def wrap_by_length(text, max_line_length):
-    if max_line_length <= 0 or not text:
+def wrap_by_length(text, max_line_length, measure=None):
+    if measure is None:
+        measure = TextMeasure(max_line_length)
+    if measure.limit <= 0 or not text:
         return text
     chunks = []
-    # 手動/既存の強制改行 (\\N) で一旦分割し、各区間を最大文字数で折る
+    # 手動/既存の強制改行 (\\N) で一旦分割し、各区間を上限で折る
     for segment in text.split("\\N"):
-        if len(segment) <= max_line_length:
+        if measure.fits(segment):
             chunks.append(segment)
             continue
-        s = segment
-        while len(s) > max_line_length:
-            chunks.append(s[:max_line_length])
-            s = s[max_line_length:]
-        if s:
-            chunks.append(s)
+        chunks.extend(_hard_split(segment, measure))
     return "\\N".join(chunks)
+
+
+# 1 区間を上限に収まる塊へ強制分割する (上限保険)
+# 文字数の物差しなら従来と同じ「上限文字数ごとの切り出し」になり、
+# 実寸の物差しなら「幅が上限を超える手前まで」になる (G5)。
+def _hard_split(segment, measure):
+    out = []
+    current = ""
+    for char in segment:
+        candidate = current + char
+        if current and not measure.fits(candidate):
+            out.append(current)
+            current = char
+            continue
+        current = candidate
+    if current:
+        out.append(current)
+    return out
 
 
 # BudouX パーサの遅延初期化シングルトン (毎回ロードするコストを避ける)
@@ -305,8 +501,10 @@ def _get_budoux_parser():
 #   - 行が下限 (min_line_length) 未満の間は文節を足し続ける (短すぎる行を避ける)
 #   - 下限達成後、次の文節を足して上限 (max_line_length) を超える場合は文節境界で改行
 #   - 単一文節が上限を超える場合のみ、その行を wrap_by_length で文字数ハード分割 (保険)
-def wrap_by_budoux(text, min_line_length, max_line_length, parser):
-    if max_line_length <= 0 or not text:
+def wrap_by_budoux(text, min_line_length, max_line_length, parser, measure=None):
+    if measure is None:
+        measure = TextMeasure(max_line_length, min_line_length)
+    if measure.limit <= 0 or not text:
         return text
     out_lines = []
     for segment in text.split("\\N"):
@@ -318,10 +516,10 @@ def wrap_by_budoux(text, min_line_length, max_line_length, parser):
         for ph in phrases:
             if not line:
                 line = ph
-            elif len(line) < min_line_length:
+            elif not measure.reached_min(line):
                 # 下限未満: 文節を足して下限に近づける (下限優先)
                 line += ph
-            elif len(line) + len(ph) <= max_line_length:
+            elif measure.fits(line + ph):
                 # 下限達成 かつ 上限内: 同一行へ追加
                 line += ph
             else:
@@ -331,23 +529,43 @@ def wrap_by_budoux(text, min_line_length, max_line_length, parser):
         if line:
             out_lines.append(line)
 
-    # 単一文節が上限超過の行のみ、従来ロジックで文字数ハード分割 (上限保険)
+    # 単一文節が上限超過の行のみ、強制分割へ回す (上限保険)
     result = []
     for ln in out_lines:
-        if len(ln) > max_line_length:
-            result.extend(wrap_by_length(ln, max_line_length).split("\\N"))
+        if not measure.fits(ln):
+            result.extend(_hard_split(ln, measure))
         else:
             result.append(ln)
-    return "\\N".join(result)
+    return "\\N".join(_merge_short_lines(result, measure))
+
+
+# 短すぎる行を前の行へ寄せる (docs/quality/resolve1.md §12.4 H1)
+#
+# BudouX の文節境界の都合で「の」だけの行が出ることがあった。
+# 前の行へ足して上限に収まるなら寄せる。収まらないならそのまま残す
+# (無理に詰めて画面外へ出すより、短い行で見せる方が害が小さい)。
+def _merge_short_lines(lines, measure, min_chars=_MIN_LINE_CHARS):
+    if len(lines) < 2 or min_chars <= 0:
+        return lines
+    out = [lines[0]]
+    for line in lines[1:]:
+        if len(line) < min_chars and out and measure.fits(out[-1] + line):
+            out[-1] += line
+            continue
+        out.append(line)
+    return out
 
 
 # 設定 (wrap_engine) に応じて改行方式を選択する。
 # BudouX 未導入/分割失敗時は文字数改行 (wrap_by_length) へ安全にフォールバックする。
-def wrap_lines(text, min_line_length, max_line_length, engine="budoux"):
+def wrap_lines(text, min_line_length, max_line_length, engine="budoux", measure=None):
+    if measure is None:
+        measure = TextMeasure(max_line_length, min_line_length)
     if engine == "budoux":
         try:
             parser = _get_budoux_parser()
-            return wrap_by_budoux(text, min_line_length, max_line_length, parser)
+            return wrap_by_budoux(text, min_line_length, max_line_length, parser,
+                                  measure=measure)
         except ImportError:
             _logger.warning(
                 "budoux が未導入のため文字数改行にフォールバックします "
@@ -355,7 +573,7 @@ def wrap_lines(text, min_line_length, max_line_length, engine="budoux"):
             )
         except Exception as e:  # noqa: BLE001 (分割失敗時もテロップ全損を避ける)
             _logger.warning("BudouX 改行に失敗したため文字数改行にフォールバック: %s", e)
-    return wrap_by_length(text, max_line_length)
+    return wrap_by_length(text, max_line_length, measure=measure)
 
 
 # faster-whisper による音声認識でテキストタイムラインを生成する TextSource 実装
@@ -391,6 +609,26 @@ class WhisperTextSource(TextSource):
         # 単語タイムスタンプ (docs/error/20260627/resolve.md 対策A)
         # 各セグメントの発話頭/末を単語境界で取得し、表示を発話タイミングへ整合させる
         self._word_timestamps = bool(subtitle_settings.get("word_timestamps", True))
+        # 置換辞書 (B3 / docs/quality/resolve1.md §3.2 B3)
+        self._replacements = subtitle_settings.get("replacements", [])
+        # ドメイン知識 (B1)。空なら渡さない = 従来と完全に同一の認識になる。
+        self._initial_prompt = ""
+        self._hotwords = build_hotwords(subtitle_settings)
+        # 行の折り返しに使う物差し (G5)。None なら文字数で折る。
+        self._measure = None
+
+    # 認識前にドメイン知識を注入する (B1)
+    # vod_title / vod_game は Twitch API の取得値 (切り抜き経路)。
+    def set_prompt_context(self, subtitle_cfg, vod_title="", vod_game=""):
+        self._initial_prompt = build_initial_prompt(subtitle_cfg, vod_title, vod_game)
+        if self._initial_prompt:
+            _logger.info("認識へ前提テキストを渡します: %s", self._initial_prompt)
+        if self._hotwords:
+            _logger.info("認識へ優先語を渡します: %s", self._hotwords)
+
+    # 行の折り返しに使う物差しを差し込む (G5)
+    def set_measure(self, measure):
+        self._measure = measure
 
     # 音声認識を実行し [{"start", "end", "text"}] のタイムラインを返す
     def extract(self, input_path, language):
@@ -423,12 +661,22 @@ class WhisperTextSource(TextSource):
             text = seg.text.strip()
             if self._remove_fillers:
                 text = self._strip_fillers(text)
+            # 置換辞書は改行より前に掛ける (B3)
+            text = apply_replacements(text, self._replacements)
             if not text:
                 continue
             text = self._split_lines(text)
             # 発話実時間(先頭語start〜末尾語end)を採用し、語頭/語尾の無音を除く (対策A)
             start, end = self._speech_bounds(seg)
             entry = {"start": start, "end": end, "text": text}
+            # 信頼度を捨てずに持つ (B2 / docs/quality/resolve1.md §3.2 B2)。
+            # 編集画面で「どこが怪しいか」を色分けするために使う。
+            confidence = getattr(seg, "avg_logprob", None)
+            if confidence is not None:
+                entry["confidence"] = float(confidence)
+            no_speech = getattr(seg, "no_speech_prob", None)
+            if no_speech is not None:
+                entry["no_speech_prob"] = float(no_speech)
             # 単語の区間はカット跨ぎの分割にだけ使う (ver8 resolve6 §4-1)。
             # 取れたときだけ載せるため、取れない構成では辞書の形が従来と同一になる。
             words = self._word_spans(seg)
@@ -460,11 +708,16 @@ class WhisperTextSource(TextSource):
         for word in (getattr(seg, "words", None) or []):
             if word.start is None or word.end is None:
                 continue
-            spans.append({
+            span = {
                 "start": float(word.start),
                 "end": float(word.end),
                 "text": str(getattr(word, "word", "")),
-            })
+            }
+            # 単語ごとの確率 (B2)。テロップを組み直すときに最小値を引き継ぐ。
+            probability = getattr(word, "probability", None)
+            if probability is not None:
+                span["probability"] = float(probability)
+            spans.append(span)
         return spans
 
     # ハルシネーション抑制オプション付きで音声認識を実行する (対策A)
@@ -480,6 +733,11 @@ class WhisperTextSource(TextSource):
             # 単語境界を取得し、表示を発話タイミングへ整合させる (対策A)
             "word_timestamps": self._word_timestamps,
         }
+        # ドメイン知識 (B1)。空のときは渡さない = 従来と完全に同一の認識。
+        if self._initial_prompt:
+            kwargs["initial_prompt"] = self._initial_prompt
+        if self._hotwords:
+            kwargs["hotwords"] = self._hotwords
         if self._vad_filter:
             # 内蔵 Silero VAD で無音/非発話区間を認識対象から除外する
             kwargs["vad_filter"] = True
@@ -514,7 +772,8 @@ class WhisperTextSource(TextSource):
     # 改行 (ASS の \\N) を挿入する (共通ヘルパへ委譲)
     # wrap_engine="budoux" で文節改行、それ以外/未導入時は文字数改行へフォールバック。
     def _split_lines(self, text):
-        return wrap_lines(text, self._min_line_length, self._max_line_length, self._wrap_engine)
+        return wrap_lines(text, self._min_line_length, self._max_line_length,
+                          self._wrap_engine, measure=self._measure)
 
 
 # コメント役割で使える配置 (ver3 resolve11 §3 D-4)
@@ -1127,7 +1386,10 @@ def adjust_display_timing(timeline, max_hold_sec=2.0, min_duration_sec=0.0,
         # 不正区間 (終了<=開始) は破棄する
         if disp_end <= disp_start:
             continue
-        adjusted.append({"start": disp_start, "end": disp_end, "text": entry["text"]})
+        # 付随キー (信頼度・単語列・役割など) を保つ (B2 / docs/quality/resolve1.md §6.1)。
+        # 従来は start/end/text だけを作り直しており、信頼度が後段へ届かなかった。
+        adjusted.append({**entry, "start": disp_start, "end": disp_end,
+                         "text": entry["text"]})
     return adjusted
 
 
@@ -1205,9 +1467,13 @@ def _review_timeline(context, timeline, subtitle_cfg):
     min_len = int(subtitle_cfg.get("min_line_length", 15))
     max_len = int(subtitle_cfg.get("max_line_length", 20))
     engine = str(subtitle_cfg.get("wrap_engine", "budoux")).strip().lower()
+    # 認識時と同じ物差しで折る (G5)。ここを文字数のままにすると、
+    # 認識時と確定時で折り返しが食い違う。
+    profile = getattr(context, "output_profile", None) or {}
+    measure = build_text_measure(subtitle_cfg, int(profile.get("width") or 0))
     used = [
         {"start": e["start"], "end": e["end"],
-         "text": wrap_lines(e["text"], min_len, max_len, engine),
+         "text": wrap_lines(e["text"], min_len, max_len, engine, measure=measure),
          "role": e.get("role", _DEFAULT_ROLE),
          # 個別フォント/サイズ (Blank/空欄はデフォルト=タグ非付与 / resolve16 §4.4)
          "font": e.get("font", ""),
@@ -1659,6 +1925,14 @@ def _item_from_words(words, wrap=None, template=None):
         "text": wrap(text) if wrap else text,
         "words": list(words),
     })
+    # 束ねた単語の確率の最小値を引き継ぐ (B2 / docs/quality/resolve1.md §3.2 B2)。
+    # テロップを組み直すと元セグメントの avg_logprob はその単位と合わなくなるため、
+    # 「この 1 本の中で最も自信の無い語」を代表値として持つ。
+    # 編集画面はこの値で色分けし、利用者は怪しい所だけ直せばよくなる。
+    probabilities = [float(w["probability"]) for w in words
+                     if w.get("probability") is not None]
+    if probabilities:
+        item["word_confidence"] = min(probabilities)
     return item
 
 
@@ -1682,7 +1956,12 @@ def regroup_items_by_length(items, keep_segments, wrap=None,
                             min_chars=5, max_chars=40,
                             break_on_sentence_end=True,
                             max_cut_gap_sec=0.0,
-                            attach_tolerance_sec=_DEFAULT_WORD_ATTACH_TOLERANCE_SEC):
+                            attach_tolerance_sec=_DEFAULT_WORD_ATTACH_TOLERANCE_SEC,
+                            split_min_pause_sec=0.0,
+                            merge_max_pause_sec=0.0,
+                            split_max_pause_sec=0.0,
+                            split_on_phrase_boundary=False,
+                            measure=None, max_lines=0):
     out = []
     buf = []          # 現在のテロップへ積んだ単語
     buf_len = 0       # 積んだ本文の文字数 (改行記号は数えない)
@@ -1691,13 +1970,18 @@ def regroup_items_by_length(items, keep_segments, wrap=None,
     last_end = None   # 直前語の終了 (素材時間)
     cursor = 0        # keep_segments の走査位置
 
-    # 積んだ単語を 1 本のテロップとして確定する
-    def flush():
+    # 積んだ単語を 1 本のテロップとして確定する。
+    # keep に単語を残して返すと、その語は次のテロップの先頭へ繰り越される (G3)。
+    def flush(keep=0):
         nonlocal buf, buf_len, buf_item
-        item = _item_from_words(buf, wrap, buf_item)
+        carried = buf[len(buf) - keep:] if keep > 0 else []
+        head = buf[:len(buf) - keep] if keep > 0 else buf
+        item = _item_from_words(head, wrap, buf_item)
         if item is not None:
             out.append(item)
-        buf, buf_len, buf_item = [], 0, None
+        buf = list(carried)
+        buf_len = sum(len(str(w.get("text", "")).strip()) for w in buf)
+        buf_item = buf_item if buf else None
 
     for item in (items or []):
         words = item.get("words")
@@ -1719,18 +2003,35 @@ def regroup_items_by_length(items, keep_segments, wrap=None,
                 continue
             if buf:
                 # B1: 上限超過 (下限未達でも切る。上限は絶対)
-                over = buf_len + len(text) > max_chars
+                over = not _fits_within(buf_len, text, max_chars, measure, buf,
+                                        wrap=wrap, max_lines=max_lines)
                 # B4: 取り除かれた無音が長い (文脈が切れている)
-                far = (max_cut_gap_sec > 0 and last_end is not None
-                       and float(word["start"]) - last_end > max_cut_gap_sec)
+                pause = (float(word["start"]) - last_end) if last_end is not None else 0.0
+                far = max_cut_gap_sec > 0 and pause > max_cut_gap_sec
                 enough = buf_len >= min_chars
                 # B2: 別のカットへ移った (= カット頭から次のテロップが始まる)
                 crossed = cut != last_cut
                 # B3: 直前語が文末記号で終わる
                 ended = break_on_sentence_end and _ends_sentence(buf[-1])
-                # B5: 別の認識セグメントへ移った (= 別の文。間に息継ぎがある)
-                if over or far or (enough and (crossed or ended or boundary)):
-                    flush()
+                # G2: 語間 (ポーズ) で切る / 間が無いなら切らない。
+                # 人が「ここで切る」と感じる最大の手掛かりは間であり、
+                # 文字数と記号だけで切ると編集都合の区切りになる
+                # (docs/quality/resolve1.md §3.3 C2)。
+                paused = split_min_pause_sec > 0 and pause >= split_min_pause_sec
+                glued = merge_max_pause_sec > 0 and pause < merge_max_pause_sec
+                # 間が無いなら記号・カット境界でも繋ぐ (上限と B4 は絶対)
+                soft = (crossed or ended or boundary or paused) and not glued
+                # 下限文字数に達していなくても、これだけ間が空いたら必ず切る。
+                # 下限 (enough) だけで soft 系の区切りを塞ぐと、疎な発話が
+                # 「下限がたまるまで」何十秒でも 1 本に繋がってしまう
+                # (実測: 17 文字のテロップが 76.8 秒 / docs/quality/kensyou)。
+                torn = split_max_pause_sec > 0 and pause >= split_max_pause_sec
+                if over or far or torn or (enough and soft):
+                    # G3: 上限超過で切るときは文節境界まで戻す。
+                    # 単語境界で切ると文の途中で切れ、手で分割し直すことになる。
+                    keep = (_phrase_carry(buf, wrap) if over and split_on_phrase_boundary
+                            else 0)
+                    flush(keep=keep)
             if not buf:
                 buf_item = item
             buf.append(word)
@@ -1740,6 +2041,87 @@ def regroup_items_by_length(items, keep_segments, wrap=None,
             last_end = float(word["end"])
     flush()
     return out, len(out)
+
+
+# 語を足しても上限に収まるか (G5 / H1 対応)
+#
+# 物差しが無ければ従来どおり文字数で判断する。
+# 実寸の物差しがある場合は、積んだ本文へ語を足した文字列の幅で判断する。
+#
+# さらに max_lines と整形関数 (wrap) が揃っていれば、
+# **折り返した結果の行数**でも判断する (docs/quality/resolve1.md §12.4 H1)。
+# 幅の合計だけで見ると、文節境界が早く来て 1 行が短くなったときに
+# 行数が max_lines を超える (実測: 2 行指定で 3 行のテロップが出ていた)。
+#
+# 行数の判定は折り返しを実際に走らせるため、最終行に入ってからだけ行う
+# (毎語ごとに BudouX を走らせると採点より重くなる)。
+def _fits_within(buf_len, text, max_chars, measure, buf, wrap=None, max_lines=0):
+    if measure is None or measure.mode == "length":
+        if buf_len + len(text) > max_chars:
+            return False
+    else:
+        body = "".join(str(w.get("text", "")).strip() for w in buf) + text
+        if not measure.fits(body):
+            return False
+
+    if wrap is None or max_lines <= 0:
+        return True
+    body = "".join(str(w.get("text", "")).strip() for w in buf) + text
+    # 最終行に入る手前までは行数を数えない (安い幅・文字数の判定で足りる)
+    if not _near_last_line(body, measure, max_chars, max_lines):
+        return True
+    return len(str(wrap(body) or "").split("\\N")) <= max_lines
+
+
+# 最終行に入っているか (行数を実際に数えるかの判断)
+def _near_last_line(body, measure, max_chars, max_lines):
+    if max_lines <= 1:
+        return True
+    if measure is None or measure.mode == "length":
+        limit = max_chars
+        value = len(body)
+    else:
+        limit = measure.limit
+        value = measure.width(body)
+    if limit <= 0:
+        return True
+    return value > limit * (max_lines - 1) / max_lines
+
+
+# 上限超過で切るとき、次のテロップへ繰り越す単語数を返す (G3)
+#
+# 積んだ本文を BudouX で文節へ分け、最後の文節境界以降に当たる単語を繰り越す。
+# 単語列と文節列は「文字数の累積」で突き合わせる (単純かつ確実)。
+# 繰り越すと今回のテロップが空になる場合は 0 を返す (必ず 1 本は確定させる)。
+def _phrase_carry(buf, wrap=None):
+    if len(buf) < 2:
+        return 0
+    texts = [str(w.get("text", "")).strip() for w in buf]
+    body = "".join(texts)
+    if not body:
+        return 0
+    try:
+        phrases = _get_budoux_parser().parse(body)
+    except Exception:  # noqa: BLE001 (分割できなければ従来どおり単語境界で切る)
+        return 0
+    if len(phrases) < 2:
+        return 0
+    # 最後の文節の開始位置 (文字数) を求める
+    boundary = len(body) - len(phrases[-1])
+    if boundary <= 0:
+        return 0
+    # その位置以降に始まる単語を繰り越す
+    cursor = 0
+    carry = 0
+    for index, text in enumerate(texts):
+        if cursor >= boundary:
+            carry = len(texts) - index
+            break
+        cursor += len(text)
+    # 全部を繰り越す = 何も確定しないので打ち切る
+    if carry >= len(buf):
+        return 0
+    return carry
 
 
 # 詰めた軸の時刻を含むカットの番号を返す (カットの外なら None)
@@ -1835,6 +2217,21 @@ def recognize_for_timeline(context, keep_segments):
         _logger.info("音声認識エンジン無効のため字幕を作成しません")
         return [], eff_cfg
 
+    # 行の折り返しを実寸 (px) で行うための物差し (G5)。
+    # 出力プロファイルの幅から「1 行に使える幅」を決め、フォントから実寸を測る。
+    # wrap_mode="length" / フォントを読めない環境では文字数の物差しが返る。
+    canvas_width = int((profile or {}).get("width") or 0)
+    measure = build_text_measure(eff_cfg, canvas_width)
+    setter = getattr(text_source, "set_measure", None)
+    if callable(setter):
+        setter(measure)
+    # ドメイン知識 (B1)。切り抜きでは VOD のタイトル・ゲーム名を種にする (Q1)。
+    prompt_setter = getattr(text_source, "set_prompt_context", None)
+    if callable(prompt_setter):
+        prompt_setter(eff_cfg,
+                      vod_title=getattr(context, "vod_title", "") or "",
+                      vod_game=getattr(context, "vod_game", "") or "")
+
     # ── プレビューの初回再生ソース用に、残す区間の音声を連結しておく (§6.4-5)
     # 認識には使わない (認識は素材そのままに対して行う / 20260812 resolve2.md §4)。
     # 失敗してもプレビューが都度生成へ切り替わるだけなので、字幕は作り続ける。
@@ -1863,6 +2260,19 @@ def recognize_for_timeline(context, keep_segments):
         _logger.warning("テロップタイムラインが空のため字幕を作成しません")
         return [], eff_cfg
 
+    # ── 話者で絞り込む (F15 / docs/quality/resolve1.md §12.5)
+    # ゲーム内のボイス (無線通信・カットシーンの台詞) は人の声そのものなので、
+    # VAD でも音源分離でも配信者の声と分かれない (§12.3-1)。
+    # 配信者が「VOD 全体で最も長く喋る 1 人」であることを使って絞り込む。
+    # 単位を決める前に行う = ゲーム内ボイスが配信者のテロップへ混ざるのを防ぐ。
+    # モデルが無い・失敗したときは items をそのまま返すため、字幕は作り続ける。
+    timeline_items, _speaker_stats = speaker_filter.apply(
+        timeline_items, context.current_video_path(), eff_cfg, ffmpeg_cfg,
+        work_dir=getattr(context, "working_dir", None))
+    if not timeline_items:
+        _logger.warning("話者照合で字幕が 0 件になったため字幕を作成しません")
+        return [], eff_cfg
+
     # ── テロップの単位を決める (ver8 resolve6 第3部 R1' / 第2部 R1)
     # 写像より前 = 素材時間のうちに行う。でないとカット境界と単語を突き合わせられない。
     unit = subtitle_unit(eff_cfg)
@@ -1873,16 +2283,29 @@ def recognize_for_timeline(context, keep_segments):
         remove_fillers = bool(eff_cfg.get("remove_fillers", False))
         fillers = eff_cfg.get("fillers", _DEFAULT_FILLERS)
 
-        # 単語から本文を組み直すため、認識時と同じ整形 (フィラー除去＋改行) を掛ける
+        replacements = eff_cfg.get("replacements", [])
+
+        # 単語から本文を組み直すため、認識時と同じ整形 (フィラー除去＋置換＋改行) を掛ける
         def _refine(text):
             if remove_fillers:
                 text = strip_fillers(text, fillers)
-            return wrap_lines(text, min_len, max_len, engine)
+            # 置換辞書は改行より前 (B3)
+            text = apply_replacements(text, replacements)
+            return wrap_lines(text, min_len, max_len, engine, measure=measure)
 
         if unit == _SUBTITLE_UNIT_LENGTH:
             # 文字数で単位を作り直す (第3部 R1')。上限 = 1 行の上限 × 最大行数。
-            max_chars = max(max_len * int(eff_cfg.get("subtitle_max_lines", 2)), 1)
-            min_chars = max(min(min_len, max_chars), 0)
+            max_lines = int(eff_cfg.get("subtitle_max_lines", 2))
+            max_chars = max(max_len * max_lines, 1)
+            # テロップの下限は専用キーで決める (G1 / docs/quality/resolve1.md §3.4 G1)。
+            # 従来は min_line_length (改行の下限) を流用していたため、改行を短くすると
+            # テロップの下限まで下がり「認識セグメントそのまま」の細かさになっていた。
+            configured_min = eff_cfg.get("subtitle_min_chars")
+            min_chars = (int(configured_min) if configured_min not in (None, "")
+                         else min_len)
+            min_chars = max(min(min_chars, max_chars), 0)
+            # 1 本のテロップに使える幅 = 1 行の幅 × 最大行数 (G5)
+            item_measure = measure.scaled(max_lines)
             timeline_items, count = regroup_items_by_length(
                 timeline_items, keep_segments, wrap=_refine,
                 min_chars=min_chars, max_chars=max_chars,
@@ -1890,9 +2313,26 @@ def recognize_for_timeline(context, keep_segments):
                 max_cut_gap_sec=float(eff_cfg.get("merge_max_cut_gap_sec", 0.0)),
                 attach_tolerance_sec=float(eff_cfg.get(
                     "word_attach_tolerance_sec",
-                    _DEFAULT_WORD_ATTACH_TOLERANCE_SEC)))
-            _logger.info("テロップ単位を文字数で再構成: %d 件 (下限 %d / 上限 %d 文字)",
-                         count, min_chars, max_chars)
+                    _DEFAULT_WORD_ATTACH_TOLERANCE_SEC)),
+                # 間 (ポーズ) を区切りの第一信号にする (G2)
+                split_min_pause_sec=float(eff_cfg.get("split_min_pause_sec", 0.0)),
+                merge_max_pause_sec=float(eff_cfg.get("merge_max_pause_sec", 0.0)),
+                # 下限文字数に関わらず必ず切る間の上限
+                split_max_pause_sec=float(eff_cfg.get("split_max_pause_sec", 0.0)),
+                # 上限超過は文節境界まで戻して切る (G3)
+                split_on_phrase_boundary=bool(
+                    eff_cfg.get("split_on_phrase_boundary", False)),
+                measure=item_measure,
+                # 折り返した結果の行数でも上限を見る (H1 / §12.4)
+                max_lines=max_lines)
+            _logger.info(
+                "テロップ単位を再構成: %d 件 (下限 %d 文字 / 上限 %s / "
+                "間で切る %.2fs / 繋ぐ %.2fs)",
+                count, min_chars,
+                f"{item_measure.limit:.0f}px" if item_measure.mode == "width"
+                else f"{max_chars} 文字",
+                float(eff_cfg.get("split_min_pause_sec", 0.0)),
+                float(eff_cfg.get("merge_max_pause_sec", 0.0)))
         else:
             # カットごとに必ず 1 本 (第2部 R1 / 旧挙動への退路)
             timeline_items, added = split_items_by_keep_segments(
@@ -1936,10 +2376,16 @@ def recognize_for_timeline(context, keep_segments):
     )
 
     # 編集画面が扱う item 形式へ揃える (初期値は全件使用・役割は配信者)
-    items = [
-        {"start": e["start"], "end": e["end"], "text": e["text"],
-         "use": True, "role": _DEFAULT_ROLE, "font": "", "font_size": None}
-        for e in timeline_items
-    ]
+    # 信頼度は取れたものだけ載せる (B2)。編集画面の色分けと、
+    # 「無修正テロップ率」の計測 (§6.1) に使う。
+    items = []
+    for e in timeline_items:
+        item = {"start": e["start"], "end": e["end"], "text": e["text"],
+                "use": True, "role": _DEFAULT_ROLE, "font": "", "font_size": None}
+        for key in ("confidence", "word_confidence", "no_speech_prob",
+                    "speaker_score", "speaker_other"):
+            if e.get(key) is not None:
+                item[key] = e[key]
+        items.append(item)
     _logger.info("音声認識完了 (Timeline 用 %d 件)", len(items))
     return items, eff_cfg

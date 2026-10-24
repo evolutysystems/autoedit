@@ -126,7 +126,7 @@ class NormalizerDiskErrorTest(unittest.TestCase):
         settings = {"loudness": {"enabled": True, "two_pass": False}}
         with mock.patch.object(loudness_normalizer, "has_audio_stream", return_value=True), \
                 mock.patch("src.modules.ffmpeg_runner.probe_duration", return_value=10.0), \
-                mock.patch("src.modules.ffmpeg_runner.execute",
+                mock.patch("src.modules.ffmpeg_runner.execute_capture",
                            side_effect=DiskSpaceError("空き容量が足りません")):
             with self.assertRaises(DiskSpaceError):
                 loudness_normalizer.normalize_file("in.mp4", self.out, settings)
@@ -136,7 +136,7 @@ class NormalizerDiskErrorTest(unittest.TestCase):
         settings = {"loudness": {"enabled": True, "two_pass": False}}
         with mock.patch.object(loudness_normalizer, "has_audio_stream", return_value=True), \
                 mock.patch("src.modules.ffmpeg_runner.probe_duration", return_value=10.0), \
-                mock.patch("src.modules.ffmpeg_runner.execute",
+                mock.patch("src.modules.ffmpeg_runner.execute_capture",
                            side_effect=FFmpegError("別の失敗")):
             result = loudness_normalizer.normalize_file("in.mp4", self.out, settings)
         self.assertEqual(result, "in.mp4")

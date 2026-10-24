@@ -354,6 +354,8 @@ class TimelineEditorDialog(QDialog):
         # 編集
         bind("split", lambda: self.controller.split_at_playhead())
         bind("split_alt", lambda: self.controller.split_at_playhead())
+        # 選択した字幕を 1 本へ結合する (G4 / docs/quality/resolve1.md §3.4 G4)
+        bind("merge_subtitles", self._merge_subtitles)
         bind("ripple_trim_before", self._ripple_trim_before)
         bind("ripple_trim_after", self._ripple_trim_after)
         # 削除 (3 種)
@@ -410,6 +412,21 @@ class TimelineEditorDialog(QDialog):
         self.controller.delete_selected(ripple=False)
 
     # A: 再生ヘッドより前をリップル削除
+    # 選択した字幕を 1 本へ結合する (G4)
+    # 字幕以外や 1 件だけの選択では何もしない (状態表示で知らせる)。
+    def _merge_subtitles(self):
+        from ...timeline.model import SubtitleClip  # noqa: PLC0415 (循環 import 回避)
+
+        timeline = self.controller.timeline
+        ids = [clip_id for clip_id in self.controller.selected_ids()
+               if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)]
+        if len(ids) < 2:
+            self.preview.set_status(tr("結合できるテロップが 2 件以上必要です"))
+            return
+        if self.controller.merge_subtitles(ids):
+            self.preview.set_status(
+                tr("{count} 件のテロップを結合しました", count=len(ids)))
+
     def _ripple_trim_before(self):
         self._run_ripple_trim("before")
 

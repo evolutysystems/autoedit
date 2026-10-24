@@ -7,7 +7,7 @@ from ..exceptions import DiskSpaceError, InputError
 from ..i18n import tr
 from ..utils import disk
 from ..utils.logger import get_logger
-from . import ffmpeg_runner, watermark_overlay
+from . import ffmpeg_runner, loudness_normalizer, watermark_overlay
 
 _logger = get_logger(__name__)
 
@@ -129,7 +129,25 @@ def run(context):
     video_path = context.current_video_path()
     disk.ensure_free(os.path.dirname(os.path.abspath(output_path)),
                      _size_or_zero(video_path), label="出力先")
-    final = finalize(_ensure_watermark(context), output_path)
+    final = finalize(_verify_loudness(context, _ensure_watermark(context)), output_path)
     context.output_path = final
     _logger.info("出力完了: %s", final)
     return final
+
+
+# 最終成果物のラウドネスを測り、目標から外れていれば補正する
+# (F10 / docs/quality/resolve1.md §4.3 F10)。
+# 正規化は「本編の素材」に掛けるため、無音カット・OP/ED 結合・オーバーレイを
+# 通した最終出力は従来一度も測られていなかった。
+# 測定・補正の失敗で成果物を失わないよう、必ず有効なパスを返す。
+def _verify_loudness(context, video_path):
+    try:
+        corrected = context.allocate_intermediate("loudness_verified.mp4")
+        return loudness_normalizer.verify_and_correct(
+            video_path, corrected, context.settings,
+            on_progress=context.progress_subcallback("音量の最終確認"))
+    except DiskSpaceError:
+        raise      # 容量不足は継続しない (resolve.md §6-9)
+    except Exception:  # noqa: BLE001 (確認・補正の失敗で成果物を失わない)
+        _logger.exception("最終出力の音量確認に失敗 (そのまま出力します)")
+        return video_path

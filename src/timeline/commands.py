@@ -273,11 +273,22 @@ def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05):
         return None
 
     if isinstance(clip, SubtitleClip):
+        # 本文の分割は「尺を変える前」に決める (docs/quality/resolve1.md §3.4 G4)。
+        # 単語列が無いクリップは尺の比率で按分するため、先に duration を縮めると
+        # 比率が常に 1.0 になり本文が分かれない。
+        head_text, tail_text = split_subtitle_text(clip, at_sec)
         new_clip = clip.copy()
         new_clip.id = timeline.next_id("s")
         new_clip.timeline_start = at_sec
         new_clip.duration = clip.duration - offset
         clip.duration = offset
+        # 従来は copy() のまま尺だけ割っていたため、両方のクリップに全文が入り
+        # 利用者が両方の本文を手で削る必要があった。
+        if head_text is not None:
+            clip.text = head_text
+            new_clip.text = tail_text
+            # 分けた側の単語列も分ける (次の分割でも語の境界で切れるように)
+            _split_origin_words(clip, new_clip, at_sec)
         track.clips.append(new_clip)
         return new_clip
 
@@ -301,6 +312,65 @@ def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05):
             new_audio.link_clip = new_clip.id
             audio_track.clips.append(new_audio)
     return new_clip
+
+
+# 字幕の本文を再生ヘッド位置で 2 つへ分ける (G4 / docs/quality/resolve1.md §3.4 G4)
+#
+# origin["words"] に単語の時刻があれば、その境界で分ける (= 発話どおりに分かれる)。
+# 単語列が無い (手入力したテロップ・古いプロジェクト) ときは文字数で按分する。
+# 分けられない (本文が空・片側が空になる) ときは (None, None) を返し、
+# 呼び出し側は従来どおり本文を複製する。
+# 戻り値: (前半の本文, 後半の本文) / 分けられなければ (None, None)
+def split_subtitle_text(clip, at_sec):
+    body = str(getattr(clip, "text", "") or "")
+    plain = body.replace("\\N", "")
+    if not plain:
+        return None, None
+
+    words = (getattr(clip, "origin", None) or {}).get("words")
+    cut = None
+    if words:
+        cut = _char_index_from_words(words, clip, at_sec, plain)
+    if cut is None:
+        # 単語列が無い: 尺の比率で文字数を按分する
+        ratio = (float(at_sec) - float(clip.timeline_start)) / float(clip.duration or 1.0)
+        cut = int(round(min(max(ratio, 0.0), 1.0) * len(plain)))
+    if cut <= 0 or cut >= len(plain):
+        return None, None
+    return plain[:cut].strip(), plain[cut:].strip()
+
+
+# 単語の時刻から「本文の何文字目で切るか」を求める (G4)
+# 単語列と本文は同じ語から作られているため、文字数の累積で突き合わせられる。
+# 本文が手で書き換えられている場合は長さが合わないので None を返す (按分へ落ちる)。
+def _char_index_from_words(words, clip, at_sec, plain):
+    joined = "".join(str(w.get("text", "")) for w in words).strip()
+    if len(joined) != len(plain):
+        return None
+    # origin["words"] は素材時間。clip 側は Timeline 時間なので、
+    # 「先頭語からの相対位置」で突き合わせる (どちらも同じ発話の並びのため)。
+    first = float(words[0]["start"])
+    offset = float(at_sec) - float(clip.timeline_start)
+    target = first + offset
+    cursor = 0
+    for word in words:
+        if float(word["start"]) >= target:
+            return cursor
+        cursor += len(str(word.get("text", "")))
+    return None
+
+
+# 分割した 2 つのクリップへ単語列を振り分ける (G4)
+def _split_origin_words(head, tail, at_sec):
+    words = (getattr(head, "origin", None) or {}).get("words")
+    if not words:
+        return
+    first = float(words[0]["start"])
+    target = first + (float(at_sec) - float(head.timeline_start))
+    head_words = [w for w in words if float(w["start"]) < target]
+    tail_words = [w for w in words if float(w["start"]) >= target]
+    head.origin = {**head.origin, "words": head_words}
+    tail.origin = {**tail.origin, "words": tail_words}
 
 
 # ------------------------------------------------------------------
@@ -1393,6 +1463,83 @@ class EditSubtitles(Command):
                     setattr(clip, key, value)
                     changed = True
         return changed
+
+
+# 選択した字幕を 1 本へ結合する (G4 / docs/quality/resolve1.md §3.4 G4)
+#
+# 従来は結合コマンドが無く、2 本を 1 本にするには
+#   片方を削除 → 残りを伸ばす → 本文を打ち直す
+# という手順を踏む必要があった。要望の「テロップを結合する作業」はここが主因。
+#
+# 規約:
+#   ・時刻 = 最初の timeline_start 〜 最後の timeline_end
+#   ・本文 = 時間順に連結し、改行は呼び出し側の整形関数 (wrap) で引き直す
+#   ・役割・色・フォントは先頭クリップのものを採用する
+#   ・origin は先頭のものを引き継ぎ、merged_from に元 ID を残す
+# wrap: 本文の整形関数 (省略時は連結のみ)。
+class MergeSubtitles(Command):
+
+    def __init__(self, clip_ids, wrap=None):
+        self._clip_ids = [i for i in (clip_ids or []) if i]
+        self._wrap = wrap
+        self.label = tr("テロップの結合")
+
+    def apply(self, timeline):
+        clips = []
+        for clip_id in self._clip_ids:
+            clip = timeline.clip_by_id(clip_id)
+            if isinstance(clip, SubtitleClip):
+                clips.append(clip)
+        if len(clips) < 2:
+            return False
+        # 同じトラックのものだけを結合する (役割をまたぐ結合は意味が定まらない)
+        track = timeline.track_of_clip(clips[0].id)
+        if track is None or track.locked:
+            return False
+        clips = [c for c in clips if timeline.track_of_clip(c.id) is track]
+        if len(clips) < 2:
+            return False
+
+        clips.sort(key=lambda c: c.timeline_start)
+        head, rest = clips[0], clips[1:]
+        start = clips[0].timeline_start
+        end = max(c.timeline_end for c in clips)
+        body = "".join(str(c.text or "").replace("\\N", "") for c in clips)
+
+        head.timeline_start = start
+        head.duration = end - start
+        head.text = self._wrap(body) if self._wrap else body
+        # 単語列も時間順に連ねる (以降の分割でも語の境界で切れるように)
+        words = []
+        for clip in clips:
+            words.extend((getattr(clip, "origin", None) or {}).get("words") or [])
+        origin = {**(head.origin or {}), "merged_from": [c.id for c in clips]}
+        if words:
+            origin["words"] = sorted(words, key=lambda w: float(w["start"]))
+        head.origin = origin
+
+        for clip in rest:
+            track.remove_clip(clip.id)
+        return True
+
+
+# 字幕を再生ヘッド位置で 2 本へ分ける (G4)
+# 本文も分けるため、分割後に両方の本文を手で削る必要がない。
+class SplitSubtitle(Command):
+
+    def __init__(self, clip_id, at_sec, min_clip_sec=0.05):
+        self._clip_id = clip_id
+        self._at_sec = float(at_sec)
+        self._min_clip_sec = float(min_clip_sec)
+        self.label = tr("テロップの分割")
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        track = timeline.track_of_clip(self._clip_id)
+        if not isinstance(clip, SubtitleClip) or track is None or track.locked:
+            return False
+        return split_clip_at(timeline, track, clip, self._at_sec,
+                             self._min_clip_sec) is not None
 
 
 # 時刻を含む区間の番号を返す (区間の外なら None / ver8 resolve6)

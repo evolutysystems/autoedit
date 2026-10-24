@@ -40,7 +40,12 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
     # コメントをセルへ集計し、急増ボーナス(平均コメント数/分)を有効化する (R3 / resolve17 §4.4.1)。
     # コメント未取得なら comment_spike=False のまま = 従来どおり音声のみ採点で完走する。
     if comments:
-        comment_source.aggregate_into_cells(comments, cells, cell_sec)
+        comment_cfg = cfg["comment"]
+        comment_source.aggregate_into_cells(
+            comments, cells, cell_sec,
+            # 日本語の笑い表現と笑いエモートも数える (docs/quality/resolve1.md §2.3 F4)
+            laugh_words=comment_cfg.get("laugh_words"),
+            laugh_emotes=comment_cfg.get("laugh_emotes"))
         cfg["avg_comments_per_min"] = comment_source.average_comments_per_min(comments, duration)
         cfg["comment_spike"] = True
         _logger.info("コメント集計: %d件 / 平均%.2f件/分",

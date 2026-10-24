@@ -48,6 +48,9 @@ def method_a_config(settings):
         "weights": method_a.get("weights", {"emotion": 0.55, "comment": 0.45}),
         "emotion_points": method_a.get("emotion_points", {"loud": 10, "long_silence": -8}),
         "comment": method_a.get("comment", {"w_point_per_char": 1, "rate_spike_bonus": 10}),
+        # コメント未取得時に重みを 0..100 へ正規化する (docs/quality/resolve1.md §2.3 F4)。
+        # 従来は comment=0 のまま total = emotion * 0.55 となり満点が 55 点だった。
+        "normalize_weights": bool(method_a.get("normalize_weights", True)),
         # 急増ボーナスの有効化と平均コメント数/分は pipeline がコメント取得時に上書きする
         # (未取得なら False/0 のまま = ボーナス無効 = 従来どおり音声のみ採点)。
         "comment_spike": False,
@@ -251,6 +254,15 @@ def clip_pipeline_config(settings):
         "volume_dialog": bool(pipe.get("volume_dialog", False)),
         # true=Timeline 編集画面 / false=従来の一括結果画面 (ver3 resolve5 §7)
         "timeline_review": bool(pipe.get("timeline_review", True)),
+        # カット閾値をどの範囲で決めるか (docs/quality/resolve1.md §2.3 F7)
+        #   "per_clip" : クリップごとに測り直す (従来)。クリップ間で揃わない
+        #   "vod"      : VOD 全体で 1 回測り、全クリップへ同じ閾値を使う
+        #   "saved"    : volume_analysis.last_cut_db を固定で使う
+        "cut_db_scope": str(pipe.get("cut_db_scope", "per_clip") or "per_clip"),
+        # ラウドネス正規化をどの範囲で行うか (§4.3 F9)
+        #   "per_clip" : クリップごとに -14 LUFS へ揃える (従来)。山場が潰れる
+        #   "vod"      : VOD 全体で 1 回測ったゲインを全クリップへ適用する
+        "loudness_scope": str(pipe.get("loudness_scope", "per_clip") or "per_clip"),
     }
 
 
@@ -309,6 +321,8 @@ def intro_card_config(settings):
     return {
         "enabled": bool(card.get("enabled", True)),
         "buffer_sec": float(card.get("buffer_sec", 1.5)),
+        # 本編に掛けた正規化ゲインをイントロへも適用する (F8)
+        "match_body_level": bool(card.get("match_body_level", True)),
         "blur_sigma": float(card.get("blur_sigma", 18)),
         "margin_top_px": int(card.get("margin_top_px", 300)),
         "margin_bottom_px": int(card.get("margin_bottom_px", 300)),
