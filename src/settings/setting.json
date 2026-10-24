@@ -1,4 +1,4 @@
-{
+﻿{
     "general": {
         "video_directory": "",
         "opening_video": "",
@@ -133,7 +133,7 @@
         "last_cut_db": -20
     },
     "loudness": {
-        "enabled": false,
+        "enabled": true,
         "target_i": -14.0,
         "target_tp": -1.5,
         "target_lra": 11.0,
