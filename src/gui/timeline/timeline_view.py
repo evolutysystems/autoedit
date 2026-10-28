@@ -8,13 +8,14 @@ import math
 import os
 
 from PySide6.QtCore import QLine, QPoint, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSlider,
     QApplication,
     QHBoxLayout,
     QLabel,
     QMenu,
+    QMessageBox,
     QPushButton,
     QScrollBar,
     QVBoxLayout,
@@ -36,6 +37,13 @@ from ...timeline.model import (
 from ...utils.logger import get_logger
 
 _logger = get_logger(__name__)
+
+# numpy があれば波形を QImage へ一括で描く (ver9 resolve9 対策B)。
+# 無い環境では従来の QLine 経路へ落ちるだけで、出る画素は変わらない。
+try:
+    import numpy as _np
+except ImportError:  # pragma: no cover (実行環境依存)
+    _np = None
 
 # ルーラの目盛り候補 (秒)。ズームに応じてラベルが詰まらない最小の刻みを選ぶ (§6.7)。
 _TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
@@ -72,6 +80,10 @@ _COLOR_SELECTED_BORDER = QColor(255, 214, 92)   # 選択枠 (琥珀。赤にす�
 _WAVE_MIN_PX = 4
 # 波形に RMS を重ねる最小の幅 (px)。これより細いと重なって見分けが付かない
 _WAVE_RMS_MIN_PX = 24
+# 波形を QImage で描く最小の列数 (ver9 resolve9 対策B)。
+# これを下回ると QImage の組み立て費用が QLine を立てる費用を上回る
+# (実測の損益分岐は 12〜16 列。無音カット後は細いクリップが大量に並ぶため効く)。
+_WAVE_IMAGE_MIN_COLUMNS = 16
 _COLOR_PLAYHEAD = QColor(232, 84, 84)           # 再生ヘッド (位置を示す機能色)
 # プロキシのレンダ済みバー (ver6 resolve3 §3.5)。
 # 実線 = 出力と同じ絵が在る / 薄い点滅 = 生成中。
@@ -173,6 +185,15 @@ def build_rows(timeline, cfg):
         rows.append({"track": track, "y": y, "height": height})
         y += height
     return rows
+
+
+# 座標 (y) にあるトラック行を返す (トラックの外なら None)
+# ヘッダとビューで同じ規約を使うため関数へ出す。
+def row_at_y(timeline, cfg, y):
+    for row in build_rows(timeline, cfg):
+        if row["y"] <= y < row["y"] + row["height"]:
+            return row
+    return None
 
 
 # ==================================================================
@@ -320,6 +341,9 @@ def _pick_tick_step(zoom_px_per_sec, min_label_px):
 
 class TrackHeaderWidget(QWidget):
 
+    # 操作の結果をプレビュー下のステータスへ出す (TimelineView と同じ経路へ流す)
+    status_message = Signal(str)
+
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self._controller = controller
@@ -345,6 +369,52 @@ class TrackHeaderWidget(QWidget):
         rows = build_rows(self._controller.timeline, self._controller.cfg)
         return rows[-1]["y"] + rows[-1]["height"] if rows else 0
 
+    def _row_at_pos(self, pos):
+        return row_at_y(self._controller.timeline, self._controller.cfg, pos.y())
+
+    # ヘッダの右クリック (ver9 要望)。増やしたテロップトラックだけ削除できる。
+    # 既定トラックとコメント用トラックでは項目を出さない (消すと置き場が無くなる)。
+    def contextMenuEvent(self, event):
+        row = self._row_at_pos(event.pos())
+        if row is None:
+            return
+        track = row["track"]
+        if not self._controller.can_remove_subtitle_track(track.id):
+            return
+        menu = QMenu(self)
+        menu.addAction(tr("テロップトラック {track} を削除", track=track.id),
+                       lambda: self._remove_track(track.id))
+        menu.exec(event.globalPos())
+
+    # トラックを削除する。テロップが載っているときだけ確認を取る (ver9 要望)
+    def _remove_track(self, track_id):
+        track = self._controller.timeline.track_by_id(track_id)
+        if track is None:
+            return
+        count = len(track.clips)
+        if count and not self._confirm_remove(track_id, count):
+            return
+        result = self._controller.remove_subtitle_track(track_id)
+        if not result["changed"]:
+            self.status_message.emit(tr("このトラックは削除できません"))
+            return
+        self.status_message.emit(
+            tr("テロップトラック {track} を削除しました", track=track_id)
+            if not result["clips"] else
+            tr("テロップトラック {track} をテロップ {count} 件ごと削除しました",
+               track=track_id, count=result["clips"]))
+
+    # 削除の確認 (テロップごと消えることを明示する)
+    def _confirm_remove(self, track_id, count):
+        answer = QMessageBox.question(
+            self, tr("テロップトラックの削除"),
+            tr("{track} にはテロップが {count} 件あります。\n"
+               "トラックごと削除しますか？\n\n"
+               "削除してもすぐに Ctrl+Z で元に戻せます。",
+               track=track_id, count=count),
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        return answer == QMessageBox.Yes
+
 
 # ==================================================================
 # Timeline 本体
@@ -368,6 +438,9 @@ class TimelineView(QWidget):
         self._drag_preview = None          # ドラッグ中の仮位置 (確定まで模型には触らない)
         self._press_pos = QPoint()         # 押した座標 (クリック/ドラッグの判定に使う)
         self._drag_moved = False           # しきい値を超えて実際に動かしたか
+        # テロップのトラック間ドラッグ (ver9 要望)。移動元と、いま重ねている移動先。
+        self._drag_source_track_id = None
+        self._drag_track_id = None
         # クリップのアウトラインの太さ (ver3 resolve4 E5)。
         # 長尺では 1,000 個超のクリップを毎フレーム描くため、設定の解決は 1 度だけ行う。
         ui_cfg = controller.cfg["ui"]
@@ -377,6 +450,10 @@ class TimelineView(QWidget):
         wave_cfg = controller.cfg["waveform"]
         self._waveform_scale = wave_cfg["scale"]
         self._waveform_db_floor = abs(float(wave_cfg["db_floor"])) or 48.0
+        # ドラッグ中は波形を省く (ver9 resolve7 対策A)
+        self._waveform_hide_while_dragging = bool(wave_cfg["hide_while_dragging"])
+        # 波形の描き方 (ver9 resolve9 対策B)。"image" = QImage へ一括 / "lines" = 従来
+        self._waveform_draw_mode = wave_cfg["draw_mode"]
         self._waveform = WaveformCache(controller.settings, controller.cfg, parent=self)
         self._waveform.changed.connect(self.update)
         self.setMouseTracking(True)
@@ -440,9 +517,15 @@ class TimelineView(QWidget):
         painter.fillRect(rect, _row_color(index))
         painter.setPen(QPen(_grid_color()))
         painter.drawLine(0, rect.bottom(), self.width(), rect.bottom())
+        # トラック間ドラッグ中は受け皿の行を枠で示す (ver9 要望)
+        if (self._dragging_across_tracks() is not None
+                and track.id == self._drag_track_id):
+            painter.setPen(QPen(_COLOR_SELECTED_BORDER, 2))
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(rect.adjusted(1, 1, -2, -2))
 
         selected = set(self._controller.selected_ids())
-        for clip in track.clips:
+        for clip in self._row_clips(track):
             span = self._clip_span(timeline, clip)
             if span is None:
                 continue
@@ -501,6 +584,13 @@ class TimelineView(QWidget):
     # 音声クリップの背景へ波形を敷く (DaVinci Resolve と同じ、緑地に明るい波形)。
     # 波形は素材内の時刻で引くため、クリップを動かしても切っても中身がずれない。
     def _paint_waveform(self, painter, clip, rect, color):
+        # ドラッグ中は描かない (ver9 resolve7 対策A)。
+        #
+        # 掴んでいる間はマウスを動かすたびに画面全体を描き直すため、ここが
+        # 1 回の描画時間の半分以上を占めていた (実測 14.5ms のうち 6〜17ms)。
+        # 省くと 2〜3 倍速くなり、離した時点で元どおり描かれる。
+        if self._waveform_hide_while_dragging and self._drag != _DRAG_NONE:
+            return
         timeline = self._controller.timeline
         video = timeline.clip_by_id(clip.link_clip)
         if video is None:
@@ -550,7 +640,18 @@ class TimelineView(QWidget):
             painter.setOpacity(1.0)
 
     # 列ごとの音量 (0.0〜1.0) を中心線から上下対称に立てる
+    #
+    # 既定では画素を numpy で組んで QImage を 1 回貼る (ver9 resolve9 対策B)。
+    # 1 列ずつ QLine を立てる作りでは、描画時間の半分以上を波形が占めていた
+    # (resolve7 §2.1。1600 列で実測 2.3〜4.5ms)。波形は「1 列 = 幅 1px の縦線」
+    # なので、その画素をそのまま置けば見え方を変えずに 4〜12 倍速くなる
+    # (同条件で 0.36〜0.57ms / 1px も変わらないことを libass 抜きの描画で確認)。
+    # numpy が無い環境・細いクリップ・設定 "lines" では従来の経路へ落ちる。
     def _draw_wave_lines(self, painter, values, left, center, half, color, gain=1.0):
+        if (self._waveform_draw_mode == "image" and _np is not None
+                and len(values) >= _WAVE_IMAGE_MIN_COLUMNS):
+            self._draw_wave_image(painter, values, left, center, half, color, gain)
+            return
         log_scale = self._waveform_scale == "log"
         floor_db = self._waveform_db_floor
         lines = []
@@ -574,6 +675,38 @@ class TimelineView(QWidget):
         if lines:
             painter.setPen(QPen(color))
             painter.drawLines(lines)
+
+    # 波形 1 本ぶんの画素を numpy で組み、QImage を 1 回貼る (ver9 resolve9 対策B)
+    #
+    # 高さ・上下の丸め・無音時の中心線は _draw_wave_lines と同じ規則で求めるため、
+    # 出る画素は従来と一致する (画面の拡大率が 1 以外でも、1 列 = 1 論理 px のまま
+    # QImage を貼るので従来の 1px ペンと同じ太さになる)。
+    def _draw_wave_image(self, painter, values, left, center, half, color, gain):
+        levels = _np.asarray(values, dtype=_np.float64) * gain
+        if self._waveform_scale == "log":
+            # dB 目盛り。底 (db_floor) 以下は高さ 0 にする
+            levels = _np.where(
+                levels <= 1e-6, 0.0,
+                1.0 + (20.0 * _np.log10(_np.maximum(levels, 1e-30)))
+                / self._waveform_db_floor)
+        # gain を上げた分がトラックからはみ出さないよう、必ず 0〜1 へ収める
+        _np.clip(levels, 0.0, 1.0, out=levels)
+        offsets = levels * half
+        tops = _np.rint(center - offsets).astype(_np.int64)
+        bottoms = _np.rint(center + offsets).astype(_np.int64)
+        # 無音でも中心線は残す (クリップの存在が分かる)
+        _np.maximum(bottoms, tops + 1, out=bottoms)
+        top = int(tops.min())
+        height = int(bottoms.max()) - top + 1
+        # 行 (画面 y) × 列 を一度に塗り分ける。帯の内側だけを不透明にする。
+        rows = _np.arange(height, dtype=_np.int64)[:, None] + top
+        inside = (rows >= tops[None, :]) & (rows <= bottoms[None, :])
+        pixels = _np.zeros((height, levels.size), dtype=_np.uint32)
+        pixels[inside] = ((color.alpha() << 24) | (color.red() << 16)
+                          | (color.green() << 8) | color.blue())
+        # QImage は渡したバッファを複写しないため、drawImage まで pixels を保持する
+        image = QImage(pixels.data, int(levels.size), height, QImage.Format_ARGB32)
+        painter.drawImage(left, top, image)
 
     # 走っている波形デコードを止める (画面を閉じるとき)
     def shutdown(self):
@@ -652,12 +785,8 @@ class TimelineView(QWidget):
     # ヒットテスト
     # ------------------------------------------------------------------
 
-    # 座標にあるトラック行を返す (トラックの外なら None)
     def _row_at_pos(self, pos):
-        for row in build_rows(self._controller.timeline, self._controller.cfg):
-            if row["y"] <= pos.y() < row["y"] + row["height"]:
-                return row
-        return None
+        return row_at_y(self._controller.timeline, self._controller.cfg, pos.y())
 
     # 座標にあるクリップとトラックを返す ((clip, track, row) / 無ければ None)
     def clip_at_pos(self, pos):
@@ -741,6 +870,9 @@ class TimelineView(QWidget):
         self._drag_anchor_sec = self.x_to_sec(pos.x())
         self._drag_origin = span[0]
         self._drag_preview = {"id": target.id, "start": span[0], "duration": span[1]}
+        # ドロップ先の初期値は掴んだトラック自身 (ver9 要望)
+        self._drag_source_track_id = track.id
+        self._drag_track_id = track.id
         # 押した位置を覚え、しきい値を超えるまでは「クリック」として扱う (§6-1)
         self._press_pos = pos
         self._drag_moved = False
@@ -779,6 +911,8 @@ class TimelineView(QWidget):
         sec = raw_sec if no_snap else self._snap(raw_sec, exclude_id=clip.id)
 
         if self._drag == _DRAG_MOVE:
+            # 縦に動かしたら移せるテロップトラックを探す (ver9 要望)
+            self._update_drop_track(clip, pos)
             delta = raw_sec - self._drag_anchor_sec
             desired = max(self._drag_origin + delta, 0.0)
             # 先頭・末尾の両方で吸着を試す (R2)
@@ -802,10 +936,14 @@ class TimelineView(QWidget):
         clip_id = self._drag_clip_id
         preview = self._drag_preview
         moved = self._drag_moved
+        source_track_id = self._drag_source_track_id
+        drop_track_id = self._drag_track_id
         self._drag = _DRAG_NONE
         self._drag_clip_id = None
         self._drag_preview = None
         self._drag_moved = False
+        self._drag_source_track_id = None
+        self._drag_track_id = None
 
         if drag == _DRAG_PLAYHEAD or clip_id is None or preview is None:
             self._controller.end_scrub()
@@ -821,7 +959,12 @@ class TimelineView(QWidget):
 
         # ドラッグ確定時に 1 回だけコマンドを積む (ドラッグ中は履歴を汚さない)
         if drag == _DRAG_MOVE:
-            self._controller.move_clip(clip_id, preview["start"])
+            # 別のテロップトラックへ落とした場合はトラックごと移す (ver9 要望)
+            if (drop_track_id and source_track_id
+                    and drop_track_id != source_track_id):
+                self._drop_on_track(clip_id, drop_track_id, preview["start"])
+            else:
+                self._controller.move_clip(clip_id, preview["start"])
         elif drag == _DRAG_TRIM_LEFT:
             self._controller.trim_clip(clip_id, commands.EDGE_LEFT, preview["start"])
         else:
@@ -841,6 +984,67 @@ class TimelineView(QWidget):
             self.setCursor(Qt.SizeHorCursor)
         else:
             self.unsetCursor()
+
+    # ------------------------------------------------------------------
+    # テロップのトラック間ドラッグ (ver9 要望)
+    # ------------------------------------------------------------------
+
+    # いま重ねている行を見てドロップ先トラックを更新する
+    # 受けられない行 (映像・音声・ロック中・役割違い) の上では直前の受け皿を保つ。
+    # こうしないと、縦に大きく動かした瞬間にドロップ先が消えて元へ戻ってしまう。
+    def _update_drop_track(self, clip, pos):
+        if self._drag_source_track_id is None or not isinstance(clip, SubtitleClip):
+            return
+        row = self._row_at_pos(pos)
+        if row is None:
+            return
+        if self._can_drop_subtitle(clip, row["track"]):
+            self._drag_track_id = row["track"].id
+
+    # そのトラックへこのテロップを落とせるか
+    # コメント役割はアイコン・背景が付く専用トラックに留め、通常テロップは
+    # コメント用トラックへ入れない (そのトラックで足した字幕はコメントになる
+    # 規約 / _role_for_track と食い違わせないため)。
+    def _can_drop_subtitle(self, clip, track):
+        cfg = self._controller.cfg["subtitle_tracks"]
+        if not cfg["drag_between_tracks"]:
+            return False
+        if not track.is_subtitle() or track.locked:
+            return False
+        if not cfg["role_track_enabled"]:
+            return True
+        is_comment_track = track.id == cfg["comment_track_id"]
+        return is_comment_track == (str(clip.role or "") == ROLE_COMMENT)
+
+    # ドロップを確定する。移せなければ理由を状態表示へ出す。
+    def _drop_on_track(self, clip_id, track_id, start):
+        if self._controller.move_subtitle_to_track(clip_id, track_id, start):
+            self.status_message.emit(
+                tr("テロップを {track} へ移しました", track=track_id))
+            return
+        # 移動先が同じ・ロック中など (重なりは空きへ寄せるためここには来ない)
+        self.status_message.emit(tr("このトラックへは移せませんでした"))
+
+    # ドラッグで別トラックへ移そうとしているクリップ ID (無ければ None)
+    # 描画をこれで切り替え、掴んだ行から消して移動先の行へ出す。
+    def _dragging_across_tracks(self):
+        if (self._drag != _DRAG_MOVE or not self._drag_moved
+                or not self._drag_track_id or not self._drag_source_track_id
+                or self._drag_track_id == self._drag_source_track_id):
+            return None
+        return self._drag_clip_id
+
+    # その行に描くクリップ (トラック間ドラッグ中は移動先の行へ描く)
+    def _row_clips(self, track):
+        moving_id = self._dragging_across_tracks()
+        if moving_id is None:
+            return track.clips
+        clips = [c for c in track.clips if c.id != moving_id]
+        if track.id == self._drag_track_id:
+            clip = self._controller.timeline.clip_by_id(moving_id)
+            if clip is not None:
+                clips.append(clip)
+        return clips
 
     # ドラッグ中の吸着 (編集点・再生ヘッド・先頭/末尾 / resolve2 §5.2)
     # 計算そのものは Controller に集約してある (クリップドラッグと再生ヘッドで共有)。
@@ -952,6 +1156,8 @@ class TimelineView(QWidget):
                        lambda: self._controller.set_clip_enabled(clip.id, not used))
         # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
         self._add_align_actions(menu, clip)
+        # 新しいテロップトラックへ移す (ver9 resolve2 §R1)
+        self._add_subtitle_track_actions(menu, clip)
         # クリップ単位のぼかし (ver5 resolve7 §5.9)。機能 OFF なら何も足さない。
         self._add_blur_actions(menu, clip, track)
         # 縦動画プロジェクトの作成 (ver5 resolve9 §5.9)。対象外なら何も足さない。
@@ -962,15 +1168,11 @@ class TimelineView(QWidget):
     def _add_align_actions(self, menu, clip):
         if not isinstance(clip, SubtitleClip):
             return
-        timeline = self._controller.timeline
-        ids = [
-            clip_id for clip_id in self._controller.selected_ids()
-            if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)
-        ] or [clip.id]
+        ids = self._selected_subtitle_ids(clip)
         menu.addSeparator()
         # テロップの結合 / 分割 (G4 / docs/quality/resolve1.md §3.4 G4)。
         # 結合コマンドが無かったため、2 本を 1 本にするには削除 → 伸ばす →
-        # 打ち直す手順が必要だった。分割は本文を複製していた。
+        # 打ち直す手順が必要だった。分割は本文を複製する (ver9 要望で既定に戻した)。
         merge = menu.addAction(
             tr("テロップの結合\tCtrl+M") if len(ids) <= 2
             else tr("選んだ {count} 件のテロップを結合\tCtrl+M", count=len(ids)),
@@ -985,6 +1187,55 @@ class TimelineView(QWidget):
         menu.addAction(tr("すべての字幕をカット頭へ揃える"),
                        lambda: self._align_subtitles(None))
 
+    # 「新規テロップトラックへ移動」をメニューへ足す (ver9 resolve2 §R1)
+    # 字幕以外では何も足さない。設定で OFF のときも足さない (§R11)。
+    def _add_subtitle_track_actions(self, menu, clip):
+        if not isinstance(clip, SubtitleClip):
+            return
+        cfg = self._controller.cfg["subtitle_tracks"]
+        if not cfg["new_track_enabled"]:
+            return
+        ids = (self._selected_subtitle_ids(clip)
+               if cfg["new_track_moves_selection"] else [clip.id])
+        menu.addSeparator()
+        label = (tr("新規テロップトラックへ移動") if len(ids) <= 1
+                 else tr("選んだ {count} 件を新規テロップトラックへ移動", count=len(ids)))
+        action = menu.addAction(label, lambda: self._move_to_new_subtitle_track(ids))
+        # 上限に達していたら押せないようにし、理由をツールチップへ出す (§R5)
+        limit = int(cfg["max_tracks"])
+        if len(self._controller.timeline.subtitle_tracks()) >= limit:
+            action.setEnabled(False)
+            action.setToolTip(
+                tr("テロップトラックはこれ以上追加できません (上限 {max} 本)", max=limit))
+
+    # 選択中の字幕クリップ ID (無ければ右クリックしたもの 1 件)
+    def _selected_subtitle_ids(self, clip):
+        timeline = self._controller.timeline
+        return [
+            clip_id for clip_id in self._controller.selected_ids()
+            if isinstance(timeline.clip_by_id(clip_id), SubtitleClip)
+        ] or [clip.id]
+
+    # 新しいテロップトラックへ移し、結果をステータスへ出す (§R9)
+    def _move_to_new_subtitle_track(self, clip_ids):
+        result = self._controller.move_subtitles_to_new_track(clip_ids)
+        if result["limit"]:
+            limit = int(self._controller.cfg["subtitle_tracks"]["max_tracks"])
+            self.status_message.emit(
+                tr("テロップトラックはこれ以上追加できません (上限 {max} 本)", max=limit))
+            return
+        if not result["moved"]:
+            self.status_message.emit(tr("移動できるテロップがありません"))
+            return
+        message = (tr("新しいテロップトラック({track})へ移しました", track=result["track"])
+                   if result["moved"] == 1
+                   else tr("{count} 件を新しいテロップトラック({track})へ移しました",
+                           count=result["moved"], track=result["track"]))
+        if result["skipped"]:
+            message += tr(" ({count} 件は時間が重なるため残しました)",
+                          count=result["skipped"])
+        self.status_message.emit(message)
+
     # 選択した字幕を 1 本へ結合する (G4)
     def _merge_subtitles(self, clip_ids):
         if self._controller.merge_subtitles(clip_ids):
@@ -993,7 +1244,8 @@ class TimelineView(QWidget):
             return
         self.status_message.emit(tr("結合できるテロップが 2 件以上必要です"))
 
-    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。本文も分かれる。
+    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。
+    # 本文は分けずに複製する (ver9 要望)。設定 timeline.subtitle_split_text で戻せる。
     def _split_subtitle(self, clip_id):
         if self._controller.split_subtitle(clip_id):
             self.status_message.emit(tr("テロップを分割しました"))
@@ -1053,14 +1305,14 @@ class TimelineView(QWidget):
             self.status_message.emit(tr("この位置には字幕を追加できません"))
 
     # 字幕トラックに対応する役割を返す (コメント用トラックならコメント)
+    # ver9 resolve2 §4.5-b: 以前は「S1 以外ならコメント」としていたため、
+    # 通常テロップ用に増やしたトラック (S3 …) で字幕を足すと
+    # アイコンと背景が付いてしまっていた。コメントは comment_track_id だけ。
     def _role_for_track(self, track):
         cfg = self._controller.cfg["subtitle_tracks"]
         if not cfg["role_track_enabled"]:
             return DEFAULT_ROLE
-        base = self._controller.timeline.base_subtitle_track()
-        is_comment = (track.id == cfg["comment_track_id"]
-                      or (base is not None and track.id != base.id))
-        return ROLE_COMMENT if is_comment else DEFAULT_ROLE
+        return ROLE_COMMENT if track.id == cfg["comment_track_id"] else DEFAULT_ROLE
 
     # 右クリックメニューからのコピー (ver3 resolve10 §5.6)
     def _copy(self):
@@ -1197,6 +1449,8 @@ class TimelinePanel(QWidget):
         self.header = TrackHeaderWidget(self._controller)
         track_row.addWidget(self.header)
         self.view = TimelineView(self._controller)
+        # ヘッダの通知もビューと同じステータス行へ出す (接続先を増やさない)
+        self.header.status_message.connect(self.view.status_message)
         track_row.addWidget(self.view, 1)
         root.addLayout(track_row, 1)
 

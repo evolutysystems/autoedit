@@ -1,4 +1,4 @@
-﻿{
+{
     "general": {
         "video_directory": "",
         "opening_video": "",
@@ -48,6 +48,11 @@
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 60,
+        "line_align": {
+            "enabled": true,
+            "require_measured_font": true
+        },
+        "explicit_position": true,
         "comment_alignment": 4,
         "comment_margin_l": 240,
         "comment_margin_r": 40,
@@ -168,6 +173,12 @@
             "scale_step_percent": 1.0,
             "default_scale_mode": "fit_width"
         },
+        "base_zoom": {
+            "enabled": true,
+            "min": 0.1,
+            "max": 3.0,
+            "step_percent": 1.0
+        },
         "project": {
             "save_button": true,
             "confirm_on_close": true,
@@ -179,9 +190,8 @@
             "recent": [],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2887226037.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2905853277.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2904967242.archive.timeline.json"
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json"
             ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
@@ -213,8 +223,24 @@
             "comment_track_id": "S2",
             "comment_track_name": "Comment",
             "comment_track_index": 2,
-            "auto_move_on_role_change": true
+            "auto_move_on_role_change": true,
+            "role_move_scope": "role_tracks",
+            "new_track_enabled": true,
+            "new_track_id_prefix": "S",
+            "new_track_name_format": "Subtitle {index}",
+            "new_track_min_index": 3,
+            "max_tracks": 8,
+            "new_track_moves_selection": true,
+            "drag_between_tracks": true,
+            "remove_track_enabled": true
         },
+        "subtitle_align": {
+            "enabled": true,
+            "apply_to_selection": true,
+            "clear_on_reclick": true,
+            "allow_comment_role": false
+        },
+        "subtitle_split_text": false,
         "ripple_delete": true,
         "ripple_delete_migrated": true,
         "ripple_sync_tracks": "all",
@@ -243,13 +269,13 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAQoAAAAkQAACaUAAASuAAAEKAAAALAAAAmlAAAErgAAAAAAAAAADXAAAAQoAAAAsAAACaUAAASu",
-                "clip": "AdnQywADAAAAAAQuAAAA9gAACS0AAARIAAAELgAAARUAAAktAAAESAAAAAAAAAAADXAAAAQuAAABFQAACS0AAARI"
+                "archive": "AdnQywADAAAAAAUuAAAAFAAAC1MAAAUdAAAFLgAAADMAAAtTAAAFHQAAAAAAAAAADXAAAAUuAAAAMwAAC1MAAAUd",
+                "clip": "AdnQywADAAAAAAAA////+AAADW8AAAVvAAAELgAAARUAAAktAAAESAAAAAACAAAADXAAAAAAAAAAFwAADW8AAAVv"
             },
             "splitter_state": {
                 "archive": {
-                    "main": "AAAA/wAAAAEAAAACAAAC7gAAAQsB/////wEAAAACAA==",
-                    "upper": "AAAA/wAAAAEAAAACAAAWgAAAAPIB/////wEAAAABAA=="
+                    "main": "AAAA/wAAAAEAAAACAAAB6gAAAbYB/////wEAAAACAA==",
+                    "upper": "AAAA/wAAAAEAAAACAAADBgAAAwUB/////wEAAAABAA=="
                 },
                 "clip": {
                     "main": "AAAA/wAAAAEAAAACAAD0fgAAJ4gB/////wEAAAACAA==",
@@ -257,14 +283,16 @@
                 }
             },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAVoAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAFaAAAAG8A////AAAFaAAAAuUAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
-            "subtitle_color_swatch_width_px": 28
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAYQAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAGEAAAAG8A////AAAGEAAAA9EAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "subtitle_color_swatch_width_px": 28,
+            "subtitle_align_button_width_px": 56
         },
         "preview": {
             "backend": "pyav",
             "subtitle_metrics_mode": "libass",
-            "update_debounce_ms": 60,
-            "cache_frames": 8,
+            "subtitle_outline_mode": "pen",
+            "update_debounce_ms": 100,
+            "cache_frames": 64,
             "high_quality_button": true,
             "audio_enabled": true,
             "audio_volume": 0.8,
@@ -380,7 +408,9 @@
             "sample_rate": 8000,
             "resolution_hz": 100,
             "scale": "linear",
-            "db_floor": -48.0
+            "db_floor": -48.0,
+            "hide_while_dragging": true,
+            "draw_mode": "image"
         }
     },
     "ffmpeg": {
@@ -506,7 +536,13 @@
             "merge_on_overlap": true,
             "occupied_by": "used",
             "used_gap_merge_sec": 10.0,
-            "max_ranges": 20
+            "max_ranges": 20,
+            "refetch": {
+                "enabled": true,
+                "pad_sec": 3.0,
+                "min_free_mb_per_min": 60,
+                "allow_quality_fallback": false
+            }
         },
         "clip_pipeline": {
             "silence_cut": true,

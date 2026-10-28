@@ -82,9 +82,12 @@ class PrepareClipsTest(unittest.TestCase):
         self._workdir_obj.cleanup()
 
     def _prepare(self, use_timeline):
-        return clip_writer._prepare_clips(
+        # _prepare_clips は (prepared, vod_analysis) を返す (ver9 resolve5 §4.4)。
+        # VOD 全体で測った音量は、後からのセクション追加で使い回すために外へ出す。
+        prepared, _analysis = clip_writer._prepare_clips(
             "vod.mp4", _SETTINGS, dict(_SETTINGS), _USED,
             _SETTINGS["ffmpeg"], self.workdir, None, use_timeline=use_timeline)
+        return prepared
 
     # Timeline 経路では実カットしない (これが字幕ズレの根本原因だった / §2-3)
     def test_timeline_path_does_not_cut(self):

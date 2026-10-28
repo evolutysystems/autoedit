@@ -31,6 +31,8 @@ _TEMP_SUFFIX = ".tmp"
 _MIN_INTRO_SEC = 0.1
 # 切り出し原点のずれをログに残す下限 (秒)。フレーム未満は騒がない。
 _ORIGIN_WARN_SEC = 0.01
+# 拡大率・表示位置を「指定なし」と見なす差 (compositor._ZOOM_EPS と同値)
+_ZOOM_EPS = 1e-4
 # ASS テンキー配置 → 水平/垂直の寄せ判定 (§5.5)
 _ALIGN_LEFT = (1, 4, 7)
 _ALIGN_RIGHT = (3, 6, 9)
@@ -205,6 +207,11 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
     # 役割別の配置 (コメントは中央の左) を近似位置へ反映する (ver3 resolve11 §5.9)。
     # アイコンと背景は Resolve 側の枠に収まらないため出力しない (§9-Q5)。
     alignment, margin_l, margin_r, margin_v = font_profile.placement_for_role(role)
+    # テロップ個別の文字寄せ (ver9 resolve3 §R12)。title の alignment 属性は
+    # 「テキストの寄せ」なのでここだけ差し替える。position (近似位置) は
+    # 従来のまま = テロップの位置は動かさない。
+    text_align = (subtitle_generator.normalize_align(item.get("align"))
+                  or _align_name(alignment))
     return {
         "offset": offset,
         "duration": max(float(item.get("end", 0.0)) - float(item.get("start", 0.0)), 0.0),
@@ -219,7 +226,7 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
         "bold": font_profile.bold,
         "italic": font_profile.italic,
         "underline": font_profile.underline,
-        "align": _align_name(alignment),
+        "align": text_align,
         "position": _title_position(
             alignment, (margin_l, margin_r, margin_v), width, height, title_cfg,
         ),
@@ -549,7 +556,10 @@ def build_timeline_spec(timeline, settings, profile=None):
     if preserve:
         # Timeline 上の位置をそのまま写す (詰め直さない / resolve5 §19-2)。
         # 字幕も Timeline 座標のままなので、余白ぶんのズレが生じない。
-        spec["clips"] = _clips_from_base_clips(body_clips, "cut")
+        spec["clips"] = _clips_from_base_clips(
+            body_clips, "cut",
+            transform_cb=((lambda c: _base_transform_for(c, canvas, cfg["title"]))
+                          if cfg["write_base_transform"] else None))
         items = _timeline_items_as_is(timeline)
     else:
         # 従来 (先頭から詰める)。余白が無い Timeline では preserve と同じ結果になる。
@@ -576,19 +586,55 @@ def _preserve_layout(cfg):
 
 # Timeline のベースクリップを「位置込み」のクリップ列へ変換する (resolve5 §19-2)
 # timeline_start を offset として渡すため、先頭・途中の余白がそのまま残る。
-def _clips_from_base_clips(body_clips, name_prefix):
+#
+# transform_cb に callable を渡すと、クリップごとの拡大率・表示位置を乗せる
+# (ver9 resolve6 §4.8)。等倍のクリップでは None が返り、何も乗らない。
+def _clips_from_base_clips(body_clips, name_prefix, transform_cb=None):
     clips = []
     for order, clip in enumerate(body_clips or [], 1):
         duration = max(float(clip.source_out) - float(clip.source_in), 0.0)
         if duration <= 0:
             continue
-        clips.append({
+        entry = {
             "offset": max(float(clip.timeline_start), 0.0),
             "start": float(clip.source_in),
             "duration": duration,
             "name": f"{name_prefix}{order}",
-        })
+        }
+        if transform_cb is not None:
+            transform = transform_cb(clip)
+            if transform:
+                entry["transform"] = transform
+        clips.append(entry)
     return clips
+
+
+# V1 の拡大率・表示位置を FCPXML の adjust-transform 用へ移す (ver9 resolve6 §4.8)
+#
+# 【基準】我々の transform.scale は「キャンバスへ収めた状態に対する倍率」で、
+# FCPXML の asset-clip もタイムライン解像度へ conform された状態が 1.0 に当たる。
+# よって倍率はそのまま渡す。位置はタイトル・透かしと同じ規約 (_to_export_space) へ移す。
+#
+# 等倍かつ位置指定なしのときは None を返す。拡大率を使っていないプロジェクトの
+# FCPXML を 1 バイトも変えないため。
+def _base_transform_for(clip, canvas, title_cfg):
+    transform = getattr(clip, "transform", None)
+    if transform is None:
+        return None
+    zoom = float(transform.scale if transform.scale is not None else 1.0)
+    x = float(transform.x or 0.0)
+    y = float(transform.y or 0.0)
+    if abs(zoom - 1.0) <= _ZOOM_EPS and abs(x) <= _ZOOM_EPS and abs(y) <= _ZOOM_EPS:
+        return None
+    width, height = int(canvas[0] or 0), int(canvas[1] or 0)
+    if width <= 0 or height <= 0:
+        return None
+    # 正規化座標 (中心原点・Y は上が正) をキャンバス px (左上原点) へ戻してから、
+    # 出力側の座標系へ移す。設定で原点や単位を変えていてもここを通せば追従する。
+    x_px = (x + 1.0) * width / 2.0
+    y_px = (1.0 - y) * height / 2.0
+    return {"scale": zoom,
+            "position": _to_export_space(x_px, y_px, width, height, title_cfg)}
 
 
 # 字幕クリップを Timeline 座標のまま items へ変換する (写像しない / resolve5 §18-2)

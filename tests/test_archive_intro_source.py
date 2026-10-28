@@ -253,7 +253,7 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self._atd = atd
 
-    def _dialog(self, keep=True, vod=None, buffer_sec=3.0):
+    def _dialog(self, keep=True, vod=None, buffer_sec=3.0, prepared_by_index=None):
         atd = self._atd
         timeline = types.SimpleNamespace(source={
             "input_path": self.vod if vod is None else vod,
@@ -272,11 +272,16 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         class _Dialog:
             _keep_extra_beside_project = \
                 atd.ArchiveTimelineDialog._keep_extra_beside_project
+            # 元 VOD が無いときに「準備中の控え」を探す経路 (ver9 resolve5 §4.5)
+            _copy_prepared_intro_source = \
+                atd.ArchiveTimelineDialog._copy_prepared_intro_source
 
             def __init__(inner):
                 inner.controller = types.SimpleNamespace(timeline=timeline)
                 inner.preview = types.SimpleNamespace(set_status=lambda *_a: None)
                 inner._project_cfg = {"archive_keep_intro_source": keep}
+                # 取り直した区間の控え。既定は空 = 控えが無い状態
+                inner._prepared_by_index = dict(prepared_by_index or {})
                 inner._settings = {
                     "ffmpeg": _FFMPEG_CFG,
                     "archive": {"intro_card": {"enabled": True,
@@ -323,10 +328,28 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         self._save(self._dialog(buffer_sec=0.0))
         self.assertEqual(self.exported, [])
 
-    # 元 VOD を手放した後の上書き保存では何もしない (既存の控えは残る)
+    # 元 VOD を手放した後の上書き保存では何もしない (既存の控えは残る)。
+    # 取り直した区間の控えも無い場合であり、従来どおりの振る舞いになる。
     def test_skips_when_vod_is_already_gone(self):
         self._save(self._dialog(vod=os.path.join(self.root, "no_such.mp4")))
         self.assertEqual(self.exported, [])
+
+    # 元 VOD が無くても、取り直した区間の控えがあれば素材フォルダへ移す
+    # (ver9 resolve5 §4.5)。これが無いと追加セクションのイントロが作れない。
+    def test_uses_prepared_intro_source_without_vod(self):
+        kept = _touch(os.path.join(self.root, "kept_intro.mp4"))
+        dialog = self._dialog(
+            vod=os.path.join(self.root, "no_such.mp4"),
+            prepared_by_index={9: {"index": 9, "start": 100.0,
+                                   "intro_source": kept}})
+        self._save(dialog)
+        # 元 VOD が無いため切り出しは起きない (控えを写すだけ)
+        self.assertEqual(self.exported, [])
+        self.assertTrue(os.path.exists(
+            self._atd.clip_writer.intro_source_path(self.folder, "m1")))
+        # 控えを持たない m2 は作られない
+        self.assertFalse(os.path.exists(
+            self._atd.clip_writer.intro_source_path(self.folder, "m2")))
 
 
 if __name__ == "__main__":

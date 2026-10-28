@@ -242,6 +242,23 @@ DEFAULT_SETTINGS = {
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 60,
+        # ── テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5)
+        # 複数行になったテロップの「行の揃え」。テロップの位置は動かさない。
+        "line_align": {
+            # false で焼き込み側の文字寄せを止める (保存した値は残す)
+            "enabled": True,
+            # フォントの送り幅を実測できないときに寄せを諦めるか。
+            # false にすると固定係数の推定で寄せるが、推定はフォントにより
+            # 1.5 倍ずれるためテロップの位置がぶれる恐れがある (§2-3)。
+            "require_measured_font": True,
+        },
+        # ── テロップの位置を ASS へ明示的に書く (ver9 resolve8 §3.2-6)
+        # true (既定) = 位置未指定のテロップにも既定のアンカー点を \pos で書き、
+        #   libass の「衝突回避」(同時刻のテロップを上へ押し上げ、消えるまで
+        #   その位置を持ち越す) が入り込む余地を無くす。見た目は 1px も変わらず、
+        #   編集画面・高精度プレビュー・Resolve 書き出しと配置が一致する。
+        # false = 従来どおり Style の alignment/margin 任せ (libass が位置を決める)。
+        "explicit_position": True,
         # ── コメント役割だけの配置と装飾 (ver3 resolve11 §7.1 / §7.4)
         # 配置: 中央の左 (ASS an4)。アイコンを左横へ確実に置くため左寄せ (1/4/7) のみ許す。
         "comment_alignment": 4,
@@ -503,6 +520,23 @@ DEFAULT_SETTINGS = {
             #   "native"    = 素材のピクセル数どおり (キャンバスより大きければ収める)
             "default_scale_mode": "fit_width",
         },
+        # V1 (ベース映像) の拡大率 (ver9 resolve6)
+        #
+        # 「この場面だけ寄りで見せたい」ときに、選択した V1 クリップを拡大する。
+        # **上の overlay とは倍率の基準が違う。**
+        #   overlay   : キャンバス幅に対する比率 (100% = 画面の横幅いっぱい)
+        #   base_zoom : キャンバスへ収めた状態に対する倍率 (100% = 今の見た目)
+        # V1 で 100% が「今の見た目」でないと、開いた瞬間に絵が変わってしまう。
+        "base_zoom": {
+            # false でインスペクタに「拡大率」欄を出さない (保存した値は残す)
+            "enabled": True,
+            # 拡大率の下限・上限。縮小 (100% 未満) も許し、余白は黒で埋まる。
+            # 0.1 より下は映像が点になり編集の役に立たないため下限とする。
+            "min": 0.1,
+            "max": 3.0,
+            # インスペクタの「拡大率」欄の刻み (%)
+            "step_percent": 1.0,
+        },
         # プロジェクトの保存・再編集 (ver3 resolve7 §5.7〜§5.11)
         "project": {
             # 編集画面に保存ボタン・Ctrl+S を出す (false で従来どおり保存操作なし)
@@ -604,7 +638,48 @@ DEFAULT_SETTINGS = {
             "comment_track_index": 2,
             # false なら役割だけ変えてトラックは動かさない
             "auto_move_on_role_change": True,
+            # 役割変更にともなう自動移動をどこまで効かせるか (ver9 resolve10)。
+            # "role_tracks" = 役割が面倒を見るトラック (S1 / コメント用 S2) に
+            #                 居るテロップだけ移す。利用者が増やしたトラック
+            #                 (S3 以降) へ置いたテロップは動かさない
+            # "all"         = どのトラックに居ても移す (v1.6.1 までの挙動)
+            "role_move_scope": "role_tracks",
+            # テロップノードの右クリックから通常テロップ用のトラックを足す
+            # (ver9 resolve2)。コメントと違い、アイコンや背景は付かない。
+            "new_track_enabled": True,
+            # 新トラックの ID と名前 (index は既存字幕トラックの最大 +1)
+            "new_track_id_prefix": "S",
+            "new_track_name_format": "Subtitle {index}",
+            # 払い出しを始める番号。2 トラック目 (S2) はコメント専用のため 3 から。
+            # comment_track_index / comment_track_id は常に予約として飛ばす。
+            "new_track_min_index": 3,
+            # 字幕トラックの本数上限 (行が増えすぎて編集しづらくなるのを防ぐ)
+            "max_tracks": 8,
+            # 複数選択しているとき、選択中の字幕をまとめて移すか
+            "new_track_moves_selection": True,
+            # テロップをドラッグ＆ドロップでトラック間を行き来させられるか
+            # (ver9 要望)。false で従来どおりメニューからの移動だけになる。
+            "drag_between_tracks": True,
+            # 増やしたトラック (S3 以降) をヘッダの右クリックから削除できるか
+            # (ver9 要望)。既定トラックとコメント用トラックは常に消せない。
+            "remove_track_enabled": True,
         },
+        # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5)。
+        # 焼き込み側の制御は subtitle.line_align にある。
+        "subtitle_align": {
+            # false でインスペクタに文字寄せの行を出さない (保存した値は残す)
+            "enabled": True,
+            # 選択中の字幕すべてへ効かせるか (文字色と同じ規約)
+            "apply_to_selection": True,
+            # 押されているボタンを押し直したら「設定に従う」へ戻すか
+            "clear_on_reclick": True,
+            # コメント役割でも変えられるようにするか (アイコン・背景は追従しない)
+            "allow_comment_role": False,
+        },
+        # テロップを分割したときに本文も分けるか (ver9 要望)。
+        # false (既定): 「こんにちは」を割ると「こんにちは」が 2 本できる。
+        # true: 再生ヘッド位置で本文も分ける (「こんに」「ちは」/ 旧 G4 の挙動)。
+        "subtitle_split_text": False,
         # Delete キー単独の割り当て (ver3 resolve2 R7)。true=リップル削除 (既定) /
         # false=空白を残す。Shift+Delete は常にもう一方。
         # 両方とも右クリックメニューからも実行できる。
@@ -661,15 +736,26 @@ DEFAULT_SETTINGS = {
             "window_min_visible_px": 120,
             # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §7)
             "subtitle_color_swatch_width_px": 28,
+            # 字幕インスペクタの文字寄せボタン 1 つの幅 (ver9 resolve3 §R1)
+            "subtitle_align_button_width_px": 56,
         },
         "preview": {
             "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
             # 字幕プレビューのメトリクス基準 (ver8 resolve8 §5)。
             # "libass" = 出力と同じ字の大きさ・行送り・字間 / "em" = 従来の Qt 近似
             "subtitle_metrics_mode": "libass",
+            # 字幕の縁と影の描き方 (ver9 resolve11 §3)。
+            # "pen"   = 幅 2W のペンでストロークする (既定。パス演算をしない)
+            # "union" = QPainterPath.united() で合併してから塗る (従来。長い
+            #           テロップ 1 本で 1.7 秒かかるため、見比べたいときだけ)
+            "subtitle_outline_mode": "pen",
             # 再生ヘッド移動から画面更新までの待ち (ms)。0 で即時 (ver8 resolve8 §9-4)
-            "update_debounce_ms": 60,
-            "cache_frames": 8,
+            "update_debounce_ms": 100,
+            # 停止中プレビューの絵を何枚まで覚えておくか (ver9 resolve9 §5)。
+            # 8 枚では Undo・やり直し・再生ヘッドの行き戻りでほぼ毎回取り直しになり、
+            # 1 枚あたり実測 32〜44ms のデコードが走っていた。64 枚なら
+            # 1920x1080 rgb24 で約 400MB に収まり、戻り先がほぼキャッシュへ当たる。
+            "cache_frames": 64,
             "high_quality_button": True,       # 「高精度プレビュー」ボタンの表示
             "audio_enabled": True,             # 起動時のミュート状態 (false=ミュート)
             "audio_volume": 0.8,               # 0.0〜1.0
@@ -1027,6 +1113,25 @@ DEFAULT_SETTINGS = {
             "used_gap_merge_sec": 10.0,
             # 1 回の追加で用意する区間の上限 (超える指定は断る)
             "max_ranges": 20,
+            # 元 VOD を手放したあとの「区間だけ取り直し」(ver9 resolve5)
+            #
+            # 元 VOD は既定 (download.keep_vod=false) でプロジェクトが自己完結した
+            # 時点でゴミ箱へ送るため、これが無いと「後から区間を足す」ことが
+            # できなくなる。要る区間だけを twitch-dl で取るので、
+            # 3 分のセクションでも数十 MB で済む (元 VOD は 10〜25GB)。
+            "refetch": {
+                "enabled": True,        # false で元 VOD が無いときは追加させない
+                # 取得範囲へ足す余裕 (秒)。取得はセグメント単位 (約 12 秒) のため
+                # 実質は保険だが、イントロカードの素 (intro_card.buffer_sec 秒手前)
+                # も要るため、実効値は buffer_sec と比べて大きいほうを使う。
+                "pad_sec": 3.0,
+                # 1 分あたりに見込む取得量 (MB)。空き容量の確認にだけ使う。
+                # 実測は 1080p で約 17MB/分のため、既定は余裕を見た値。
+                "min_free_mb_per_min": 60,
+                # 記録された画質が使えないとき、別の画質へ落として取得してよいか。
+                # 既定 false = 落とさない (画質が変わると既存素材と寸法が割れる)。
+                "allow_quality_fallback": False,
+            },
         },
         # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
         "clip_pipeline": {
@@ -2377,6 +2482,25 @@ class SettingsWindow(QWidget):
         archive_enable_layout.addStretch(1)
         layout.addLayout(archive_enable_layout)
 
+        # 見出し (取得データ) — 元動画を残すかどうか (ver9 resolve5 §6.5)
+        # 既定は「残さない」。1 本 10〜25GB を抱えずに済み、後から区間を足すときは
+        # 必要なぶんだけ取り直せるため、通常は外したままでよい。
+        layout.addWidget(self._make_title("取得データ"))
+        keep_vod_note = QLabel(tr(
+            "外すと、編集に必要な素材がプロジェクトへ揃った時点で元動画をゴミ箱へ送ります\n"
+            "（1 本 10〜25GB の節約）。セクション追加は、必要な区間だけを取得し直して使えます。"
+        ))
+        theme.mark_note(keep_vod_note)
+        layout.addWidget(keep_vod_note)
+
+        self.archive_keep_vod_check = QCheckBox(tr("元動画 (VOD) を残す"))
+        keep_vod_layout = QHBoxLayout()
+        keep_vod_layout.setContentsMargins(0, 0, 0, 0)
+        keep_vod_layout.addWidget(self._make_column_label("取得データ"))
+        keep_vod_layout.addWidget(self.archive_keep_vod_check)
+        keep_vod_layout.addStretch(1)
+        layout.addLayout(keep_vod_layout)
+
         # 見出し (テーマ・イントロカード)
         layout.addWidget(self._make_title("テーマ・イントロカード"))
         note = QLabel(tr(
@@ -2821,6 +2945,10 @@ class SettingsWindow(QWidget):
         # 既定は archive_tab の判定 (.get("enabled", False)) に合わせ、キー欠落時は無効表示にする。
         self.archive_enabled_check.setChecked(bool(archive.get("enabled", False)))
 
+        # 元動画を残すか (ver9 resolve5 §6.5)。既定は「残さない」
+        self.archive_keep_vod_check.setChecked(
+            bool(archive.get("download", {}).get("keep_vod", False)))
+
         # アーカイブ切り抜き: テーマ・イントロカード (resolve19 §5)
         self.intro_enabled_check.setChecked(bool(intro_card.get("enabled", True)))
         self.intro_buffer_sec_edit.setText(str(intro_card.get("buffer_sec", 1.5)))
@@ -3059,6 +3187,11 @@ class SettingsWindow(QWidget):
         # archive セクションの他キー (download/scoring/output/clip_pipeline/combine) は
         # base から引き継ぎ、enabled と intro_card サブ辞書のみ UI 値で差し替える。
         settings.setdefault("archive", {})["enabled"] = self.archive_enabled_check.isChecked()
+        # 元動画を残すか (ver9 resolve5 §6.5)。download の他キー
+        # (保持日数・キャッシュ等) は base の値をそのまま引き継ぐ。
+        download = dict(settings["archive"].get("download", {}))
+        download["keep_vod"] = self.archive_keep_vod_check.isChecked()
+        settings["archive"]["download"] = download
         settings["archive"]["intro_card"] = {
             "enabled": self.intro_enabled_check.isChecked(),
             "buffer_sec": self._to_float(self.intro_buffer_sec_edit.text(), 1.5),

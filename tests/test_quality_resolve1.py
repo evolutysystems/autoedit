@@ -11,7 +11,9 @@
 #   G5  : 実寸 (px) の物差しで「2 行で画面外に出ない」ことが保証される
 #   B1  : 配信タイトル・ゲーム名が initial_prompt へ入る / hotwords が組める
 #   B3  : 置換辞書が改行より前に効く
-#   G4  : 結合で本文が連なり、分割で本文が分かれる
+#   G4  : 結合で本文が連なる / 分割で本文も分けられる
+#         (ver9 要望で既定は「本文を複製」へ変更。本文の分割は
+#          split_text=True のときだけ = tests/test_subtitle_split_text.py も参照)
 import os
 import unittest
 
@@ -581,6 +583,8 @@ class MergeSubtitlesTest(unittest.TestCase):
         self.assertEqual(self.track.clips[0].text, "あいうえおか")
 
 
+# 本文も分ける分割 (split_text=True)。ver9 要望で既定は複製へ変わったため、
+# ここでは「設定で戻したときに G4 どおり動くこと」を守る。
 class SplitSubtitleTest(unittest.TestCase):
 
     # 単語の時刻があれば語の境界で本文が分かれる
@@ -592,7 +596,7 @@ class SplitSubtitleTest(unittest.TestCase):
         ]}
         track.clips.append(SubtitleClip("s1", 0.0, 2.0, text="あいうえお",
                                         origin=origin))
-        command = commands.SplitSubtitle("s1", 1.0)
+        command = commands.SplitSubtitle("s1", 1.0, split_text=True)
         self.assertTrue(command.apply(timeline))
         clips = sorted(track.clips, key=lambda c: c.timeline_start)
         self.assertEqual([c.text for c in clips], ["あい", "うえお"])
@@ -601,7 +605,7 @@ class SplitSubtitleTest(unittest.TestCase):
     def test_split_without_words_uses_ratio(self):
         timeline, track = _subtitle_timeline()
         track.clips.append(SubtitleClip("s1", 0.0, 4.0, text="あいうえおかきく"))
-        command = commands.SplitSubtitle("s1", 2.0)
+        command = commands.SplitSubtitle("s1", 2.0, split_text=True)
         self.assertTrue(command.apply(timeline))
         clips = sorted(track.clips, key=lambda c: c.timeline_start)
         self.assertEqual([c.text for c in clips], ["あいうえ", "おかきく"])
@@ -610,7 +614,7 @@ class SplitSubtitleTest(unittest.TestCase):
     def test_split_keeps_all_text(self):
         timeline, track = _subtitle_timeline()
         track.clips.append(SubtitleClip("s1", 0.0, 4.0, text="あいうえおかきく"))
-        commands.SplitSubtitle("s1", 2.0).apply(timeline)
+        commands.SplitSubtitle("s1", 2.0, split_text=True).apply(timeline)
         joined = "".join(c.text for c in
                          sorted(track.clips, key=lambda c: c.timeline_start))
         self.assertEqual(joined, "あいうえおかきく")
@@ -619,7 +623,8 @@ class SplitSubtitleTest(unittest.TestCase):
     def test_split_respects_min_duration(self):
         timeline, track = _subtitle_timeline()
         track.clips.append(SubtitleClip("s1", 0.0, 1.0, text="あいう"))
-        command = commands.SplitSubtitle("s1", 0.01, min_clip_sec=0.05)
+        command = commands.SplitSubtitle("s1", 0.01, min_clip_sec=0.05,
+                                         split_text=True)
         self.assertFalse(command.apply(timeline))
         self.assertEqual(len(track.clips), 1)
 

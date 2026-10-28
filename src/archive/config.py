@@ -304,6 +304,30 @@ def section_add_config(settings):
         "used_gap_merge_sec": max(float(add.get("used_gap_merge_sec", 10.0) or 0.0), 0.0),
         # 1 回の追加で用意する区間の上限。超える指定は理由を出して断る。
         "max_ranges": max(int(add.get("max_ranges", 20) or 20), 1),
+        # 元 VOD を手放したあとの「区間だけ取り直し」(ver9 resolve5 §4.8)
+        "refetch": _section_refetch_config(add.get("refetch", {})),
+    }
+
+
+# セクション追加で元 VOD が無いときに、必要な区間だけ取り直す設定 (ver9 resolve5 §4.8)
+# 元 VOD は既定 (keep_vod=false) で自己完結後にゴミ箱へ送るため、
+# これが無効だと「後から区間を足す」機能そのものが使えなくなる。
+def _section_refetch_config(refetch):
+    refetch = refetch if isinstance(refetch, dict) else {}
+    return {
+        "enabled": bool(refetch.get("enabled", True)),
+        # 取得範囲へ足す余裕 (秒)。取得はセグメント単位 (約 12 秒) のため実質は保険だが、
+        # イントロカードの素 (クリップ開始の intro_card.buffer_sec 秒手前) も要るため
+        # 実効値は buffer_sec と比べて大きいほうを使う (resolve5 §5.3)。
+        "pad_sec": max(float(refetch.get("pad_sec", 3.0) or 0.0), 0.0),
+        # 1 分あたりに見込む取得量 (MB)。空き容量の確認にだけ使う。
+        # 実測は 1080p で約 17MB/分 (resolve5 §2.6) のため既定は余裕を見た値。
+        "min_free_mb_per_min": max(
+            float(refetch.get("min_free_mb_per_min", 60.0) or 0.0), 0.0),
+        # 記録された画質が使えないとき、別の画質へ落として取得してよいか。
+        # 既定 false = 落とさない。画質が変わると既存素材と寸法が割れるため、
+        # 黙って通さず呼び出し側で確認を取る (resolve5 §5.4)。
+        "allow_quality_fallback": bool(refetch.get("allow_quality_fallback", False)),
     }
 
 

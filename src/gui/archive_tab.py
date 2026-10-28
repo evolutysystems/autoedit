@@ -130,16 +130,21 @@ class ArchiveAnalyzeWorker(QThread):
 
     def run(self):
         try:
-            input_path, comments, markers = self._prepare_source()
+            input_path, comments, markers, vod_source = self._prepare_source()
             result = pipeline.analyze(input_path, self._settings,
                                       progress_cb=self._emit,
                                       comments=comments, markers=markers)
-            self.finished_ok.emit({"result": result, "input_path": input_path})
+            # vod_source は「元 VOD を手放したあとに区間だけ取り直す」ための控え
+            # (ver9 resolve5 §4.3)。ローカル動画経路では None になる。
+            self.finished_ok.emit({"result": result, "input_path": input_path,
+                                   "vod_source": vod_source})
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("アーカイブ採点に失敗")
             self.failed.emit(format_failure_message(e))
 
-    # モードに応じて (ローカル動画パス, 正規化コメント or None, マーカー or None) を用意する
+    # モードに応じて
+    # (ローカル動画パス, 正規化コメント or None, マーカー or None, 取得元の控え or None)
+    # を用意する
     def _prepare_source(self):
         if self._job.get("mode") == _MODE_TWITCH:
             return self._fetch_twitch()
@@ -150,7 +155,7 @@ class ArchiveAnalyzeWorker(QThread):
         chat_path = self._job.get("chat_path")
         if chat_path:
             comments = comment_source.load_comments(chat_path)
-        return input_path, comments, None
+        return input_path, comments, None, None
 
     # Twitch VOD/コメントを取得する (所有判定 → download → chat json)
     def _fetch_twitch(self):
@@ -179,13 +184,17 @@ class ArchiveAnalyzeWorker(QThread):
         # 取得前の空き容量確認・壊れた取得物の検出・断片キャッシュの後始末を
         # download_vod 側で行うため、判断材料を渡す (resolve.md §6-3・§6-4)。
         general = self._settings.get("general", {})
+        # details には取得元の控え (video_id / 実際の画質 / 全長) が入る。
+        # プロジェクトへ残し、元 VOD を手放したあとの区間取り直しに使う
+        # (ver9 resolve5 §4.3)。
+        vod_source = {}
         input_path = twitch_source.download_vod(
             video_id, work_dir, dl["twitch_dl_path"], dl["vod_format"],
             progress_cb=lambda m: self.progress.emit(0.0, m), ffmpeg_dir=ffmpeg_dir,
             quality_fallback=dl["vod_quality_fallback"],
             ffmpeg_cfg=self._settings.get("ffmpeg", {}),
             min_free_bytes=disk.required_from_gb(general.get("min_free_space_gb", 20)),
-            keep_cache_on_error=dl["keep_cache_on_error"])
+            keep_cache_on_error=dl["keep_cache_on_error"], details=vod_source)
 
         # コメント取得。失敗してもコメント無しで採点続行 (resolve17 §5)
         comments = None
@@ -201,7 +210,7 @@ class ArchiveAnalyzeWorker(QThread):
         # ストリームマーカー取得 (ver3 resolve16)。失敗してもマーカー無しで続行する
         # (コメント取得と同じ規約)。旧トークンはスコープが無いため事前に判定する。
         markers = self._fetch_markers(video_id)
-        return input_path, comments, markers
+        return input_path, comments, markers, vod_source
 
     # VOD のストリームマーカーを取得する (取得できなければ None / ver3 resolve16 §5.6)
     def _fetch_markers(self, video_id):
@@ -237,7 +246,7 @@ class ArchiveClipWorker(QThread):
 
     def __init__(self, input_path, settings, clips, result_callback=None,
                  curve=None, parent=None, points=None,
-                 watermark_confirm_callback=None):
+                 watermark_confirm_callback=None, vod_source=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
@@ -247,6 +256,9 @@ class ArchiveClipWorker(QThread):
         # ポイント (ver5 resolve §5.4)。未注入なら従来どおり消費も透かしも無い。
         self._points = points
         self._watermark_confirm_callback = watermark_confirm_callback
+        # 取得元の控え (ver9 resolve5 §4.3)。プロジェクトへ残し、元 VOD を
+        # 手放したあとに区間だけ取り直すために使う。
+        self._vod_source = vod_source
 
     def run(self):
         try:
@@ -255,7 +267,8 @@ class ArchiveClipWorker(QThread):
                 self._input_path, self._settings, self._clips,
                 progress_cb=self._emit, result_callback=self._result_callback,
                 curve=self._curve, points=self._points,
-                watermark_confirm_callback=self._watermark_confirm_callback)
+                watermark_confirm_callback=self._watermark_confirm_callback,
+                vod_source=self._vod_source)
             self.finished_ok.emit(outputs)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("切り抜き+焼き込みに失敗")
@@ -908,7 +921,9 @@ class ArchiveTabWidget(QWidget):
         self._clip_worker = ArchiveClipWorker(
             self._pending_input, self._settings, clips,
             result_callback=self._review_bridge, curve=curve, parent=self,
-            points=self._points, watermark_confirm_callback=self._watermark_bridge)
+            points=self._points, watermark_confirm_callback=self._watermark_bridge,
+            vod_source=(payload.get("vod_source")
+                        if isinstance(payload, dict) else None))
         self._clip_worker.progress.connect(self._on_progress)
         self._clip_worker.finished_ok.connect(self._on_clip_done)
         self._clip_worker.failed.connect(self._on_failed)

@@ -108,6 +108,19 @@ class ChangeSubtitleRoleTest(unittest.TestCase):
         self.assertIsNone(timeline.track_by_id(COMMENT_SUBTITLE_TRACK_ID))
         self.assertEqual(timeline.clip_by_id("s1").role, "comment")
 
+    # 通常テロップ用に増やしたトラック (S3) はコメント用として使われない
+    # (ver9 resolve2 §9.2)。S2 が無ければ S2 を新しく作る。
+    def test_plain_extra_track_is_not_used_for_comment(self):
+        timeline = _timeline()
+        timeline.tracks.append(Track(
+            "S3", TRACK_SUBTITLE, 3, name="Subtitle 3",
+            clips=[SubtitleClip("s9", 9.0, 1.0, text="通常テロップ")]))
+        command = commands.ChangeSubtitleRole("s1", "comment", _cfg())
+        self.assertTrue(commands.CommandStack().push(timeline, command))
+        self.assertEqual(timeline.track_of_clip("s1").id,
+                         COMMENT_SUBTITLE_TRACK_ID)
+        self.assertEqual(len(timeline.track_by_id("S3").clips), 1)
+
     # 自動移動だけを切ることもできる
     def test_auto_move_disabled(self):
         timeline = _timeline()

@@ -45,6 +45,14 @@ def _clip(media_id="m1", timeline_start=2.0, duration=3.0, source_in=5.0,
                 transform=Transform(x=x, y=y, scale=scale, opacity=opacity))
 
 
+# V1 (ベース映像) のクリップ。**拡大率は等倍** (ver9 resolve6)。
+# _clip() の既定 scale=0.5 はオーバーレイ用 (キャンバス幅に対する比率) で、
+# ベース映像では「収めた状態の 50%」= 縮小の意味になってしまう。
+def _base_clip(**kwargs):
+    kwargs.setdefault("scale", 1.0)
+    return _clip(**kwargs)
+
+
 def _comment_item(text="コメント本文", start=0.0, end=2.0):
     return {"start": start, "end": end, "text": text, "use": True, "role": "comment"}
 
@@ -133,7 +141,7 @@ class BaseFiltersTest(unittest.TestCase):
     def test_normalize_chain_is_unchanged(self):
         media = _media(width=1280, height=720)
         filters = compositor.base_filters(
-            self.timeline, media, _clip(), self.profile)
+            self.timeline, media, _base_clip(), self.profile)
 
         self.assertEqual(filters, [
             "scale=1920:1080:force_original_aspect_ratio=decrease",
@@ -146,14 +154,14 @@ class BaseFiltersTest(unittest.TestCase):
     # 素材がキャンバスと同じなら何も足さない (= コマンドが 1 文字も変わらない / R15)
     def test_matching_media_needs_no_filter(self):
         filters = compositor.base_filters(
-            self.timeline, _media(), _clip(), self.profile)
+            self.timeline, _media(), _base_clip(), self.profile)
 
         self.assertEqual(filters, [])
 
     # 無音カットのフェードの文字列も従来どおり
     def test_fade_chain_is_unchanged(self):
         filters = compositor.base_filters(
-            self.timeline, _media(), _clip(), self.profile,
+            self.timeline, _media(), _base_clip(), self.profile,
             fade_sec=0.05, duration=3.0)
 
         self.assertEqual(filters, ["fade=t=in:st=0:d=0.05",
@@ -162,7 +170,7 @@ class BaseFiltersTest(unittest.TestCase):
     # 尺がフェード 2 本ぶんに満たないクリップへはフェードを掛けない
     def test_short_clip_has_no_fade(self):
         filters = compositor.base_filters(
-            self.timeline, _media(), _clip(), self.profile,
+            self.timeline, _media(), _base_clip(), self.profile,
             fade_sec=0.05, duration=0.08)
 
         self.assertEqual(filters, [])
@@ -171,7 +179,7 @@ class BaseFiltersTest(unittest.TestCase):
     def test_proxy_normalizes_to_the_proxy_canvas(self):
         profile = CanvasProfile.proxy(self.timeline, {"output_fps": _FPS}, 0.5)
         filters = compositor.base_filters(
-            self.timeline, _media(), _clip(), profile)
+            self.timeline, _media(), _base_clip(), profile)
 
         self.assertIn("scale=960:540:force_original_aspect_ratio=decrease", filters)
         self.assertIn("pad=960:540:(ow-iw)/2:(oh-ih)/2", filters)

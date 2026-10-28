@@ -45,7 +45,7 @@ class ArchiveReservationTest(unittest.TestCase):
 
     def _stub(self, outputs=None, error=None):
         def _fake(_input_path, _settings, _clips, _progress_cb=None, _result_callback=None,
-                  _curve=None, watermark_required=False):
+                  _curve=None, watermark_required=False, vod_source=None):
             self.flags.append(watermark_required)
             if error is not None:
                 raise error

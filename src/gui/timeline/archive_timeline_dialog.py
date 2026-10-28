@@ -9,6 +9,7 @@
 # 書き出し時に archive.timeline_builder.split_by_clip() が行う (§3-8)。
 import base64
 import os
+import shutil
 
 from PySide6.QtCore import QByteArray, Qt, QThread, Signal
 from PySide6.QtGui import QGuiApplication
@@ -28,7 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...archive import clip_writer, project_resume, vod_rebase
+from ...archive import clip_writer, project_resume, twitch_source, vod_range, vod_rebase
+from ...exceptions import DiskSpaceError, PipelineCancelled
 from ...i18n import tr
 from ...modules import ffmpeg_runner
 from ...archive import config as archive_config
@@ -56,6 +58,10 @@ _DOCK_AREAS = {
 # 秒を "H:MM:SS" 表記へ (クリップバーの区間表示用)。
 # 追加ダイアログと同じ表記にするため実装を 1 つに寄せる (ver3 resolve13 §5.3)。
 _fmt = format_hms
+
+# 準備データと素材の控えを vod_start で突き合わせるときの許容 (秒)。
+# どちらも同じ値を書き写したものなので、丸めの差だけを見逃せばよい。
+_INTRO_MATCH_EPS = 0.01
 
 
 class ArchiveTimelineDialog(TimelineEditorDialog):
@@ -91,6 +97,12 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._section_worker = None
         self._section_progress = None
         self._vod_duration = 0.0
+        # 区間の取り直しに使う取得元 (ver9 resolve5 §4.3)。
+        # 画面構築 (_build_clip_bar) から参照するため super().__init__ より先に決める。
+        # この時点では controller が無いので、引数の timeline から引く。
+        self._vod_source = archive_timeline.resolve_vod_source(timeline, settings or {})
+        # 全長を Twitch へ尋ねたか (取れなくても二度は尋ねない)
+        self._vod_length_asked = False
         super().__init__(timeline, settings, work_dir, parent=parent,
                          project_path=project_path, created_at=created_at, mode=mode)
         self.setWindowTitle(tr("切り抜き編集 (採点結果)"))
@@ -212,11 +224,9 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         if not card["enabled"] or card["buffer_sec"] <= 0:
             return              # イントロカードを使わない設定
         vod = project_resume.recorded_vod_path(self.controller.timeline)
-        if not vod or not os.path.exists(vod):
-            # 元 VOD を手放した後の上書き保存。既に在る控えはそのまま残る
-            _logger.info("元 VOD が無いためイントロカードの素は作れません "
-                         "(既存の控えはそのまま使います)")
-            return
+        # 元 VOD が無くても、区間を取り直して足したセクションには準備中の控えがある
+        # (ver9 resolve5 §4.5)。在るものだけを素材フォルダへ移す。
+        has_vod = bool(vod and os.path.exists(vod))
         folder = self._media_dir(project_path)
         ffmpeg_cfg = self._settings.get("ffmpeg", {})
         timeline = self.controller.timeline
@@ -235,9 +245,12 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
                 QApplication.setOverrideCursor(Qt.WaitCursor)
                 try:
                     self.preview.set_status(tr("イントロ用の映像を保存しています…"))
-                    if clip_writer.export_intro_source(
-                            vod, float(entry.get("vod_start", 0.0)),
-                            card["buffer_sec"], dest, ffmpeg_cfg):
+                    if has_vod:
+                        if clip_writer.export_intro_source(
+                                vod, float(entry.get("vod_start", 0.0)),
+                                card["buffer_sec"], dest, ffmpeg_cfg):
+                            saved += 1
+                    elif self._copy_prepared_intro_source(entry, dest):
                         saved += 1
                 finally:
                     QApplication.restoreOverrideCursor()
@@ -246,6 +259,32 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             return
         if saved:
             _logger.info("イントロカードの素を %d 件そろえました: %s", saved, folder)
+        elif not has_vod:
+            # 元 VOD も控えも無い素材 (元 VOD があった時代に保存したセクション)。
+            # 既に在る控えはそのまま残るため、書き出しは従来どおり続けられる。
+            _logger.info("元 VOD が無いためイントロカードの素は作れません "
+                         "(既存の控えはそのまま使います)")
+
+    # 準備中に控えたイントロの素を素材フォルダへ写す (ver9 resolve5 §4.5)
+    #
+    # 区間を取り直して足したセクションは、保存の時点では取り直した素材が消えている。
+    # 準備の最中に控えてあるので、それをプロジェクトの隣へ移しておく。
+    # 突き合わせは vod_start で行う (素材 1 本と 1 対 1 で対応する値のため)。
+    def _copy_prepared_intro_source(self, media_entry, dest):
+        target = float(media_entry.get("vod_start", 0.0))
+        # 統合で足した差分の素材は self._prepared へは入らず (代表へ畳まれる)
+        # _prepared_by_index にだけ残るため、そちらを走査する。
+        for prepared in self._prepared_by_index.values():
+            if abs(float(prepared.get("start", 0.0)) - target) > _INTRO_MATCH_EPS:
+                continue
+            kept = str(prepared.get("intro_source", "") or "")
+            if not kept or not os.path.exists(kept):
+                continue
+            os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+            shutil.copy2(kept, dest)
+            _logger.info("イントロカードの素を控えから戻しました: %s", dest)
+            return True
+        return False
 
     # クリップ選択・使用可否・テーマの行 (§3-4)
     def _build_clip_bar(self):
@@ -267,24 +306,17 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         if self._section_add_available():
             self.add_section_button = QPushButton(tr("セクション追加..."))
             self.add_section_button.setAutoDefault(False)
-            self.add_section_button.setToolTip(
-                tr("元動画の区間を指定してセクションを追加します。\n"
-                "元動画の時系列に合わせた位置へ挿入され、"
-                "既存セクションと重なる場合は 1 つへ統合されます。"))
+            self.add_section_button.setToolTip(self._section_add_tooltip())
             self.add_section_button.clicked.connect(self._on_add_section)
             layout.addWidget(self.add_section_button)
         elif self._section_add_blocked_by_missing_source():
-            # 元 VOD を手放したあとに開き直した場合 (docs/error/fromUser/resolve.md §6-6)。
+            # 元 VOD を手放し、取り直しもできない場合 (ver9 resolve5 §4.6)。
             # 黙ってボタンを消すと「前は在ったのに」と理由が分からないため、
             # 押せない状態で出し、なぜ使えないかと戻し方を伝える。
             self.add_section_button = QPushButton(tr("セクション追加..."))
             self.add_section_button.setAutoDefault(False)
             self.add_section_button.setEnabled(False)
-            self.add_section_button.setToolTip(
-                tr("元動画が無いため、新しい区間を追加できません。\n"
-                   "この編集に使う素材はプロジェクトに保存されているため編集は続けられます。\n"
-                   "区間を足したい場合は、設定の「元動画を残す」を有効にしたうえで"
-                   "取得し直してください。"))
+            self.add_section_button.setToolTip(self._section_add_blocked_tooltip())
             layout.addWidget(self.add_section_button)
 
         self.use_check = QCheckBox(tr("このクリップを使用する"))
@@ -432,35 +464,104 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     # セクションの追加 (ver3 resolve13)
     # ------------------------------------------------------------------
 
+    # 元 VOD が手元にあるか
+    def _has_local_vod(self):
+        return bool(self._source_path and os.path.exists(self._source_path))
+
+    # 区間だけの取り直しが使えるか (ver9 resolve5 §4.6)
+    #
+    # 所有判定 (archive.auth.owner_only) はここでは見ない。取り直しは
+    # 「採点のときに所有判定を通した同じ VOD の一部をもう一度取る」操作であり、
+    # 入口で一度確かめてあるためである。sub-only などで取れない場合は
+    # 取得を試みた時点で理由が出る (resolve5 §5.2)。
+    def _refetch_available(self):
+        return bool(self._section_cfg["refetch"]["enabled"]
+                    and self._vod_source.get("video_id"))
+
     # 追加機能を出せるか。新素材の置き場 (write_clips の作業ディレクトリ) と
     # OP/ED 無効化済みの設定が揃っている経路でのみ有効 (§5.6)。
+    # 元 VOD が手元に無くても、区間だけ取り直せるなら使える (ver9 resolve5)。
     def _section_add_available(self):
-        return bool(self._section_cfg["enabled"]
-                    and self._clip_workdir
-                    and self._clip_settings
-                    and self._source_path
-                    and os.path.exists(self._source_path))
+        if not (self._section_cfg["enabled"]
+                and self._clip_workdir and self._clip_settings):
+            return False
+        return bool(self._has_local_vod() or self._refetch_available())
 
-    # 追加機能が「元動画が無いことだけ」を理由に使えない状態か (resolve.md §6-6)。
+    # 追加機能が「素材を用意できないことだけ」を理由に使えない状態か。
     # 機能そのものが無効・経路が違う場合と区別し、説明を出す相手を絞る。
     def _section_add_blocked_by_missing_source(self):
         return bool(self._section_cfg["enabled"]
                     and self._clip_workdir
                     and self._clip_settings
-                    and not (self._source_path and os.path.exists(self._source_path)))
+                    and not self._has_local_vod()
+                    and not self._refetch_available())
+
+    # 「セクション追加...」のツールチップ (素材の出どころで文言を変える)
+    def _section_add_tooltip(self):
+        base = tr("元動画の区間を指定してセクションを追加します。\n"
+                  "元動画の時系列に合わせた位置へ挿入され、"
+                  "既存セクションと重なる場合は 1 つへ統合されます。")
+        if self._has_local_vod():
+            return base
+        return base + tr("\n\n元動画は手元にありませんが、"
+                         "追加する区間だけを Twitch から取得します"
+                         "（元動画全体を取り直すわけではありません）。")
+
+    # 追加できないときのツールチップ (なぜ使えないかと、戻し方を伝える)
+    def _section_add_blocked_tooltip(self):
+        if not self._section_cfg["refetch"]["enabled"]:
+            return tr("元動画が無いため、新しい区間を追加できません。\n"
+                      "この編集に使う素材はプロジェクトに保存されているため編集は続けられます。\n"
+                      "区間を足したい場合は、設定の「元動画を残す」を有効にしたうえで"
+                      "取得し直してください。")
+        # 取り直しは有効だが取得元が分からない (ローカル動画からの採点など)
+        return tr("元動画が無く、取得元も分からないため新しい区間を追加できません。\n"
+                  "この編集に使う素材はプロジェクトに保存されているため編集は続けられます。\n"
+                  "区間を足したい場合は、元動画を用意して取得し直してください。")
+
+    # 同梱 ffmpeg のディレクトリ (twitch-dl は VOD の扱いに ffmpeg を PATH から探す)
+    def _ffmpeg_dir(self):
+        try:
+            return os.path.dirname(
+                ffmpeg_runner.get_ffmpeg_exe(self._settings.get("ffmpeg", {})))
+        except Exception:  # noqa: BLE001 (見つからなくても取得は試せる)
+            return None
 
     # 元動画の全長 (秒)。取れなければ 0.0 = 上限チェックをしない。
-    # ffprobe を毎回叩かないよう 1 度だけ測る。
+    #
+    # ① 元 VOD があれば測る → ② 採点時の記録 → ③ Twitch へ尋ねる
+    # (ver9 resolve5 §4.6)。ffprobe も API も 1 度だけ呼ぶ。
     def _vod_duration_sec(self):
         if self._vod_duration:
             return self._vod_duration
-        try:
-            self._vod_duration = float(ffmpeg_runner.probe_duration(
-                self._source_path, self._settings.get("ffmpeg", {})) or 0.0)
-        except Exception:  # noqa: BLE001 (測れなくても追加はできる)
-            _logger.exception("元動画の全長を取得できませんでした")
-            self._vod_duration = 0.0
+        if self._has_local_vod():
+            try:
+                self._vod_duration = float(ffmpeg_runner.probe_duration(
+                    self._source_path, self._settings.get("ffmpeg", {})) or 0.0)
+            except Exception:  # noqa: BLE001 (測れなくても追加はできる)
+                _logger.exception("元動画の全長を取得できませんでした")
+                self._vod_duration = 0.0
+        if not self._vod_duration:
+            # 採点時に記録した全長。元 VOD を手放したあとはこれが頼りになる
+            self._vod_duration = float(
+                self._vod_source.get("vod_duration_sec", 0.0) or 0.0)
+        if (not self._vod_duration and not self._vod_length_asked
+                and self._refetch_available()):
+            self._vod_length_asked = True
+            self._vod_duration = self._ask_vod_length()
         return self._vod_duration
+
+    # Twitch へ全長を尋ねる (記録も元 VOD も無いプロジェクト向け / §4.6 ③)。
+    # 数秒かかるため待ちカーソルを出す。取れなければ 0.0 (上限チェックなし)。
+    def _ask_vod_length(self):
+        dl = archive_config.download_config(self._settings)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            return float(twitch_source.video_length_sec(
+                self._vod_source["video_id"], dl["twitch_dl_path"],
+                self._ffmpeg_dir()) or 0.0)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     # 追加ダイアログの初期値。
     # 採点グラフのクリックも再生ヘッドの移動も選択セクション (_current) へ反映されるため、
@@ -569,7 +670,13 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
 
         self._section_worker = _SectionPrepareWorker(
             self._source_path, self._settings, self._clip_settings, jobs,
-            self._clip_workdir, parent=self)
+            self._clip_workdir, parent=self,
+            # 元 VOD が手元に無いときだけ取り直す (ver9 resolve5 §4.7)
+            vod_source=(None if self._has_local_vod() else self._vod_source),
+            # 採点時に VOD 全体で測った音量。追加セクションだけ基準が変わるのを防ぐ (§4.4)
+            vod_analysis=archive_timeline.vod_analysis_record(self.controller.timeline),
+            ffmpeg_dir=self._ffmpeg_dir(),
+            vod_duration_sec=self._vod_duration)
         self._section_worker.progress.connect(self._on_section_progress)
         self._section_worker.finished_ok.connect(
             lambda entries, _plan=plan: self._on_section_ready(entries, _plan))
@@ -857,7 +964,13 @@ class _SectionPrepareWorker(QThread):
     finished_ok = Signal(object)       # 準備できた prepared の一覧
     failed = Signal(str)
 
-    def __init__(self, source_path, settings, clip_settings, jobs, workdir, parent=None):
+    # vod_source       : 取得元の控え。渡すと**元 VOD の代わりに区間を取り直す**
+    #                    (ver9 resolve5 §4.7)。None なら従来どおり source_path を使う。
+    # vod_analysis     : VOD 全体で測った音量 (§4.4)。既存セクションと基準を揃える。
+    # vod_duration_sec : 元動画の全長 (分かっていれば取得範囲の終端を丸めるのに使う)
+    def __init__(self, source_path, settings, clip_settings, jobs, workdir, parent=None,
+                 vod_source=None, vod_analysis=None, ffmpeg_dir=None,
+                 vod_duration_sec=0.0):
         super().__init__(parent)
         self._source_path = source_path
         self._settings = settings
@@ -865,9 +978,58 @@ class _SectionPrepareWorker(QThread):
         self._jobs = list(jobs)
         self._workdir = workdir
         self._cancelled = False
+        self._vod_source = vod_source or None
+        self._vod_analysis = vod_analysis
+        self._ffmpeg_dir = ffmpeg_dir
+        self._vod_duration_sec = float(vod_duration_sec or 0.0)
 
     def cancel(self):
         self._cancelled = True
+
+    # 区間の素材と、その素材の VOD 絶対原点を用意する (ver9 resolve5 §4.7)
+    #
+    # 元 VOD が手元にあればそのまま使う (原点 0.0 = 従来と完全に同じ)。
+    # 無ければ要る区間だけを取り直し、素材の原点を添えて返す。原点は
+    # プレイリストの EXTINF 累積から決まるため、切り出し位置はずれない。
+    def _source_for(self, job, progress_cb):
+        if not self._vod_source:
+            return self._source_path, 0.0
+        progress_cb(tr("元動画の区間を取得"))
+        fetched = vod_range.fetch_range(
+            self._vod_source["video_id"], job["start"], job["end"],
+            self._workdir, self._settings,
+            quality=self._vod_source.get("quality", "source"),
+            ffmpeg_dir=self._ffmpeg_dir,
+            progress_cb=lambda message: progress_cb(str(message)),
+            cancel_cb=lambda: self._cancelled,
+            tag=str(job["index"]),
+            vod_duration_sec=self._vod_duration_sec)
+        return fetched["path"], float(fetched["origin_sec"])
+
+    # イントロカードの素を、区間の素材があるうちに控えておく (ver9 resolve5 §4.5)
+    #
+    # イントロカードはクリップ開始の buffer_sec 秒**手前**から作るため、
+    # クリップ素材 (vod_start 始まり) には入っていない。取り直した区間の素材は
+    # 画面を閉じると消えるので、ここで控えないと後から作れなくなる。
+    # 元 VOD が手元にある場合は保存時に作れるため何もしない (従来どおり)。
+    def _keep_intro_source(self, entry, source, origin, ffmpeg_cfg):
+        if not self._vod_source or not entry:
+            return
+        card = archive_config.intro_card_config(self._settings)
+        if not card["enabled"] or card["buffer_sec"] <= 0:
+            return              # イントロカードを使わない設定
+        dest = os.path.join(self._workdir, f"intro_{entry['index']}.mp4")
+        try:
+            kept = clip_writer.export_intro_source(
+                source, float(entry.get("start", 0.0)), card["buffer_sec"],
+                dest, ffmpeg_cfg, source_origin_sec=origin)
+        except DiskSpaceError:
+            raise               # 容量不足は継続しない (resolve.md §6-9)
+        except Exception:  # noqa: BLE001 (控えが作れなくても追加そのものは続ける)
+            _logger.warning("イントロカードの素を控えられませんでした (追加は続けます)")
+            return
+        if kept:
+            entry["intro_source"] = kept
 
     def run(self):
         ffmpeg_cfg = self._settings.get("ffmpeg", {})
@@ -889,10 +1051,19 @@ class _SectionPrepareWorker(QThread):
                            head=head, start=format_hms(_job["start"]),
                            end=format_hms(_job["end"]), phase=label))
 
-                entries.append(clip_writer.prepare_one_clip(
-                    self._source_path, self._settings, self._clip_settings, job,
-                    ffmpeg_cfg, self._workdir, use_timeline=True, progress_cb=phase))
+                source, origin = self._source_for(job, phase)
+                entry = clip_writer.prepare_one_clip(
+                    source, self._settings, self._clip_settings, job,
+                    ffmpeg_cfg, self._workdir, use_timeline=True, progress_cb=phase,
+                    vod_analysis=self._vod_analysis, source_origin_sec=origin)
+                self._keep_intro_source(entry, source, origin, ffmpeg_cfg)
+                entries.append(entry)
             self.progress.emit(1.0, tr("準備が完了しました"))
+            self.finished_ok.emit(entries)
+        except PipelineCancelled:
+            # 取得中の中止は失敗ではない。用意できた区間だけを渡して終える
+            # (呼び側が 0 件なら「中止しました」と出す / ver9 resolve5 §4.7)
+            _logger.info("セクションの準備を中止しました (%d 区間で停止)", len(entries))
             self.finished_ok.emit(entries)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("セクションの準備に失敗しました")

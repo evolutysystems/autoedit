@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
+    QButtonGroup,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -39,10 +40,11 @@ from PySide6.QtWidgets import (
 
 from ...exceptions import TimelineError
 from ...export import resolve_export
+from ...modules import subtitle_generator
 from ...i18n import tr
 from ...services import config as services_config
 from ...settings.settings_window import save_settings
-from ...timeline import commands, media_sidecar, project_io
+from ...timeline import commands, compositor, crop, media_sidecar, project_io
 from ...timeline.builder import dedupe_recent, recent_path
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
@@ -61,6 +63,9 @@ _logger = get_logger(__name__)
 
 # 字幕の役割 (既存 subtitle_editor_dialog と同じ選択肢)
 _ROLE_CHOICES = [("配信者", "streamer"), ("サブ", "sub"), ("コメント", "comment")]
+
+# 文字寄せの選択肢 (ver9 resolve3 §R1)。並び順がボタンの並び順になる。
+_ALIGN_CHOICES = [("left", "左寄せ"), ("center", "中央寄せ"), ("right", "右寄せ")]
 
 # フォント一覧の先頭に置く「指定なし」= setting.json の字幕フォントに従う
 _FONT_DEFAULT_LABEL = "(設定のフォント)"
@@ -1530,7 +1535,11 @@ class _InspectorPanel(QWidget):
         self.role_combo = QComboBox()
         for label, value in ((tr(t), v) for t, v in _ROLE_CHOICES):
             self.role_combo.addItem(label, value)
-        self.role_combo.currentIndexChanged.connect(self._on_role_changed)
+        # activated = 利用者が選び直したときだけ (フォントコンボと同じ流儀)。
+        # currentIndexChanged だと、インスペクタの上でホイールを回した・矢印キーを
+        # 押しただけで役割変更コマンドが飛び、テロップが移動してしまう
+        # (ver9 resolve10 §2.4)。
+        self.role_combo.activated.connect(self._on_role_changed)
         form.addRow(tr("役割"), self.role_combo)
 
         # フォントは名前の直接入力ではなく一覧から選ぶ (設定画面・字幕編集画面と同じ形式)。
@@ -1554,6 +1563,33 @@ class _InspectorPanel(QWidget):
         self.size_spin.setSpecialValueText(tr("既定"))
         self.size_spin.editingFinished.connect(self._on_size_changed)
         form.addRow(tr("サイズ"), self.size_spin)
+
+        # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §R1)。
+        # コンボではなく 3 つ並んだ排他ボタン (エクセルの配置ボタンと同じ操作感)。
+        # 既定 (未指定) は設定の表示位置から求めたボタンを押した状態で見せる (§R3)。
+        self.align_buttons = {}
+        self._align_group = None
+        if self._controller.cfg["subtitle_align"]["enabled"]:
+            align_width = int(
+                self._controller.cfg["ui"]["subtitle_align_button_width_px"])
+            align_row = QWidget()
+            align_layout = QHBoxLayout(align_row)
+            align_layout.setContentsMargins(0, 0, 0, 0)
+            align_layout.setSpacing(0)          # 隙間 0 で 1 つの帯に見せる
+            self._align_group = QButtonGroup(self)
+            self._align_group.setExclusive(True)    # 常に 1 つだけ選択される (要望)
+            for value, label in _ALIGN_CHOICES:
+                button = QPushButton(tr(label))
+                button.setCheckable(True)
+                button.setFixedWidth(align_width)
+                # clicked = 利用者が押したときだけ。show_clip の流し込みでは発火しない
+                button.clicked.connect(
+                    lambda _checked=False, v=value: self._on_align_clicked(v))
+                self._align_group.addButton(button)
+                align_layout.addWidget(button)
+                self.align_buttons[value] = button
+            align_layout.addStretch(1)
+            form.addRow(tr("文字寄せ"), align_row)
 
         # 文字色・縁の色は「このクリップだけの上書き」(resolve6 §3-1)。
         # 空欄なら設定の役割色 (配信者/サブ/コメント) に従う。
@@ -1622,6 +1658,44 @@ class _InspectorPanel(QWidget):
         overlay_form.addRow("", scale_buttons)
         root.addWidget(self.overlay_widget)
 
+        # V1 (ベース映像) 用の編集欄 (ver9 resolve6 §4.4)。
+        # 字幕用・オーバーレイ用と同じ場所に置き、選択に応じて出し分ける。
+        #
+        # **倍率の基準がオーバーレイと違う。** オーバーレイの「大きさ」は
+        # キャンバス幅に対する比率だが、V1 の「拡大率」はキャンバスへ収めた状態に
+        # 対する倍率で、100% が「今の見た目」になる (§3.1)。
+        # 取り違えを防ぐため、ラベルも言葉を分けている (大きさ / 拡大率)。
+        self.base_widget = QWidget()
+        base_form = QFormLayout(self.base_widget)
+        base_form.setContentsMargins(0, 6, 0, 0)
+
+        base_cfg = self._controller.cfg["base_zoom"]
+        self.zoom_spin = QDoubleSpinBox()
+        self.zoom_spin.setDecimals(1)
+        self.zoom_spin.setRange(float(base_cfg["min"]) * 100.0,
+                                float(base_cfg["max"]) * 100.0)
+        self.zoom_spin.setSingleStep(float(base_cfg["step_percent"]))
+        self.zoom_spin.setSuffix(" %")
+        self.zoom_spin.setToolTip(
+            tr("映像の拡大率です (100% = 画面に収めた元の大きさ)\n"
+            "縦横比は常に保たれます。100% 以外のときはプレビューを"
+            "ドラッグして位置を変えられます"))
+        # 1 打鍵ごとにコマンドを積まないよう、確定したときだけ反映する
+        self.zoom_spin.editingFinished.connect(self._on_zoom_changed)
+        base_form.addRow(tr("拡大率"), self.zoom_spin)
+
+        self.zoom_note_label = QLabel("")
+        self.zoom_note_label.setWordWrap(True)
+        theme.mark_note(self.zoom_note_label)
+        base_form.addRow("", self.zoom_note_label)
+
+        self.reset_zoom_button = QPushButton(tr("等倍に戻す"))
+        self.reset_zoom_button.setToolTip(
+            tr("拡大率を 100% に戻します (位置も中央へ戻ります)"))
+        self.reset_zoom_button.clicked.connect(lambda: self._apply_zoom(1.0))
+        base_form.addRow("", self.reset_zoom_button)
+        root.addWidget(self.base_widget)
+
         self.reset_position_button = QPushButton(tr("位置を既定へ戻す"))
         self.reset_position_button.setToolTip(
             tr("ドラッグで動かした位置を捨てて、設定の配置・余白に従わせます"))
@@ -1631,6 +1705,7 @@ class _InspectorPanel(QWidget):
         root.addStretch(1)
         self.subtitle_widget.setVisible(False)
         self.overlay_widget.setVisible(False)
+        self.base_widget.setVisible(False)
         self.reset_position_button.setVisible(False)
 
     # 選択要素を表示する
@@ -1645,6 +1720,7 @@ class _InspectorPanel(QWidget):
                     "ここに詳細が出ます。"))
                 self.subtitle_widget.setVisible(False)
                 self.overlay_widget.setVisible(False)
+                self.base_widget.setVisible(False)
                 self.reset_position_button.setVisible(False)
                 return
             is_subtitle = isinstance(clip, SubtitleClip)
@@ -1653,6 +1729,11 @@ class _InspectorPanel(QWidget):
             self.overlay_widget.setVisible(is_overlay)
             if is_overlay:
                 self._show_overlay_scale(clip)
+            # V1 (ベース映像) の拡大率 (ver9 resolve6)
+            is_base = self._is_base_video_clip(clip)
+            self.base_widget.setVisible(is_base)
+            if is_base:
+                self._show_base_zoom(clip)
             self.reset_position_button.setVisible(True)
             self.title_label.setText(self._title_for(clip))
             self.info_label.setText(self._info_for(clip))
@@ -1665,6 +1746,7 @@ class _InspectorPanel(QWidget):
                 # 色は先頭 1 件の値を出す (複数選択で値が違っても「複数値」は持たない)
                 self.color_field.set_value(clip.color)
                 self.outline_color_field.set_value(clip.outline_color)
+                self._show_align(clip)
                 self._update_multi_note()
         finally:
             self._updating = False
@@ -1705,8 +1787,96 @@ class _InspectorPanel(QWidget):
         self.multi_note_label.setVisible(count > 1)
         if count > 1:
             self.multi_note_label.setText(
-                tr("※ 文字色・縁の色は選択中の {count} 件すべてに適用されます"
+                tr("※ 文字色・縁の色・文字寄せは選択中の {count} 件すべてに適用されます"
                    "（字幕・役割・フォント・サイズはこの 1 件のみ）", count=count))
+
+    # 文字寄せボタンの表示を現在の値に合わせる (ver9 resolve3 §R3 / §R5)
+    # 未指定のときは設定の表示位置 (縦動画なら縦の値) から求めた寄せを押しておく。
+    def _show_align(self, clip):
+        if self._align_group is None:
+            return
+        allowed = self._align_allowed(clip)
+        current = (subtitle_generator.normalize_align(clip.align)
+                   or subtitle_generator.align_of_alignment(
+                       self._role_alignment(clip.role)))
+        tooltip = self._align_tooltip(allowed)
+        for value, button in self.align_buttons.items():
+            button.setChecked(value == current)
+            button.setEnabled(allowed)
+            button.setToolTip(tooltip)
+
+    # この字幕の文字寄せを変えられるか (コメントはアイコン・背景の配置が決まっている)
+    def _align_allowed(self, clip):
+        if clip.role != "comment":
+            return True
+        return bool(self._controller.cfg["subtitle_align"]["allow_comment_role"])
+
+    # 役割に対応する設定の表示位置 (コメントは comment_alignment / 他は alignment)
+    # 参照するのはプレビューと同じ実効設定 (縦動画では縦の値)。
+    def _role_alignment(self, role):
+        eff_cfg = self._controller.effective_subtitle_cfg()
+        if role == "comment" and eff_cfg.get("comment_alignment") is not None:
+            return eff_cfg.get("comment_alignment")
+        return eff_cfg.get("alignment", 2)
+
+    def _align_tooltip(self, allowed):
+        if not allowed:
+            return tr("コメントはアイコンと背景の配置が決まっているため、"
+                      "文字寄せを変えられません")
+        return tr("複数行になったテロップの行の揃えです\n"
+                  "テロップの表示位置 (左右・上下) は動きません。"
+                  "1 行のテロップでは見た目は変わりません")
+
+    # 文字寄せボタン。選択中の字幕すべてへ 1 コマンドで適用する (§R7 / Undo 1 手)
+    def _on_align_clicked(self, value):
+        if self._updating or not isinstance(self._clip, SubtitleClip):
+            return
+        cfg = self._controller.cfg["subtitle_align"]
+        # 既に効いている値をもう一度押したら「設定に従う」へ戻す (§R4)
+        if (cfg["clear_on_reclick"]
+                and subtitle_generator.normalize_align(self._clip.align) == value):
+            value = ""
+        ids = (self._selected_subtitle_ids() if cfg["apply_to_selection"]
+               else [self._clip.id])
+        targets, skipped = self._align_targets(ids)
+        if not targets:
+            self.status_message.emit(tr("文字寄せを変えられるテロップがありません"))
+            self._show_align(self._clip)        # 押された見た目を元へ戻す
+            return
+        self._controller.edit_subtitles(targets, align=value)
+        # 「設定に従う」へ戻したときは押されているボタンが変わるため、ここで引き直す
+        # (排他ボタンは押し直しただけでは checked が外れない)
+        self._show_align(self._clip)
+        self.status_message.emit(self._align_message(value, len(targets), skipped))
+
+    # 寄せを変えられる字幕だけを選び出す (戻り値 (対象 ID, 除外した件数))
+    def _align_targets(self, clip_ids):
+        timeline = self._controller.timeline
+        targets = []
+        skipped = 0
+        for clip_id in clip_ids:
+            clip = timeline.clip_by_id(clip_id)
+            if not isinstance(clip, SubtitleClip):
+                continue
+            if self._align_allowed(clip):
+                targets.append(clip_id)
+            else:
+                skipped += 1
+        return targets, skipped
+
+    def _align_message(self, value, count, skipped):
+        label = dict(_ALIGN_CHOICES).get(value, "")
+        if not value:
+            message = (tr("文字寄せを設定に戻しました") if count <= 1
+                       else tr("{count} 件の文字寄せを設定に戻しました", count=count))
+        elif count <= 1:
+            message = tr("文字寄せを「{align}」にしました", align=tr(label))
+        else:
+            message = tr("{count} 件の文字寄せを「{align}」にしました",
+                         count=count, align=tr(label))
+        if skipped:
+            message += tr(" ({count} 件はコメントのため変えていません)", count=skipped)
+        return message
 
     def _title_for(self, clip):
         if isinstance(clip, SubtitleClip):
@@ -1751,8 +1921,8 @@ class _InspectorPanel(QWidget):
     # 対象は オーバーレイの映像・画像クリップ だけで、
     #   ・字幕      … 大きさはフォントサイズで表す (二重の指定手段を作らない)
     #   ・音声      … 見た目を持たない
-    #   ・ベース映像 (本編・OP・ED) … renderer が transform を見ないため
-    #                                 変えても出力が変わらない = 嘘になる
+    #   ・ベース映像 (本編・OP・ED) … 倍率の基準が違うため「拡大率」欄で扱う
+    #                                 (ver9 resolve6 §3.1 / _is_base_video_clip)
     # は出さない。
     def _is_overlay_clip(self, clip):
         if clip is None or isinstance(clip, (SubtitleClip, AudioClip)):
@@ -1780,6 +1950,71 @@ class _InspectorPanel(QWidget):
         else:
             self.scale_note_label.setText(tr("幅 {width} px 相当", width=width_px))
         self.native_size_button.setEnabled(native_scale(timeline, clip) is not None)
+
+    # ------------------------------------------------------------------
+    # 拡大率 (V1 / ver9 resolve6 §4.4)
+    # ------------------------------------------------------------------
+
+    # 「拡大率」欄を出す対象か。
+    # ベース映像トラックの映像クリップだけが対象。字幕・音声・オーバーレイは出さない。
+    def _is_base_video_clip(self, clip):
+        if not self._controller.cfg["base_zoom"]["enabled"]:
+            return False
+        return commands.is_base_video_clip(self._controller.timeline, clip)
+
+    # 縦動画の切り抜き指定があるか (ver9 resolve6 §3.6)。
+    # 切り抜きは「どこを切ってどこへ置くか」を既に決めているため拡大率と併用しない。
+    def _has_crop_layout(self):
+        timeline = self._controller.timeline
+        layout = crop.load(timeline)
+        if layout is None:
+            return False
+        media = timeline.media_by_id(str(layout.get("media_id") or ""))
+        return crop.is_valid(layout, media, timeline.width, timeline.height)
+
+    # 現在の拡大率を欄へ出し、実寸の目安と操作の案内を添える
+    def _show_base_zoom(self, clip):
+        zoom = float(clip.transform.scale or 1.0)
+        self.zoom_spin.setValue(zoom * 100.0)
+        timeline = self._controller.timeline
+        media = timeline.media_by_id(clip.media_id)
+
+        # 切り抜き指定があるときは触らせない (理由を書いて無効にする)
+        cropped = self._has_crop_layout()
+        self.zoom_spin.setEnabled(not cropped)
+        self.reset_zoom_button.setEnabled(not cropped and abs(zoom - 1.0) > 1e-4)
+        if cropped:
+            self.zoom_note_label.setText(
+                tr("縦動画の切り抜きで位置と大きさを指定しているため、"
+                   "拡大率は使えません"))
+            return
+
+        fit_w, fit_h = compositor.fit_size_px(
+            getattr(media, "width", 0), getattr(media, "height", 0),
+            timeline.width, timeline.height)
+        lines = []
+        if fit_w > 0 and fit_h > 0:
+            lines.append(tr("{width} × {height} px 相当",
+                            width=int(round(fit_w * zoom)),
+                            height=int(round(fit_h * zoom))))
+        if abs(zoom - 1.0) <= 1e-4:
+            lines.append(tr("100% 以外にすると、プレビューをドラッグして"
+                            "位置を変えられます"))
+        else:
+            lines.append(tr("プレビューをドラッグすると位置を変えられます"))
+        self.zoom_note_label.setText("\n".join(lines))
+
+    def _on_zoom_changed(self):
+        if self._updating or not self._is_base_video_clip(self._clip):
+            return
+        self._apply_zoom(self.zoom_spin.value() / 100.0)
+
+    def _apply_zoom(self, zoom):
+        if self._clip is None or zoom is None:
+            return
+        if not self._is_base_video_clip(self._clip) or self._has_crop_layout():
+            return
+        self._controller.zoom_base_clip(self._clip.id, zoom)
 
     def _on_scale_changed(self):
         if self._updating or not self._is_overlay_clip(self._clip):
@@ -1809,6 +2044,8 @@ class _InspectorPanel(QWidget):
 
     # 役割を変えるとコメント用トラック (S2) への移動も一緒に行う (ver3 resolve11 §5.8)。
     # 移動できなくても役割の変更は通る (出力は役割が決めるため見た目は正しく出る)。
+    # 移動するのは S1 / コメント用トラックに居るテロップだけで、利用者が増やした
+    # トラック (S3 以降) へ置いたテロップはその場に残る (ver9 resolve10 §3.2)。
     def _on_role_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):
             return
@@ -1824,6 +2061,10 @@ class _InspectorPanel(QWidget):
         elif result["blocked"]:
             self.status_message.emit(
                 tr("同じ時間にコメントがあるため、役割だけ変更しました"))
+        elif result["skipped"]:
+            # 増やしたトラックへ置いたテロップは動かさない (ver9 resolve10 §3.5)
+            self.status_message.emit(
+                tr("テロップの置き場所はそのままで役割だけ変更しました"))
 
     def _on_font_changed(self):
         if self._updating or not isinstance(self._clip, SubtitleClip):

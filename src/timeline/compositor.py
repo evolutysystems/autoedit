@@ -109,7 +109,9 @@ def _even(value):
 # プロキシは「ここで縮める」ことで以降のフィルタとエンコードがすべて軽くなる (§3.3)。
 def base_filters(timeline, media, clip, profile, fade_sec=0.0,
                  duration=None, settings=None, window=None):
-    filters = list(still_filters(timeline, media, profile, settings))
+    # clip を渡すと V1 の拡大率・表示位置が効く (ver9 resolve6 §4.1)。
+    # 等倍なら従来と同一のフィルタになる。
+    filters = list(still_filters(timeline, media, profile, settings, clip=clip))
 
     # 無音カットのフェード設定 (呼び出し側が settings から解決して渡す / renderer §8.2)
     # フェードアウトの開始位置は実際に書き出す尺を基準にする (resolve3 §5.3)
@@ -140,13 +142,20 @@ def base_filters(timeline, media, clip, profile, fade_sec=0.0,
 #
 # 停止中の 1 枚絵 (高精度プレビュー) はこちらを使う。クロップを通すため、
 # 縦動画プロジェクトでも出力と同じ枠・同じぼかし背景になる (§4.6)。
-def still_filters(timeline, media, profile, settings=None):
+def still_filters(timeline, media, profile, settings=None, clip=None):
     # 縦動画の切り抜き (ver5 resolve9 §5.5)。指定が無ければ None が返り、
     # 以降は従来どおりの正規化になる = コマンドが 1 文字も変わらない (R15)。
     chain = crop_chain(timeline, media, profile, settings)
     if chain:
         # 切り抜きが正規化を兼ねる (キャンバス寸法・fps・画素形式まで揃えて出す)
+        # 切り抜きは「どこを切ってどこへ置くか」を既に決めているため、
+        # V1 の拡大率とは併用しない (ver9 resolve6 §3.6)。
         return [chain]
+    # V1 の拡大率・表示位置 (ver9 resolve6 §3.3)。
+    # 100% かつ位置指定なしなら空が返り、以降は従来どおりの正規化になる。
+    zoom = base_zoom_filters(media, clip, profile)
+    if zoom:
+        return zoom
     if not needs_normalize(media, profile.width, profile.height, profile.fps):
         return []
     _warn_normalize_once(media, profile)
@@ -157,6 +166,127 @@ def still_filters(timeline, media, profile, settings=None):
         f"fps={profile.fps}",
         "format=yuv420p",
     ]
+
+
+# ------------------------------------------------------------------
+# V1 の拡大率・表示位置 (ver9 resolve6)
+# ------------------------------------------------------------------
+#
+# V1 (ベース映像) は本来「キャンバスへ収めて埋める」ものだった。そこへ
+# 「この場面だけ寄りで見せたい」という拡大率を足す。
+#
+# **100% の意味がオーバーレイと違う。**
+#   オーバーレイ (overlay_chain) : scale = キャンバス幅に対する比率
+#   V1 (ここ)                    : scale = **キャンバスへ収めた状態に対する倍率**
+# V1 で 100% が「今の見た目」でなければ、開いた瞬間に絵が変わってしまうためである
+# (resolve6 §3.1)。この 2 つを読み書きするのは overlay_chain と本関数だけに限る。
+#
+# 100% かつ位置指定なしのときは**空リスト**を返し、呼び側は従来の正規化へ落ちる。
+# これにより既存プロジェクトのフィルタ文字列が 1 文字も変わらない (§3.2)。
+
+# 拡大率が 1.0 と見なせる差 (ここ以下は「等倍」として従来経路へ落とす)
+_ZOOM_EPS = 1e-4
+
+
+# 素材をキャンバスへ収めたときの寸法を返す (scale=…:force_original_aspect_ratio=decrease と同値)
+# 素材の寸法が分からないときは (0, 0) を返す。
+#
+# 可動範囲の計算 (commands.clamp_base_offset) も同じ寸法を使うため、
+# 計算の実体はここ 1 つに置き、キャンバス寸法を直接受ける形も公開する。
+def fit_size_px(media_w, media_h, canvas_w, canvas_h):
+    media_w = int(media_w or 0)
+    media_h = int(media_h or 0)
+    if media_w <= 0 or media_h <= 0:
+        return 0, 0
+    ratio = min(canvas_w / media_w, canvas_h / media_h)
+    return _even(media_w * ratio), _even(media_h * ratio)
+
+
+def fit_size(media, profile):
+    return fit_size_px(getattr(media, "width", 0), getattr(media, "height", 0),
+                       profile.width, profile.height)
+
+
+# クリップの拡大率 (1.0 = 等倍)。拡大率を持たないクリップは 1.0。
+def base_zoom(clip):
+    transform = getattr(clip, "transform", None)
+    if transform is None:
+        return 1.0
+    return float(transform.scale if transform.scale is not None else 1.0)
+
+
+# 拡大率が等倍と見なせるか
+def is_identity_zoom(clip):
+    return abs(base_zoom(clip) - 1.0) <= _ZOOM_EPS
+
+
+# V1 の拡大率と表示位置のフィルタを返す (resolve6 §3.3)
+#
+# z > 1 : 収めた寸法の z 倍へ拡大し、キャンバスの大きさで crop (はみ出しを切る)
+# z < 1 : 収めた寸法の z 倍へ縮小し、キャンバスの大きさへ pad (余白は黒)
+# 位置 (transform.x/y) は、切り出す場所 / 置く場所をずらす量として効く。
+def base_zoom_filters(media, clip, profile):
+    if clip is None or is_identity_zoom(clip):
+        return []
+    fit_w, fit_h = fit_size(media, profile)
+    if fit_w <= 0 or fit_h <= 0:
+        # 寸法が分からない素材は拡大できない (倍率の基準が決まらない)。
+        # 操作を封じるより、従来どおり収めて出すほうが害が小さい。
+        return []
+
+    zoom = base_zoom(clip)
+    target_w = _even(fit_w * zoom)
+    target_h = _even(fit_h * zoom)
+    offset_x, offset_y = base_offset_px(media, clip, profile)
+
+    filters = [f"scale={target_w}:{target_h}"]
+    # **軸ごとに crop と pad のどちらが要るかが違う。**
+    # 例: 4:3 素材を 110% にすると、高さは余り (crop) 幅は足りない (pad)。
+    # 片方だけで済ませると FFmpeg が「入力が余白の内に収まらない」と失敗する。
+    crop_w = min(target_w, profile.width)
+    crop_h = min(target_h, profile.height)
+    if crop_w < target_w or crop_h < target_h:
+        # はみ出す軸を切る。見せる位置を左上座標で指定する。
+        # 符号は反転する (映像を右へずらす = 切り出し位置は左へ動く)。
+        crop_x = _clamp_int((target_w - crop_w) / 2.0 - offset_x, 0, target_w - crop_w)
+        crop_y = _clamp_int((target_h - crop_h) / 2.0 - offset_y, 0, target_h - crop_h)
+        filters.append(f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}")
+    if crop_w < profile.width or crop_h < profile.height:
+        # 足りない軸を黒で埋める。置く位置を左上座標で指定する。
+        # 符号はそのまま (映像を右へずらす = 置く位置も右へ動く)。
+        pad_x = _clamp_int((profile.width - crop_w) / 2.0 + offset_x,
+                            0, profile.width - crop_w)
+        pad_y = _clamp_int((profile.height - crop_h) / 2.0 + offset_y,
+                            0, profile.height - crop_h)
+        filters.append(f"pad={profile.width}:{profile.height}:{pad_x}:{pad_y}:black")
+    # 以降は従来の正規化と同じものを残す (sar / fps / 画素形式)
+    filters += ["setsar=1", f"fps={profile.fps}", "format=yuv420p"]
+    return filters
+
+
+# 表示位置のずらし量をピクセルで返す (キャンバス基準)。
+#
+# transform.x/y は「キャンバス中心を原点とする正規化座標」(-1.0〜1.0 / model.py:104)。
+# Y は**上が正**なので、ピクセル座標 (下が正) へ直すときに符号を反転する。
+# プロキシでも相似になるよう、寸法は profile からだけ取る。
+def base_offset_px(media, clip, profile):
+    transform = getattr(clip, "transform", None) if clip is not None else None
+    if transform is None:
+        return 0.0, 0.0
+    x = float(transform.x or 0.0)
+    y = float(transform.y or 0.0)
+    return x * profile.width / 2.0, -y * profile.height / 2.0
+
+
+# 整数へ丸めて範囲へ収める (crop / pad の座標は負や範囲外を取れない)
+#
+# **偶数へは丸めない。** 偶数が必須なのは crop / pad の**幅と高さ**で (yuv420p)、
+# それは _even で丸めている。座標まで偶数にすると、プロキシ (本番の 1/2 寸法) で
+# 丸め先が食い違い、本番との相似が崩れる (tests/test_base_zoom.py の相似検査)。
+# 座標が奇数のときのクロマの半画素ずれは、視覚的に判別できない範囲である。
+def _clamp_int(value, low, high):
+    high = max(high, low)
+    return int(min(max(round(value), low), high))
 
 
 # 縦動画の切り抜きのフィルタを返す (ver5 resolve9 §5.5 / 旧 renderer._crop_chain)

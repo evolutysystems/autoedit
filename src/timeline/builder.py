@@ -270,6 +270,13 @@ def _paste_config(values):
 # 役割別の字幕トラック運用を検証して既定で補う (ver3 resolve11 §7.3)
 # コメント役割の字幕を専用トラック (既定 S2) へ置くための設定。
 # role_track_enabled=False で従来どおり字幕トラック 1 本の運用へ戻せる。
+# ver9 resolve2: 右クリックから通常テロップ用トラックを足す設定もここで補う。
+# 役割変更の自動移動の範囲 (ver9 resolve10 §3.2)。既定は "role_tracks"。
+def _role_move_scope(value):
+    scope = str(value or "").strip().lower()
+    return scope if scope in ("role_tracks", "all") else "role_tracks"
+
+
 def _subtitle_tracks_config(values):
     values = values if isinstance(values, dict) else {}
     track_id = str(values.get("comment_track_id", "") or "").strip()
@@ -279,6 +286,42 @@ def _subtitle_tracks_config(values):
         "comment_track_name": str(values.get("comment_track_name", "") or "Comment"),
         "comment_track_index": _positive_int(values.get("comment_track_index"), 2),
         "auto_move_on_role_change": bool(values.get("auto_move_on_role_change", True)),
+        # ver9 resolve10: 役割変更の自動移動をどこまで効かせるか。
+        # "role_tracks" (既定) = S1 / コメント用トラックに居るテロップだけ移す。
+        # "all" = どのトラックに居ても移す (v1.6.1 までの挙動)。
+        # 未知の値は既定へ寄せる (設定の書き間違いで挙動が変わらないように)。
+        "role_move_scope": _role_move_scope(values.get("role_move_scope")),
+        # ver9 resolve2: 右クリックから足す通常テロップ用トラック
+        "new_track_enabled": bool(values.get("new_track_enabled", True)),
+        "new_track_id_prefix": str(
+            values.get("new_track_id_prefix", "") or "S").strip() or "S",
+        "new_track_name_format": str(
+            values.get("new_track_name_format", "") or "Subtitle {index}"),
+        # 2 トラック目はコメント専用のため既定 3 から (§R4)
+        "new_track_min_index": _positive_int(values.get("new_track_min_index"), 3),
+        "max_tracks": _positive_int(values.get("max_tracks"), 8),
+        "new_track_moves_selection": bool(
+            values.get("new_track_moves_selection", True)),
+        # ver9 要望: ドラッグ＆ドロップでテロップトラックを行き来できるか。
+        # false で従来どおり「新規テロップトラックへ移動」だけになる。
+        "drag_between_tracks": bool(values.get("drag_between_tracks", True)),
+        # ver9 要望: 増やしたトラックをヘッダの右クリックから削除できるか
+        "remove_track_enabled": bool(values.get("remove_track_enabled", True)),
+    }
+
+
+# テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5) の UI 設定を検証して既定で補う
+# 焼き込み側の制御は subtitle.line_align (ASS 生成は subtitle セクションしか見ないため)。
+def _subtitle_align_config(values):
+    values = values if isinstance(values, dict) else {}
+    return {
+        "enabled": bool(values.get("enabled", True)),
+        # 選択中の字幕すべてへ効かせるか (文字色と同じ規約 / §R7)
+        "apply_to_selection": bool(values.get("apply_to_selection", True)),
+        # 同じボタンを押し直したら「設定に従う」へ戻すか (§R4)
+        "clear_on_reclick": bool(values.get("clear_on_reclick", True)),
+        # コメント役割でも文字寄せを変えられるようにするか (§R5 / §7.1)
+        "allow_comment_role": bool(values.get("allow_comment_role", False)),
     }
 
 
@@ -337,6 +380,7 @@ def timeline_config(settings):
     opening_ending = cfg.get("opening_ending", {}) or {}
     waveform = cfg.get("waveform", {}) or {}
     overlay = cfg.get("overlay", {}) or {}
+    base_zoom = cfg.get("base_zoom", {}) or {}
     project = cfg.get("project", {}) or {}
     return {
         "enabled": bool(cfg.get("enabled", True)),
@@ -351,6 +395,11 @@ def timeline_config(settings):
         "default_subtitle_sec": _positive_float(cfg.get("default_subtitle_sec"), 2.0),
         # 役割別の字幕トラック (ver3 resolve11 §7.3)
         "subtitle_tracks": _subtitle_tracks_config(cfg.get("subtitle_tracks", {})),
+        # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §R1)
+        "subtitle_align": _subtitle_align_config(cfg.get("subtitle_align", {})),
+        # テロップを分割したときに本文も分けるか (ver9 要望)。
+        # false (既定) = 両方へ同じ本文が入る / true = 再生ヘッド位置で本文も分ける
+        "subtitle_split_text": bool(cfg.get("subtitle_split_text", False)),
         # Delete キー単独の割り当て (ver3 resolve2 R7)。true=リップル削除 (既定)
         "ripple_delete": bool(cfg.get("ripple_delete", True)),
         # リップルで一緒に詰める対象 (resolve2 R8)。"all"=全トラック (既定) / "same"=同一のみ
@@ -366,6 +415,20 @@ def timeline_config(settings):
             "default_scale_mode": ("native"
                                    if str(overlay.get("default_scale_mode", "")).strip()
                                    == "native" else "fit_width"),
+        },
+        # V1 (ベース映像) の拡大率 (ver9 resolve6 §4.7)
+        #
+        # **オーバーレイの overlay.min_scale/max_scale とは意味が違う。**
+        #   overlay   : キャンバス幅に対する比率
+        #   base_zoom : キャンバスへ収めた状態に対する倍率 (100% = 今の見た目)
+        # 同じ値に見えて基準が違うため、設定も分けて持つ。
+        "base_zoom": {
+            "enabled": bool(base_zoom.get("enabled", True)),
+            # 縮小も許す (ver9 resolve6 回答 #1)。余白は黒で埋まる。
+            # 0.1 より下では映像が点になり編集の役に立たないため下限とする。
+            "min": _positive_float(base_zoom.get("min"), 0.1),
+            "max": _positive_float(base_zoom.get("max"), 3.0),
+            "step_percent": _positive_float(base_zoom.get("step_percent"), 1.0),
         },
         # プロジェクトの保存・再編集 (ver3 resolve7 §5.7〜§5.11)
         "project": {
@@ -465,6 +528,9 @@ def timeline_config(settings):
             # 字幕インスペクタの色見本ボタンの幅 (ver3 resolve6 §5.5)
             "subtitle_color_swatch_width_px": _positive_int(
                 ui.get("subtitle_color_swatch_width_px"), 28),
+            # 字幕インスペクタの文字寄せボタン 1 つの幅 (ver9 resolve3 §R1)
+            "subtitle_align_button_width_px": _positive_int(
+                ui.get("subtitle_align_button_width_px"), 56),
         },
         # 音声クリップの波形表示 (X = 時間 / Y = 音量)
         "waveform": {
@@ -481,6 +547,22 @@ def timeline_config(settings):
                       else "linear"),
             # "log" のときに底とする音量 (dB)。これ以下は高さ 0 になる。
             "db_floor": float(waveform.get("db_floor", -48.0) or -48.0),
+            # ドラッグ中 (クリップの移動・トリム・再生ヘッドのスクラブ) は
+            # 波形を描かない (ver9 resolve7 対策A)。
+            #
+            # ドラッグ中はマウスを動かすたびに画面全体を描き直すが、描画時間の
+            # 半分以上が波形で占められていた (実測 14.5ms のうち 6〜17ms)。
+            # 掴んでいる間だけ省くと 2〜3 倍速くなり、離せば元どおり出る。
+            "hide_while_dragging": bool(waveform.get("hide_while_dragging", True)),
+            # 波形の描き方 (ver9 resolve9 対策B)。
+            # "image" (既定) = 列の画素を numpy で立てて QImage を 1 回貼る
+            # "lines"        = 1 列ずつ QLine を立てる従来方式
+            # 波形は 1 列 = 幅 1px の縦線なので、どちらでも出る画素は同じである
+            # (1600 列で実測 2.3〜4.5ms → 0.36〜0.57ms)。numpy が無い環境と、
+            # 列が少なく QImage の組み立て費用が勝つ細いクリップは "lines" へ落ちる。
+            "draw_mode": ("lines" if str(
+                waveform.get("draw_mode", "image")).strip().lower() == "lines"
+                else "image"),
         },
         "preview": {
             "backend": str(preview.get("backend", "pyav") or "pyav"),
@@ -490,11 +572,27 @@ def timeline_config(settings):
             "subtitle_metrics_mode": (
                 "em" if str(preview.get("subtitle_metrics_mode", "libass")
                             ).strip().lower() == "em" else "libass"),
-            # 再生ヘッドの移動から画面更新までの待ち (ms)。0 で即時 (従来動作)。
+            # 字幕の縁と影の描き方 (ver9 resolve11 §3)。
+            # "pen"   = 幅 2W のペンでストロークする (既定。パス演算をしない)
+            # "union" = QPainterPath.united() で合併してから塗る (従来。長い
+            #           テロップ 1 本で 1.7 秒かかるため、見比べたいときだけ)
+            "subtitle_outline_mode": (
+                "union" if str(preview.get("subtitle_outline_mode", "pen")
+                               ).strip().lower() == "union" else "pen"),
+            # 再生ヘッドの移動・編集から画面更新までの待ち (ms)。0 で即時 (従来動作)。
             # 連続したスクラブ・ドラッグで毎回フレームを取り直すと、
             # 停止中の表示がチカチカする (ver8 resolve8 §9-4)。
-            "update_debounce_ms": max(0, int(preview.get("update_debounce_ms", 60) or 0)),
-            "cache_frames": int(preview.get("cache_frames", 8)),
+            #
+            # 既定を 60 → 100 へ上げた (ver9 resolve7 対策E)。プロキシが off の
+            # 環境ではフレームの取り直しに実測 32〜44ms かかり、60ms 間隔では
+            # デコードがほぼ途切れずに走り続けて操作が重くなる。
+            "update_debounce_ms": max(0, int(preview.get("update_debounce_ms", 100) or 0)),
+            # 停止中プレビューの絵を覚えておく枚数 (ver9 resolve9 §5 / §7-1)。
+            # 既定を 8 → 64 へ上げた。8 枚では Undo・やり直し・再生ヘッドの
+            # 行き戻りでほぼ毎回デコード (実測 32〜44ms) が走っていた。
+            # 1920x1080 rgb24 で 1 枚 ≒ 6.2MB のため 64 枚で約 400MB。
+            # メモリを節約したい環境では下げられる。
+            "cache_frames": int(preview.get("cache_frames", 64)),
             "high_quality_button": bool(preview.get("high_quality_button", True)),
             "audio_enabled": bool(preview.get("audio_enabled", True)),
             "audio_volume": float(preview.get("audio_volume", 0.8)),

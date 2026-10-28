@@ -113,6 +113,56 @@ class NestedDefaultsTest(unittest.TestCase):
         self.assertIsNotNone(tracks, "subtitle_tracks が補完されていません")
         self.assertEqual(tracks["comment_track_id"], "S2")
 
+    # 右クリックから足すテロップトラックの設定も、旧 setting.json へ補完される
+    # (ver9 resolve2 §9.2)。既存値は温存される。
+    def test_new_track_defaults_are_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        # ver9 より前の形 (役割別トラックのキーだけ持つ)
+        data["timeline"]["subtitle_tracks"] = {
+            "role_track_enabled": True,
+            "comment_track_id": "S9",            # 利用者が変えた値
+            "comment_track_name": "Comment",
+            "comment_track_index": 2,
+            "auto_move_on_role_change": True,
+        }
+        merged = sw._merge_with_defaults(data)
+        self.assertTrue(sw._fill_timeline_nested_defaults(merged))
+        tracks = merged["timeline"]["subtitle_tracks"]
+        for key in ("new_track_enabled", "new_track_id_prefix",
+                    "new_track_name_format", "new_track_min_index",
+                    "max_tracks", "new_track_moves_selection"):
+            self.assertIn(key, tracks, f"{key} が補完されていません")
+        self.assertEqual(tracks["new_track_min_index"], 3)
+        self.assertEqual(tracks["max_tracks"], 8)
+        # 既存値は上書きしない
+        self.assertEqual(tracks["comment_track_id"], "S9")
+
+    # 役割変更の自動移動の範囲も旧 setting.json へ補完される (ver9 resolve10 §5 T28)
+    def test_role_move_scope_default_is_filled(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"]["subtitle_tracks"] = copy.deepcopy(
+            data["timeline"]["subtitle_tracks"])
+        # ver9 resolve10 より前の形 (role_move_scope を持たない)
+        data["timeline"]["subtitle_tracks"].pop("role_move_scope", None)
+        merged = sw._merge_with_defaults(data)
+        self.assertTrue(sw._fill_timeline_nested_defaults(merged))
+        tracks = merged["timeline"]["subtitle_tracks"]
+        self.assertEqual(tracks["role_move_scope"], "role_tracks")
+
+    # 利用者が "all" (従来挙動) へ変えていれば温存する
+    def test_role_move_scope_is_kept(self):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        data["timeline"] = copy.deepcopy(data["timeline"])
+        data["timeline"]["subtitle_tracks"] = copy.deepcopy(
+            data["timeline"]["subtitle_tracks"])
+        data["timeline"]["subtitle_tracks"]["role_move_scope"] = "all"
+        merged = sw._merge_with_defaults(data)
+        sw._fill_timeline_nested_defaults(merged)
+        self.assertEqual(
+            merged["timeline"]["subtitle_tracks"]["role_move_scope"], "all")
+
 
 # コメント役割の先頭ラベル「コメント：」の撤去 (ver3 resolve11 C3 / §8-1)
 class CommentLabelMigrationTest(unittest.TestCase):

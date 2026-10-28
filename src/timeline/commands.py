@@ -12,6 +12,7 @@ import os
 from ..i18n import tr
 from ..utils.logger import get_logger
 from . import clipboard
+from . import compositor
 from .model import (
     BASE_SUBTITLE_TRACK_ID,
     BASE_Z_ORDER,
@@ -44,6 +45,24 @@ _DEFAULT_SUBTITLE_TRACKS_CFG = {
     "comment_track_name": "Comment",
     "comment_track_index": 2,
     "auto_move_on_role_change": True,
+    # ver9 resolve10: 役割変更の自動移動をどこまで効かせるか。
+    #   "role_tracks" (既定) … 役割が面倒を見るトラック (S1 / コメント用 S2) に
+    #                          居るテロップだけ移す。利用者が増やしたトラック
+    #                          (S3 以降) に置いたテロップは動かさない
+    #   "all"                … どのトラックに居ても移す (v1.6.1 までの挙動)
+    "role_move_scope": "role_tracks",
+    # ver9 resolve2: テロップノードの右クリックから足す通常テロップ用トラック
+    "new_track_enabled": True,
+    "new_track_id_prefix": "S",
+    "new_track_name_format": "Subtitle {index}",
+    # 2 トラック目はコメント専用のため 3 から払い出す (§R4)
+    "new_track_min_index": 3,
+    "max_tracks": 8,
+    "new_track_moves_selection": True,
+    # ver9 要望: ドラッグ＆ドロップでテロップトラックを行き来できるか
+    "drag_between_tracks": True,
+    # ver9 要望: 増やしたトラックをヘッダの右クリックから削除できるか
+    "remove_track_enabled": True,
 }
 
 
@@ -51,8 +70,12 @@ _DEFAULT_SUBTITLE_TRACKS_CFG = {
 # cfg: timeline_config()["subtitle_tracks"]。None なら既定 (コメントは S2) で動く。
 def ensure_subtitle_track(timeline, role, cfg=None):
     cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    # 番号も渡して拾い直しをコメント用の行に限る (ver9 resolve10 §3.4)。
+    # 渡さないと、通常テロップ用に増やしたトラックの中身が全部コメントに
+    # なった時点でそのトラックがコメント用として拾われてしまう。
     track = timeline.subtitle_track_for_role(
-        role, cfg["comment_track_id"], cfg["role_track_enabled"])
+        role, cfg["comment_track_id"], cfg["role_track_enabled"],
+        comment_track_index=_positive_int(cfg["comment_track_index"], 2))
     if track is not None:
         return track
     if not cfg["role_track_enabled"] or role != ROLE_COMMENT:
@@ -63,6 +86,77 @@ def ensure_subtitle_track(timeline, role, cfg=None):
         _logger.info("コメント用の字幕トラックを作成しました: %s", track.id)
     timeline.tracks.append(track)
     return track
+
+
+# 設定値を正の int へ寄せる (不正値・未設定は既定へ)
+def _positive_int(value, default):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+# 通常テロップ用の字幕トラックを 1 本作って返す (ver9 resolve2 §R4)
+# コメント用トラックとは独立で、役割の印は何も持たせない
+# (見た目を決めるのは clip.role だけのため、アイコンも背景も付かない)。
+# コメント用の番号 (既定 index 2 / S2) は予約として飛ばす。
+def create_subtitle_track(timeline, cfg=None):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    track_id, index = timeline.next_subtitle_track_id(
+        prefix=cfg["new_track_id_prefix"],
+        min_index=cfg["new_track_min_index"],
+        reserved_indexes=(cfg["comment_track_index"],),
+        reserved_ids=(cfg["comment_track_id"],),
+    )
+    try:
+        name = str(cfg["new_track_name_format"]).format(index=index)
+    except (KeyError, IndexError, ValueError):
+        # 書式が壊れていても画面は止めない (ID をそのまま名前にする)
+        _logger.warning("字幕トラック名の書式が不正です: %r",
+                        cfg["new_track_name_format"])
+        name = track_id
+    track = Track(track_id, TRACK_SUBTITLE, index, name=name)
+    timeline.tracks.append(track)
+    _logger.info("テロップトラックを追加しました: %s (%s)", track_id, name)
+    return track
+
+
+# 削除してよいテロップトラックか (ver9 要望)
+# 残すもの:
+#   ・既定トラック (index 最小 / 通常 S1) … テロップの置き場が無くなるのを防ぐ
+#   ・コメント用トラック (既定 S2)        … 役割変更の移動先が無くなるのを防ぐ
+# つまり右クリックから消せるのは、増やしたトラック (S3 以降) だけになる。
+def is_removable_subtitle_track(timeline, track, cfg=None):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    if track is None or not track.is_subtitle():
+        return False
+    base = timeline.base_subtitle_track()
+    if base is not None and track.id == base.id:
+        return False
+    if cfg["role_track_enabled"] and (
+            track.id == cfg["comment_track_id"]
+            or track.index == _positive_int(cfg["comment_track_index"], 2)):
+        return False
+    return True
+
+
+# 役割変更の自動移動が面倒を見るテロップトラックか (ver9 resolve10 §3.2)
+#
+# 見るのは 2 本だけ:
+#   ・既定トラック (index 最小 / 通常 S1) … コメントを解除したときの戻り先
+#   ・コメント用トラック (既定 S2)        … コメント化したときの移動先
+# 利用者が増やしたトラック (S3 以降) は「同時刻に並べたいから自分で置いた」
+# 場所であり、役割を変えても動かさない (置き場所の指定を役割で上書きしない)。
+def is_role_managed_subtitle_track(timeline, track, cfg=None):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    if track is None or not track.is_subtitle():
+        return False
+    base = timeline.base_subtitle_track()
+    if base is not None and track.id == base.id:
+        return True
+    return (track.id == cfg["comment_track_id"]
+            or track.index == _positive_int(cfg["comment_track_index"], 2))
 
 
 # トラック上に [start, end) と重なるクリップがあるか (自分自身は除く)
@@ -267,23 +361,27 @@ def _overlay_elements(timeline):
 # 両側が最小尺を満たさない位置では割らない。リンク音声も 2 本へ分ける (R18 §6.3.4)。
 # ver3 resolve10 §5.2: SplitClip と貼り付けの割り込み (make_room_for_range) で
 # 分割の規約を共有するため関数へ出した。2 か所へ書くと必ずズレるため 1 つに寄せる。
-def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05):
+def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05, split_text=False):
     offset = at_sec - clip.timeline_start
     if offset < min_clip_sec or (clip.duration - offset) < min_clip_sec:
         return None
 
     if isinstance(clip, SubtitleClip):
-        # 本文の分割は「尺を変える前」に決める (docs/quality/resolve1.md §3.4 G4)。
-        # 単語列が無いクリップは尺の比率で按分するため、先に duration を縮めると
-        # 比率が常に 1.0 になり本文が分かれない。
-        head_text, tail_text = split_subtitle_text(clip, at_sec)
+        # 本文の扱いは split_text で決める (ver9 要望 / docs/quality/resolve1.md §3.4 G4)。
+        #   split_text=False (既定): 本文はそのまま複製する。「こんにちは」を割ると
+        #       「こんにちは」「こんにちは」の 2 本になる。同じ文を 2 回出したい、
+        #       表示時間だけ割りたいという使い方がこちらのため、こちらを既定にする。
+        #   split_text=True: 本文も再生ヘッド位置で分ける (G4 の挙動)。
+        #       「こんにちは」が「こんに」「ちは」に分かれる。設定で戻せるよう温存する。
+        # 本文の分割は「尺を変える前」に決める。単語列が無いクリップは尺の比率で
+        # 按分するため、先に duration を縮めると比率が常に 1.0 になり本文が分かれない。
+        head_text, tail_text = (split_subtitle_text(clip, at_sec) if split_text
+                                else (None, None))
         new_clip = clip.copy()
         new_clip.id = timeline.next_id("s")
         new_clip.timeline_start = at_sec
         new_clip.duration = clip.duration - offset
         clip.duration = offset
-        # 従来は copy() のまま尺だけ割っていたため、両方のクリップに全文が入り
-        # 利用者が両方の本文を手で削る必要があった。
         if head_text is not None:
             clip.text = head_text
             new_clip.text = tail_text
@@ -716,10 +814,13 @@ class SplitClip(Command):
 
     label = "編集点の追加"
 
-    def __init__(self, clip_id, at_sec, min_clip_sec=0.05):
+    def __init__(self, clip_id, at_sec, min_clip_sec=0.05, split_text=False):
         self._clip_id = clip_id
         self._at_sec = float(at_sec)
         self._min_clip_sec = float(min_clip_sec)
+        # 字幕を割ったときに本文も分けるか (既定 False = 複製 / ver9 要望)。
+        # 「ここで分割」からも字幕を割れるため、テロップ用の分割と規約を合わせる。
+        self._split_text = bool(split_text)
 
     def apply(self, timeline):
         clip = timeline.clip_by_id(self._clip_id)
@@ -729,7 +830,8 @@ class SplitClip(Command):
         # 分割の規約は split_clip_at() が持つ (ver3 resolve10 §5.2)。
         # 両側が最小尺を満たさない位置では割れず None が返る。
         return split_clip_at(timeline, track, clip, self._at_sec,
-                             self._min_clip_sec) is not None
+                             self._min_clip_sec,
+                             split_text=self._split_text) is not None
 
 
 # クリップを削除する (R10 / R17)
@@ -1366,6 +1468,111 @@ class ResizeOverlay(Command):
         return True
 
 
+# ------------------------------------------------------------------
+# V1 (ベース映像) の拡大率と表示位置 (ver9 resolve6)
+# ------------------------------------------------------------------
+#
+# オーバーレイの ResizeOverlay / MoveOverlay とは**基準と可動範囲が違う**ため、
+# 相乗りさせず別のコマンドにする (resolve6 §3.5)。
+#   オーバーレイ : scale = キャンバス幅に対する比率 / 位置は画面のどこにでも置ける
+#   V1 (ここ)    : scale = キャンバスへ収めた状態に対する倍率 (100% = 今の見た目)
+#                  位置は**黒帯が出ない範囲**に限る
+
+
+# V1 クリップか (ベース映像トラックに載る映像クリップか)
+def is_base_video_clip(timeline, clip):
+    if clip is None or isinstance(clip, (SubtitleClip, AudioClip)):
+        return False
+    if not hasattr(clip, "transform"):
+        return False
+    base = timeline.base_video_track()
+    track = timeline.track_of_clip(clip.id)
+    return base is not None and track is not None and track.id == base.id
+
+
+# 表示位置を可動範囲へ丸める (resolve6 §3.4)
+#
+# 拡大しているときは「はみ出しているぶん」までしか動かせない。それを超えると
+# 画面の端に黒帯が出る。縮小しているときは「余白のぶん」までしか動かせない。
+# 拡大率を変えたときも位置を変えたときも、必ずここを通して丸め直す。
+#
+# 素材の寸法が分からないときは丸めない (倍率の基準が決まらないため)。
+# 戻り値: (x, y) 正規化座標
+def clamp_base_offset(timeline, media, zoom, x, y):
+    fit_w, fit_h = compositor.fit_size_px(
+        getattr(media, "width", 0), getattr(media, "height", 0),
+        timeline.width, timeline.height)
+    if fit_w <= 0 or fit_h <= 0:
+        return float(x or 0.0), float(y or 0.0)
+    zoom = float(zoom or 1.0)
+    # 正規化座標の限界 = はみ出し (または余白) の半分 ÷ キャンバスの半分
+    limit_x = abs(fit_w * zoom - timeline.width) / float(timeline.width)
+    limit_y = abs(fit_h * zoom - timeline.height) / float(timeline.height)
+    return (min(max(float(x or 0.0), -limit_x), limit_x),
+            min(max(float(y or 0.0), -limit_y), limit_y))
+
+
+# V1 クリップの拡大率を変える (resolve6 §3.5)
+# zoom: キャンバスへ収めた状態に対する倍率 (1.0 = 等倍 = 今の見た目)
+class ZoomBaseClip(Command):
+
+    label = "拡大率の変更"
+
+    def __init__(self, clip_id, zoom, min_zoom=0.1, max_zoom=3.0):
+        self._clip_id = clip_id
+        self._zoom = float(zoom)
+        self._min = float(min_zoom)
+        self._max = float(max_zoom)
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        if not is_base_video_clip(timeline, clip):
+            return False
+        value = min(max(self._zoom, self._min), self._max)
+        media = timeline.media_by_id(clip.media_id)
+        # 拡大率が変われば可動範囲も変わる。位置を新しい範囲へ丸め直す
+        # (縮めたときに前の位置が残って黒帯が出るのを防ぐ)。
+        new_x, new_y = clamp_base_offset(
+            timeline, media, value, clip.transform.x, clip.transform.y)
+        same_zoom = abs(float(clip.transform.scale or 1.0) - value) <= _EPS
+        same_pos = (abs(float(clip.transform.x or 0.0) - new_x) <= _EPS
+                    and abs(float(clip.transform.y or 0.0) - new_y) <= _EPS)
+        if same_zoom and same_pos:
+            return False        # 変化なし → 履歴を汚さない
+        clip.transform.scale = value
+        clip.transform.x = new_x
+        clip.transform.y = new_y
+        return True
+
+
+# V1 クリップの表示位置を変える (resolve6 §3.5)
+# 等倍 (100%) のときは動かせない。動かす余地が無く、誤操作で履歴を汚さないため。
+class MoveBaseClip(Command):
+
+    label = "表示位置の変更"
+
+    def __init__(self, clip_id, x, y):
+        self._clip_id = clip_id
+        self._x = x
+        self._y = y
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        if not is_base_video_clip(timeline, clip):
+            return False
+        if compositor.is_identity_zoom(clip):
+            return False        # 等倍は動かせない (はみ出しも余白も無い)
+        zoom = float(clip.transform.scale or 1.0)
+        media = timeline.media_by_id(clip.media_id)
+        new_x, new_y = clamp_base_offset(timeline, media, zoom, self._x, self._y)
+        if (abs(float(clip.transform.x or 0.0) - new_x) <= _EPS
+                and abs(float(clip.transform.y or 0.0) - new_y) <= _EPS):
+            return False
+        clip.transform.x = new_x
+        clip.transform.y = new_y
+        return True
+
+
 # 字幕の内容を変更する
 class EditSubtitle(Command):
 
@@ -1395,6 +1602,11 @@ class EditSubtitle(Command):
 #   移動できなくても見た目は正しく出る。ここで役割変更ごと失敗させると
 #   「色は変えられるのに役割は変えられない」という不可解な挙動になる。
 # 移動しても clip.id は変えない (選択・Undo・アーカイブ index の紐付けを切らないため)。
+#
+# ver9 resolve10: 自動移動は「S1 ↔ コメント用 S2」の往復に限る。
+#   以前は行き先を role だけで決めていたため、利用者が増やしたトラック (S3 以降) へ
+#   移したテロップも、役割を触った瞬間に S1 へ引き戻されていた (resolve10 §2.1)。
+#   置き場所は「最後にそこへ置いた人の意思」として尊重する。
 class ChangeSubtitleRole(Command):
 
     label = "字幕の役割変更"
@@ -1406,32 +1618,188 @@ class ChangeSubtitleRole(Command):
         # 呼び出し側の案内文言用 (移動できたか / 移動先が埋まっていたか)
         self.moved = False
         self.move_blocked = False
+        # 置き場所を尊重して移動しなかったか (ver9 resolve10 §3.3)
+        self.move_skipped = False
 
     def apply(self, timeline):
         clip = timeline.clip_by_id(self._clip_id)
         if not isinstance(clip, SubtitleClip):
             return False
-        changed = clip.role != self._role
-        clip.role = self._role
-        if not (self._cfg["role_track_enabled"]
-                and self._cfg["auto_move_on_role_change"]):
-            return changed
+        # 役割が変わらないなら何もしない (ver9 resolve10 §3.3)。
+        # 以前は「役割は同じだが移動はする」経路があり、コンボで同じ役割を
+        # 選び直しただけでテロップが S1 へ動いていた。
+        if clip.role == self._role:
+            return False
 
         source = timeline.track_of_clip(clip.id)
-        target = ensure_subtitle_track(timeline, self._role, self._cfg)
+        # 行き先は clip.role を書き換える前に決める (ver9 resolve10 §3.3)。
+        # 書き換えてから探すと、増やしたトラックに載っている 1 本をコメント化
+        # したときに「中身が全部コメント」の条件へ自分が引っかかり、
+        # そのトラックがコメント用と誤認される。
+        target = self._move_target(timeline, clip, source)
+        clip.role = self._role
         if source is None or target is None or target.id == source.id:
-            return changed
+            return True
         if target.locked or _overlaps_any(
                 target, clip.timeline_start, clip.timeline_end, exclude_id=clip.id):
             self.move_blocked = True
             _logger.info("移動先 %s が空いていないため役割だけ変更しました: %s",
                          target.id, clip.id)
-            return changed
+            return True
 
         source.remove_clip(clip.id)
         target.clips.append(clip)
         target.sort_clips(timeline)
         self.moved = True
+        return True
+
+    # 役割変更にともなう移動先を返す (移動しないときは None)
+    # 【重要】clip.role を書き換える前に呼ぶ (ver9 resolve10 §3.3)。
+    def _move_target(self, timeline, clip, source):
+        cfg = self._cfg
+        if source is None:
+            return None
+        if not (cfg["role_track_enabled"] and cfg["auto_move_on_role_change"]):
+            return None
+        # 利用者が増やしたトラックに置かれたテロップは動かさない (§3.2)
+        if (str(cfg["role_move_scope"]) == "role_tracks"
+                and not is_role_managed_subtitle_track(timeline, source, cfg)):
+            self.move_skipped = True
+            _logger.info("%s は利用者が置いたトラックのため役割だけ変更します: %s",
+                         source.id, clip.id)
+            return None
+        return ensure_subtitle_track(timeline, self._role, cfg)
+
+
+# 字幕を新しいテロップトラックへ移す (ver9 resolve2 §R2)
+# 役割 (role) は変えない = 色・配置はそのままで、アイコンも背景も付かない。
+# 「同じ時刻に並べられる本数」を増やすだけの操作であり、出力の見た目は変わらない
+# (焼き込みもプレビューも subtitle_clips() で全字幕を集めるため)。
+class MoveSubtitlesToNewTrack(Command):
+
+    def __init__(self, clip_ids, subtitle_tracks_cfg=None):
+        self._clip_ids = [i for i in (clip_ids or []) if i]
+        self._cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(subtitle_tracks_cfg or {})}
+        # 呼び出し側の案内文言用 (移せた件数 / 残した件数 / 上限で止まったか)
+        self.created_track_id = None
+        self.moved = 0
+        self.skipped = 0
+        self.limit_reached = False
+        # 件数を履歴ボタンへ出す (静的な label と違いここで組み立てる)
+        self.label = (tr("新規テロップトラックへ移動") if len(self._clip_ids) <= 1
+                      else tr("新規テロップトラックへ移動（{count} 件）",
+                              count=len(self._clip_ids)))
+
+    def apply(self, timeline):
+        # 【重要】CommandStack.push は apply が False を返しても状態を戻さない
+        # (例外時だけ _restore する)。そのため「移せるか」を全部決めてから
+        # トラックを作る。空のトラックだけが残る状態を作らない。
+        targets = self._movable(timeline)
+        if not targets:
+            return False
+        if len(timeline.subtitle_tracks()) >= _positive_int(self._cfg["max_tracks"], 8):
+            self.limit_reached = True
+            _logger.info("字幕トラックの上限 (%s) に達しています",
+                         self._cfg["max_tracks"])
+            return False
+
+        track = create_subtitle_track(timeline, self._cfg)
+        self.created_track_id = track.id
+        for clip in targets:
+            source = timeline.track_of_clip(clip.id)
+            if source is None:
+                continue
+            source.remove_clip(clip.id)
+            track.clips.append(clip)
+            self.moved += 1
+        track.sort_clips(timeline)
+        return self.moved > 0
+
+    # 1 本のトラックへ入れられる字幕を開始時刻順に選ぶ。
+    # 互いに重なるものは同じトラックへ入れられないため、早いもの勝ちで落とす (§R3)。
+    def _movable(self, timeline):
+        clips = []
+        for clip_id in self._clip_ids:
+            clip = timeline.clip_by_id(clip_id)
+            if not isinstance(clip, SubtitleClip):
+                continue                  # 映像・音声の混在選択は黙って読み飛ばす
+            source = timeline.track_of_clip(clip.id)
+            if source is None or source.locked:
+                self.skipped += 1
+                continue
+            clips.append(clip)
+        chosen, cursor = [], None
+        for clip in sorted(clips, key=lambda c: c.timeline_start):
+            if cursor is not None and clip.timeline_start < cursor - _EPS:
+                self.skipped += 1
+                continue
+            chosen.append(clip)
+            cursor = clip.timeline_end
+        return chosen
+
+
+# テロップを別のテロップトラックへ移す (ver9 要望 / ドラッグ＆ドロップの受け皿)
+#
+# 「新規テロップトラックへ移動」はトラックを増やす操作しか持たなかったため、
+# 2 行で足りる場面でもトラックが増え続けていた。これは**既にあるトラックへ**移す操作。
+# 時刻も同時に変わる (斜めにドラッグできる) ため new_start も受ける。
+# 移動先で時間が重なるときは近い側の空きへ寄せる (トラック内の移動と同じ規約)。
+# 役割 (role) は変えない = 見た目は一切変わらない (ver9 resolve2 §1.1)。
+class MoveSubtitleToTrack(Command):
+
+    def __init__(self, clip_id, track_id, new_start=None, min_clip_sec=0.05):
+        self._clip_id = clip_id
+        self._track_id = track_id
+        self._new_start = None if new_start is None else float(new_start)
+        self._min_clip_sec = float(min_clip_sec)
+        # 呼び出し側の案内文言用 (実際に落ち着いた位置)
+        self.moved_start = None
+        self.label = tr("テロップのトラック移動")
+
+    def apply(self, timeline):
+        clip = timeline.clip_by_id(self._clip_id)
+        source = timeline.track_of_clip(self._clip_id)
+        target = timeline.track_by_id(self._track_id)
+        if not isinstance(clip, SubtitleClip) or source is None or target is None:
+            return False
+        if not target.is_subtitle() or source.locked or target.locked:
+            return False
+        if target.id == source.id:
+            return False
+        desired = clip.timeline_start if self._new_start is None else self._new_start
+        start = _clamp_position(target, clip, desired, self._min_clip_sec)
+        source.remove_clip(clip.id)
+        clip.timeline_start = start
+        target.clips.append(clip)
+        target.sort_clips(timeline)
+        self.moved_start = start
+        _logger.info("テロップを %s から %s へ移しました: %s",
+                     source.id, target.id, clip.id)
+        return True
+
+
+# テロップトラックを 1 本削除する (ver9 要望 / ヘッダの右クリック)
+#
+# 載っているテロップも一緒に消える。消えることの確認は呼び出し側 (UI) で取る。
+# Undo はスナップショット方式なので、間違えても Ctrl+Z で丸ごと戻る。
+# 既定トラックとコメント用トラックは消さない (is_removable_subtitle_track)。
+class RemoveSubtitleTrack(Command):
+
+    def __init__(self, track_id, subtitle_tracks_cfg=None):
+        self._track_id = track_id
+        self._cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(subtitle_tracks_cfg or {})}
+        # 呼び出し側の案内文言用 (一緒に消したテロップの件数)
+        self.removed_clips = 0
+        self.label = tr("テロップトラックの削除")
+
+    def apply(self, timeline):
+        track = timeline.track_by_id(self._track_id)
+        if not is_removable_subtitle_track(timeline, track, self._cfg):
+            return False
+        self.removed_clips = len(track.clips)
+        timeline.tracks = [t for t in timeline.tracks if t.id != track.id]
+        _logger.info("テロップトラックを削除しました: %s (テロップ %d 件)",
+                     track.id, self.removed_clips)
         return True
 
 
@@ -1527,10 +1895,12 @@ class MergeSubtitles(Command):
 # 本文も分けるため、分割後に両方の本文を手で削る必要がない。
 class SplitSubtitle(Command):
 
-    def __init__(self, clip_id, at_sec, min_clip_sec=0.05):
+    def __init__(self, clip_id, at_sec, min_clip_sec=0.05, split_text=False):
         self._clip_id = clip_id
         self._at_sec = float(at_sec)
         self._min_clip_sec = float(min_clip_sec)
+        # 本文も分けるか (既定 False = 両方へ同じ本文を複製する / ver9 要望)
+        self._split_text = bool(split_text)
         self.label = tr("テロップの分割")
 
     def apply(self, timeline):
@@ -1539,7 +1909,8 @@ class SplitSubtitle(Command):
         if not isinstance(clip, SubtitleClip) or track is None or track.locked:
             return False
         return split_clip_at(timeline, track, clip, self._at_sec,
-                             self._min_clip_sec) is not None
+                             self._min_clip_sec,
+                             split_text=self._split_text) is not None
 
 
 # 時刻を含む区間の番号を返す (区間の外なら None / ver8 resolve6)

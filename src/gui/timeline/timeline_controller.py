@@ -41,6 +41,8 @@ class TimelineController(QObject):
         self._dirty = False
         # 再生ヘッドをドラッグ中か (resolve7 §5.12)
         self._scrubbing = False
+        # 実効字幕設定の控え (縦動画の上書き反映済み / ver9 resolve3 §R3)
+        self._eff_subtitle_cfg = None
 
     # ------------------------------------------------------------------
     # 参照
@@ -57,6 +59,20 @@ class TimelineController(QObject):
     @property
     def cfg(self):
         return self._cfg
+
+    # 実効字幕設定 (縦動画の上書きを反映済み) を返す (ver9 resolve3 §R3)
+    # プレビューと同じ値を使うことで「インスペクタの表示 = 見え方」を一致させる。
+    # 1 プロジェクトの間は変わらないため 1 回だけ組んで覚えておく。
+    def effective_subtitle_cfg(self):
+        from ...modules import subtitle_generator  # noqa: PLC0415 (重い import を遅らせる)
+
+        if self._eff_subtitle_cfg is None:
+            self._eff_subtitle_cfg = subtitle_generator.build_effective_subtitle_cfg(
+                self._settings.get("subtitle", {}), self._settings.get("vertical", {}),
+                {"is_portrait": self._timeline.orientation == "portrait",
+                 "width": self._timeline.width, "height": self._timeline.height},
+            )
+        return self._eff_subtitle_cfg
 
     def is_dirty(self):
         return self._dirty
@@ -168,7 +184,10 @@ class TimelineController(QObject):
         targets = [clip_id] if clip_id else self._clips_at(at_sec)
         changed = False
         for target in targets:
-            if self.execute(commands.SplitClip(target, at_sec, self._cfg["min_clip_sec"])):
+            # 字幕を割ったときの本文の扱いはテロップ用の分割と同じ規約にする (ver9 要望)
+            if self.execute(commands.SplitClip(
+                    target, at_sec, self._cfg["min_clip_sec"],
+                    split_text=self._cfg["subtitle_split_text"])):
                 changed = True
         return changed
 
@@ -226,6 +245,17 @@ class TimelineController(QObject):
         return self.execute(commands.ResizeOverlay(
             clip_id, scale, overlay["min_scale"], overlay["max_scale"]))
 
+    # V1 (ベース映像) の拡大率を変える (ver9 resolve6 §3.5)。
+    # zoom はキャンバスへ収めた状態に対する倍率 (1.0 = 今の見た目)。
+    def zoom_base_clip(self, clip_id, zoom):
+        cfg = self._cfg["base_zoom"]
+        return self.execute(commands.ZoomBaseClip(
+            clip_id, zoom, cfg["min"], cfg["max"]))
+
+    # V1 の表示位置を変える (拡大・縮小しているときだけ効く / §3.4)
+    def move_base_clip(self, clip_id, x, y):
+        return self.execute(commands.MoveBaseClip(clip_id, x, y))
+
     def edit_subtitle(self, clip_id, **fields):
         return self.execute(commands.EditSubtitle(clip_id, **fields))
 
@@ -260,11 +290,14 @@ class TimelineController(QObject):
             return False
         return self.execute(commands.MergeSubtitles(ids, wrap=self._subtitle_wrap()))
 
-    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。本文も分かれる。
+    # 再生ヘッド位置で字幕を 2 本へ分ける (G4)。
+    # 本文は既定では分けずに複製する (ver9 要望)。
+    # timeline.subtitle_split_text=true で本文も分ける旧挙動へ戻せる。
     def split_subtitle(self, clip_id, at_sec=None):
         at_sec = self._playhead if at_sec is None else at_sec
         return self.execute(commands.SplitSubtitle(
-            clip_id, at_sec, self._cfg["min_clip_sec"]))
+            clip_id, at_sec, self._cfg["min_clip_sec"],
+            split_text=self._cfg["subtitle_split_text"]))
 
     # 本文の整形関数 (改行の引き直し) を返す
     # 結合すると行が長くなるため、現在の折り返し設定で引き直す必要がある。
@@ -335,13 +368,54 @@ class TimelineController(QObject):
         return command.created_clip_id
 
     # 字幕の役割を変える。コメントにするとコメント用トラック (S2) へ移す。
-    # 戻り値 {"changed": bool, "moved": bool, "blocked": bool} (ver3 resolve11 §5.8)
+    # 戻り値 {"changed": bool, "moved": bool, "blocked": bool, "skipped": bool}
+    # (ver3 resolve11 §5.8 / skipped は ver9 resolve10 §3.5)
+    #   skipped = 利用者が増やしたトラックに置かれていたため移動しなかった
     def change_subtitle_role(self, clip_id, role):
         command = commands.ChangeSubtitleRole(
             clip_id, role, subtitle_tracks_cfg=self._cfg["subtitle_tracks"])
         changed = self.execute(command)
         return {"changed": changed, "moved": command.moved,
-                "blocked": command.move_blocked}
+                "blocked": command.move_blocked,
+                "skipped": command.move_skipped}
+
+    # 選択した字幕を新しいテロップトラックへ移す (ver9 resolve2 §R2)
+    # 役割は変えないため、アイコンも背景も付かない (見た目は従来のテロップのまま)。
+    # 戻り値 {"moved": int, "skipped": int, "track": str|None, "limit": bool}
+    def move_subtitles_to_new_track(self, clip_ids):
+        command = commands.MoveSubtitlesToNewTrack(
+            clip_ids, subtitle_tracks_cfg=self._cfg["subtitle_tracks"])
+        changed = self.execute(command)
+        return {
+            "moved": command.moved if changed else 0,
+            "skipped": command.skipped,
+            "track": command.created_track_id if changed else None,
+            "limit": command.limit_reached,
+        }
+
+    # テロップを既にあるテロップトラックへ移す (ドラッグ＆ドロップ / ver9 要望)
+    # new_start を渡すと時刻も同時に変わる (斜めのドラッグ)。
+    def move_subtitle_to_track(self, clip_id, track_id, new_start=None):
+        return self.execute(commands.MoveSubtitleToTrack(
+            clip_id, track_id, new_start, self._cfg["min_clip_sec"]))
+
+    # テロップトラックを 1 本削除する (ヘッダの右クリック / ver9 要望)
+    # 載っているテロップも一緒に消える (確認は UI 側で取る)。
+    # 戻り値 {"changed": bool, "clips": 一緒に消したテロップの件数}
+    def remove_subtitle_track(self, track_id):
+        command = commands.RemoveSubtitleTrack(
+            track_id, subtitle_tracks_cfg=self._cfg["subtitle_tracks"])
+        changed = self.execute(command)
+        return {"changed": changed,
+                "clips": command.removed_clips if changed else 0}
+
+    # 削除できるテロップトラックか (ヘッダの右クリックの出し分け / ver9 要望)
+    def can_remove_subtitle_track(self, track_id):
+        cfg = self._cfg["subtitle_tracks"]
+        if not cfg["remove_track_enabled"]:
+            return False
+        track = self._timeline.track_by_id(track_id)
+        return commands.is_removable_subtitle_track(self._timeline, track, cfg)
 
     # ------------------------------------------------------------------
     # コピー＆ペースト (ver3 resolve10 §5.4)

@@ -288,6 +288,7 @@ class PreviewPanel(QWidget):
 
         self._base_item = BaseFrameItem()
         self._base_item.show_blank(self._canvas)
+        self._base_item.move_finished = self._on_base_moved
         self._scene.addItem(self._base_item)
 
         # トランスポート (resolve2 §5.6-4)
@@ -409,7 +410,13 @@ class PreviewPanel(QWidget):
         # プロキシは鍵が変わったタイルだけを捨てて作り直す (ver6 resolve3 §3.5)
         if self._proxy is not None:
             self._proxy.invalidate()
-        self._refresh_all()
+        # 絵の取り直しは再生ヘッドの移動と同じくまとめる (ver9 resolve7 対策D)。
+        #
+        # 以前はここだけ即時だった。編集 1 回ごとにフレームのデコード
+        # (実測 32〜44ms) が走るため、続けて操作するとそのぶん待たされていた。
+        # 時刻表示だけは即時にして、反映が遅れた感じを出さない。
+        self._update_time_label()
+        self._schedule_refresh()
 
     def _on_playhead_moved(self, sec):
         if self._proxy is not None:
@@ -690,11 +697,92 @@ class PreviewPanel(QWidget):
         if pixmap.width() > 0 and pixmap.height() > 0:
             scale = min(self._canvas[0] / pixmap.width(),
                         self._canvas[1] / pixmap.height())
+        # V1 の拡大率・表示位置 (ver9 resolve6 §4.6)。
+        # **プロキシ由来の絵には掛けない。** タイルには compositor 経由で
+        # すでに焼かれているため、ここで掛けると二重に拡大される。
+        zoom, offset = 1.0, (0.0, 0.0)
+        if not from_proxy:
+            zoom, offset = self._base_zoom_view()
         self._base_item.setPixmap(pixmap)
-        self._base_item.setScale(scale)
-        # 縦横比を保って中央へ収める
-        self._base_item.setPos((self._canvas[0] - pixmap.width() * scale) / 2.0,
-                               (self._canvas[1] - pixmap.height() * scale) / 2.0)
+        self._base_item.setScale(scale * zoom)
+        # 縦横比を保って中央へ収め、拡大しているぶんだけ位置をずらす。
+        # 範囲は先に外しておく (前のフレームの範囲で位置が丸められるのを防ぐ)
+        self._base_item.set_drag_bounds(None)
+        center_x = (self._canvas[0] - pixmap.width() * scale * zoom) / 2.0
+        center_y = (self._canvas[1] - pixmap.height() * scale * zoom) / 2.0
+        self._base_item.setPos(center_x + offset[0], center_y + offset[1])
+        # ドラッグ中も黒帯を出さない (ver9 resolve6 §3.4)
+        self._base_item.set_drag_bounds(self._base_drag_bounds(
+            pixmap, scale * zoom, (center_x, center_y)))
+        self._sync_base_draggable()
+
+    # 再生ヘッド位置の V1 クリップを返す (無ければ None)
+    def _base_clip_at_playhead(self):
+        timeline = self._controller.timeline
+        playhead = self._controller.playhead()
+        for clip in timeline.base_clips():
+            if clip.contains(playhead):
+                return clip
+        return None
+
+    # 表示に使う拡大率と、ずらし量 (キャンバス px) を返す (ver9 resolve6 §4.6)
+    #
+    # 計算は compositor と同じ規約で行う (位置の Y は上が正)。
+    # 切り抜き指定があるときは拡大率を使わない (§3.6。出力側も同じ判断)。
+    def _base_zoom_view(self):
+        clip = self._base_clip_at_playhead()
+        if clip is None or compositor.is_identity_zoom(clip):
+            return 1.0, (0.0, 0.0)
+        if crop.load(self._controller.timeline) is not None:
+            return 1.0, (0.0, 0.0)
+        zoom = compositor.base_zoom(clip)
+        profile = compositor.CanvasProfile(
+            int(self._canvas[0]), int(self._canvas[1]),
+            self._controller.timeline.fps)
+        media = self._controller.timeline.media_by_id(clip.media_id)
+        return zoom, compositor.base_offset_px(media, clip, profile)
+
+    # V1 をドラッグできる範囲 (シーン座標) を返す (ver9 resolve6 §3.4)
+    #
+    # 中央に置いた位置を基準に、はみ出し (または余白) のぶんだけ動かせる。
+    # コマンド側の clamp_base_offset と同じ範囲を画面側でも表す。
+    def _base_drag_bounds(self, pixmap, scale, center):
+        shown_w = pixmap.width() * scale
+        shown_h = pixmap.height() * scale
+        limit_x = abs(shown_w - self._canvas[0]) / 2.0
+        limit_y = abs(shown_h - self._canvas[1]) / 2.0
+        return QRectF(center[0] - limit_x, center[1] - limit_y,
+                      limit_x * 2.0, limit_y * 2.0)
+
+    # V1 を掴める状態にするかを決める (ver9 resolve6 §3.7)
+    #
+    # ① 再生ヘッド位置の V1 クリップが選択中 ② 拡大率が 100% でない
+    # ③ 切り抜き指定が無い — の 3 つが揃ったときだけ掴ませる。
+    # 見えていないクリップや、選んでいないクリップを動かさないための条件である。
+    def _sync_base_draggable(self):
+        clip = self._base_clip_at_playhead()
+        draggable = (clip is not None
+                     and clip.id in set(self._controller.selected_ids())
+                     and not compositor.is_identity_zoom(clip)
+                     and crop.load(self._controller.timeline) is None)
+        self._base_item.set_draggable(clip.id if clip is not None else "", draggable)
+
+    # V1 のドラッグ確定 → 正規化座標へ直してコマンドを積む (ver9 resolve6 §4.5)
+    #
+    # 置いた位置から「中央に置いたときの位置」を引いてずらし量を求める。
+    # 表示側の式 (_on_frame_ready) の逆算であり、符号の規約は compositor と揃える。
+    def _on_base_moved(self, clip_id, pos_x, pos_y):
+        pixmap = self._base_item.pixmap()
+        scale = self._base_item.scale()
+        if pixmap.isNull() or scale <= 0:
+            return
+        center_x = (self._canvas[0] - pixmap.width() * scale) / 2.0
+        center_y = (self._canvas[1] - pixmap.height() * scale) / 2.0
+        half_w = max(self._canvas[0] / 2.0, 1.0)
+        half_h = max(self._canvas[1] / 2.0, 1.0)
+        x = (pos_x - center_x) / half_w
+        y = -(pos_y - center_y) / half_h          # Y は上が正 (model.py:104)
+        self._controller.move_base_clip(clip_id, x, y)
 
     # 縦動画プロジェクトの切り抜きをフレームへ当てる (ver5 resolve9 §5.8)。
     #
@@ -825,7 +913,8 @@ class PreviewPanel(QWidget):
                 # 既定 "libass" = 出力と同じ見え方。"em" で従来の近似へ戻せる。
                 return SubtitleOverlayItem(
                     element, self._eff_cfg, self._font_profile, self._canvas,
-                    metrics_mode=self._cfg["subtitle_metrics_mode"])
+                    metrics_mode=self._cfg["subtitle_metrics_mode"],
+                    outline_mode=self._cfg["subtitle_outline_mode"])
             media = self._controller.timeline.media_by_id(element.media_id)
             if media is None:
                 return None
@@ -867,6 +956,8 @@ class PreviewPanel(QWidget):
         for clip_id, item in self._overlay_items.items():
             item.setSelected(clip_id in selected)
         self._scene.blockSignals(False)
+        # V1 を掴めるかは選択で変わる (ver9 resolve6 §3.7)
+        self._sync_base_draggable()
 
     # ドラッグ確定 → 正規化座標へ直してコマンドを積む
     def _on_overlay_moved(self, clip_id, center_x, center_y):

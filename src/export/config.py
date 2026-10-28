@@ -27,6 +27,10 @@ def resolve_config(settings):
         # Timeline 経路のクリップ配置 (resolve5 §19-4)
         # "preserve"=Timeline 上の位置をそのまま出力 (空きは gap) / "pack"=先頭から詰める (従来)
         "timeline_layout": str(resolve.get("timeline_layout", "preserve") or "preserve"),
+        # V1 の拡大率・表示位置を adjust-transform として書くか (ver9 resolve6 §4.8)。
+        # 既定 true。Resolve 側の解釈が食い違ったときに false で止められるようにしてある
+        # (false なら従来と同じ FCPXML になる)。
+        "write_base_transform": bool(resolve.get("write_base_transform", True)),
         # クリップ用出力のファイル名接頭辞 (空文字なら接頭辞なし)
         "clip_prefix": str(resolve.get("clip_prefix", "clip") or ""),
         # 位置変換の係数 (§5.5)

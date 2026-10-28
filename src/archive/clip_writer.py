@@ -108,15 +108,20 @@ def existing_intro_source(media_dir, media_id):
 # イントロカードの素を元 VOD から切り出して残す (保存時に呼ぶ)
 # clip_start   : クリップ開始の VOD 内の秒
 # buffer_sec   : イントロの尺 (archive.intro_card.buffer_sec)
+# source_origin_sec : vod_path の 0 秒が VOD の何秒目か (ver9 resolve5 §4.5)。
+#                既定 0.0 = 元 VOD そのもの。区間だけ取り直した素材を渡すときは
+#                その原点を指定する (clip_start は VOD 絶対秒のまま渡せる)。
 # 戻り値: 書き出したパス / 作れなかった場合は None
 #
 # cut_region (-c copy) ではなく**再エンコード**する。-c copy はキーフレームまでしか
 # 戻れないため、開始位置と尺が前後して「クリップ開始の直前 buffer_sec 秒」にならない。
 # -ss を -i の前に置いた再エンコードはキーフレームから復号して捨てるため、
 # フレーム正確に同じ区間が取れる (_build_intro_card が元 VOD から取るのと同じ区間)。
-def export_intro_source(vod_path, clip_start, buffer_sec, dest, ffmpeg_cfg):
+def export_intro_source(vod_path, clip_start, buffer_sec, dest, ffmpeg_cfg,
+                        source_origin_sec=0.0):
     length = float(buffer_sec or 0.0)
-    start = float(clip_start or 0.0) - length
+    # 素材内の位置へ直す (元 VOD なら origin=0 で従来と同一)
+    start = float(clip_start or 0.0) - float(source_origin_sec or 0.0) - length
     if length < 0.1 or start < 0.0:
         return None             # VOD の先頭でバッファを確保できない (イントロも出ない)
     if not vod_path or not os.path.exists(vod_path):
@@ -588,7 +593,7 @@ def _transcribe(prepared_path, settings, eff_cfg):
 # 戻り値: prepared 1 件ぶんの辞書 (_prepare_clips の要素と同一構成)
 def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
                      use_timeline=False, progress_cb=None, saved_db=None,
-                     vod_analysis=None):
+                     vod_analysis=None, source_origin_sec=0.0):
     subtitle_cfg = clip_settings.get("subtitle", {})
     vertical_cfg = settings.get("vertical", {})
     if saved_db is None:
@@ -603,7 +608,12 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
     clip_dir = os.path.join(workdir, f"clip{clip['index']}")
     os.makedirs(clip_dir, exist_ok=True)
     raw = os.path.join(clip_dir, "raw.mp4")
-    cut_region(input_path, clip["start"], clip["end"], raw, ffmpeg_cfg)
+    # clip の start/end は**元 VOD の絶対秒**。input_path が区間だけ取り直した素材の
+    # ときは、その原点ぶん平行移動して素材内の位置へ直す (ver9 resolve5 §4.5)。
+    # entry へ入れる start/end は絶対秒のままにすること (vod_start/vod_end として
+    # 保存され、素材の復元に使われる唯一のキーであるため)。
+    origin = float(source_origin_sec or 0.0)
+    cut_region(input_path, clip["start"] - origin, clip["end"] - origin, raw, ffmpeg_cfg)
     # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
     # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
     #
@@ -683,8 +693,13 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
 # use_timeline : True  = Timeline 経路。実カットせず編集点だけを求め、区間音声のみで認識する
 #                        (docs/error/20260811/resolve.md §4-2)。字幕の時間軸が Timeline と一致する。
 #                False = 従来画面経路。これまでどおり実カットしてから認識する。
-# 戻り値: [{"index","start","end","score","prepared_path","profile","eff_cfg","items",
-#           "keep_segments","normalized_path","normalized_duration"}]
+# 戻り値: (prepared, vod_analysis)
+#   prepared     : [{"index","start","end","score","prepared_path","profile","eff_cfg",
+#                    "items","keep_segments","normalized_path","normalized_duration"}]
+#   vod_analysis : VOD 全体で測った音量 (analyze_vod の戻り値)。
+#                  セクション追加で同じ基準を使い回すためプロジェクトへ残す
+#                  (ver9 resolve5 §4.4)。元 VOD を手放すと測り直せないため、
+#                  追加セクションだけ音量が違う状態を避けるのに要る。
 def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdir,
                    progress_cb, use_timeline=False):
     prepared = []
@@ -705,7 +720,7 @@ def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdi
             input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
             use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db,
             vod_analysis=vod_analysis))
-    return prepared
+    return prepared, vod_analysis
 
 
 # ------------------------------------------------------------------
@@ -898,9 +913,13 @@ def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
 #   None ならキャンセル (出力なし)。未注入(CLI/テスト)は全件そのまま自動で書き出す。
 # curve: 採点グラフ用の窓スコア列 (結果画面へ渡す)。
 # points: PointsService (GUI 実行時のみ注入。None でポイント処理なし / ver5 resolve §5.4)。
+# vod_source: 取得元の控え {"provider","video_id","quality","vod_duration_sec"}
+#   (ver9 resolve5 §4.3)。プロジェクトへ残し、元 VOD を手放したあとに
+#   「追加する区間だけを取り直す」ために使う。ローカル動画経路では None。
 # 戻り値: 出力ファイルパスの一覧 (結合時は [..., 結合1本]、非結合時は個別クリップ群)。
 def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
-                curve=None, points=None, watermark_confirm_callback=None):
+                curve=None, points=None, watermark_confirm_callback=None,
+                vod_source=None):
     # ログ送信 (request1 / resolve1 §7.2 / §7.3)
     project_id = telemetry.register_project(input_path, settings)
     started_at = telemetry.export_started(project_id)
@@ -915,7 +934,8 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
         return []
     try:
         outputs = _write_clips(input_path, settings, clips, progress_cb, result_callback,
-                               curve, points_service.watermark_required(reservation))
+                               curve, points_service.watermark_required(reservation),
+                               vod_source=vod_source)
     except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 失敗・中断では消費しない (R6)
         points_service.cancel(points, reservation)
@@ -944,7 +964,7 @@ def _log_export(project_id, settings, started_at, success, cancelled=False, erro
 
 
 def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
-                 curve=None, watermark_required=False):
+                 curve=None, watermark_required=False, vod_source=None):
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
 
@@ -965,7 +985,7 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
         use_timeline = config.use_timeline_review(settings)
 
         # ① prepare: 全クリップを 切り出し→編集点検出(または無音カット)→文字起こし (ダイアログ無し)
-        prepared = _prepare_clips(
+        prepared, vod_analysis = _prepare_clips(
             input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb,
             use_timeline=use_timeline)
         if not prepared:
@@ -977,7 +997,10 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
         timeline = None
         if use_timeline:
             timeline = archive_timeline.build_archive_timeline(
-                prepared, clip_settings, source_path=input_path, curve=curve)
+                prepared, clip_settings, source_path=input_path, curve=curve,
+                # 取得元と音量の基準を残す。元 VOD を手放したあとに
+                # 区間だけ取り直すために要る (ver9 resolve5 §4.3・§4.4)
+                vod_source=vod_source, vod_analysis=vod_analysis)
 
         # ② 一括レビュー: 1つの画面で全クリップを編集
         if result_callback is not None:

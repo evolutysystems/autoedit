@@ -10,6 +10,9 @@
 # 「1 本に並べて編集し、書き出しでクリップ単位へ戻す」ことで、
 # クリップを跨いだ編集を可能にしつつ、テーマ演出・個別出力・結合といった
 # 既存の書き出し処理 (clip_writer) をそのまま使い続けられる。
+import os
+import re
+
 from ..timeline import commands, media_probe
 from ..timeline.builder import timeline_config
 from ..timeline.model import (
@@ -32,6 +35,7 @@ from ..timeline.model import (
 )
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
+from . import config
 from . import scoring
 
 _logger = get_logger(__name__)
@@ -59,7 +63,13 @@ ORIGIN_ARCHIVE_INDEX = "archive_clip_index"
 # curve         : 採点グラフの窓スコア列 (ver3 resolve9 §3-2)。
 #                 保存したプロジェクトを開き直したときもグラフを出せるよう
 #                 source.archive.curve へ間引いて残す。
-def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
+# vod_source    : 取得元の控え {"provider","video_id","quality","vod_duration_sec",…}
+#                 (ver9 resolve5 §4.3)。元 VOD を手放したあとに「区間だけ取り直す」
+#                 ために要る。ローカルファイル経路など取得元が無い場合は None。
+# vod_analysis  : VOD 全体で測った音量 (clip_writer.analyze_vod の戻り値 / §4.4)。
+#                 セクション追加で同じ基準を使い回すために残す。
+def build_archive_timeline(prepared, clip_settings, source_path="", curve=None,
+                           vod_source=None, vod_analysis=None):
     cfg = timeline_config(clip_settings)
     ffmpeg_cfg = (clip_settings or {}).get("ffmpeg", {})
     profile = next((p.get("profile") for p in prepared if p.get("profile")), None)
@@ -153,6 +163,7 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
             "media": media_meta,
             # 採点グラフを再現するための窓スコア列 (ver3 resolve9 §3-2)
             "curve": _trim_curve(curve),
+            **_source_extras(vod_source, vod_analysis),
         },
     }
     timeline.normalize()
@@ -162,6 +173,123 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None):
         timeline.duration_sec(),
     )
     return timeline
+
+
+# ------------------------------------------------------------------
+# 取得元と音量の控え (ver9 resolve5 §4.3・§4.4)
+# ------------------------------------------------------------------
+#
+# 元 VOD は既定でプロジェクトが自己完結した時点でゴミ箱へ送る。その後に
+# 「まだ素材が無い区間」を足すには、どこから取ったのか (video_id・画質) と、
+# 何を基準に音量を合わせたのか (VOD 全体の測定値) が残っていなければならない。
+
+# 元 VOD のファイル名から video_id を推測するための形 ("vod_123456.mp4")。
+# download_vod の出力テンプレート "vod_{id}.{format}" と対になっている。
+_VOD_FILENAME_RE = re.compile(r"^vod_(\d+)\.", re.IGNORECASE)
+
+
+# source.archive へ足す控えを組む (空の控えはキーごと作らない)。
+# 既存プロジェクトとの差分を増やさないため、渡されなかったものは書かない。
+def _source_extras(vod_source, vod_analysis):
+    extras = {}
+    trimmed = _trim_vod_source(vod_source)
+    if trimmed:
+        extras["vod_source"] = trimmed
+    measured = _trim_vod_analysis(vod_analysis)
+    if measured:
+        extras["vod_analysis"] = measured
+    return extras
+
+
+# 取得元の控えを保存用へ整える (保存に要る欄だけを写す)
+def _trim_vod_source(vod_source):
+    if not isinstance(vod_source, dict):
+        return {}
+    video_id = str(vod_source.get("video_id", "") or "")
+    if not video_id:
+        return {}               # 取り直しに使えない控えは残さない
+    trimmed = {
+        "provider": str(vod_source.get("provider", "twitch") or "twitch"),
+        "video_id": video_id,
+        "quality": str(vod_source.get("quality", "") or ""),
+    }
+    duration = float(vod_source.get("vod_duration_sec", 0.0) or 0.0)
+    if duration > 0:
+        trimmed["vod_duration_sec"] = duration
+    fetched_at = str(vod_source.get("fetched_at", "") or "")
+    if fetched_at:
+        trimmed["fetched_at"] = fetched_at
+    return trimmed
+
+
+# VOD 全体で測った音量を保存用へ整える。
+# measured は loudnorm の実測値 (辞書) で、そのまま normalize_file へ渡せる形で残す。
+def _trim_vod_analysis(vod_analysis):
+    if not isinstance(vod_analysis, dict):
+        return {}
+    trimmed = {}
+    cut_db = vod_analysis.get("cut_db")
+    if cut_db is not None:
+        trimmed["cut_db"] = int(cut_db)
+    measured = vod_analysis.get("measured")
+    if isinstance(measured, dict) and measured:
+        trimmed["measured"] = {str(k): measured[k] for k in measured}
+    return trimmed
+
+
+# source.archive.vod_source を読む (無ければ空辞書)
+def vod_source_record(timeline):
+    record = archive_section(timeline).get("vod_source")
+    return record if isinstance(record, dict) else {}
+
+
+# source.archive.vod_analysis を読む (無ければ None)。
+# prepare_one_clip の vod_analysis 引数へそのまま渡せる形で返す。
+def vod_analysis_record(timeline):
+    record = archive_section(timeline).get("vod_analysis")
+    if not isinstance(record, dict) or not record:
+        return None
+    return {"cut_db": record.get("cut_db"), "measured": record.get("measured")}
+
+
+# 元 VOD のパスから video_id を推測する (ver9 resolve5 §4.3 の後方互換)。
+# vod_source を持たない既存プロジェクトでも、取得時のファイル名が
+# "vod_<数字>.mp4" のままなら取り直しができる。読めなければ空文字。
+def guess_video_id(vod_path):
+    name = os.path.basename(str(vod_path or ""))
+    found = _VOD_FILENAME_RE.match(name)
+    return found.group(1) if found else ""
+
+
+# 区間の取り直しに使う取得元を決める (ver9 resolve5 §4.3)
+#
+# ① 記録 (source.archive.vod_source) があればそれを使う
+# ② 無ければ元 VOD のファイル名から video_id を推測し、画質は設定値を使う
+# ③ どちらでも決まらなければ video_id は空文字 = 取り直しはできない
+#
+# 戻り値: {"provider","video_id","quality","vod_duration_sec","from_record"}
+def resolve_vod_source(timeline, settings=None):
+    record = vod_source_record(timeline)
+    source = getattr(timeline, "source", None) or {}
+    archive = source.get("archive") if isinstance(source, dict) else {}
+    recorded_path = ""
+    if isinstance(source, dict):
+        recorded_path = str((archive or {}).get("vod_path", "")
+                            or source.get("input_path", "") or "")
+    default_quality = str(
+        config.download_config(settings or {})["vod_format"] or "source")
+
+    video_id = str(record.get("video_id", "") or "")
+    from_record = bool(video_id)
+    if not video_id:
+        video_id = guess_video_id(recorded_path)
+    return {
+        "provider": str(record.get("provider", "twitch") or "twitch"),
+        "video_id": video_id,
+        "quality": str(record.get("quality", "") or "") or default_quality,
+        "vod_duration_sec": float(record.get("vod_duration_sec", 0.0) or 0.0),
+        "from_record": from_record,
+    }
 
 
 # 採点グラフの窓スコア列を保存用へ間引く (ver3 resolve9 §3-2)

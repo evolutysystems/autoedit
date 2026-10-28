@@ -28,6 +28,11 @@ DEFAULT_ROLE = "streamer"
 # コメント役割。専用の字幕トラックへ置き分ける対象 (ver3 resolve11 §3 D-1)
 ROLE_COMMENT = "comment"
 
+# ── テロップ 1 本ごとの文字寄せ (ver9 resolve3 §R2)
+# 複数行になったテロップの「行の揃え」であり、テロップの表示位置は動かさない。
+# "" = 設定の表示位置 (subtitle.alignment / vertical.alignment) に従う。
+SUBTITLE_ALIGNS = ("left", "center", "right")
+
 # ベースクリップ (V1 の本編・OP・ED) の描画順。オーバーレイは 1 以上を使う (§6.5-2)。
 BASE_Z_ORDER = 0
 # レイヤー振り直しの刻み幅。間に挿入する将来操作で全体再計算を避けるため 10 刻みにする。
@@ -81,6 +86,13 @@ def _to_int_or_none(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# 文字寄せを正規化する (未知の値・None・大文字混在はすべて "" = 設定に従う)
+# ver9 resolve3 §R2。EditSubtitle の setattr から直接入るため setter で必ず通す。
+def _to_align(value):
+    text = str(value or "").strip().lower()
+    return text if text in SUBTITLE_ALIGNS else ""
 
 
 # 秒値を JSON 書き出し用にミリ秒精度へ丸める (§6.2.3)
@@ -286,7 +298,7 @@ class SubtitleClip:
 
     def __init__(self, clip_id, timeline_start, duration, text="", role=DEFAULT_ROLE,
                  font="", font_size=None, use=True, z_order=DEFAULT_SUBTITLE_Z_ORDER,
-                 transform=None, origin=None, color="", outline_color=""):
+                 transform=None, origin=None, color="", outline_color="", align=""):
         self.id = clip_id
         self.timeline_start = _to_float(timeline_start)
         self.duration = _to_float(duration)
@@ -303,6 +315,19 @@ class SubtitleClip:
         self.color = str(color or "")
         # このクリップだけの縁の色 (ASS &HAABBGGRR)。空文字 = 役割の色に従う (resolve6 §3-2)
         self.outline_color = str(outline_color or "")
+        # このクリップだけの文字寄せ (left/center/right)。空文字 = 設定の表示位置に従う
+        # (ver9 resolve3 §R2)。行の揃えだけを変え、テロップの位置は動かさない。
+        self.align = align
+
+    # 文字寄せは EditSubtitle の setattr から直接入るため、setter で正規化する
+    # (ver9 resolve3 §1.5)。不正値は「設定に従う」へ倒して画面を壊さない。
+    @property
+    def align(self):
+        return self._align
+
+    @align.setter
+    def align(self, value):
+        self._align = _to_align(value)
 
     @property
     def timeline_end(self):
@@ -319,7 +344,7 @@ class SubtitleClip:
             self.id, self.timeline_start, self.duration, self.text, self.role,
             self.font, self.font_size, self.use, self.z_order,
             self.transform.copy(), dict(self.origin),
-            self.color, self.outline_color,
+            self.color, self.outline_color, self.align,
         )
 
     # 既存資産 (build_subtitle_file / resolve_export) が扱う item 形式へ変換する
@@ -343,13 +368,22 @@ class SubtitleClip:
             item["color"] = self.color
         if self.outline_color:
             item["outline_color"] = self.outline_color
+        # 文字寄せも指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve3 §R12)
+        if self.align:
+            item["align"] = self.align
         return item
 
     def to_dict(self):
+        # 開始と尺を別々に丸めると、保存・再読込で「前の終わり」と「次の始まり」が
+        # 最大 1ms ずれて重なる (ver9 resolve8 §3.4)。たった 1ms でも libass の
+        # 衝突回避が働き、焼き込みだけテロップが押し上げられる原因になるため、
+        # 終端を丸めてから差を取り、隣り合うテロップの境界を保つ。
+        start = round_sec(self.timeline_start)
+        duration = round_sec(self.timeline_start + self.duration) - start
         return {
             "id": self.id,
-            "timeline_start": round_sec(self.timeline_start),
-            "duration": round_sec(self.duration),
+            "timeline_start": start,
+            "duration": round_sec(duration),
             "text": self.text,
             "role": self.role,
             "font": self.font,
@@ -361,6 +395,8 @@ class SubtitleClip:
             # 個別の色 (未指定は空文字。旧ファイルに無くても from_dict で空文字になる)
             "color": self.color,
             "outline_color": self.outline_color,
+            # 個別の文字寄せ (未指定は空文字 = 設定の表示位置に従う / resolve3 §R11)
+            "align": self.align,
         }
 
     @staticmethod
@@ -379,6 +415,7 @@ class SubtitleClip:
             origin=data.get("origin"),
             color=data.get("color", ""),
             outline_color=data.get("outline_color", ""),
+            align=data.get("align", ""),
         )
 
 
@@ -651,18 +688,32 @@ class Timeline:
     # 役割に対応する字幕トラックを返す (無ければ None。作成はここでは行わない)
     # コメント役割だけ専用トラック (既定 S2) へ置き分ける (ver3 resolve11 §5.1)。
     # enabled=False のときは常に既定トラック (S1) を返す = 従来どおりの 1 本運用。
+    # comment_track_index を渡すと、拾い直しの候補をその番号のトラックに限る
+    # (ver9 resolve10 §3.4)。通常テロップ用に増やしたトラック (S3 以降) が
+    # 「中身が全部コメント」になった瞬間にコメント用と誤認されるのを防ぐ。
     def subtitle_track_for_role(self, role,
                                 comment_track_id=COMMENT_SUBTITLE_TRACK_ID,
-                                enabled=True):
+                                enabled=True, comment_track_index=None):
         if not enabled or str(role or "") != ROLE_COMMENT:
             return self.base_subtitle_track()
         track = self.track_by_id(comment_track_id)
         if track is not None and track.is_subtitle():
             return track
-        # ID を設定で変えられている場合に備え「S1 以外の字幕トラック」で拾い直す
+        # ID を設定で変えられている場合の拾い直し (ver3 resolve11 §5.1)。
+        # ver9 resolve2 §4.1-b: 「S1 以外ならどれでも」は、通常テロップ用に
+        # 増やしたトラック (S3 …) をコメント用と誤認するためやめる。
+        # 中身がすべてコメント役割のトラックだけを候補にする (空トラックは除く)。
         base = self.base_subtitle_track()
+        index = None if comment_track_index is None else _to_int(
+            comment_track_index, 0)
         for candidate in sorted(self.subtitle_tracks(), key=lambda t: t.index):
-            if base is None or candidate.id != base.id:
+            if base is not None and candidate.id == base.id:
+                continue
+            # コメント用の番号 (既定 2) 以外は候補にしない (ver9 resolve10 §3.4)
+            if index is not None and candidate.index != index:
+                continue
+            if candidate.clips and all(
+                    str(c.role or "") == ROLE_COMMENT for c in candidate.clips):
                 return candidate
         return None
 
@@ -745,6 +796,21 @@ class Timeline:
                 gaps.append((cursor, clip.timeline_start))
             cursor = max(cursor, clip.timeline_end)
         return gaps
+
+    # 新しい字幕トラックの ID を払い出す (ver9 resolve2 §R4)
+    # index は既存字幕トラックの最大 +1。ただし min_index 未満にはせず、
+    # 予約された番号・ID (コメント用トラック) は飛ばす。
+    # 2 トラック目はコメント専用のため、通常テロップ用は min_index=3 で呼ばれ、
+    # S1 だけの状態でも S2 を奪わず S3 から始まる。
+    def next_subtitle_track_id(self, prefix="S", min_index=1,
+                               reserved_indexes=(), reserved_ids=()):
+        index = max([t.index for t in self.subtitle_tracks()] or [0]) + 1
+        index = max(index, _to_int(min_index, 1))
+        used_ids = {t.id for t in self.tracks} | {str(i) for i in reserved_ids if i}
+        reserved = {_to_int(i, 0) for i in reserved_indexes}
+        while index in reserved or f"{prefix}{index}" in used_ids:
+            index += 1
+        return f"{prefix}{index}", index
 
     # 新しい映像トラックの ID を払い出す (D&D で自動生成する / §6.8)
     def next_video_track_id(self):

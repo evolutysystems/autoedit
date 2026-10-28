@@ -6,7 +6,7 @@
 # 字幕の描画は Qt による近似であり libass と完全一致しない (§6.4-4 に明記した仕様)。
 # ただし ver6 resolve3 §4.7 で「影」「アウトラインの太さ」「行送り」の 3 点を
 # ASS (libass) 側へ寄せた。グリフの形そのもの (ヒンティング・字間) は依然として近似。
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -44,6 +44,12 @@ _DEFAULT_OVERLAY_CFG = {
 
 # コメント役割 (背景とアイコンを付ける対象 / ver3 resolve11)
 _ROLE_COMMENT = "comment"
+
+# 字幕の縁 (アウトライン) と影の描き方 (ver9 resolve11 §3)
+#   "pen"   … 幅 2W の QPen で字のパスをストロークする (既定。パス演算をしない)
+#   "union" … QPainterPath.united() でパスを合併してから塗る (従来。桁違いに遅い)
+OUTLINE_PEN = "pen"
+OUTLINE_UNION = "union"
 
 # コメントアイコンの読み込み結果を使い回すためのキャッシュ (キー: (パス, 一辺px))。
 # 再生中は毎フレーム作り直されるため、その都度ディスクから読むと引っかかる。
@@ -350,8 +356,10 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
 
     # metrics_mode: "libass" = 字の大きさ・行送り・字間を出力 (libass) へ合わせる
     #               "em"     = 従来の Qt 近似 (ver8 resolve8 §5-4 の退避口)
+    # outline_mode: 縁と影の描き方 (ver9 resolve11 §3)。既定 "pen"。
     def __init__(self, clip, eff_cfg, font_profile, canvas_size, parent=None,
-                 metrics_mode=font_metrics.MODE_LIBASS):
+                 metrics_mode=font_metrics.MODE_LIBASS,
+                 outline_mode=OUTLINE_PEN):
         # ASS の改行 \N を実改行へ戻して表示する
         text = str(clip.text or "").replace("\\N", "\n")
         role = str(clip.role or "streamer")
@@ -414,6 +422,10 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         # 行ごとの寄せ。libass は \an の水平成分に従って各行を寄せる。
         self._line_align = _line_alignment(clip, eff_cfg, canvas_size, role)
         self._text_path_cache = None
+        # 縁と影の描き方 / 作り置き (ver9 resolve11 §3)
+        self._outline_mode = (OUTLINE_UNION if str(outline_mode) == OUTLINE_UNION
+                              else OUTLINE_PEN)
+        self._outline_cache = None
 
         self._place(clip, eff_cfg, canvas_size)
         # コメントは背景 (角丸の箱) とアイコンを子アイテムとして持たせる
@@ -472,6 +484,42 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
             path.addText(left, baseline, font, line)
         self._text_path_cache = path
         return path
+
+    # 幅 2W の丸い継ぎ目のペン (縁・影のストローク用 / ver9 resolve11 §3)
+    # ストローカと同じ形を描くため、継ぎ目と端は Round で揃える。
+    def _stroke_pen(self, color):
+        pen = QPen(color, float(self._outline_width) * 2.0)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        return pen
+
+    # 縁と影を 1 枚の形で塗るためのパス (outline_mode="union" のときだけ使う)
+    #
+    # 【重要】QPainterPath.united() は既定では使わない (ver9 resolve11 §2)。
+    #   パスのブール演算が重く、縁 10px のとき 26 文字のテロップで 733ms、
+    #   46 文字で 1752ms かかっていた。しかも paint のたびに計算していたため、
+    #   再生ヘッドを動かすだけで 1 クリック最大 1 秒待たされていた。
+    #   既定の "pen" はこの演算を一切せず、幅 2W のペンで字のパスを
+    #   ストロークする (絵は変わらない / §3.3 で全画素を照合)。
+    # 文字・font・縁の太さは生成後に変わらないため、作った形は使い回す。
+    def _outline_paths(self):
+        if self._outline_cache is not None:
+            return self._outline_cache
+        path = self._text_path()
+        if self._outline_width <= 0:
+            # 縁が無いときは影も字の形そのまま (従来と同じ)
+            self._outline_cache = (None, path)
+            return self._outline_cache
+        stroker = QPainterPathStroker()
+        # ASS の Outline=W は「字の外側に W px」。中心線ストロークで同じ太さを
+        # 出すには幅 2W にして、内側へ出たぶんを字の塗りで覆う。
+        stroker.setWidth(float(self._outline_width) * 2.0)
+        stroker.setJoinStyle(Qt.RoundJoin)
+        stroker.setCapStyle(Qt.RoundCap)
+        shape = stroker.createStroke(path).united(path)
+        # 縁も影も同じ形を使う (字の塗りが上に乗るため内側は見えない)
+        self._outline_cache = (shape, shape)
+        return self._outline_cache
 
     # 選択枠は文字の矩形に合わせる (boundingRect は影と縁のぶん外へ広い)
     def _paint_selection(self, painter):
@@ -559,24 +607,27 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setPen(Qt.NoPen)
 
-        stroke = None
-        if self._outline_width > 0:
-            stroker = QPainterPathStroker()
-            # ASS の Outline=W は「字の外側に W px」。中心線ストロークで同じ太さを
-            # 出すには幅 2W にして、内側へ出たぶんを字の塗りで覆う。
-            stroker.setWidth(float(self._outline_width) * 2.0)
-            stroker.setJoinStyle(Qt.RoundJoin)
-            stroker.setCapStyle(Qt.RoundCap)
-            stroke = stroker.createStroke(path).united(path)
-
-        if self._shadow_px > 0:
-            silhouette = stroke if stroke is not None else path
-            painter.translate(self._shadow_px, self._shadow_px)
-            painter.fillPath(silhouette, QBrush(self._shadow_color))
-            painter.translate(-self._shadow_px, -self._shadow_px)
-
-        if stroke is not None:
-            painter.fillPath(stroke, QBrush(self._outline_color))
+        if self._outline_mode == OUTLINE_UNION:
+            # 従来の経路: 縁と字を合併した 1 枚の形で塗る (遅い / §3)
+            shape, silhouette = self._outline_paths()
+            if self._shadow_px > 0:
+                painter.translate(self._shadow_px, self._shadow_px)
+                painter.fillPath(silhouette, QBrush(self._shadow_color))
+                painter.translate(-self._shadow_px, -self._shadow_px)
+            if shape is not None:
+                painter.fillPath(shape, QBrush(self._outline_color))
+        else:
+            # 既定の経路: パス演算をせず、幅 2W のペンでストロークする (§3)。
+            # 影も同じ形 (ストローク + 字) をずらして置く。重なる内側は
+            # このあと不透明な縁と字で覆われるため、二重に乗っても見えない。
+            if self._shadow_px > 0:
+                painter.translate(self._shadow_px, self._shadow_px)
+                if self._outline_width > 0:
+                    painter.strokePath(path, self._stroke_pen(self._shadow_color))
+                painter.fillPath(path, QBrush(self._shadow_color))
+                painter.translate(-self._shadow_px, -self._shadow_px)
+            if self._outline_width > 0:
+                painter.strokePath(path, self._stroke_pen(self._outline_color))
         painter.fillPath(path, self.brush())
         painter.restore()
         self._paint_selection(painter)
@@ -602,10 +653,15 @@ def _line_height_ratio(eff_cfg):
 
 
 # 行ごとの水平の寄せを決める (ver6 resolve3 §4.7-3)
+#   クリップ個別の文字寄せ: それが最優先 (ver9 resolve3 §4.3)。
+#                 箱 (_text_width = 最長行) の位置は変えず、中の行だけを寄せる。
 #   位置指定あり: コメントは \an4 (左) / それ以外は \an5 (中央) で焼かれる
 #                 (subtitle_generator の \an 決定と同じ規約)
 #   位置指定なし: Style の alignment に従う
 def _line_alignment(clip, eff_cfg, canvas_size, role):
+    align = subtitle_generator.normalize_align(getattr(clip, "align", ""))
+    if align:
+        return align
     if clip.transform.is_positioned():
         return "left" if str(role or "") == _ROLE_COMMENT else "center"
     _x, _y, h_anchor, _v_anchor = default_subtitle_anchor(
@@ -613,14 +669,57 @@ def _line_alignment(clip, eff_cfg, canvas_size, role):
     return h_anchor
 
 
-# ベース映像フレームのアイテム (選択・移動は不可)
+# ベース映像フレームのアイテム (選択は不可。拡大中だけ掴んで動かせる)
+#
+# 拡大率が 100% 以外のときだけ掴める (ver9 resolve6 §3.7)。等倍では動かす余地が
+# 無いため掴ませない。選択は Timeline 側が持つので ItemIsSelectable は立てない
+# (立てるとプレビューと Timeline で選択が二重になる)。
 class BaseFrameItem(QGraphicsPixmapItem):
+
+    # 位置確定を伝える先 (PreviewPanel が設定する / _OverlayMixin と同じ規約)
+    move_finished = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setZValue(-1000)
         self.setFlag(QGraphicsItem.ItemIsSelectable, False)
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        # 掴める対象のクリップ (空文字 = 掴めない)
+        self.clip_id = ""
+        # ドラッグできる範囲 (シーン座標の矩形)。None なら制限しない
+        self._drag_bounds = None
+
+    # 掴める状態を切り替える (ver9 resolve6 §3.7)
+    # clip_id が空、または draggable が偽なら動かせない。
+    def set_draggable(self, clip_id, draggable):
+        draggable = bool(draggable and clip_id)
+        self.clip_id = str(clip_id or "") if draggable else ""
+        self.setFlag(QGraphicsItem.ItemIsMovable, draggable)
+        self.setCursor(Qt.OpenHandCursor if draggable else Qt.ArrowCursor)
+
+    # ドラッグできる範囲を決める (ver9 resolve6 §3.4)
+    #
+    # 確定時にはコマンドが同じ範囲へ丸めるが、ドラッグ**中**も越えさせない。
+    # 越えられると画面の端に黒帯が見えて、離した瞬間に戻ることになる。
+    def set_drag_bounds(self, bounds):
+        self._drag_bounds = bounds
+
+    # 位置が変わる前に可動範囲へ収める (Qt の標準の差し込み口)
+    def itemChange(self, change, value):
+        if (change == QGraphicsItem.ItemPositionChange
+                and self._drag_bounds is not None):
+            bounds = self._drag_bounds
+            value = QPointF(
+                min(max(value.x(), bounds.left()), bounds.right()),
+                min(max(value.y(), bounds.top()), bounds.bottom()))
+        return super().itemChange(change, value)
+
+    # ドラッグ確定時に 1 回だけ通知する (ドラッグ中は積まない = 履歴を汚さない)
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self.clip_id and callable(self.move_finished):
+            point = self.pos()
+            self.move_finished(self.clip_id, point.x(), point.y())
 
     # 空フレーム (取得できないとき) は黒で塗る
     # 直前に縮小フレームを表示していた場合に備え、拡縮と位置も戻す (resolve6 §5.8)

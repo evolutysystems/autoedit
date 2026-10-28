@@ -782,6 +782,119 @@ class WhisperTextSource(TextSource):
 _COMMENT_ALIGNMENTS = (1, 4, 7)
 _DEFAULT_COMMENT_ALIGNMENT = 4
 
+# テンキー配置の左右成分 (ver9 resolve3 §1.1)。段 (上下) は 3 つずつで変わる。
+_ALIGN_COLUMNS = ("left", "center", "right")
+_ALIGN_LEFT_COLUMN = (1, 4, 7)
+_ALIGN_RIGHT_COLUMN = (3, 6, 9)
+
+
+# 文字寄せ (left/center/right) を正規化する。未知・空は "" (設定に従う)
+# ver9 resolve3 §R2。model._to_align と同じ規約 (import を増やさないため個別に持つ)。
+def normalize_align(value):
+    text = str(value or "").strip().lower()
+    return text if text in _ALIGN_COLUMNS else ""
+
+
+# テンキー配置 (1〜9) から文字寄せを取り出す (インスペクタの既定表示用 / §R3)
+def align_of_alignment(alignment):
+    value = _to_int(alignment, 2)
+    if not 1 <= value <= 9:
+        value = 2
+    return _ALIGN_COLUMNS[(value - 1) % 3]
+
+
+# 段 (上下) を保ったまま左右成分だけ差し替えたテンキー配置を返す (§0.3)
+# align が未指定・不正なら alignment をそのまま返す = 従来と同一。
+def alignment_with_align(alignment, align):
+    value = _to_int(alignment, 2)
+    key = normalize_align(align)
+    if not key or not 1 <= value <= 9:
+        return value
+    return (value - 1) // 3 * 3 + 1 + _ALIGN_COLUMNS.index(key)
+
+
+# 文字寄せを効かせるかどうかを解決する (ver9 resolve3 §4.2-b)
+#
+# 【重要】テロップの位置は動かさない。「一番長い行がいま居る矩形」を箱として固定し、
+#   箱の中で行を寄せるだけにする。箱の幅は font_advance の実測
+#   (comment_decor.text_extent) を使う。推定 (固定係数) はフォントにより 1.5 倍
+#   ずれるため、それで箱をずらすとテロップの位置がぶれる (§2-3)。
+#
+# 何もしない (= 従来と完全に同一の出力) 条件:
+#   ・文字寄せが未指定 / 設定の表示位置と同じ
+#   ・subtitle_cfg が無い (背景を出さない旧来の呼び出し) / 設定で無効
+#   ・行が 1 本だけ (寄せても見た目が変わらない)
+#   ・フォントの送り幅を読めない (require_measured_font=true のとき)
+#   ・箱が余白に収まらない (余り ≤ 0)
+#
+# 戻り値 dict
+#   align    : 実際に効かせる寄せ ("" = 何もしない)
+#   width    : 箱の幅 px
+#   an       : 位置指定なしのときに使うテンキー配置
+#   margin_l / margin_r : Dialogue 行のイベント余白 (箱をこれで表現する)
+#   skip     : 効かせなかった理由 ("" / "unmeasured" / "overflow")
+def resolve_line_align(entry, subtitle_cfg, font_profile, video_width, video_height,
+                       text=None):
+    none = {"align": "", "width": 0.0, "an": 0, "margin_l": 0, "margin_r": 0,
+            "box_left": 0.0, "skip": ""}
+    align = normalize_align((entry or {}).get("align"))
+    if not align or subtitle_cfg is None or font_profile is None:
+        return none
+    if not dict(subtitle_cfg.get("line_align") or {}).get("enabled", True):
+        return none
+    role = str(entry.get("role", _DEFAULT_ROLE))
+    alignment, margin_l, margin_r, _margin_v = font_profile.placement_for_role(role)
+    alignment = _to_int(alignment, 2)
+    if align == align_of_alignment(alignment):
+        return none                     # 実効が同じなら出さない (従来と同一出力)
+
+    extent = comment_decor.text_extent(entry, subtitle_cfg, text=text)
+    if extent["lines"] <= 1:
+        return none                     # 1 行なら寄せても見た目が変わらない
+    require_measured = dict(subtitle_cfg.get("line_align") or {}).get(
+        "require_measured_font", True)
+    if require_measured and not extent["measured"]:
+        return dict(none, skip="unmeasured")
+
+    width = float(extent["width"])
+    # 位置をドラッグ済みなら \pos がアンカーで位置を決めるため、箱を余白で表す必要はない
+    # (余白は \pos のとき無視される / §R6 と §1.6 検証3)。余白に収まるかの判定も要らない。
+    if entry.get("pos_x") is not None and entry.get("pos_y") is not None:
+        return dict(none, align=align, width=width)
+
+    margin_l = _to_int(margin_l, 40)
+    margin_r = _to_int(margin_r, 40)
+    available = video_width - margin_l - margin_r
+    if available - width <= 0:
+        return dict(none, skip="overflow")
+
+    # 箱の左端 = いまの最長行の左端 (設定の表示位置から決まる / §1.6 検証1)
+    if alignment in _ALIGN_LEFT_COLUMN:
+        box_left = float(margin_l)
+    elif alignment in _ALIGN_RIGHT_COLUMN:
+        box_left = float(video_width - margin_r - width)
+    else:
+        box_left = margin_l + (available - width) / 2.0
+    # 箱の左端は整数 px へ丸める (ver9 resolve8 §3.2-4)。
+    # イベント余白 (整数しか持てない) で箱を表す従来の経路と、\pos でアンカーを
+    # 動かす新しい経路の両方が同じ箱を指すようにするため。丸めずに \pos へ渡すと
+    # 文字が 1px 未満だけ横へずれ、設定で切り戻したときに絵が変わってしまう。
+    box_left = float(round(box_left))
+    # 位置を \pos で明示する場合、箱はアンカーの移動で表すためイベント余白は使わない
+    # (余白は \pos のとき無視される / §3.2-4)。
+    explicit = _explicit_position_enabled(subtitle_cfg)
+    return {
+        "align": align,
+        "width": width,
+        "an": alignment_with_align(alignment, align),
+        # 箱をイベント余白で表現する (Style の余白ではなく Dialogue 行の余白が勝つ)
+        "margin_l": 0 if explicit else max(int(box_left), 0),
+        "margin_r": 0 if explicit else max(int(round(video_width - (box_left + width))), 0),
+        # 箱の左端 (px)。\pos を書くときのアンカー算出に使う (§3.2-4)
+        "box_left": box_left,
+        "skip": "",
+    }
+
 
 # コメント役割の配置・余白を字幕設定から取り出す (ver3 resolve11 §5.4-1)
 # キーが無ければ共通値 (alignment/margin_*) へ落ちるため、旧 setting.json でも挙動不変。
@@ -909,22 +1022,101 @@ def _inline_font_override(font, font_size):
     return "{" + override + "}" if override else ""
 
 
+# テロップの位置を ASS へ明示的に書くか (ver9 resolve8 §3.2-6)
+#
+# 設定 subtitle.explicit_position (既定 true)。subtitle_cfg を渡さない旧来の
+# 呼び出し (背景もコメント装飾も出さない経路) では False を返し、
+# 生成される ASS を従来と 1 文字も変えない (後方互換)。
+def _explicit_position_enabled(subtitle_cfg):
+    if subtitle_cfg is None:
+        return False
+    return bool(subtitle_cfg.get("explicit_position", True))
+
+
+# 位置未指定のテロップが置かれる既定のアンカー点を求める (ver9 resolve8 §3.2-1)
+#
+# libass は \pos を持たないイベントを「衝突回避」で上へ押し上げ、しかもその位置を
+# そのテロップが消えるまで持ち越す。1 フレームでも重なれば数秒ずれ続けるため、
+# 編集画面 (Qt 描画) や Resolve 書き出し (座標を直接計算) と配置が食い違う。
+# 既定位置をそのまま \pos で書けば libass に動かす余地が無くなる。
+#
+# アンカーは \an5 (中央) に寄せず、元のテンキー配置をそのまま使うのが肝である。
+# 下段系なら「行の下端」が基準になるため、行数が変わっても位置がずれない。
+# 戻り値 (テンキー配置, x, y)。x/y は PlayRes 上の px。
+def default_anchor(role, font_profile, video_width, video_height):
+    alignment, margin_l, margin_r, margin_v = font_profile.placement_for_role(
+        str(role or _DEFAULT_ROLE))
+    alignment = _to_int(alignment, 2)
+    if not 1 <= alignment <= 9:
+        alignment = 2
+    margin_l = _to_int(margin_l, 40)
+    margin_r = _to_int(margin_r, 40)
+    margin_v = _to_int(margin_v, 60)
+    # 左右: 左寄せ=左余白 / 右寄せ=右余白 / 中央=左右余白を含めた中心
+    if alignment in _ALIGN_LEFT_COLUMN:
+        x = float(margin_l)
+    elif alignment in _ALIGN_RIGHT_COLUMN:
+        x = float(video_width - margin_r)
+    else:
+        x = (margin_l + video_width - margin_r) / 2.0
+    # 上下: 下段=下端から縦余白 / 中段=キャンバスの半分 / 上段=上端から縦余白
+    if alignment <= 3:
+        y = float(video_height - margin_v)
+    elif alignment <= 6:
+        y = video_height / 2.0
+    else:
+        y = float(margin_v)
+    return alignment, x, y
+
+
 # 字幕の位置上書きタグを生成する (ver3 resolve.md §8.3)
 # entry["pos_x"]/["pos_y"] はキャンバス中心を原点とする正規化座標 (-1.0〜1.0、Y は上が正)。
 # 未指定 (キー無し / None) のときは空文字を返し、Style の alignment/margin に従う
 # = 既存の生成結果と完全に一致する (後方互換)。
-def _inline_position_override(entry, video_width, video_height):
+def _inline_position_override(entry, video_width, video_height, line_align=None,
+                              font_profile=None, subtitle_cfg=None):
     x = entry.get("pos_x")
     y = entry.get("pos_y")
+    align = (line_align or {}).get("align", "")
     if x is None or y is None:
-        return ""
+        # 位置未指定: 既定のアンカー点を自前で書き、libass に位置を決めさせない
+        # (ver9 resolve8 §3.2)。設定 OFF / 旧来の呼び出しでは従来どおり何も出さない。
+        if font_profile is None or not _explicit_position_enabled(subtitle_cfg):
+            return ""
+        anchor, px, py = default_anchor(
+            entry.get("role", _DEFAULT_ROLE), font_profile, video_width, video_height)
+        # 文字寄せがあるときは、段 (上下) を保ったまま箱の左/中央/右へアンカーを移す
+        # (§3.2-4)。箱は resolve_line_align が決めた「最長行がいま居る矩形」。
+        if align:
+            width = float((line_align or {}).get("width", 0.0))
+            box_left = float((line_align or {}).get("box_left", 0.0))
+            anchor = _to_int((line_align or {}).get("an"), anchor) or anchor
+            if align == "left":
+                px = box_left
+            elif align == "right":
+                px = box_left + width
+            else:
+                px = box_left + width / 2.0
+        return f"\\an{anchor}\\pos({px:.1f},{py:.1f})"
     # 正規化座標 → ピクセル (\pos はテキストのアンカー位置。\an5 で中央基準に揃える)
     px = (float(x) + 1.0) * video_width / 2.0
     py = (1.0 - float(y)) * video_height / 2.0
     # コメントだけは左中央アンカー (\an4) にする (ver3 resolve11 §3 D-4)。
     # 中央基準 (\an5) だと「文字列の左端 = 中央 - 文字幅/2」となり、文字幅を測れない
     # Python 側からアイコン・背景の位置を決められないため。他の役割は従来どおり \an5。
-    anchor = 4 if str(entry.get("role", "")) == _ROLE_COMMENT else 5
+    is_comment = str(entry.get("role", "")) == _ROLE_COMMENT
+    anchor = 4 if is_comment else 5
+    # 文字寄せの指定があれば、同じ箱のままアンカーだけ左/中央/右へ移す
+    # (ver9 resolve3 §R6 / §1.6 検証3)。4/5/6 はすべて中段系のため上下位置は動かない。
+    if align:
+        width = float((line_align or {}).get("width", 0.0))
+        box_left = px if is_comment else px - width / 2.0
+        if align == "left":
+            anchor, px = 4, box_left
+        elif align == "right":
+            anchor, px = 6, box_left + width
+        else:
+            anchor, px = 5, box_left + width / 2.0
     return f"\\an{anchor}\\pos({px:.1f},{py:.1f})"
 
 
@@ -978,9 +1170,15 @@ def _inline_color_override(entry):
 
 # 1 エントリぶんのインライン上書きタグ (位置 → フォント → サイズ → 塗り → 縁 の順) をまとめる
 # 何も指定が無ければ空文字を返す (既存挙動と同一)。
-def _inline_overrides(entry, video_width, video_height):
-    position = _inline_position_override(entry, video_width, video_height)
+def _inline_overrides(entry, video_width, video_height, line_align=None,
+                      font_profile=None, subtitle_cfg=None):
+    position = _inline_position_override(entry, video_width, video_height, line_align,
+                                         font_profile, subtitle_cfg)
     override = ""
+    # 文字寄せ (ver9 resolve3 §R2)。位置指定ありのときは position 側がアンカーを
+    # 持つため、ここで \an を重ねない (重ねると基準が二重に変わる)。
+    if not position and (line_align or {}).get("align", ""):
+        override += f"\\an{line_align['an']}"
     font = entry.get("font", "")
     if font:
         override += f"\\fn{font}"
@@ -1050,9 +1248,11 @@ def build_subtitle_file(timeline, font_profile, output_path,
     # 個別の色指定の件数 (ログ出力用 / resolve6 §5.3)
     color_override_count = 0
     outline_override_count = 0
+    # 個別の文字寄せの件数と、効かせられなかった件数 (ver9 resolve3 §8)
+    align_override_count = 0
+    align_skipped = {}
     for entry in timeline:
-        start = _format_ass_time(entry["start"])
-        end = _format_ass_time(entry["end"])
+        start, end = _format_ass_range(entry["start"], entry["end"])
         text = entry["text"].replace("\n", "\\N")
         role = entry.get("role", _DEFAULT_ROLE)
         # コメント役割のみ先頭に「コメント：」＋改行(\N)を付与する (request10 追加要望5)。
@@ -1070,7 +1270,18 @@ def build_subtitle_file(timeline, font_profile, output_path,
         # コメントラベル付与より後に前置する (§8-5 確定)。
         entry_font = entry.get("font", "")
         entry_size = entry.get("font_size")
-        override = _inline_overrides(entry, video_width, video_height)
+        # クリップ個別の文字寄せ (ver9 resolve3 §R2)。箱 (= 最長行の矩形) は
+        # 動かさないため、イベント余白で箱を表現して \an で箱の中の寄せを決める。
+        # ラベル付与後の本文で箱の幅を測る (実際に出る行がこれのため / 背景と同じ規約)。
+        line_align = resolve_line_align(
+            entry, subtitle_cfg, font_profile, video_width, video_height, text=text)
+        if line_align["align"]:
+            align_override_count += 1
+        elif line_align["skip"]:
+            align_skipped[line_align["skip"]] = align_skipped.get(
+                line_align["skip"], 0) + 1
+        override = _inline_overrides(entry, video_width, video_height, line_align,
+                                     font_profile, subtitle_cfg)
         if override:
             text = override + text
             if entry_font:
@@ -1089,35 +1300,80 @@ def build_subtitle_file(timeline, font_profile, output_path,
                 f"Dialogue: {bg_layer},{start},{end},{style_name},,0,0,0,,{background}")
             background_count += 1
         layer = comment_layer if role == _ROLE_COMMENT else 0
+        # 文字寄せの箱はイベント余白で表す (背景の行は \pos を持つため 0 のまま)。
+        # 位置を \pos で明示する設定では resolve_line_align が余白を 0 で返すため、
+        # ここは常に 0,0,0 になる (余白は \pos のとき無視される / ver9 resolve8 §3.2-4)。
+        margins = f"{line_align['margin_l']},{line_align['margin_r']},0"
         body_lines.append(
-            f"Dialogue: {layer},{start},{end},{style_name},,0,0,0,,{text}")
+            f"Dialogue: {layer},{start},{end},{style_name},,{margins},,{text}")
 
     # 個別指定の件数を INFO 出力する (resolve16 §6 / resolve6 §5.3)。
     # 0 件時のみ従来同様に静かに済ませる。
     if background_count:
         _logger.info("コメント背景: %d 件", background_count)
 
-    if (font_override_count or size_override_count
-            or color_override_count or outline_override_count):
+    if (font_override_count or size_override_count or color_override_count
+            or outline_override_count or align_override_count):
         _logger.info(
-            "テロップ個別指定 フォント %d 件 / サイズ %d 件 / 文字色 %d 件 / 縁の色 %d 件",
+            "テロップ個別指定 フォント %d 件 / サイズ %d 件 / 文字色 %d 件 / "
+            "縁の色 %d 件 / 文字寄せ %d 件",
             font_override_count, size_override_count,
-            color_override_count, outline_override_count,
+            color_override_count, outline_override_count, align_override_count,
         )
+
+    # 文字寄せを効かせられなかったものは理由ごとに 1 回だけ知らせる (§R8 / §8)。
+    # どちらもテロップの位置は現状どおりのまま、寄せだけが効かない状態。
+    if align_skipped.get("unmeasured"):
+        _logger.warning(
+            "フォントの送り幅を読めないため文字寄せを適用しませんでした: %d 件 "
+            "(subtitle.font_family / テロップ個別のフォントを見直すと解消します)",
+            align_skipped["unmeasured"])
+    if align_skipped.get("overflow"):
+        _logger.info(
+            "テロップが余白に収まらないため文字寄せを適用しませんでした: %d 件",
+            align_skipped["overflow"])
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(body_lines) + "\n")
     return output_path
 
 
+# 秒値を 1/100 秒 (ASS の時間解像度) へ「切り捨て」る (ver9 resolve8 §3.3)
+#
+# 四捨五入だと、隙間ゼロで連続するテロップの境界が前は切り上げ・次は切り捨てへ
+# 分かれて 10ms だけ重なる (例: end=81.615000…1 → 81.62 / start=81.615 → 81.61)。
+# その 1 フレームで libass の衝突回避が働き、後のテロップが上へ押し上げられたまま
+# 消えるまで戻らないため、編集画面と焼き込みで配置が食い違う。
+# 浮動小数の誤差は先にミリ秒へ丸めてから落とす (81.615000…1 と 81.615 を同じ値にする)。
+def _to_centiseconds(seconds):
+    value = _to_float(seconds, 0.0)
+    if value <= 0:
+        return 0
+    return round(value * 1000) // 10
+
+
+# 1/100 秒を ASS タイムスタンプ (H:MM:SS.cc) へ組む
+def _centiseconds_to_ass(centiseconds):
+    h, rest = divmod(int(centiseconds), 360000)
+    m, rest = divmod(rest, 6000)
+    s, cs = divmod(rest, 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
 # 秒値を ASS タイムスタンプ (H:MM:SS.cc) に変換する
 def _format_ass_time(seconds):
-    if seconds < 0:
-        seconds = 0
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = seconds - h * 3600 - m * 60
-    return f"{h}:{m:02d}:{s:05.2f}"
+    return _centiseconds_to_ass(_to_centiseconds(seconds))
+
+
+# 開始・終了の ASS タイムスタンプを組で作る (ver9 resolve8 §3.3)
+# 切り捨てで start == end になる 10ms 未満のテロップは表示が消えてしまうため、
+# 終端を 1/100 秒ぶん持ち上げて必ず尺を残す。
+def _format_ass_range(start, end):
+    start_cs = _to_centiseconds(start)
+    end_cs = _to_centiseconds(end)
+    if end_cs <= start_cs:
+        end_cs = start_cs + 1
+    return _centiseconds_to_ass(start_cs), _centiseconds_to_ass(end_cs)
 
 
 # 字幕ファイルを動画に焼き込む

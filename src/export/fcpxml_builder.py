@@ -179,6 +179,8 @@ def _quantize_clips(clips, fps):
             "offset_f": offset_f,
             "start_f": max(to_frames(clip.get("start", 0.0), fps), 0),
             "dur_f": dur_f,
+            # V1 の拡大率・表示位置 (ver9 resolve6 §4.8)。無ければ None
+            "transform": clip.get("transform"),
         })
         cursor_f = offset_f + dur_f
     # 明示位置が順不同でも spine を時刻順に並べる (累積方式では元の順序が保たれる)
@@ -256,7 +258,9 @@ def _total_frames(fclips):
 #   "fps": int, "width": int, "height": int,
 #   "source": {"path": 絶対パス, "name": str, "duration": float},
 #   "clips":  [{"start": ソース内イン点秒, "duration": 尺秒, "name": str,
-#               "offset": タイムライン位置秒 (任意)}, ...]
+#               "offset": タイムライン位置秒 (任意),
+#               "transform": {"scale": float, "position": (x, y)} or None (任意)}, ...]
+#             transform は V1 の拡大率・表示位置 (ver9 resolve6)。None なら書かない
 #             offset 省略時は spine の順に連結、指定時はその位置へ置き空きは gap になる
 #             (Timeline の余白を保つ / resolve5 §19-1)
 #   "titles": [{"offset": タイムライン秒, "duration": 尺秒, "text": str,
@@ -414,6 +418,7 @@ def build_fcpxml(spec):
                 "start": frames_to_text(fc["start_f"], fps),
                 "duration": frames_to_text(fc["dur_f"], fps),
             })
+            _append_base_transform(element, fc.get("transform"))
         clip_elements.append(element)
 
     # 接続要素は担当クリップの子要素とし、offset は親ローカル時間で表す (§5.2)。
@@ -514,6 +519,26 @@ def _time_text_on(seconds, frame_duration):
 # 重なり素材 1 件ぶんの resources id (asset, format) を返す
 def _overlay_ids(index):
     return f"r{10 + index * 2}", f"r{11 + index * 2}"
+
+
+# V1 クリップへ adjust-transform を足す (ver9 resolve6 §4.8)
+#
+# transform が None のときは**何も書かない**。等倍のクリップに要素を足さないことで、
+# 拡大率を使っていないプロジェクトの FCPXML が 1 バイトも変わらない。
+#
+# scale の基準: asset-clip はタイムライン解像度へ conform されて置かれるため、
+# 1.0 が「画面に収めた状態」に当たる。呼び側 (resolve_export) の拡大率と
+# 基準が一致するのでそのまま渡す。透かし (_append_overlay) は video 要素で
+# 素材の原寸が基準になるため、同じ属性でも基準が違う点に注意。
+def _append_base_transform(element, transform):
+    if not transform:
+        return None
+    scale = float(transform.get("scale") or 1.0)
+    attrs = {"scale": f"{scale:.4f} {scale:.4f}"}
+    position = transform.get("position")
+    if position is not None:
+        attrs["position"] = f"{float(position[0]):.4f} {float(position[1]):.4f}"
+    return ET.SubElement(element, "adjust-transform", attrs)
 
 
 # video 要素 (重なり素材 = 透かし) を親クリップへ追加する (ver5 resolve §5.5)

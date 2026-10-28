@@ -134,11 +134,16 @@ def tile_key(timeline, env, tile_index):
         if not _overlaps(clip.timeline_start, clip.timeline_end, start, end):
             continue
         audio = timeline.audio_clip_for(clip.id)
+        # 拡大率と表示位置も絵を決める (ver9 resolve6 §4.2)。
+        # ここへ足し忘れると、拡大率を変えても古いタイルが使われて絵が変わらない。
+        transform = clip.transform
         parts.append("v1|" + "|".join([
             str(clip.media_id), f"{clip.source_in:.4f}",
             f"{clip.timeline_start:.4f}", f"{clip.duration:.4f}",
             f"{0.0 if audio is None else audio.gain_db:.3f}",
             str(int(bool(audio is not None and audio.muted))),
+            f"{float(transform.scale or 1.0):.4f}",
+            str(transform.x), str(transform.y),
         ]))
 
     for element in timeline.overlay_elements():

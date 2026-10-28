@@ -9,7 +9,13 @@ import shutil
 import subprocess
 import sys
 
-from ..exceptions import DiskSpaceError, FFmpegError, InputError, TwitchError
+from ..exceptions import (
+    DiskSpaceError,
+    FFmpegError,
+    InputError,
+    PipelineCancelled,
+    TwitchError,
+)
 from ..i18n import tr
 from ..utils import disk
 from ..utils.logger import get_logger
@@ -38,6 +44,9 @@ _INFO_TIMEOUT_SEC = 60
 
 # 画質名にフレームレートが書かれていないときの既定 (Twitch の通常配信)
 _DEFAULT_FPS = 30
+
+# 中止したサブプロセスの終了を待つ上限 (秒)。過ぎたら kill する。
+_TERMINATE_WAIT_SEC = 5
 
 
 # 入力(URL または 数字ID)から video id を取り出す。不正なら InputError。
@@ -112,7 +121,11 @@ def _twitchdl_env(ffmpeg_dir):
 
 
 # サブプロセスを実行し、標準出力/エラーを progress_cb に流す。非0終了で TwitchError。
-def _run(argv, progress_cb=None, label="取得中…", env=None):
+#
+# cancel_cb に callable を渡すと、出力 1 行ごとに中止を問い合わせる (ver9 resolve5 §4.7)。
+# True が返ったらプロセスを終わらせて PipelineCancelled を送出する。
+# 出力が来ない間は検査できないため、進捗を出し続けるコマンドでのみ実用になる。
+def _run(argv, progress_cb=None, label="取得中…", env=None, cancel_cb=None):
     _logger.info("twitch-dl 実行: %s", " ".join(str(a) for a in argv[:2]) + " …")
     try:
         proc = subprocess.Popen(
@@ -132,6 +145,14 @@ def _run(argv, progress_cb=None, label="取得中…", env=None):
     tail = []
     for line in proc.stdout:
         line = line.rstrip()
+        if cancel_cb is not None and cancel_cb():
+            _logger.info("twitch-dl の実行を中止します (利用者の操作)")
+            proc.terminate()
+            try:
+                proc.wait(timeout=_TERMINATE_WAIT_SEC)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            raise PipelineCancelled(tr("元動画の区間の取得を中止しました"))
         if not line:
             continue
         tail.append(line)
@@ -182,14 +203,15 @@ def _last_target_dir(argv):
 # 画質の解決 (docs/error/20260810/resolve.md)
 # ------------------------------------------------------------------
 
-# VOD で利用できる画質の一覧を返す。
-# 戻り値: [{"name","group_id","resolution","is_source"}] / 取得できないときは []。
-# 取れなくても VOD 取得自体は続けられるよう、失敗は例外にせず空リストで返す。
-def list_qualities(video_id, twitch_dl_path="twitch-dl", ffmpeg_dir=None):
+# `twitch-dl info --json` の結果を辞書で返す (取れなければ None)。
+# 画質一覧 (list_qualities) と全長の問い合わせ (video_length_sec) で共用する。
+#
+# info は JSON を stdout・進捗ログを stderr へ出すため、_run() (stderr を stdout へ
+# 合流させる) は使わず stdout だけを取る。合流させると JSON が壊れる。
+# 取れなくても呼び側が続けられるよう、失敗は例外にせず None を返す。
+def _info_json(video_id, twitch_dl_path="twitch-dl", ffmpeg_dir=None, label="動画情報"):
     argv = list(_resolve_twitchdl(twitch_dl_path)) + ["info", str(video_id), "--json"]
     try:
-        # info は JSON を stdout・進捗ログを stderr へ出すため、_run() (stderr を stdout へ
-        # 合流させる) は使わず stdout だけを取る。合流させると JSON が壊れる。
         result = subprocess.run(
             argv,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -199,22 +221,44 @@ def list_qualities(video_id, twitch_dl_path="twitch-dl", ffmpeg_dir=None):
             timeout=_INFO_TIMEOUT_SEC,
         )
     except (OSError, subprocess.SubprocessError) as e:
-        _logger.warning("画質一覧を取得できませんでした (希望画質のまま続行します): %s", e)
-        return []
+        _logger.warning("%sを取得できませんでした: %s", label, e)
+        return None
     if result.returncode != 0:
-        _logger.info("画質一覧を取得できませんでした (code %d)。希望画質のまま続行します",
-                     result.returncode)
-        return []
+        _logger.info("%sを取得できませんでした (code %d)", label, result.returncode)
+        return None
 
     text = result.stdout or ""
     start = text.find("{")
     if start < 0:
-        _logger.info("画質一覧の出力を解釈できませんでした。希望画質のまま続行します")
-        return []
+        _logger.info("%sの出力を解釈できませんでした", label)
+        return None
     try:
-        data = json.loads(text[start:])
+        return json.loads(text[start:])
     except json.JSONDecodeError:
-        _logger.info("画質一覧の出力を解釈できませんでした。希望画質のまま続行します")
+        _logger.info("%sの出力を解釈できませんでした", label)
+        return None
+
+
+# VOD の全長 (秒) を Twitch へ問い合わせる (ver9 resolve5 §4.6)。
+# 元 VOD を手放したあと、追加ダイアログの上限として使う。
+# 取れなければ 0.0 = 上限チェックをしない (従来どおりの退避)。
+def video_length_sec(video_id, twitch_dl_path="twitch-dl", ffmpeg_dir=None):
+    data = _info_json(video_id, twitch_dl_path, ffmpeg_dir, label="元動画の情報")
+    if not isinstance(data, dict):
+        return 0.0
+    try:
+        return max(float(data.get("lengthSeconds", 0) or 0), 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# VOD で利用できる画質の一覧を返す。
+# 戻り値: [{"name","group_id","resolution","is_source"}] / 取得できないときは []。
+# 取れなくても VOD 取得自体は続けられるよう、失敗は例外にせず空リストで返す。
+def list_qualities(video_id, twitch_dl_path="twitch-dl", ffmpeg_dir=None):
+    data = _info_json(video_id, twitch_dl_path, ffmpeg_dir, label="画質一覧")
+    if data is None:
+        _logger.info("希望画質のまま続行します")
         return []
 
     playlists = []
@@ -280,10 +324,13 @@ def resolve_quality(playlists, preferred="source"):
 # start/end は "hh:mm[:ss]" 形式の範囲指定 (任意)。
 # quality_fallback=True なら、希望画質が無い VOD で利用できる最高画質へ自動で落とす
 # (error 20260810。source を持たない VOD が存在するため)。False で従来どおりの挙動。
+# details に辞書を渡すと、取得元の控え (video_id / 実際に使った画質 / 全長) を書き戻す。
+# 元 VOD を手放したあとに区間だけ取り直すために、プロジェクトへ残す値である
+# (ver9 resolve5 §4.3)。
 def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source",
                  auth_token="", start=None, end=None, progress_cb=None, ffmpeg_dir=None,
                  quality_fallback=True, ffmpeg_cfg=None, min_free_bytes=0,
-                 keep_cache_on_error=False):
+                 keep_cache_on_error=False, details=None):
     os.makedirs(work_dir, exist_ok=True)
     out_template = os.path.join(work_dir, "vod_{id}.{format}")
     expected = os.path.join(work_dir, f"vod_{video_id}.mp4")
@@ -306,6 +353,9 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
             _logger.info("取得済みの VOD を再利用します: %s", expected)
             if progress_cb:
                 progress_cb(tr("取得済みの配信データを使います"))
+            # 再利用でも控えは要る。画質は前回の指定が分からないため希望値を残す
+            _fill_source_details(details, video_id, quality or "source",
+                                 expected, ffmpeg_cfg)
             return expected
         _logger.error(
             "取得済みの VOD が壊れているため取得し直します: %s (%s)",
@@ -377,7 +427,171 @@ def download_vod(video_id, work_dir, twitch_dl_path="twitch-dl", quality="source
                size=disk.human(size)))
     _logger.info("VOD 取得完了: %s (%s / 画質 %s)",
                  expected, disk.human(_size_or_zero(expected)), chosen)
+    _fill_source_details(details, video_id, chosen, expected, ffmpeg_cfg)
     return expected
+
+
+# 取得元の控えを書き戻す (ver9 resolve5 §4.3)。
+# 元 VOD を手放したあとに区間だけ取り直すには、どの動画のどの画質から作ったのかが
+# 残っていなければならない。全長は追加ダイアログの上限に使う。
+def _fill_source_details(details, video_id, quality, path, ffmpeg_cfg):
+    if details is None:
+        return
+    details["provider"] = "twitch"
+    details["video_id"] = str(video_id)
+    details["quality"] = str(quality or "")
+    if ffmpeg_cfg is None:
+        return                  # テスト等の ffprobe を持たない経路では測らない
+    from ..modules import ffmpeg_runner       # noqa: PLC0415 (循環 import を避ける)
+
+    try:
+        details["vod_duration_sec"] = float(
+            ffmpeg_runner.probe_duration(path, ffmpeg_cfg) or 0.0)
+    except (FFmpegError, OSError, ValueError):
+        # 測れなくても取得そのものは成功している。上限チェックが緩むだけ
+        _logger.warning("元 VOD の全長を測れませんでした: %s", path)
+
+
+# ------------------------------------------------------------------
+# 区間だけの取得 (ver9 resolve5 §4.2)
+# ------------------------------------------------------------------
+
+# セグメント保存名 ("00020.ts")。twitch-dl は全体プレイリストでの並び順を
+# {index:05d} で付ける (twitchdl/playlists.py enumerate_vods)。
+_SEGMENT_NAME_RE = re.compile(r"^(\d+)\.ts$", re.IGNORECASE)
+
+# VOD 全体のプレイリスト / 取得分のプレイリストの保存名 (twitchdl/commands/download.py)
+PLAYLIST_NAME = "playlist.m3u8"
+DOWNLOADED_PLAYLIST_NAME = "playlist_downloaded.m3u8"
+
+
+# 指定範囲のセグメント (.ts) をキャッシュへ落とすところまでを行う (ver9 resolve5 §4.2)。
+#
+# **連結も切り詰めも twitch-dl にはさせない** (--no-join)。
+# twitch-dl の --start/--end による切り詰めは ffmpeg へ整数秒で渡され、
+# しかも format_time が int() で切り捨てるため末尾が最大 1 秒欠ける (resolve5 §2.2)。
+# 位置を誤差なく決めるための連結と切り出しは vod_range 側で自前に行う。
+#
+# start_hms / end_hms : "H:MM:SS" (twitch-dl は整数秒しか受けないため呼び側で丸める)
+# cache_root          : キャッシュの親。**区間ごとに空のディレクトリを渡すこと**
+#                       (前回の残りのセグメントを拾わないようにするため)
+# quality_fallback    : 既定 False。画質が変わると既存素材と寸法が割れるため、
+#                       落とすかどうかは呼び側が確認を取ってから決める (§5.4)。
+#
+# 戻り値: {"segment_dir": セグメントの置き場,
+#          "segments"   : 番号順のファイル名,
+#          "playlist"   : VOD 全体のプレイリストのパス,
+#          "quality"    : 実際に指定した画質名}
+def download_vod_range(video_id, cache_root, start_hms, end_hms,
+                       twitch_dl_path="twitch-dl", quality="source",
+                       auth_token="", progress_cb=None, ffmpeg_dir=None,
+                       quality_fallback=False, keep_cache_on_error=False,
+                       cancel_cb=None):
+    os.makedirs(cache_root, exist_ok=True)
+    cache_template = os.path.join(cache_root, "{id}", "{quality}")
+    cache_for_video = os.path.join(cache_root, str(video_id))
+
+    wanted = quality or "source"
+    playlists = []
+    chosen = wanted
+    if quality_fallback:
+        playlists = list_qualities(video_id, twitch_dl_path, ffmpeg_dir)
+        chosen = resolve_quality(playlists, wanted)
+        if chosen != wanted:
+            message = tr("{wanted} 画質が無いため {chosen} で取得します",
+                         wanted=wanted, chosen=chosen)
+            _logger.info("区間取得の画質を %s → %s へ落とします", wanted, chosen)
+            if progress_cb:
+                progress_cb(message)
+
+    argv = list(_resolve_twitchdl(twitch_dl_path))
+    # --output は連結しないため使われないが、twitch-dl が引数として要求する。
+    # 取り違えを防ぐため、作業用キャッシュの中の名前を渡す (archive_work へは置かない)。
+    argv += ["download", str(video_id),
+             "--quality", chosen,
+             "--format", "mp4",
+             "--output", os.path.join(cache_root, "range_{id}.{format}"),
+             "--cache-dir", cache_template,
+             "--start", start_hms,
+             "--end", end_hms,
+             "--keep",          # 連結しないので消されると何も残らない
+             "--no-join",       # 切り詰めをさせない (ここが要点)
+             "--overwrite"]
+    if auth_token:
+        argv += ["--auth-token", auth_token]
+
+    try:
+        _run(argv, progress_cb, label="区間取得中…", env=_twitchdl_env(ffmpeg_dir),
+             cancel_cb=cancel_cb)
+    except DiskSpaceError:
+        # 容量不足は原因がそのまま答えなので包み直さない (download_vod と同じ扱い)
+        _cleanup_cache(cache_for_video, keep_cache_on_error)
+        raise
+    except PipelineCancelled:
+        # 中止では断片を残さない (次の取得が前回の残りを拾わないようにする)
+        _cleanup_cache(cache_for_video, False)
+        raise
+    except TwitchError as e:
+        _cleanup_cache(cache_for_video, keep_cache_on_error)
+        names = ", ".join(p["name"] for p in playlists) if playlists else "取得できませんでした"
+        raise TwitchError(
+            tr("元動画の区間を取得できませんでした (指定画質: {quality} / 利用可能: {available})。\n"
+               "{error}", quality=chosen, available=names, error=e)) from e
+
+    segment_dir = _find_segment_dir(cache_for_video)
+    if not segment_dir:
+        raise TwitchError(
+            tr("取得した区間のファイルが見つかりません: {path}", path=cache_for_video))
+    segments = list_segments(segment_dir)
+    if not segments:
+        raise TwitchError(
+            tr("取得した区間のファイルが見つかりません: {path}", path=segment_dir))
+    playlist = os.path.join(segment_dir, PLAYLIST_NAME)
+    if not os.path.isfile(playlist):
+        raise TwitchError(
+            tr("取得した区間の位置を確かめられません（プレイリストがありません）。"))
+    _logger.info("区間取得完了: %s (%d セグメント / 画質 %s)",
+                 segment_dir, len(segments), chosen)
+    return {"segment_dir": segment_dir, "segments": segments,
+            "playlist": playlist, "quality": chosen}
+
+
+# キャッシュから「セグメントが入っているディレクトリ」を探す。
+# twitch-dl は --cache-dir の {quality} を group_id ("chunked" など) へ展開するため、
+# 画質名からは組み立てられない (指定が "source" でもフォルダは "chunked")。
+def _find_segment_dir(cache_for_video):
+    if not os.path.isdir(cache_for_video):
+        return ""
+    candidates = []
+    for name in sorted(os.listdir(cache_for_video)):
+        path = os.path.join(cache_for_video, name)
+        if os.path.isdir(path):
+            candidates.append(path)
+    for path in candidates:
+        if list_segments(path):
+            return path
+    return candidates[0] if candidates else ""
+
+
+# セグメントのファイル名を番号順に返す (番号以外の名前は無視する)
+def list_segments(segment_dir):
+    found = []
+    try:
+        names = os.listdir(segment_dir)
+    except OSError:
+        return []
+    for name in names:
+        m = _SEGMENT_NAME_RE.match(name)
+        if m:
+            found.append((int(m.group(1)), name))
+    found.sort()
+    return [name for _index, name in found]
+
+
+# セグメントのファイル名から番号を取り出す ("00020.ts" → 20 / 読めなければ None)
+def segment_index(name):
+    m = _SEGMENT_NAME_RE.match(os.path.basename(str(name or "")))
+    return int(m.group(1)) if m else None
 
 
 # 動画として読める状態かを ffprobe で確かめる (resolve.md §6-4)。
