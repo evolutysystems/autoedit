@@ -41,9 +41,10 @@ Set-Location src
 pyinstaller main_window.spec --clean --noconfirm
 # → src/dist/Stretheus/ が生成される
 
-# FFmpeg/ffprobe を同梱し setting.json のパスを合わせる (HowToRelease §5.2 / §3.2)
-New-Item -ItemType Directory -Force "dist/Stretheus/ffmpeg" | Out-Null
-Copy-Item "<入手した>/ffmpeg.exe","<入手した>/ffprobe.exe" "dist/Stretheus/ffmpeg/"
+# FFmpeg/ffprobe は spec の datas が _internal/ffmpeg/ へ自動で入れる。
+# exe 隣へ ffmpeg/ を作ってコピーすると 2 重に入り zip が約 170MB 膨らむ
+# （2026-10-28 / v1.7.0 作業で踏んだ。HowToRelease §5.2）。同梱を確かめるだけでよい:
+Get-ChildItem "dist/Stretheus/_internal/ffmpeg"
 ```
 
 本体一式を zip 化し、ハッシュを取得する。

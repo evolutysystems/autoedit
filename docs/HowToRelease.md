@@ -268,13 +268,22 @@ pyinstaller main_window.spec --clean --noconfirm
 
 ### 5.2 動作前提の整備（FFmpeg 同梱）
 
-`ffmpeg.exe` / `ffprobe.exe` を配布フォルダへ配置し、同梱 `setting.json` のパスを合わせる（§3.2）。
+> **【現行】手で配置する必要はない。** `main_window.spec` の `datas` が
+> `('ffmpeg/ffmpeg.exe', 'ffmpeg')` / `('ffmpeg/ffprobe.exe', 'ffmpeg')` を拾い、
+> ビルド時に **`dist/Stretheus/_internal/ffmpeg/` へ自動で入る**
+> （`src/ffmpeg/` へ置いてあることが前提・§2.2）。
+> 下記のように exe 隣へ `ffmpeg/` を作ってコピーすると
+> **2 重に入り、payload の zip が約 170MB 膨らむ**（2026-10-28 / v1.7.0 作業で実際に踏んだ）。
 
 ```powershell
-# 例: dist/Stretheus/ffmpeg/ に配置
-New-Item -ItemType Directory -Force "dist/Stretheus/ffmpeg" | Out-Null
-Copy-Item "<入手した>/ffmpeg.exe","<入手した>/ffprobe.exe" "dist/Stretheus/ffmpeg/"
+# 同梱を確かめる（ここに 2 つあれば OK。exe 隣に ffmpeg/ を作ってはいけない）
+Get-ChildItem "dist/Stretheus/_internal/ffmpeg"
+# spec が拾う前の置き場所。未配置ならここへ入手した exe を置いてからビルドする
+Get-ChildItem "ffmpeg"
 ```
+
+同梱 `setting.json` のパスは既定で同梱相対（`ffmpeg/ffmpeg.exe`）を指しており、
+`ffmpeg_runner._resolve_exe()` が `_internal/` 基準で解決する（§3.2）。
 
 ### 5.2.1 ライセンス表記の同梱（ver5 resolve2 §5.10）
 
