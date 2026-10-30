@@ -942,9 +942,13 @@ class ArchiveTabWidget(QWidget):
             return
         self.status_label.setText(tr("完了: {path}", path=outputs[-1]))
         joined = "\n".join(outputs)
-        QMessageBox.information(
-            self, tr("完了"),
-            tr("動画を出力しました。\n{paths}", paths=joined))
+        message = tr("動画を出力しました。\n{paths}", paths=joined)
+        # 書き出しが最後に渡してきたラベルが「完了」以外なら注意として添える。
+        # テーマを入れたのにイントロカードを作れなかった場合がこれにあたる
+        # (黙って省くと成果物を見るまで気づけない / ver9 resolve12 §3.7)。
+        if self._spinner_message and self._spinner_message != tr("完了"):
+            message = f"{message}\n\n{self._spinner_message}"
+        QMessageBox.information(self, tr("完了"), message)
 
     # 異常終了
     def _on_failed(self, message):

@@ -23,6 +23,7 @@ from ..modules import (
 )
 from ..utils.logger import get_logger
 from . import crop
+from . import subtitle_style
 from .media_probe import needs_normalize
 
 _logger = get_logger(__name__)
@@ -421,7 +422,11 @@ def subtitle_profile(context):
 #   引数として受け取れないようにしてある。
 def subtitle_chain(timeline, context, clips, name, fonts_dir=None):
     eff_cfg, font_profile = subtitle_profile(context)
-    items = [clip.to_item() for clip in clips if clip.use]
+    # トラックの既定色を個別色と同じ経路へ乗せる (ver9 resolve13 §3.8)。
+    # 個別指定があるテロップはそちらが優先される。
+    track_colors = subtitle_style.track_color_map(timeline)
+    items = [clip.to_item(track_colors.get(clip.id, ""))
+             for clip in clips if clip.use]
     ass_path, option = subtitle_chain_for_items(
         timeline, items, eff_cfg, font_profile,
         context.allocate_intermediate(name), fonts_dir)

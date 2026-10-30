@@ -12,7 +12,7 @@ from datetime import datetime
 from ..exceptions import TimelineError
 from ..i18n import tr
 from ..utils.logger import get_logger
-from .builder import recent_key, recent_path
+from .builder import dedupe_recent, recent_key, recent_path
 from .model import (
     BASE_AUDIO_TRACK_ID,
     MediaRef,
@@ -912,6 +912,30 @@ def delete_project(path, timeline_cfg=None, delete_media_dir=True, use_trash=Tru
     return result
 
 
+# 履歴 (kind に応じて recent / recent_archive) の先頭へ積む。戻り値: 変更があったか
+# 「続きから」(一覧・コンボ) が見るのはこの履歴と走査フォルダだけで、
+# project_dir / output_directory が空の設定では走査フォルダが無い。保存したものを
+# 開き直せるようにするには、作った側がここへ積む必要がある (ver9 resolve14 追補)。
+# 設定ファイルへの書き戻しは呼び出し側で行う (forget_recent と同じ約束)。
+def remember_recent(settings, path, kind=None):
+    # 空の dict も積み先になるため "settings or {}" では書き戻せない
+    # (既定のままの起動では timeline セクションが無いことがある)。
+    if not path or not isinstance(settings, dict):
+        return False
+    project_cfg = settings.setdefault("timeline", {}).setdefault("project", {})
+    key = "recent_archive" if kind == KIND_ARCHIVE else "recent"
+    before = [str(p) for p in (project_cfg.get(key) or []) if p]
+    # 区切り文字・大文字小文字の違いで同じプロジェクトを二重に積まない
+    # (既に入っている重複もここで畳まれる / resolve.md §9-8)
+    recent = dedupe_recent([path] + before)
+    try:
+        limit = max(int(project_cfg.get("recent_limit", 10) or 10), 1)
+    except (TypeError, ValueError):
+        limit = 10
+    project_cfg[key] = recent[:limit]
+    return project_cfg[key] != before
+
+
 # 履歴 (recent / recent_archive) からパスを取り除く。戻り値: 変更があったか
 def forget_recent(settings, path, new_path=None):
     project_cfg = (settings or {}).setdefault("timeline", {}).setdefault("project", {})
@@ -957,6 +981,7 @@ __all__ = [
     "project_kind",
     "read_summary",
     "related_paths",
+    "remember_recent",
     "rename_project",
     "save",
     "scan_projects",

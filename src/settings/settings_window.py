@@ -663,6 +663,17 @@ DEFAULT_SETTINGS = {
             # 増やしたトラック (S3 以降) をヘッダの右クリックから削除できるか
             # (ver9 要望)。既定トラックとコメント用トラックは常に消せない。
             "remove_track_enabled": True,
+            # 最初から並べておくテロップトラックの本数 (ver9 resolve13)。
+            # S1=通常 / S2=コメント / S3=サブ代わり。1 にすると従来どおり S1 のみ。
+            "initial_tracks": 3,
+            # トラックヘッダの色見本から文字色を決められるようにするか
+            # (ver9 resolve13)。false で従来どおりヘッダは名前だけになる。
+            "header_color_enabled": True,
+            # インスペクタに「役割」コントロールを出すか (ver9 resolve13)。
+            # 既定 false = 役割は載せたトラックが決める。true で従来の操作へ戻る。
+            "role_control_enabled": False,
+            # コメント用トラックのヘッダに出す目印アイコンの大きさ (px)
+            "comment_icon_px": 20,
         },
         # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5)。
         # 焼き込み側の制御は subtitle.line_align にある。
@@ -704,6 +715,8 @@ DEFAULT_SETTINGS = {
             "track_height_px": 56,
             "subtitle_track_height_px": 40,
             "header_width_px": 88,
+            # テロップトラックのヘッダに出す色見本の大きさ (ver9 resolve13)
+            "track_color_swatch_px": 12,
             "trim_handle_px": 6,
             "ruler_min_label_px": 60,
             "window_width": 1280,
@@ -993,7 +1006,16 @@ DEFAULT_SETTINGS = {
             # アーカイブ切り抜きから縦プロジェクトを作るとき、素材を元 VOD へ
             # 張り替えるために「切り出しの先頭 (キーフレーム)」を探す幅 (秒)。
             # Twitch の VOD は 2 秒間隔のため既定で十分に広い (ver5 resolve10 §5.2)。
+            # media_mode="rebase" のときだけ使う。
             "keyframe_window_sec": 30.0,
+            # 縦プロジェクトが素材をどう持つか (ver9 resolve14)。
+            #   "copy"   = プロジェクトの隣へ複製して自己完結させる (既定)。
+            #              元 VOD を手放したあとでも作れ、作ったものも開き続けられる。
+            #   "rebase" = 元 VOD 1 本へ張り替える (従来)。容量は使わないが元 VOD が要る。
+            "media_mode": "copy",
+            # 素材を複製するか。false なら今のパスを指したままにする
+            # (容量を使わない代わりに、素材が消えると開けなくなる)。
+            "keep_media": True,
         },
     },
     "logging": {

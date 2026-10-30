@@ -31,6 +31,11 @@ _BACKGROUNDS = (BG_BLUR, BG_BLACK)
 # 分割したときの上枠の高さの比 (キャンバス高に対して)。1080x1920 なら 640 / 1280 になる。
 _SPLIT_TOP_RATIO = 1.0 / 3.0
 
+# 縦プロジェクトが素材をどう持つか (ver9 resolve14 §3.2)
+MEDIA_COPY = "copy"         # 素材をプロジェクトの隣へ複製して自己完結させる (既定)
+MEDIA_REBASE = "rebase"     # 元 VOD 1 本へ張り替える (従来。元 VOD が要る)
+_MEDIA_MODES = (MEDIA_COPY, MEDIA_REBASE)
+
 # 設定が空だったときの既定値 (setting.json の vertical.crop と同じ)
 _DEFAULTS = {
     "background": BG_BLUR,
@@ -40,6 +45,9 @@ _DEFAULTS = {
     "project_suffix": "_vertical",
     "close_gaps": True,
     "keyframe_window_sec": 30.0,
+    # 素材の持ち方 (ver9 resolve14)。既定は複製して自己完結。
+    "media_mode": MEDIA_COPY,
+    "keep_media": True,
 }
 
 
@@ -62,10 +70,26 @@ def config(settings):
         "project_suffix": str(section.get("project_suffix",
                                           _DEFAULTS["project_suffix"]) or ""),
         "close_gaps": bool(section.get("close_gaps", _DEFAULTS["close_gaps"])),
-        # 切り出しの先頭 (キーフレーム) を探しに戻る幅 (ver5 resolve10 §5.2)
+        # 切り出しの先頭 (キーフレーム) を探しに戻る幅 (ver5 resolve10 §5.2)。
+        # media_mode="rebase" のときだけ使う。
         "keyframe_window_sec": _clamp(section.get("keyframe_window_sec"),
                                       _DEFAULTS["keyframe_window_sec"], 1.0, 600.0),
+        # 素材の持ち方 (ver9 resolve14 §3.2)。
+        #   "copy"   = 縦プロジェクトの隣へ複製する (既定)。元 VOD も元プロジェクトも
+        #              要らなくなるため、元 VOD を手放したあとでも作れる。
+        #   "rebase" = 元 VOD 1 本へ張り替える (従来)。容量は使わないが元 VOD が要る。
+        "media_mode": _media_mode(section.get("media_mode")),
+        # 複製するか (ver9 resolve14 §3.4)。false なら今のパスを指したままにする。
+        "keep_media": bool(section.get("keep_media", _DEFAULTS["keep_media"])),
     }
+
+
+# 素材の持ち方を検証する (未知の値は既定へ寄せる)
+def _media_mode(value):
+    mode = str(value or "").strip().lower()
+    if mode and mode not in _MEDIA_MODES:
+        _logger.warning("未知の vertical.crop.media_mode のため既定を使用します: %s", value)
+    return mode if mode in _MEDIA_MODES else _DEFAULTS["media_mode"]
 
 
 # ------------------------------------------------------------------

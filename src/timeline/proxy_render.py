@@ -20,7 +20,7 @@ import time
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
-from . import compositor, crop
+from . import compositor, crop, subtitle_style
 
 _logger = get_logger(__name__)
 
@@ -470,10 +470,12 @@ def _fade_sec(settings):
 # タイル開始ぶん引く必要がある。はみ出した側は 0 / タイル尺で詰める。
 def _subtitle_items(timeline, start, end):
     items = []
+    # プロキシでも本番と同じ色にするため、トラックの既定色を渡す (ver9 resolve13 §3.8)
+    track_colors = subtitle_style.track_color_map(timeline)
     for clip in timeline.subtitle_clips():
         if not _overlaps(clip.timeline_start, clip.timeline_end, start, end):
             continue
-        item = clip.to_item()
+        item = clip.to_item(track_colors.get(clip.id, ""))
         item["start"] = max(clip.timeline_start - start, 0.0)
         item["end"] = min(clip.timeline_end - start, end - start)
         items.append(item)

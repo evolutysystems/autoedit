@@ -235,7 +235,9 @@ class ViewDropRuleTest(unittest.TestCase):
         controller = TimelineController(timeline, settings or dict(sw.DEFAULT_SETTINGS))
         return controller, TimelineView(controller)
 
-    def test_normal_subtitle_can_drop_on_s1_s3_only(self):
+    # ver9 resolve13 §3.7: 役割コントロールを外したため、コメントにする手段は
+    # 「S2 へ落とす」だけになった。どのテロップトラックへも落とせる。
+    def test_subtitle_can_drop_on_any_subtitle_track(self):
         controller, view = self._view()
         timeline = controller.timeline
         clip = timeline.clip_by_id("s1")
@@ -243,21 +245,22 @@ class ViewDropRuleTest(unittest.TestCase):
             clip, timeline.track_by_id("S3")))
         self.assertTrue(view._can_drop_subtitle(
             clip, timeline.track_by_id(BASE_SUBTITLE_TRACK_ID)))
-        # コメント用トラックは受けない (そこで足す字幕はコメントになる規約のため)
-        self.assertFalse(view._can_drop_subtitle(
+        # コメント用トラックも受ける (落ちた先で役割がコメントになる)
+        self.assertTrue(view._can_drop_subtitle(
             clip, timeline.track_by_id(COMMENT_SUBTITLE_TRACK_ID)))
-        # 映像トラックも受けない
+        # 映像トラックは受けない
         self.assertFalse(view._can_drop_subtitle(
             clip, timeline.track_by_id(BASE_VIDEO_TRACK_ID)))
 
-    def test_comment_clip_stays_on_comment_track(self):
+    # コメント役割のテロップも通常トラックへ出せる (出た先で通常へ戻る)
+    def test_comment_clip_can_leave_the_comment_track(self):
         controller, view = self._view()
         timeline = controller.timeline
         clip = timeline.clip_by_id("s1")
         clip.role = ROLE_COMMENT
         self.assertTrue(view._can_drop_subtitle(
             clip, timeline.track_by_id(COMMENT_SUBTITLE_TRACK_ID)))
-        self.assertFalse(view._can_drop_subtitle(
+        self.assertTrue(view._can_drop_subtitle(
             clip, timeline.track_by_id("S3")))
 
     def test_disabled_by_setting(self):
@@ -351,14 +354,16 @@ class DragAndDropTest(unittest.TestCase):
                          BASE_SUBTITLE_TRACK_ID)
         self.assertGreater(controller.timeline.clip_by_id("s1").timeline_start, 1.0)
 
-    # コメント用トラック (S2) の行へ落としても移らない
-    def test_drag_to_comment_track_is_refused(self):
+    # コメント用トラック (S2) へ落とすと移り、役割もコメントになる
+    # (ver9 resolve13 §3.7。役割コントロールを外した代わりの手段)
+    def test_drag_to_comment_track_makes_it_a_comment(self):
         controller, rows = self._drag((60.0, 5.0), (60.0, 5.0))
         y1 = self._row_y(rows, BASE_SUBTITLE_TRACK_ID)
         y2 = self._row_y(rows, COMMENT_SUBTITLE_TRACK_ID)
         controller, _rows = self._drag((60.0, y1), (60.0, y2))
         self.assertEqual(_track_of(controller.timeline, "s1"),
-                         BASE_SUBTITLE_TRACK_ID)
+                         COMMENT_SUBTITLE_TRACK_ID)
+        self.assertEqual(controller.timeline.clip_by_id("s1").role, ROLE_COMMENT)
 
 
 class ControllerTrackTest(unittest.TestCase):

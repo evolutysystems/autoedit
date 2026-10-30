@@ -14,7 +14,7 @@ from ..i18n import tr
 from ..modules import ffmpeg_runner, output_profile, subtitle_generator, watermark_overlay
 from ..services import points as points_service
 from ..services import telemetry
-from ..timeline import media_probe, project_io
+from ..timeline import media_probe, project_io, subtitle_style
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
 from . import fcpxml_builder, srt_writer
@@ -218,8 +218,10 @@ def _title_from_item(item, offset, font_profile, canvas, title_cfg, name):
         "text": text,
         "font": item.get("font") or font_profile.family,
         "font_size": item.get("font_size") or font_profile.size,
-        "color": (item.get("color")
-                  or font_profile.role_colors.get(role, font_profile.color_hex)),
+        # 塗りは 個別 → トラック (item["color"] に合成済み) → 役割 → 既定 の順
+        # (ver9 resolve13 §3.2)。判定は subtitle_style へ寄せてある。
+        "color": subtitle_style.resolve_item_color(
+            item, font_profile.role_colors, font_profile.color_hex),
         "stroke_color": stroke_hex,
         "stroke_alpha": stroke_alpha,
         "stroke_width": font_profile.outline_width,
@@ -257,8 +259,10 @@ def _caption_from_item(item, offset, font_profile, name):
         "font": item.get("font") or font_profile.family,
         "font_size": item.get("font_size") or font_profile.size,
         # 塗りは item 個別指定を優先する (resolve6 §3-5)
-        "color": (item.get("color")
-                  or font_profile.role_colors.get(role, font_profile.color_hex)),
+        # 塗りは 個別 → トラック (item["color"] に合成済み) → 役割 → 既定 の順
+        # (ver9 resolve13 §3.2)。判定は subtitle_style へ寄せてある。
+        "color": subtitle_style.resolve_item_color(
+            item, font_profile.role_colors, font_profile.color_hex),
         "bold": font_profile.bold,
         "italic": font_profile.italic,
         "underline": font_profile.underline,
@@ -641,7 +645,10 @@ def _base_transform_for(clip, canvas, title_cfg):
 # 余白 (オープニング区間など) に載っている字幕も位置を保って出力する
 # (FCPXML では gap の接続要素になる / §18-3)。
 def _timeline_items_as_is(timeline):
-    return [clip.to_item() for clip in timeline.subtitle_clips()]
+    # トラックの既定色も載せる (ver9 resolve13 §3.8)
+    track_colors = subtitle_style.track_color_map(timeline)
+    return [clip.to_item(track_colors.get(clip.id, ""))
+            for clip in timeline.subtitle_clips()]
 
 
 # 字幕クリップを「出力対象クリップだけを連結したタイムライン」の時刻へ直す
@@ -653,6 +660,7 @@ def _timeline_subtitle_items(timeline, segments, body_media_id):
 
     items = []
     dropped = 0
+    track_colors = subtitle_style.track_color_map(timeline)
     for clip in timeline.subtitle_clips():
         resolved = full_map.to_source(clip.timeline_start)
         if resolved is None or resolved[0] != body_media_id:
@@ -662,7 +670,7 @@ def _timeline_subtitle_items(timeline, segments, body_media_id):
         if start is None:
             dropped += 1
             continue
-        item = clip.to_item()
+        item = clip.to_item(track_colors.get(clip.id, ""))
         item["start"] = start
         item["end"] = start + clip.duration
         items.append(item)

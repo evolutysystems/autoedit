@@ -186,8 +186,9 @@ class BlurCanvas(QGraphicsView):
         canvas = (self._canvas_width, self._canvas_height)
         try:
             if spec.get("kind") == "text":
-                return SubtitleOverlayItem(element, self._subtitle_cfg,
-                                           self._font_profile, canvas)
+                return SubtitleOverlayItem(
+                    element, self._subtitle_cfg, self._font_profile, canvas,
+                    track_color=str(spec.get("track_color", "") or ""))
             return ImageOverlayItem(element, spec.get("pixmap"), canvas,
                                     overlay_cfg=self._overlay_cfg)
         except Exception:                   # noqa: BLE001 (1 件の失敗で画面を落とさない)

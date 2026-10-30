@@ -60,7 +60,7 @@ except Exception:  # noqa: BLE001
 from ...i18n import tr
 from ...modules import ffmpeg_runner, subtitle_generator
 from ...settings.settings_window import resolve_fonts_dir
-from ...timeline import commands, compositor, crop, proxy_render
+from ...timeline import commands, compositor, crop, proxy_render, subtitle_style
 from ...timeline.audio_source import AudioChunkSource
 from ...timeline.frame_source import create_frame_source, is_pyav_available
 from ...timeline.model import SubtitleClip
@@ -914,7 +914,11 @@ class PreviewPanel(QWidget):
                 return SubtitleOverlayItem(
                     element, self._eff_cfg, self._font_profile, self._canvas,
                     metrics_mode=self._cfg["subtitle_metrics_mode"],
-                    outline_mode=self._cfg["subtitle_outline_mode"])
+                    outline_mode=self._cfg["subtitle_outline_mode"],
+                    # トラックの既定色 (ver9 resolve13 §3.2)。
+                    # 個別指定があるテロップではそちらが優先される。
+                    track_color=subtitle_style.track_color_for(
+                        self._controller.timeline, element))
             media = self._controller.timeline.media_by_id(element.media_id)
             if media is None:
                 return None
@@ -1489,10 +1493,11 @@ class PreviewPanel(QWidget):
 
         # 現在時刻を 0 とみなす 1 件ぶんの ASS を書き出す
         items = []
+        track_colors = subtitle_style.track_color_map(timeline)
         for clip in timeline.subtitle_clips():
             if not clip.contains(playhead):
                 continue
-            item = clip.to_item()
+            item = clip.to_item(track_colors.get(clip.id, ""))
             item["start"], item["end"] = 0.0, 1.0
             items.append(item)
         _ass_path, ass_chain = compositor.subtitle_chain_for_items(

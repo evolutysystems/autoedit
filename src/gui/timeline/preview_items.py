@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...modules import comment_decor, subtitle_generator
+from ...timeline import subtitle_style
 from . import font_metrics
 
 # ASS テンキー配置 → 水平/垂直の寄せ (resolve_export と同じ対応)
@@ -357,9 +358,11 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
     # metrics_mode: "libass" = 字の大きさ・行送り・字間を出力 (libass) へ合わせる
     #               "em"     = 従来の Qt 近似 (ver8 resolve8 §5-4 の退避口)
     # outline_mode: 縁と影の描き方 (ver9 resolve11 §3)。既定 "pen"。
+    # track_color : このテロップが載っているトラックの既定色 (ver9 resolve13 §3.2)。
+    #               個別指定が無いときの色。空文字なら従来どおり役割の色に従う。
     def __init__(self, clip, eff_cfg, font_profile, canvas_size, parent=None,
                  metrics_mode=font_metrics.MODE_LIBASS,
-                 outline_mode=OUTLINE_PEN):
+                 outline_mode=OUTLINE_PEN, track_color=""):
         # ASS の改行 \N を実改行へ戻して表示する
         text = str(clip.text or "").replace("\\N", "\n")
         role = str(clip.role or "streamer")
@@ -391,9 +394,11 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         # 位置の基準 (anchor_scene_point) を役割で切り替えるため覚えておく
         self._role = role
 
-        # クリップ個別の色があれば優先する (resolve6 §3-4)。空文字なら役割の色に従う。
-        fill = (clip.color
-                or font_profile.role_colors.get(role, font_profile.color_hex))
+        # 個別 → トラック → 役割 → 既定 の順で決める (ver9 resolve13 §3.2)。
+        # 判定は subtitle_style に 1 つだけ置き、焼き込み・Resolve と揃える。
+        fill = subtitle_style.resolve_color(
+            clip.color, track_color, role, font_profile.role_colors,
+            font_profile.color_hex)
         self.setBrush(QBrush(ass_color_to_qcolor(fill)))
         outline = (clip.outline_color
                    or font_profile.role_outline_colors.get(

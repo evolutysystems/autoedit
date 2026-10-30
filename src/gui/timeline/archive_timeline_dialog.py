@@ -37,7 +37,7 @@ from ...archive import config as archive_config
 from ...archive import timeline_builder as archive_timeline
 from ...export import resolve_export
 from ...services import config as services_config
-from ...timeline import project_io
+from ...timeline import crop, project_io
 from ...utils.logger import get_logger
 from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
 from ..score_graph_widget import ScoreGraphWidget
@@ -173,18 +173,34 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     # 縦動画プロジェクト (ver5 resolve10)
     # ------------------------------------------------------------------
     #
-    # アーカイブ用 Timeline が参照している中間ファイルは実行の終わりに消えるため、
-    # そのまま保存すると開けない縦プロジェクトになる。作成時に素材を元 VOD へ
-    # 張り替えることで、いつでも開き直せるようにする。張り替えには元 VOD が要る
-    # ので、VOD が無いときはメニューを出さない。
+    # アーカイブ用 Timeline が参照している素材は、未保存なら実行の終わりに消える
+    # 一時ファイル、保存済みでも元プロジェクトの .media/ にある。そのまま指して
+    # 保存すると、あとで開けない縦プロジェクトになる。
+    #
+    # ver5 resolve10 では「作成時に素材を元 VOD へ張り替える」ことで解いていたが、
+    # 元 VOD は既定で自動整理される (resolve.md §6-6) ため、
+    #   ・元 VOD が無いとメニューごと消える
+    #   ・張り替えた縦プロジェクトも、元 VOD が消えると開けない
+    # という穴が残っていた (ver9 resolve14 §1)。
+    # 既定では**素材を縦プロジェクトの隣へ複製して自己完結**させる (§3.1)。
+    # 設定 vertical.crop.media_mode="rebase" で従来の張り替えへ戻せる。
 
-    def _can_make_vertical(self):
-        if not super()._can_make_vertical():
-            return False
+    # 張り替え方式 (media_mode="rebase") のときだけ元 VOD が要る。
+    # 作れない理由は項目を消さずに伝える (§3.3)。
+    def _vertical_blocked_reason(self, clips):
+        reason = super()._vertical_blocked_reason(clips)
+        if reason:
+            return reason
+        if crop.config(self._settings)["media_mode"] != crop.MEDIA_REBASE:
+            return ""           # 素材は手元にあるものを複製する = 元 VOD は要らない
         vod = project_resume.recorded_vod_path(self.controller.timeline)
-        return bool(vod) and os.path.exists(vod)
+        if vod and os.path.exists(vod):
+            return ""
+        return tr("（元動画が見つかりません）")
 
     def _vertical_rebase(self, clips):
+        if crop.config(self._settings)["media_mode"] != crop.MEDIA_REBASE:
+            return None         # 張り替えない (複製して自己完結させる / §3.2)
         return vod_rebase.plan(self.controller.timeline, self._settings, clips)
 
     # keep_media / keep_audio の対象は V1 が参照する全クリップ素材
@@ -210,13 +226,18 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         return media_list
 
     # 保存時にイントロカードの素をプロジェクトの隣へ残す
-    # (docs/error/fromUser/resolve.md §9-7)
+    # (docs/error/fromUser/resolve.md §9-7 / ver9 resolve12 §3.1・§3.2)
     #
     # イントロカードはクリップ開始の buffer_sec 秒**手前**の映像から作るため、
     # クリップ素材 (vod_start 始まり) には入っておらず、元 VOD だけが素だった。
     # §6-6 で元 VOD を手放せるようにした結果、開き直して書き出すと
     # イントロカードだけが作れなくなっていた。数秒ぶんをここで控えておく。
     # 失敗しても保存そのものは続ける (元 VOD があるうちは元 VOD から作れる)。
+    #
+    # 回る単位は**セクション** (source.archive.clips) で、素材 (media) ではない。
+    # イントロはセクション開始の手前から作るものであり、統合されたセクションでは
+    # 代表素材の vod_start がセクション開始と一致しないためである (resolve12 §1.7)。
+    # 控えの名前に使う素材は intro_media_id() が決める (作る側と読む側で同じ選び方)。
     def _keep_extra_beside_project(self, project_path):
         if not bool(self._project_cfg["archive_keep_intro_source"]):
             return
@@ -232,16 +253,16 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         timeline = self.controller.timeline
         saved = 0
         try:
-            for media in self._media_to_copy():
-                if media is None:
-                    continue
-                entry = archive_timeline.archive_media_entry(timeline, media.id)
-                if entry is None:
-                    continue    # 復元情報が無い素材 (D&D で足した画像など)
-                if clip_writer.existing_intro_source(folder, media.id):
+            # Timeline 上に実体があるセクションだけを回る (全クリップを消した
+            # セクションの控えは要らない)
+            for entry in archive_timeline.sections_by_vod(timeline):
+                media_id = archive_timeline.intro_media_id(timeline, entry.get("index"))
+                if not media_id:
+                    continue    # 素材が結び付いていないセクション
+                if clip_writer.existing_intro_source(folder, media_id):
                     saved += 1
                     continue    # 前回の保存で作ってある (作り直さない)
-                dest = clip_writer.intro_source_path(folder, media.id)
+                dest = clip_writer.intro_source_path(folder, media_id)
                 QApplication.setOverrideCursor(Qt.WaitCursor)
                 try:
                     self.preview.set_status(tr("イントロ用の映像を保存しています…"))
@@ -269,9 +290,10 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
     #
     # 区間を取り直して足したセクションは、保存の時点では取り直した素材が消えている。
     # 準備の最中に控えてあるので、それをプロジェクトの隣へ移しておく。
-    # 突き合わせは vod_start で行う (素材 1 本と 1 対 1 で対応する値のため)。
-    def _copy_prepared_intro_source(self, media_entry, dest):
-        target = float(media_entry.get("vod_start", 0.0))
+    # 突き合わせはセクション開始 (vod_start) で行う。準備データの start も
+    # セクション開始のため、同じ値どうしを比べることになる (ver9 resolve12 §3.2)。
+    def _copy_prepared_intro_source(self, section_entry, dest):
+        target = float(section_entry.get("vod_start", 0.0))
         # 統合で足した差分の素材は self._prepared へは入らず (代表へ畳まれる)
         # _prepared_by_index にだけ残るため、そちらを走査する。
         for prepared in self._prepared_by_index.values():

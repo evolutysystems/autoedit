@@ -40,7 +40,7 @@ from ...blur import preview as blur_preview
 from ...blur.config import config as blur_config
 from ...blur.plan import STATUS_FAILED, STATUS_LOST
 from ...i18n import tr
-from ...timeline import commands
+from ...timeline import commands, subtitle_style
 from ...timeline.frame_source import create_frame_source
 from ...timeline.model import SubtitleClip
 from ...utils.logger import get_logger
@@ -563,7 +563,11 @@ class BlurSpecDialog(QDialog):
             if not element.contains(playhead):
                 continue
             if isinstance(element, SubtitleClip):
-                specs.append({"kind": "text", "element": element})
+                # トラックの既定色も渡す (ver9 resolve13 §3.2)。ぼかし画面の
+                # 参考表示でも本番と同じ色になる。
+                specs.append({"kind": "text", "element": element,
+                              "track_color": subtitle_style.track_color_for(
+                                  self._timeline, element)})
                 continue
             pixmap = self._overlay_pixmap(element)
             if pixmap is not None and not pixmap.isNull():

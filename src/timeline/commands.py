@@ -63,6 +63,8 @@ _DEFAULT_SUBTITLE_TRACKS_CFG = {
     "drag_between_tracks": True,
     # ver9 要望: 増やしたトラックをヘッダの右クリックから削除できるか
     "remove_track_enabled": True,
+    # ver9 resolve13: 最初から並べておくテロップトラックの本数 (1 で従来どおり)
+    "initial_tracks": 3,
 }
 
 
@@ -109,17 +111,78 @@ def create_subtitle_track(timeline, cfg=None):
         reserved_indexes=(cfg["comment_track_index"],),
         reserved_ids=(cfg["comment_track_id"],),
     )
-    try:
-        name = str(cfg["new_track_name_format"]).format(index=index)
-    except (KeyError, IndexError, ValueError):
-        # 書式が壊れていても画面は止めない (ID をそのまま名前にする)
-        _logger.warning("字幕トラック名の書式が不正です: %r",
-                        cfg["new_track_name_format"])
-        name = track_id
+    name = _subtitle_track_name(cfg["new_track_name_format"], index, track_id)
     track = Track(track_id, TRACK_SUBTITLE, index, name=name)
     timeline.tracks.append(track)
     _logger.info("テロップトラックを追加しました: %s (%s)", track_id, name)
     return track
+
+
+# 字幕トラックの表示名を書式から組む。書式が壊れていても画面は止めない
+# (ID をそのまま名前にする)。create_subtitle_track と初期トラックで共有する。
+def _subtitle_track_name(name_format, index, track_id):
+    try:
+        return str(name_format).format(index=index)
+    except (KeyError, IndexError, ValueError):
+        _logger.warning("字幕トラック名の書式が不正です: %r", name_format)
+        return track_id
+
+
+# 最初から並べておくテロップトラックをそろえる (ver9 resolve13 §3.3)
+#
+# 従来は S1 だけを作り、コメント用 (S2) は役割をコメントにしたときに、
+# 通常テロップ用 (S3…) は右クリックで足したときに初めて現れた。そのため
+# 「役割をサブへ変える → 文字色を変える → 別トラックへドラッグ」という
+# 3 手が毎回必要だった。最初から並べておけば「置くだけ」で済む。
+#
+# 作るのは**空のトラック**だけで、既にあるものには触らない。
+# initial_tracks=1 にすると v1.7.0 以前と同じ (S1 のみ) に戻せる。
+#
+# sub_color: 既定 S3 へ入れておく文字色 (設定のサブ色 / resolve13 §4.1)。
+#            「サブ」役割の代わりに使う 1 本目を、色まで含めて用意しておく。
+# 戻り値: 作ったトラックの一覧
+def ensure_initial_subtitle_tracks(timeline, cfg=None, sub_color=""):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    count = _positive_int(cfg.get("initial_tracks"), 3)
+    if not cfg["role_track_enabled"]:
+        # 役割別トラックを使わない運用では従来どおり 1 本だけにする
+        count = min(count, 1)
+    comment_index = _positive_int(cfg["comment_track_index"], 2)
+    plain_first = _positive_int(cfg["new_track_min_index"], 3)
+    created = []
+    for index in range(1, count + 1):
+        if index == 1:
+            track_id, name, color = BASE_SUBTITLE_TRACK_ID, "Subtitle 1", ""
+        elif index == comment_index:
+            track_id = cfg["comment_track_id"]
+            name, color = cfg["comment_track_name"], ""
+        else:
+            track_id = f"{cfg['new_track_id_prefix']}{index}"
+            name = _subtitle_track_name(cfg["new_track_name_format"], index, track_id)
+            color = str(sub_color or "") if index == plain_first else ""
+        if timeline.track_by_id(track_id) is not None:
+            continue            # 既にある (開き直したプロジェクトなど)
+        created.append(Track(track_id, TRACK_SUBTITLE, index, name=name, color=color))
+    if created:
+        timeline.tracks.extend(created)
+        _logger.info("テロップトラックをそろえました: %s",
+                     ", ".join(track.id for track in created))
+    return created
+
+
+# そのテロップトラックに載るテロップの役割 (ver9 resolve13 §3.6)
+#
+# 役割はトラックが決める一方通行にした。画面から「役割」コントロールを外したため、
+# コメントにする・通常へ戻す唯一の手段が「どのトラックへ置くか」になる。
+#   コメント用トラック (既定 S2) … ROLE_COMMENT (アイコン・背景・コメント配置が付く)
+#   それ以外のテロップトラック   … DEFAULT_ROLE (通常テロップ。色はトラックが持つ)
+# 役割別トラックを使わない設定 (role_track_enabled=false) では None を返し、
+# 呼び出し側は役割へ触れない (従来どおり画面の指定に任せる)。
+def role_for_subtitle_track(track, cfg=None):
+    cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(cfg or {})}
+    if track is None or not cfg["role_track_enabled"]:
+        return None
+    return ROLE_COMMENT if track.id == cfg["comment_track_id"] else DEFAULT_ROLE
 
 
 # 削除してよいテロップトラックか (ver9 要望)
@@ -193,12 +256,13 @@ def _snapshot(timeline):
             {
                 "id": t.id, "kind": t.kind, "index": t.index, "name": t.name,
                 "enabled": t.enabled, "locked": t.locked, "is_base": t.is_base,
-                "link_track": t.link_track,
+                "link_track": t.link_track, "color": t.color,
                 "clips": [c.copy() for c in t.clips],
             }
             for t in timeline.tracks
         ],
         "media_pool": list(timeline.media_pool),
+        # テロップトラックの既定色 (ver9 resolve13 §3.5)。色の変更も Undo で戻せる
         # source も控える (ver3 resolve9 §3-3)。アーカイブ用のテーマは
         # source.archive.clips[].theme にあり、コマンドで書き換えるため
         # Undo で戻せる必要がある。クリップ用は小さな辞書のため負担にならない。
@@ -210,7 +274,8 @@ def _snapshot(timeline):
 def _restore(timeline, snapshot):
     timeline.tracks = [
         Track(t["id"], t["kind"], t["index"], t["name"], t["enabled"],
-              t["locked"], t["is_base"], t["link_track"], t["clips"])
+              t["locked"], t["is_base"], t["link_track"], t["clips"],
+              t.get("color", ""))
         for t in snapshot["tracks"]
     ]
     timeline.media_pool = list(snapshot["media_pool"])
@@ -1705,11 +1770,17 @@ class MoveSubtitlesToNewTrack(Command):
 
         track = create_subtitle_track(timeline, self._cfg)
         self.created_track_id = track.id
+        # 新トラックは通常テロップ用のため、コメント役割のまま移ると
+        # アイコンと背景だけが残ってしまう。役割も落ち先へ合わせる
+        # (ver9 resolve13 §3.7)。
+        role = role_for_subtitle_track(track, self._cfg)
         for clip in targets:
             source = timeline.track_of_clip(clip.id)
             if source is None:
                 continue
             source.remove_clip(clip.id)
+            if role is not None:
+                clip.role = role
             track.clips.append(clip)
             self.moved += 1
         track.sort_clips(timeline)
@@ -1747,11 +1818,13 @@ class MoveSubtitlesToNewTrack(Command):
 # 役割 (role) は変えない = 見た目は一切変わらない (ver9 resolve2 §1.1)。
 class MoveSubtitleToTrack(Command):
 
-    def __init__(self, clip_id, track_id, new_start=None, min_clip_sec=0.05):
+    def __init__(self, clip_id, track_id, new_start=None, min_clip_sec=0.05,
+                 subtitle_tracks_cfg=None):
         self._clip_id = clip_id
         self._track_id = track_id
         self._new_start = None if new_start is None else float(new_start)
         self._min_clip_sec = float(min_clip_sec)
+        self._cfg = {**_DEFAULT_SUBTITLE_TRACKS_CFG, **(subtitle_tracks_cfg or {})}
         # 呼び出し側の案内文言用 (実際に落ち着いた位置)
         self.moved_start = None
         self.label = tr("テロップのトラック移動")
@@ -1772,6 +1845,12 @@ class MoveSubtitleToTrack(Command):
         clip.timeline_start = start
         target.clips.append(clip)
         target.sort_clips(timeline)
+        # 役割は落ち先のトラックが決める (ver9 resolve13 §3.7)。
+        # S2 へ落ちればコメント (アイコン・背景が付く)、出れば通常テロップへ戻る。
+        role = role_for_subtitle_track(target, self._cfg)
+        if role is not None and clip.role != role:
+            clip.role = role
+            _logger.info("移動先に合わせて役割を %s にしました: %s", role, clip.id)
         self.moved_start = start
         _logger.info("テロップを %s から %s へ移しました: %s",
                      source.id, target.id, clip.id)
@@ -1800,6 +1879,30 @@ class RemoveSubtitleTrack(Command):
         timeline.tracks = [t for t in timeline.tracks if t.id != track.id]
         _logger.info("テロップトラックを削除しました: %s (テロップ %d 件)",
                      track.id, self.removed_clips)
+        return True
+
+
+# テロップトラックの既定の文字色を変える (ver9 resolve13 §3.5)
+#
+# 色はトラックが持ち、**個別指定の無いテロップすべて**へ一斉に効く。
+# 個別指定 (SubtitleClip.color) のほうが強いため、1 本だけ変えた色は守られる。
+# 履歴のスナップショットはトラックの色も控えるので Ctrl+Z で戻せる。
+class SetSubtitleTrackColor(Command):
+
+    def __init__(self, track_id, color):
+        self._track_id = str(track_id or "")
+        self._color = str(color or "").strip()
+        self.label = tr("テロップトラックの文字色")
+
+    def apply(self, timeline):
+        track = timeline.track_by_id(self._track_id)
+        if track is None or not track.is_subtitle():
+            return False
+        if track.color == self._color:
+            return False            # 変化なし → 履歴を汚さない
+        track.color = self._color
+        _logger.info("テロップトラック %s の文字色を %s にしました",
+                     track.id, self._color or "既定")
         return True
 
 

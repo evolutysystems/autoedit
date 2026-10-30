@@ -187,11 +187,13 @@
             "missing_media_policy": "renormalize",
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
-            "recent": [],
+            "recent": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011_vertical.timeline.json"
+            ],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json"
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json"
             ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
@@ -232,7 +234,11 @@
             "max_tracks": 8,
             "new_track_moves_selection": true,
             "drag_between_tracks": true,
-            "remove_track_enabled": true
+            "remove_track_enabled": true,
+            "initial_tracks": 3,
+            "header_color_enabled": true,
+            "role_control_enabled": false,
+            "comment_icon_px": 20
         },
         "subtitle_align": {
             "enabled": true,
@@ -255,6 +261,7 @@
             "track_height_px": 56,
             "subtitle_track_height_px": 40,
             "header_width_px": 88,
+            "track_color_swatch_px": 12,
             "trim_handle_px": 6,
             "ruler_min_label_px": 60,
             "window_width": 1280,
@@ -451,7 +458,9 @@
             "max_scale": 2.0,
             "project_suffix": "_vertical",
             "close_gaps": true,
-            "keyframe_window_sec": 30.0
+            "keyframe_window_sec": 30.0,
+            "media_mode": "copy",
+            "keep_media": true
         }
     },
     "logging": {

@@ -350,7 +350,12 @@ class SubtitleClip:
     # 既存資産 (build_subtitle_file / resolve_export) が扱う item 形式へ変換する
     # 既存の {"start","end","text","use","role","font","font_size"} と互換。
     # 位置を明示指定しているときだけ pos_x/pos_y を足す (未指定なら既存と完全に同一の辞書)。
-    def to_item(self):
+    #
+    # track_color: このテロップが載っているトラックの既定色 (ver9 resolve13 §3.8)。
+    #   個別指定が無いときだけ item["color"] へ入れる。こうすると焼き込み・プレビュー・
+    #   Resolve 出力のどれもが**個別色と同じ経路**でトラック色を扱えるため、
+    #   下流 (ASS のインライン上書き / title 辞書) を一切変えずに済む。
+    def to_item(self, track_color=""):
         item = {
             "start": self.timeline_start,
             "end": self.timeline_end,
@@ -363,9 +368,11 @@ class SubtitleClip:
         if self.transform.is_positioned():
             item["pos_x"] = self.transform.x
             item["pos_y"] = self.transform.y
-        # 色は個別指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve6 §5.2)
-        if self.color:
-            item["color"] = self.color
+        # 色は個別指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve6 §5.2)。
+        # 個別が空ならトラックの既定色へ落ちる (ver9 resolve13 §3.2 の②)。
+        color = self.color or str(track_color or "")
+        if color:
+            item["color"] = color
         if self.outline_color:
             item["outline_color"] = self.outline_color
         # 文字寄せも指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve3 §R12)
@@ -473,7 +480,7 @@ class AudioClip:
 class Track:
 
     def __init__(self, track_id, kind, index, name="", enabled=True, locked=False,
-                 is_base=False, link_track=None, clips=None):
+                 is_base=False, link_track=None, clips=None, color=""):
         self.id = track_id
         self.kind = kind
         self.index = _to_int(index, 1)
@@ -485,6 +492,9 @@ class Track:
         # 音声トラックがどの映像トラックへリンクしているか (R18)
         self.link_track = link_track
         self.clips = list(clips or [])
+        # このトラックに載るテロップの既定の文字色 (HTML #RRGGBB / ver9 resolve13 §3.1)。
+        # 空文字 = 役割の色 (設定) に従う = 従来どおり。テロップトラックでのみ使う。
+        self.color = str(color or "")
 
     def is_video(self):
         return self.kind == TRACK_VIDEO
@@ -532,6 +542,10 @@ class Track:
             data["is_base"] = self.is_base
         if self.is_audio() and self.link_track:
             data["link_track"] = self.link_track
+        # トラックの既定色は指定があるときだけ載せる (ver9 resolve13 §3.1)。
+        # 未指定なら旧版と完全に同じ辞書になり、差分が増えない。
+        if self.color:
+            data["color"] = self.color
         return data
 
     @staticmethod
@@ -553,6 +567,8 @@ class Track:
             is_base=data.get("is_base", False),
             link_track=data.get("link_track"),
             clips=clips,
+            # 旧プロジェクトにはこのキーが無い = 空文字 = 従来の見え方 (resolve13 §7)
+            color=data.get("color", ""),
         )
 
 

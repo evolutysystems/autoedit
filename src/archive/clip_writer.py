@@ -292,8 +292,11 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
                       gain_db=None):
     start_buf = max(0.0, clip_start - card["buffer_sec"])
     length = clip_start - start_buf
+    # ここへ来る時点でテーマは必ず入っている (_decorate_clip がテーマ無しを弾く)。
+    # 作れなかったことは「入力したのにカードが出ない」結果に直結するため、
+    # 黙って省かず WARNING で残す (ver9 resolve12 §3.7)。
     if length < 0.1:
-        _logger.info("clip%d: 開始前バッファを確保できないためイントロを省略", index)
+        _logger.warning("clip%d: 開始前バッファを確保できないためイントロを省略", index)
         return None
     # 素は ① 元 VOD (新規実行。VOD 内の時刻で切る) → ② 保存しておいた控え
     # (元 VOD を手放した後。既にその区間だけが入っているため先頭から取る) の順
@@ -305,7 +308,7 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
                      index, os.path.basename(intro_source))
         input_args = ["-i", intro_source, "-t", f"{length:.3f}"]
     else:
-        _logger.info(
+        _logger.warning(
             "clip%d: 元 VOD もイントロ素材が無いためイントロカードを省略します "
             "(元 VOD: %s)", index, source)
         return None
@@ -810,6 +813,9 @@ def _burn_clips(input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
         theme = (ed.get("theme") or "").strip()
         clip_meta = {"index": prepared["index"], "start": prepared["start"],
                      "end": prepared["end"],
+                     # 完了時に「テーマを入れたのにカードが出なかった」件を数えるため
+                     # 控える (ver9 resolve12 §3.7)
+                     "theme": theme,
                      # 元 VOD を手放した後のイントロカード用 (resolve.md §9-7)
                      "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
@@ -875,6 +881,9 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
         theme = (entry.get("theme") or "").strip()
         clip_meta = {"index": prepared["index"], "start": prepared["start"],
                      "end": prepared["end"],
+                     # 完了時に「テーマを入れたのにカードが出なかった」件を数えるため
+                     # 控える (ver9 resolve12 §3.7)
+                     "theme": theme,
                      # 元 VOD を手放した後のイントロカード用 (resolve.md §9-7)
                      "intro_source": prepared.get("intro_source", "")}
         parts, body = _decorate_clip(
@@ -1039,6 +1048,20 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
                             watermark_required=watermark_required)
 
 
+# 書き出し完了時の進捗ラベル (ver9 resolve12 §3.7)
+#
+# テーマを入れたのにイントロカードが付かなかったクリップは、黙って省かれると
+# 成果物を見るまで気づけない。完了の文言へ並べ、画面からも分かるようにする。
+# parts は [イントロ, タグ付き本編] か [本編] のため、2 本未満 = カードが無い。
+def _finish_label(burned):
+    missing = [str(entry["clip"]["index"]) for entry in burned
+               if entry["clip"].get("theme") and len(entry["parts"]) < 2]
+    if not missing:
+        return tr("完了")
+    return tr("完了（clip {list} はイントロカードを作れませんでした）",
+              list="・".join(missing))
+
+
 # レビュー後の書き出し (burn → テーマ演出 → 個別出力 → 結合) を行う (ver3 resolve9 §5.6)
 # write_clips から切り出した処理で、保存済みプロジェクトの再編集
 # (archive/project_resume.run_from_archive_project) からも同じものを呼ぶ。
@@ -1093,7 +1116,7 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
                 outputs.append(_write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg))
         _logger.info("個別クリップ %d 件を出力 (結合なし)", len(outputs))
         if progress_cb:
-            progress_cb(1.0, tr("完了"))
+            progress_cb(1.0, _finish_label(burned))
         return outputs
 
     # 結合: [Opening?] + (intro?+本編)群 + [Ending?] を 1 本へ (OP/ED を1回だけ)
@@ -1107,7 +1130,7 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
 
     _logger.info("結合出力: %s (使用%d)", final, len(burned))
     if progress_cb:
-        progress_cb(1.0, tr("完了"))
+        progress_cb(1.0, _finish_label(burned))
     return outputs + [final]
 
 

@@ -13,7 +13,7 @@
 import os
 import re
 
-from ..timeline import commands, media_probe
+from ..timeline import commands, media_probe, subtitle_style
 from ..timeline.builder import timeline_config
 from ..timeline.model import (
     BASE_AUDIO_TRACK_ID,
@@ -166,6 +166,11 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None,
             **_source_extras(vod_source, vod_analysis),
         },
     }
+    # テロップトラックを最初から並べる (ver9 resolve13 §3.3)。クリップ用と同じ扱い。
+    commands.ensure_initial_subtitle_tracks(
+        timeline, cfg["subtitle_tracks"],
+        sub_color=(clip_settings or {}).get("subtitle", {}).get(
+            "sub_subtitle_color", ""))
     timeline.normalize()
     _logger.info(
         "アーカイブ Timeline 構築: %d クリップ / V1 %d 本 / S1 %d 件 / 全長 %.1fs",
@@ -235,6 +240,15 @@ def _trim_vod_analysis(vod_analysis):
     if isinstance(measured, dict) and measured:
         trimmed["measured"] = {str(k): measured[k] for k in measured}
     return trimmed
+
+
+# プロジェクトが指す元 VOD のパス (存在しなくても記録値を返す)。
+# project_resume からここへ移した (ver9 resolve12 §3.5)。素材の復元を持たない
+# intro_source からも要るためで、project_resume.recorded_vod_path は本関数へ委譲する。
+def recorded_vod_path(timeline):
+    source = getattr(timeline, "source", None) or {}
+    archive = archive_section(timeline)
+    return str(archive.get("vod_path", "") or source.get("input_path", "") or "")
 
 
 # source.archive.vod_source を読む (無ければ空辞書)
@@ -450,7 +464,12 @@ def _build_group_timeline(timeline, clips):
     video_track = Track(BASE_VIDEO_TRACK_ID, TRACK_VIDEO, 1, name="Video 1", is_base=True)
     audio_track = Track(BASE_AUDIO_TRACK_ID, TRACK_AUDIO, 1, name="Audio 1",
                         link_track=BASE_VIDEO_TRACK_ID)
-    subtitle_track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
+    # トラックの既定色も引き継ぐ (ver9 resolve13 §3.8)。写さないと
+    # 書き出しだけテロップの色が設定の役割色へ戻ってしまう。
+    base_subtitle = timeline.track_by_id(BASE_SUBTITLE_TRACK_ID)
+    subtitle_track = Track(
+        BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1",
+        color=(base_subtitle.color if base_subtitle is not None else ""))
     sub.tracks = [video_track, audio_track, subtitle_track]
     # 元の字幕トラック構成 (S1 / コメント用 S2 …) をそのまま複製する
     # (ver3 resolve11 §5.9)。1 本へ潰すと S1 と S2 の字幕が同じトラックで重なり、
@@ -459,7 +478,8 @@ def _build_group_timeline(timeline, clips):
     for track in sorted(timeline.subtitle_tracks(), key=lambda t: t.index):
         if track.id in subtitle_tracks:
             continue
-        copied = Track(track.id, TRACK_SUBTITLE, track.index, name=track.name)
+        copied = Track(track.id, TRACK_SUBTITLE, track.index, name=track.name,
+                       color=track.color)
         subtitle_tracks[track.id] = copied
         sub.tracks.append(copied)
 
@@ -589,6 +609,11 @@ def clip_entry(timeline, clip_index):
 # **統合では一切畳まない**。見せ方 (clips) と作り方 (media) を分ける。
 
 
+# セクションの開始秒と素材の vod_start を突き合わせるときの許容 (秒)。
+# どちらも同じ値を書き写したものなので、丸めの差だけを見逃せばよい。
+_INTRO_MEDIA_EPS = 0.01
+
+
 # source.archive.media を読む (無ければ空の一覧)
 def archive_media(timeline):
     rows = archive_section(timeline).get("media")
@@ -613,6 +638,36 @@ def archive_media_entry(timeline, media_id):
                     "media_role": str(entry.get("media_role", "normalized")
                                       or "normalized")}
     return None
+
+
+# セクションの開始を担当する素材の media_id を返す (ver9 resolve12 §3.2)
+#
+# イントロカードはセクション開始の buffer_sec 秒**手前**から作るため、控えは
+# 「開始を担当する素材」の名前で持たなければならない。ところが統合されたセクションは
+# clips[].media_id (代表) と、実際に開始秒を持つ素材が食い違う:
+#
+#   clips[0]  vod_start=140 media_id=m1   ← 代表は m1
+#   media[]   m1: 180〜540 / m10: 140〜180 ← 140 秒を持つのは m10
+#
+# 代表で控えを作ると「177〜180 秒」がカードの背景になり、セクション開始 (140 秒) の
+# 直前ではなくなる。作る側と読む側の両方をここに寄せ、選び方を 1 つにする。
+#
+# 選び方: media[] のうち vod_start がセクションの vod_start と一致するもの。
+#         一致が無い (media の控えを持たない旧プロジェクトなど) 場合は
+#         clips[].media_id へ落ちる = 従来どおりの振る舞いになる。
+def intro_media_id(timeline, clip_index):
+    entry = clip_entry(timeline, clip_index)
+    if entry is None:
+        return ""
+    fallback = str(entry.get("media_id", "") or "")
+    start = float(entry.get("vod_start", 0.0))
+    for row in archive_media(timeline):
+        media_id = str(row.get("media_id", "") or "")
+        if not media_id:
+            continue
+        if abs(float(row.get("vod_start", 0.0)) - start) <= _INTRO_MEDIA_EPS:
+            return media_id
+    return fallback
 
 
 # 素材の復元情報を書き込む (同じ media_id があれば置き換える)。
@@ -1241,7 +1296,8 @@ def to_export_entry(clip_index, sub_timeline, prepared, theme=""):
         for subtitle in sorted(track.clips, key=lambda c: c.timeline_start):
             # クリップ用の Resolve 出力と同じ変換を使う (SubtitleClip.to_item)。
             # 個別指定 (位置・色) もそのまま出力へ運ばれる (ver3 resolve6 §3-5)。
-            items.append(subtitle.to_item())
+            # トラックの既定色もここで乗せる (ver9 resolve13 §3.8)。
+            items.append(subtitle.to_item(subtitle_style.track_color(track)))
 
     return {
         "index": clip_index,

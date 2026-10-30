@@ -174,9 +174,13 @@ class RoleComboSignalTest(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def _panel(self):
+    # 役割コンボは既定で出なくなった (ver9 resolve13 §3.6)。この検査は
+    # 「コンボを出したときに信号をどう扱うか」を見るものなので、設定で出して試す。
+    def _panel(self, role_control=True):
         timeline, _, _ = _moved_to_new_track()
-        controller = TimelineController(timeline, {})
+        settings = {"timeline": {"subtitle_tracks": {
+            "role_control_enabled": bool(role_control)}}}
+        controller = TimelineController(timeline, settings)
         panel = ted._InspectorPanel(controller)      # noqa: SLF001 (単体テスト)
         controller.selection_changed.connect(panel.show_clip)
         controller.timeline_changed.connect(panel.refresh)
@@ -198,6 +202,14 @@ class RoleComboSignalTest(unittest.TestCase):
         panel._on_font_changed()                     # noqa: SLF001
         self.assertEqual(timeline.track_of_clip("s1").id, "S3")
         self.assertEqual(timeline.clip_by_id("s1").color, "&H000000FF")
+
+    # 既定では役割コンボを出さない (ver9 resolve13 §3.6)。
+    # 代わりに「どのトラックに載っているか」を見せる。
+    def test_role_combo_is_hidden_by_default(self):
+        _timeline, _controller, panel = self._panel(role_control=False)
+        self.assertIsNone(panel.role_combo)
+        self.assertIsNotNone(panel.track_label)
+        self.assertIn("S3", panel.track_label.text())
 
     # 利用者が選び直したとき (activated) は役割が変わる。ただし居場所は動かない。
     def test_activated_changes_role_only(self):

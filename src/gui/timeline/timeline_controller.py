@@ -3,7 +3,7 @@
 # UI と編集処理の分離 (§4-2) が崩れず、Undo/Redo が全操作で一様に効く。
 from PySide6.QtCore import QObject, Signal
 
-from ...timeline import clipboard, commands, model
+from ...timeline import clipboard, commands, model, subtitle_style
 from ...timeline.builder import timeline_config
 from ...timeline.timemap import TimeMap
 from ...utils.logger import get_logger
@@ -397,7 +397,18 @@ class TimelineController(QObject):
     # new_start を渡すと時刻も同時に変わる (斜めのドラッグ)。
     def move_subtitle_to_track(self, clip_id, track_id, new_start=None):
         return self.execute(commands.MoveSubtitleToTrack(
-            clip_id, track_id, new_start, self._cfg["min_clip_sec"]))
+            clip_id, track_id, new_start, self._cfg["min_clip_sec"],
+            # 役割は落ち先のトラックが決める (ver9 resolve13 §3.7)
+            subtitle_tracks_cfg=self._cfg["subtitle_tracks"]))
+
+    # テロップトラックの既定の文字色を変える (ヘッダの色見本 / ver9 resolve13 §3.5)
+    # そのトラックの、個別指定が無いテロップすべてへ効く。空文字で既定へ戻す。
+    def set_subtitle_track_color(self, track_id, color):
+        return self.execute(commands.SetSubtitleTrackColor(track_id, color))
+
+    # テロップトラックの既定の文字色 (未設定は空文字)
+    def subtitle_track_color(self, track_id):
+        return subtitle_style.track_color(self._timeline.track_by_id(track_id))
 
     # テロップトラックを 1 本削除する (ヘッダの右クリック / ver9 要望)
     # 載っているテロップも一緒に消える (確認は UI 側で取る)。

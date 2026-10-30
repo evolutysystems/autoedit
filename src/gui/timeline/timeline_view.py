@@ -8,7 +8,15 @@ import math
 import os
 
 from PySide6.QtCore import QLine, QPoint, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QImage,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QAbstractSlider,
     QApplication,
@@ -20,17 +28,19 @@ from PySide6.QtWidgets import (
     QScrollBar,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from .. import theme
+from ..color_field import ColorField, parse_color
 from .waveform import WaveformCache
 from ...i18n import tr
-from ...timeline import commands, media_probe
+from ...modules import comment_decor
+from ...timeline import commands, media_probe, subtitle_style
 from ...timeline.model import (
     DEFAULT_ROLE,
     ORIGIN_ENDING,
     ORIGIN_OPENING,
-    ROLE_COMMENT,
     AudioClip,
     SubtitleClip,
 )
@@ -101,6 +111,9 @@ _LEGACY_TRACK_BG_ALT = QColor(44, 44, 47)
 _LEGACY_GRID = QColor(64, 64, 68)
 _LEGACY_TEXT = QColor(236, 236, 236)
 _LEGACY_RULER_BG = QColor(30, 30, 32)
+
+# トラックヘッダの左余白 (色見本・アイコン・名前の並びに使う / ver9 resolve13 §3.4)
+_HEADER_PAD_PX = 6
 
 
 # トラック領域の下地 (= 「Timeline の背景の黒色部分」)。半透明なのでウィンドウ背景が透ける。
@@ -348,21 +361,82 @@ class TrackHeaderWidget(QWidget):
         super().__init__(parent)
         self._controller = controller
         self.setFixedWidth(controller.cfg["ui"]["header_width_px"])
+        # コメント用トラックの目印 (ver9 resolve13 §3.4)。焼き込みで使うものと
+        # 同じ素材を 1 回だけ読む。見つからなければアイコン無しで続ける。
+        self._comment_icon = None
+        self._comment_icon_loaded = False
+        self.setToolTip(tr("色見本を押すとそのトラックの文字色を決められます"))
+
+    # テロップトラックのヘッダに出す色見本の矩形 (ver9 resolve13 §3.5)
+    def _swatch_rect(self, row):
+        size = int(self._controller.cfg["ui"]["track_color_swatch_px"])
+        y = row["y"] + (row["height"] - size) // 2
+        return QRect(_HEADER_PAD_PX, y, size, size)
+
+    # 色見本を出す行か (テロップトラックで、設定が有効なときだけ)
+    def _has_swatch(self, track):
+        return bool(track.is_subtitle()
+                    and self._controller.cfg["subtitle_tracks"]["header_color_enabled"])
+
+    # コメント用トラックか (アイコンを出す対象)
+    def _is_comment_track(self, track):
+        cfg = self._controller.cfg["subtitle_tracks"]
+        return bool(track.is_subtitle() and cfg["role_track_enabled"]
+                    and track.id == cfg["comment_track_id"])
+
+    # コメントアイコンを読む (1 回だけ。見つからなければ None のまま)
+    def _icon_pixmap(self):
+        if self._comment_icon_loaded:
+            return self._comment_icon
+        self._comment_icon_loaded = True
+        try:
+            path = comment_decor.resolve_icon_path(
+                self._controller.settings.get("subtitle", {}))
+            if path:
+                pixmap = QPixmap(path)
+                self._comment_icon = None if pixmap.isNull() else pixmap
+        except Exception:  # noqa: BLE001 (目印が出ないだけで編集はできる)
+            _logger.debug("コメントアイコンを読めませんでした", exc_info=True)
+        return self._comment_icon
 
     def paintEvent(self, _event):
         painter = QPainter(self)
         # ルーラと同じ見え方に揃える (下地と重ねた 1 色で塗る / §5.7-1)
         painter.fillRect(self.rect(), _ruler_color())
         rows = build_rows(self._controller.timeline, self._controller.cfg)
+        icon_px = int(self._controller.cfg["subtitle_tracks"]["comment_icon_px"])
         for index, row in enumerate(rows):
+            track = row["track"]
             rect = QRect(0, row["y"], self.width(), row["height"])
             painter.fillRect(rect, _row_color(index))
             painter.setPen(QPen(_grid_color()))
             painter.drawLine(0, row["y"] + row["height"], self.width(),
                              row["y"] + row["height"])
+            left = _HEADER_PAD_PX
+            if self._has_swatch(track):
+                self._paint_swatch(painter, self._swatch_rect(row), track.color)
+                left = self._swatch_rect(row).right() + _HEADER_PAD_PX
+            if self._is_comment_track(track):
+                icon = self._icon_pixmap()
+                if icon is not None:
+                    target = QRect(left, row["y"] + (row["height"] - icon_px) // 2,
+                                   icon_px, icon_px)
+                    painter.drawPixmap(target, icon)
+                    left = target.right() + 4
             painter.setPen(QPen(_text_color()))
-            painter.drawText(rect.adjusted(8, 0, -4, 0),
-                             Qt.AlignVCenter | Qt.AlignLeft, row["track"].id)
+            painter.drawText(rect.adjusted(left, 0, -4, 0),
+                             Qt.AlignVCenter | Qt.AlignLeft, track.id)
+
+    # 色見本を塗る。既定 (未指定) は破線の枠で示す (設定画面の色欄と同じ見せ方)
+    def _paint_swatch(self, painter, rect, color):
+        if not color:
+            painter.setPen(QPen(_text_color(), 1, Qt.DashLine))
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(rect)
+            return
+        painter.setPen(QPen(_grid_color()))
+        painter.setBrush(QBrush(parse_color(color, with_alpha=False)))
+        painter.drawRect(rect)
 
     # トラック行の合計高さ
     def rows_height(self):
@@ -371,6 +445,45 @@ class TrackHeaderWidget(QWidget):
 
     def _row_at_pos(self, pos):
         return row_at_y(self._controller.timeline, self._controller.cfg, pos.y())
+
+    # 色見本を押したらそのトラックの文字色を決める (ver9 resolve13 §3.5)
+    def mousePressEvent(self, event):
+        row = self._row_at_pos(event.pos())
+        if (event.button() == Qt.LeftButton and row is not None
+                and self._has_swatch(row["track"])
+                and self._swatch_rect(row).contains(event.pos())):
+            self._open_color_popup(row["track"], self._swatch_rect(row))
+            return
+        super().mousePressEvent(event)
+
+    # 色を選ぶ小窓を開く。中身は設定画面と同じ部品 (ColorField) を使う。
+    # 「既定へ」を押すと空文字 = 役割の色に戻る。
+    def _open_color_popup(self, track, anchor):
+        menu = QMenu(self)
+        field = ColorField(
+            with_alpha=False,
+            swatch_width_px=int(
+                self._controller.cfg["ui"]["subtitle_color_swatch_width_px"]),
+            placeholder=tr("既定"))
+        field.set_value(track.color)
+        field.setToolTip(
+            tr("このトラックのテロップの文字色です。\n"
+               "テロップごとに色を指定したものは、そちらが優先されます"))
+        field.color_committed.connect(
+            lambda value, track_id=track.id: self._apply_color(menu, track_id, value))
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(field)
+        menu.addAction(action)
+        menu.exec(self.mapToGlobal(anchor.bottomLeft()))
+
+    def _apply_color(self, menu, track_id, value):
+        menu.close()
+        if not self._controller.set_subtitle_track_color(track_id, value):
+            return
+        self.update()
+        self.status_message.emit(
+            tr("{track} の文字色を変えました", track=track_id) if value else
+            tr("{track} の文字色を既定に戻しました", track=track_id))
 
     # ヘッダの右クリック (ver9 要望)。増やしたテロップトラックだけ削除できる。
     # 既定トラックとコメント用トラックでは項目を出さない (消すと置き場が無くなる)。
@@ -1002,19 +1115,16 @@ class TimelineView(QWidget):
             self._drag_track_id = row["track"].id
 
     # そのトラックへこのテロップを落とせるか
-    # コメント役割はアイコン・背景が付く専用トラックに留め、通常テロップは
-    # コメント用トラックへ入れない (そのトラックで足した字幕はコメントになる
-    # 規約 / _role_for_track と食い違わせないため)。
+    #
+    # ver9 resolve13 §3.7: 役割コントロールを画面から外したため、**コメントに
+    # する・通常へ戻す唯一の手段がこの移動**になった。以前はコメント役割を S2 に
+    # 閉じ込めていたが、それでは役割を変えられなくなる。どのテロップトラックへも
+    # 落とせるようにし、役割は落ち先に合わせる (MoveSubtitleToTrack が行う)。
     def _can_drop_subtitle(self, clip, track):
         cfg = self._controller.cfg["subtitle_tracks"]
         if not cfg["drag_between_tracks"]:
             return False
-        if not track.is_subtitle() or track.locked:
-            return False
-        if not cfg["role_track_enabled"]:
-            return True
-        is_comment_track = track.id == cfg["comment_track_id"]
-        return is_comment_track == (str(clip.role or "") == ROLE_COMMENT)
+        return bool(track.is_subtitle() and not track.locked)
 
     # ドロップを確定する。移せなければ理由を状態表示へ出す。
     def _drop_on_track(self, clip_id, track_id, start):
@@ -1308,11 +1418,11 @@ class TimelineView(QWidget):
     # ver9 resolve2 §4.5-b: 以前は「S1 以外ならコメント」としていたため、
     # 通常テロップ用に増やしたトラック (S3 …) で字幕を足すと
     # アイコンと背景が付いてしまっていた。コメントは comment_track_id だけ。
+    # ver9 resolve13 §3.6: 判定は commands へ寄せ、移動時の役割合わせと 1 つにした。
     def _role_for_track(self, track):
-        cfg = self._controller.cfg["subtitle_tracks"]
-        if not cfg["role_track_enabled"]:
-            return DEFAULT_ROLE
-        return ROLE_COMMENT if track.id == cfg["comment_track_id"] else DEFAULT_ROLE
+        role = commands.role_for_subtitle_track(
+            track, self._controller.cfg["subtitle_tracks"])
+        return DEFAULT_ROLE if role is None else role
 
     # 右クリックメニューからのコピー (ver3 resolve10 §5.6)
     def _copy(self):

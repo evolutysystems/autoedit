@@ -11,11 +11,15 @@
 #
 # 元の Timeline は読むだけで、変更しない (§4-5)。
 import copy
+import os
+import shutil
 
 from ..i18n import tr
 from ..modules import output_profile
 from ..utils.logger import get_logger
 from . import crop
+from . import project_io
+from .builder import timeline_config
 from .model import (
     BASE_AUDIO_TRACK_ID,
     BASE_SUBTITLE_TRACK_ID,
@@ -260,3 +264,84 @@ def _warn_dropped(timeline, clips, warnings):
 
     if (timeline.source or {}).get("blur"):
         warnings.append("ぼかしの指定は引き継ぎませんでした (切り抜き後の座標が変わるため)。")
+
+
+# ==================================================================
+# 素材の複製 (ver9 resolve14 §3.1)
+# ==================================================================
+#
+# 縦プロジェクトが参照する素材は、アーカイブ用だと
+#   ・未保存   … 実行の終わりに消える一時ファイル
+#   ・保存済み … 元プロジェクトの <プロジェクト>.media/
+# のどちらかにある。どちらも「縦プロジェクトだけを残す」と開けなくなるため、
+# 作成時に縦プロジェクトの隣へ写して自己完結させる。
+#
+# 元 VOD 1 本へ張り替える従来の方式 (vod_rebase) は、元 VOD が既定で
+# 自動整理されるため同じ問題を抱えていた (resolve14 §1.4)。
+
+
+# 複製先のファイル名。素材 ID を前に付けて衝突を防ぐ
+# (アーカイブ用は全クリップが normalized.mp4 という同名のため / resolve9 §5.4)。
+def _media_dest_name(media):
+    return f"{media.id}_{os.path.basename(media.path)}"
+
+
+# 縦プロジェクトが参照する素材を <プロジェクト>.media/ へ複製して自己完結させる
+#
+# timeline     : build() が作った縦 Timeline (media_pool は deepcopy 済みのため
+#                パスを書き換えても元の Timeline は変わらない)
+# project_path : 保存先のプロジェクトファイル
+# skip_paths   : 複製しない素材のパス (クリップ用の元動画など、消えないもの)
+# warnings     : 複製できなかったものを積む一覧 (作成そのものは続ける)
+# 戻り値: (複製した件数, 複製したバイト数)
+def copy_media_beside(timeline, project_path, settings, skip_paths=(),
+                      warnings=None, progress_cb=None):
+    cfg = timeline_config(settings)
+    folder = project_io.media_dir_path(
+        project_path, cfg["project_suffix"], cfg["project"]["media_dir_suffix"])
+    if not folder:
+        return 0, 0
+    skip = {os.path.normcase(os.path.abspath(path)) for path in (skip_paths or []) if path}
+    source = dict(timeline.source or {})
+    body_id = str(source.get("media_id", "") or "")
+    copied, total = 0, 0
+
+    for media in timeline.media_pool:
+        path = str(getattr(media, "path", "") or "")
+        if not path or os.path.normcase(os.path.abspath(path)) in skip:
+            continue
+        if not os.path.exists(path):
+            # 既に消えている素材。ここで止めず、開けない可能性として伝える
+            if warnings is not None:
+                warnings.append(
+                    tr("素材が見つからないため複製できませんでした: {name}",
+                       name=os.path.basename(path)))
+            continue
+        dest = os.path.join(folder, _media_dest_name(media))
+        try:
+            os.makedirs(folder, exist_ok=True)
+            # 同じ内容が既にあるなら複製し直さない (作るたびに数百 MB を書かない)
+            if not (os.path.exists(dest)
+                    and os.path.getsize(dest) == os.path.getsize(path)):
+                if progress_cb:
+                    progress_cb(tr("素材を複製しています…"))
+                shutil.copy2(path, dest)
+                copied += 1
+                total += os.path.getsize(dest)
+        except OSError:
+            # 複製に失敗しても作成は続ける (元のパスを指したまま保存する)
+            _logger.exception("縦プロジェクトへの素材の複製に失敗しました: %s", path)
+            if warnings is not None:
+                warnings.append(
+                    tr("素材を複製できませんでした: {name}",
+                       name=os.path.basename(path)))
+            continue
+        media.path = dest
+        if media.id == body_id:
+            source["media_path"] = dest
+            timeline.source = source
+
+    if copied:
+        _logger.info("縦プロジェクトの素材を %d 件複製しました (%.1f MB): %s",
+                     copied, total / (1024 * 1024), folder)
+    return copied, total

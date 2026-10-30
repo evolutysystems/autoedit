@@ -307,6 +307,16 @@ def _subtitle_tracks_config(values):
         "drag_between_tracks": bool(values.get("drag_between_tracks", True)),
         # ver9 要望: 増やしたトラックをヘッダの右クリックから削除できるか
         "remove_track_enabled": bool(values.get("remove_track_enabled", True)),
+        # ver9 resolve13 §3.3: 最初から並べておくテロップトラックの本数。
+        # 1 にすると v1.7.0 以前と同じ (S1 のみ) に戻る。
+        "initial_tracks": _positive_int(values.get("initial_tracks"), 3),
+        # ver9 resolve13 §3.5: トラックヘッダで文字色を決められるようにするか
+        "header_color_enabled": bool(values.get("header_color_enabled", True)),
+        # ver9 resolve13 §3.6: インスペクタへ「役割」コントロールを出すか。
+        # 既定 false = 役割はトラックが決める。true で従来の操作へ戻せる。
+        "role_control_enabled": bool(values.get("role_control_enabled", False)),
+        # ver9 resolve13 §3.4: コメント用トラックのヘッダに出すアイコンの大きさ (px)
+        "comment_icon_px": _positive_int(values.get("comment_icon_px"), 20),
     }
 
 
@@ -485,6 +495,8 @@ def timeline_config(settings):
             "track_height_px": int(ui.get("track_height_px", 56)),
             "subtitle_track_height_px": int(ui.get("subtitle_track_height_px", 40)),
             "header_width_px": int(ui.get("header_width_px", 88)),
+            # テロップトラックのヘッダに出す色見本の大きさ (ver9 resolve13 §3.5)
+            "track_color_swatch_px": int(ui.get("track_color_swatch_px", 12)),
             "trim_handle_px": int(ui.get("trim_handle_px", 6)),
             "ruler_min_label_px": int(ui.get("ruler_min_label_px", 60)),
             "window_width": int(ui.get("window_width", 1280)),
@@ -807,6 +819,13 @@ def build(input_path, media_path, keep_segments, subtitle_items,
     # ── 字幕 (本編基準の時刻へ OP の尺を一律で加える)
     _append_subtitles(timeline, subtitle_track, subtitle_items, body_offset,
                       keep_segments, tracks_cfg=cfg["subtitle_tracks"])
+
+    # テロップトラックを最初から並べる (ver9 resolve13 §3.3)。
+    # S1/S2/S3 が最初から在れば「役割を変えて色を変えて移動する」手数が要らない。
+    commands.ensure_initial_subtitle_tracks(
+        timeline, cfg["subtitle_tracks"],
+        # 既定 S3 は「サブ」役割の代わりに使う 1 本目。設定のサブ色を入れておく
+        sub_color=(settings or {}).get("subtitle", {}).get("sub_subtitle_color", ""))
 
     timeline.normalize()
     # コメント用トラックは必要になったときだけ作られる (ver3 resolve11 §5.3)

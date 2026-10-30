@@ -24,6 +24,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.archive import clip_writer, vod_retention
+from src.archive import timeline_builder as archive_timeline
 from src.exceptions import FFmpegError
 
 _FFMPEG_CFG = {"video_codec": "libx264", "preset": "medium", "crf": 20,
@@ -35,6 +36,23 @@ def _touch(path, size=16):
     with open(path, "wb") as f:
         f.write(b"0" * size)
     return path
+
+
+# Timeline の最小フェイク。sections_by_vod / intro_media_id / clip_range が
+# 見るものだけを持つ (V1 クリップは「セクションが Timeline 上に在る」ことを表す)。
+def _timeline(vod, clips, media_rows, live=None):
+    rows = list(clips)
+    track = types.SimpleNamespace(clips=[
+        types.SimpleNamespace(
+            origin={archive_timeline.ORIGIN_ARCHIVE_INDEX: entry.get("index")},
+            timeline_start=pos * 10.0, timeline_end=pos * 10.0 + 10.0, enabled=True)
+        for pos, entry in enumerate(rows)
+        if live is None or entry.get("index") in live])
+    return types.SimpleNamespace(
+        source={"input_path": vod,
+                "archive": {"vod_path": vod, "clips": rows,
+                            "media": list(media_rows)}},
+        base_video_track=lambda: track)
 
 
 class IntroSourcePathTest(unittest.TestCase):
@@ -253,19 +271,19 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self._atd = atd
 
-    def _dialog(self, keep=True, vod=None, buffer_sec=3.0, prepared_by_index=None):
+    def _dialog(self, keep=True, vod=None, buffer_sec=3.0, prepared_by_index=None,
+                clips=None, media_rows=None, live=None):
         atd = self._atd
-        timeline = types.SimpleNamespace(source={
-            "input_path": self.vod if vod is None else vod,
-            "archive": {
-                "vod_path": self.vod if vod is None else vod,
-                "clips": [],
-                "media": [
-                    {"media_id": "m1", "vod_start": 100.0, "vod_end": 280.0},
-                    {"media_id": "m2", "vod_start": 900.0, "vod_end": 1080.0},
-                ],
-            },
-        })
+        # 控えは**セクション**単位で作る (ver9 resolve12 §3.2)。
+        # 既定は「セクションと素材が 1 対 1」の素直な形。
+        if clips is None:
+            clips = [{"index": 1, "media_id": "m1", "vod_start": 100.0, "vod_end": 280.0},
+                     {"index": 2, "media_id": "m2", "vod_start": 900.0, "vod_end": 1080.0}]
+        if media_rows is None:
+            media_rows = [{"media_id": "m1", "vod_start": 100.0, "vod_end": 280.0},
+                          {"media_id": "m2", "vod_start": 900.0, "vod_end": 1080.0}]
+        timeline = _timeline(self.vod if vod is None else vod, clips, media_rows,
+                             live=live)
         media = [types.SimpleNamespace(id="m1", path="x"),
                  types.SimpleNamespace(id="m2", path="y")]
 
@@ -334,6 +352,43 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         self._save(self._dialog(vod=os.path.join(self.root, "no_such.mp4")))
         self.assertEqual(self.exported, [])
 
+    # 統合されたセクションは「開始を担当する素材」の名前で控える
+    # (ver9 resolve12 §1.7)。代表 (m1) で控えると 177〜180 秒という
+    # 無関係な位置がカードの背景になってしまう。
+    def test_uses_the_media_that_owns_the_section_start(self):
+        dialog = self._dialog(
+            clips=[{"index": 1, "media_id": "m1",
+                    "vod_start": 140.0, "vod_end": 540.0}],
+            media_rows=[{"media_id": "m1", "vod_start": 180.0, "vod_end": 540.0},
+                        {"media_id": "m10", "vod_start": 140.0, "vod_end": 180.0}])
+
+        self._save(dialog)
+
+        self.assertEqual(
+            [(start, dest) for _vod, start, _buf, dest in self.exported],
+            [(140.0, os.path.join(self.folder, "m10_intro.mp4"))])
+
+    # 素材の控え (media) を持たない旧プロジェクトは代表へ落ちる = 従来どおり
+    def test_falls_back_to_the_section_media_id(self):
+        dialog = self._dialog(
+            clips=[{"index": 1, "media_id": "m1",
+                    "vod_start": 140.0, "vod_end": 540.0}],
+            media_rows=[])
+
+        self._save(dialog)
+
+        self.assertEqual(
+            [(start, dest) for _vod, start, _buf, dest in self.exported],
+            [(140.0, os.path.join(self.folder, "m1_intro.mp4"))])
+
+    # Timeline 上に実体が無いセクション (全クリップを消した) は書き出されないため控えない
+    def test_skips_sections_without_clips_on_the_timeline(self):
+        self._save(self._dialog(live={2}))
+
+        self.assertEqual(
+            [(start, dest) for _vod, start, _buf, dest in self.exported],
+            [(900.0, os.path.join(self.folder, "m2_intro.mp4"))])
+
     # 元 VOD が無くても、取り直した区間の控えがあれば素材フォルダへ移す
     # (ver9 resolve5 §4.5)。これが無いと追加セクションのイントロが作れない。
     def test_uses_prepared_intro_source_without_vod(self):
@@ -350,6 +405,105 @@ class KeepIntroSourceOnSaveTest(unittest.TestCase):
         # 控えを持たない m2 は作られない
         self.assertFalse(os.path.exists(
             self._atd.clip_writer.intro_source_path(self.folder, "m2")))
+
+
+class SaveProjectWiringTest(unittest.TestCase):
+
+    # 保存フックが**呼ばれるか**だけを検査する (ver9 resolve12 §6.1)
+    #
+    # 今回の不具合は「フックはあるのに save_project から呼ばれていない」ことだった。
+    # 中身の試験 (KeepIntroSourceOnSaveTest) は関数を直接呼ぶため配線を見ておらず、
+    # 全件緑のまま機能が死んでいた。ここで配線そのものを押さえる。
+    def setUp(self):
+        from src.gui.timeline import timeline_editor_dialog as ted
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.target = os.path.join(self._tmp.name, "proj.timeline.json")
+        self.order = []
+        patcher = mock.patch.object(
+            ted.project_io, "save",
+            side_effect=lambda *_a, **_k: self.order.append("save"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(ted, "project_thumbnail", mock.MagicMock())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._ted = ted
+
+    def _dialog(self, modified=True):
+        ted = self._ted
+        outer = self
+
+        class _Dialog:
+            save_project = ted.TimelineEditorDialog.save_project
+            _on_autosave = ted.TimelineEditorDialog._on_autosave
+
+            def __init__(inner):
+                inner.extra_calls = []
+                inner._project_path = outer.target
+                inner._settings = {"ffmpeg": _FFMPEG_CFG}
+                inner._created_at = "2026-01-01T00:00:00"
+                inner._project_cfg = {"keep_media": False, "keep_audio": False,
+                                      "keep_blur_cache": False, "recent_limit": 10}
+                inner.controller = types.SimpleNamespace(
+                    timeline=object(), mark_saved=lambda: None,
+                    is_modified=lambda: modified,
+                    cfg={"project_suffix": ".timeline.json"})
+                inner.preview = types.SimpleNamespace(set_status=lambda *_a: None)
+
+            def _keep_media_for_kind(inner):
+                return False
+
+            def _keep_extra_beside_project(inner, project_path):
+                inner.extra_calls.append(project_path)
+                outer.order.append("extra")
+
+            def _autosave_path(inner):
+                return os.path.join(outer._tmp.name, "proj.autosave.json")
+
+            def _update_window_title(inner):
+                pass
+
+            def _remember_recent(inner, path):
+                pass
+
+            def _discard_autosave(inner):
+                pass
+
+        return _Dialog()
+
+    # 本題: 本体の保存でフックが呼ばれる (これが抜けていた)
+    def test_save_project_calls_the_extra_hook(self):
+        dialog = self._dialog()
+
+        self.assertTrue(dialog.save_project())
+
+        self.assertEqual(len(dialog.extra_calls), 1)
+        self.assertEqual(dialog.extra_calls[0], dialog._project_path)
+
+    # JSON を書く前に呼ぶ (控えを作ってから保存を確定する)
+    def test_hook_runs_before_the_json_is_written(self):
+        dialog = self._dialog()
+
+        dialog.save_project()
+
+        self.assertEqual(self.order, ["extra", "save"])
+
+    # 自動保存では呼ばない (60 秒ごとに ffmpeg を回さない)
+    def test_autosave_does_not_call_the_hook(self):
+        dialog = self._dialog()
+
+        dialog._on_autosave()
+
+        self.assertEqual(dialog.extra_calls, [])
+        self.assertEqual(self.order, ["save"])
+
+    # クリップ用 (既定の実装) は何もしないだけで例外にならない
+    def test_default_hook_is_a_no_op(self):
+        self.assertIsNone(
+            self._ted.TimelineEditorDialog._keep_extra_beside_project(
+                object(), self.target))
 
 
 if __name__ == "__main__":

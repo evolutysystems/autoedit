@@ -44,8 +44,15 @@ from ...modules import subtitle_generator
 from ...i18n import tr
 from ...services import config as services_config
 from ...settings.settings_window import save_settings
-from ...timeline import commands, compositor, crop, media_sidecar, project_io
-from ...timeline.builder import dedupe_recent, recent_path
+from ...timeline import (
+    commands,
+    compositor,
+    crop,
+    media_sidecar,
+    project_io,
+    subtitle_style,
+)
+from ...timeline.builder import recent_path
 from ...timeline.model import AudioClip, SubtitleClip
 from ...utils.logger import get_logger
 from ...version import __version__
@@ -107,6 +114,14 @@ class TimelineEditorDialog(QDialog):
         theme.install_window_background(self)
 
         self.controller = TimelineController(timeline, settings, parent=self)
+        # テロップトラックを最初から並べる (ver9 resolve13 §3.3 / §4.5)。
+        # 保存済みプロジェクトを開き直したときも同じ操作感にするため、
+        # 足りないぶんをここで補う。増えるのは空のトラックだけで、履歴へは積まない
+        # (Undo で消えない / 保存するまでプロジェクトファイルは変わらない)。
+        commands.ensure_initial_subtitle_tracks(
+            timeline, self.controller.cfg["subtitle_tracks"],
+            sub_color=(settings or {}).get("subtitle", {}).get(
+                "sub_subtitle_color", ""))
         ui_cfg = self.controller.cfg["ui"]
         self._project_cfg = self.controller.cfg["project"]
         # 保存 UI を出すか (アーカイブ用は素材が一時ファイルのため出さない / resolve7 §3-6)
@@ -686,19 +701,39 @@ class TimelineEditorDialog(QDialog):
     # ------------------------------------------------------------------
 
     # 右クリックメニューへ項目を足す (timeline_view から呼ばれる)
+    #
+    # 作れない理由があるときは**押せない項目として出す** (ver9 resolve14 §3.3)。
+    # 黙って項目ごと消すと「前はあったのに」が分からない (セクション追加で
+    # 同じ失敗をして ver9 resolve5 §4.6 で直した経緯がある)。
     def vertical_menu_actions(self, menu):
         if not self._can_make_vertical():
-            return
+            return              # そもそも対象外の画面 (既に縦・種別違い)
         clips = self._vertical_target_clips()
         if not clips:
-            return
+            return              # 選んでいないだけ (操作の問題なので出さない)
 
         menu.addSeparator()
         count = len(clips)
         label = (tr("このクリップから縦動画プロジェクトを作成...") if count == 1
                  else tr("選んだ {count} クリップから縦動画プロジェクトを作成...",
                          count=count))
-        menu.addAction(label, self._open_vertical_project)
+        reason = self._vertical_blocked_reason(clips)
+        action = menu.addAction(label + reason, self._open_vertical_project)
+        if reason:
+            action.setEnabled(False)
+
+    # 作れない理由 (空文字なら作れる / ver9 resolve14 §3.3)。
+    # 既定は「対象クリップの素材がすべて見つからない」場合だけ。
+    def _vertical_blocked_reason(self, clips):
+        if clips and not any(self._clip_media_exists(clip) for clip in clips):
+            return tr("（素材が見つかりません）")
+        return ""
+
+    # そのクリップの素材が実在するか
+    def _clip_media_exists(self, clip):
+        media = self.controller.timeline.media_by_id(
+            str(getattr(clip, "media_id", "") or ""))
+        return bool(media is not None and media.path and os.path.exists(media.path))
 
     # 縦動画にできる Timeline か。既に縦のものは対象外 (§10 #10)。
     #
@@ -744,6 +779,14 @@ class TimelineEditorDialog(QDialog):
             make_rebase=lambda: self._vertical_rebase(clips))
         dialog.exec()
         if dialog.saved_path():
+            # 「続きから」で開き直せるよう履歴へ積む (ver9 resolve14 追補)。
+            # 一覧が見るのは履歴と走査フォルダで、project_dir / 出力先が
+            # 空の設定では走査フォルダが無い。積まないと、元動画の隣へ出来た
+            # プロジェクトを画面から開けない (D&D だけになる)。
+            # 積み先はこの画面の種別ではなく常に recent: 作られるのは
+            # 縦の**クリップ用**プロジェクトで、アーカイブ用の画面から作っても
+            # 開くのはクリップ用タブの「続きから」だからである。
+            self._remember_recent(dialog.saved_path(), kind=project_io.KIND_CLIP)
             self.preview.set_status(
                 tr("縦動画プロジェクトを作成しました: {name}",
                    name=os.path.basename(dialog.saved_path())))
@@ -900,6 +943,8 @@ class TimelineEditorDialog(QDialog):
             # ぼかしの解析結果をプロジェクトの隣へ移す (ver5 resolve4 §5.12.3)。
             # JSON を書く前に行う = 更新した置き場 (cache / cache_abs) を保存に載せるため。
             self._keep_blur_cache_beside_project(target)
+        # 種別ごとの追加の控え (アーカイブ用はイントロカードの素 / ver9 resolve12 §3.1)
+        self._keep_extra_beside_project(target)
         try:
             # 初回作成時刻は引き継ぐ (上書きのたびに created_at が変わらないように)
             project_io.save(self.controller.timeline, target,
@@ -959,6 +1004,16 @@ class TimelineEditorDialog(QDialog):
         if not self._blur_tracks:
             return
         self.controller.execute(commands.SetBlurCache(cache_path, project_path=project_path))
+
+    # 種別ごとに「素材・音声・ぼかし以外で保存の隣へ残すもの」を控えるためのフック
+    # (ver9 resolve12 §3.1)
+    #
+    # クリップ用は残すものが無いため既定では何もしない。アーカイブ用だけが
+    # イントロカードの素を控える (archive_timeline_dialog で上書きする)。
+    # 自動保存からは呼ばない: 数秒とはいえ ffmpeg が走るため、60 秒ごとの
+    # 自動保存に載せると編集中に引っかかる。本体の保存のときだけでよい。
+    def _keep_extra_beside_project(self, project_path):
+        return
 
     # 正規化済み素材から音声だけを <プロジェクト名>.media/ へ残す (resolve9 §5.5-a)
     # 映像は -c:v copy で作られているため保存する必要が無く、音声だけで復元できる。
@@ -1110,16 +1165,12 @@ class TimelineEditorDialog(QDialog):
     # 最近使ったプロジェクトを setting.json へ積む (main_window の「編集の続き」に出す)
     # 種別ごとに積み先を分ける (クリップ用 = recent / アーカイブ用 = recent_archive)。
     # タブごとの一覧・コンボにその種別のものだけを並べるため (resolve9 §3-4)。
-    def _remember_recent(self, path):
+    # 積み方そのものは project_io.remember_recent にある (縦動画プロジェクトの
+    # 作成画面からも同じ積み方で呼ぶため / ver9 resolve14 追補)。
+    def _remember_recent(self, path, kind=None):
         try:
-            project_cfg = self._settings.setdefault("timeline", {}).setdefault("project", {})
-            key = ("recent_archive" if self._project_kind() == project_io.KIND_ARCHIVE
-                   else "recent")
-            # 区切り文字・大文字小文字の違いで同じプロジェクトを二重に積まない
-            # (既に入っている重複もここで畳まれる / resolve.md §9-8)
-            recent = dedupe_recent([path] + list(project_cfg.get(key) or []))
-            limit = max(int(self._project_cfg["recent_limit"]), 1)
-            project_cfg[key] = recent[:limit]
+            project_io.remember_recent(self._settings, path,
+                                       kind or self._project_kind())
             save_settings(self._settings)
         except Exception:  # noqa: BLE001 (履歴の保存に失敗しても編集は続けられる)
             _logger.warning("最近使ったプロジェクトの記録に失敗しました (処理は続行します)")
@@ -1532,15 +1583,28 @@ class _InspectorPanel(QWidget):
         self.text_edit.editing_finished.connect(self._on_text_changed)
         form.addRow(tr("字幕"), self.text_edit)
 
-        self.role_combo = QComboBox()
-        for label, value in ((tr(t), v) for t, v in _ROLE_CHOICES):
-            self.role_combo.addItem(label, value)
-        # activated = 利用者が選び直したときだけ (フォントコンボと同じ流儀)。
-        # currentIndexChanged だと、インスペクタの上でホイールを回した・矢印キーを
-        # 押しただけで役割変更コマンドが飛び、テロップが移動してしまう
-        # (ver9 resolve10 §2.4)。
-        self.role_combo.activated.connect(self._on_role_changed)
-        form.addRow(tr("役割"), self.role_combo)
+        # 役割はトラックが決める (ver9 resolve13 §3.6)。
+        # 「役割をサブへ変えて色を変えて別トラックへ移す」3 手をやめ、
+        # 「そのトラックへ置く」だけで済むようにするため、既定では出さない。
+        # 設定 role_control_enabled=true で従来の操作へ戻せる。
+        self.role_combo = None
+        self.track_label = None
+        if self._controller.cfg["subtitle_tracks"]["role_control_enabled"]:
+            self.role_combo = QComboBox()
+            for label, value in ((tr(t), v) for t, v in _ROLE_CHOICES):
+                self.role_combo.addItem(label, value)
+            # activated = 利用者が選び直したときだけ (フォントコンボと同じ流儀)。
+            # currentIndexChanged だと、インスペクタの上でホイールを回した・
+            # 矢印キーを押しただけで役割変更コマンドが飛び、テロップが移動して
+            # しまう (ver9 resolve10 §2.4)。
+            self.role_combo.activated.connect(self._on_role_changed)
+            form.addRow(tr("役割"), self.role_combo)
+        else:
+            # 代わりに「どのトラックに載っているか」を見せる。文字色と見た目の
+            # 出どころがここで分かるようにするため (読み取り専用)。
+            self.track_label = QLabel("")
+            theme.mark_note(self.track_label)
+            form.addRow(tr("トラック"), self.track_label)
 
         # フォントは名前の直接入力ではなく一覧から選ぶ (設定画面・字幕編集画面と同じ形式)。
         # 先頭の空項目は「設定のフォントに従う」= font 未指定を表す。
@@ -1739,8 +1803,11 @@ class _InspectorPanel(QWidget):
             self.info_label.setText(self._info_for(clip))
             if is_subtitle:
                 self.text_edit.setPlainText(clip.text.replace("\\N", "\n"))
-                index = self.role_combo.findData(clip.role)
-                self.role_combo.setCurrentIndex(max(index, 0))
+                if self.role_combo is not None:
+                    index = self.role_combo.findData(clip.role)
+                    self.role_combo.setCurrentIndex(max(index, 0))
+                if self.track_label is not None:
+                    self.track_label.setText(self._track_note(clip))
                 self._set_font(clip.font or "")
                 self.size_spin.setValue(float(clip.font_size or 0))
                 # 色は先頭 1 件の値を出す (複数選択で値が違っても「複数値」は持たない)
@@ -1750,6 +1817,21 @@ class _InspectorPanel(QWidget):
                 self._update_multi_note()
         finally:
             self._updating = False
+
+    # インスペクタへ出す「どのトラックに載っているか」(ver9 resolve13 §3.6)
+    #
+    # 役割コントロールを外した代わりに、見た目の出どころをここで見せる。
+    # 文字色は 個別 → トラック → 設定 の順で決まるため、どれが効いているかを添える。
+    def _track_note(self, clip):
+        track = self._controller.timeline.track_of_clip(clip.id)
+        if track is None:
+            return ""
+        if clip.color:
+            return tr("{track}（このテロップだけの色）", track=track.id)
+        color = subtitle_style.track_color(track)
+        if color:
+            return tr("{track}（文字色 {color}）", track=track.id, color=color)
+        return tr("{track}（文字色は設定に従う）", track=track.id)
 
     # フォントを選択状態にする。一覧に無い指定 (別 PC で作った案件・未導入のフォント)
     # は項目を足してから選ぶ。黙って「設定のフォント」へ戻すと指定が失われるため。
@@ -2047,7 +2129,8 @@ class _InspectorPanel(QWidget):
     # 移動するのは S1 / コメント用トラックに居るテロップだけで、利用者が増やした
     # トラック (S3 以降) へ置いたテロップはその場に残る (ver9 resolve10 §3.2)。
     def _on_role_changed(self):
-        if self._updating or not isinstance(self._clip, SubtitleClip):
+        if (self._updating or self.role_combo is None
+                or not isinstance(self._clip, SubtitleClip)):
             return
         result = self._controller.change_subtitle_role(
             self._clip.id, self.role_combo.currentData())

@@ -271,24 +271,135 @@ class MenuGateTest(unittest.TestCase):
             _Dialog(_timeline(archive=True),
                     kind=project_io.KIND_ARCHIVE)._can_make_vertical())
 
-    # アーカイブ用の画面は、元 VOD が無いときだけ出さないこと (resolve10 §5.4)
-    def test_archive_gate_needs_vod(self):
+    # アーカイブ用の画面は、元 VOD が無くても対象 (ver9 resolve14 §3.3)。
+    # 既定では素材を複製して自己完結させるため、元 VOD は要らない。
+    def _archive_dialog(self, timeline, settings=None):
         from src.gui.timeline import archive_timeline_dialog as module
 
-        def _dialog(timeline):
-            dialog = module.ArchiveTimelineDialog.__new__(module.ArchiveTimelineDialog)
-            dialog.controller = type("C", (), {"timeline": timeline})()
-            dialog._project_kind = lambda: project_io.KIND_ARCHIVE
-            return dialog
+        dialog = module.ArchiveTimelineDialog.__new__(module.ArchiveTimelineDialog)
+        dialog.controller = type("C", (), {"timeline": timeline})()
+        dialog._project_kind = lambda: project_io.KIND_ARCHIVE
+        dialog._settings = settings or {}
+        return dialog
 
-        self.assertTrue(_dialog(_timeline(archive=True))._can_make_vertical())
-
+    def _without_vod(self):
         gone = _timeline(archive=True)
         gone.source = dict(gone.source,
                            archive=dict(gone.source["archive"],
                                         vod_path="D:/does/not/exist.mp4"),
                            input_path="D:/does/not/exist.mp4")
-        self.assertFalse(_dialog(gone)._can_make_vertical())
+        return gone
+
+    def test_archive_gate_does_not_need_vod(self):
+        self.assertTrue(
+            self._archive_dialog(_timeline(archive=True))._can_make_vertical())
+        # 元 VOD が無くても対象のまま (複製して自己完結させるため)
+        self.assertTrue(self._archive_dialog(self._without_vod())._can_make_vertical())
+
+    # 張り替え方式を選んでいるときだけ、元 VOD が無いと理由を出す
+    def test_rebase_mode_reports_the_missing_vod(self):
+        rebase = {"vertical": {"crop": {"media_mode": "rebase"}}}
+        dialog = self._archive_dialog(self._without_vod(), rebase)
+        self.assertTrue(dialog._can_make_vertical())
+        self.assertIn("元動画", dialog._vertical_blocked_reason([]))
+        # 既定 (複製) では理由なし = そのまま作れる
+        self.assertEqual(
+            self._archive_dialog(self._without_vod())._vertical_blocked_reason([]), "")
+
+
+# 「続きから」の履歴 (ver9 resolve14 追補)
+#   ・作った縦プロジェクトが recent へ積まれること
+#   ・アーカイブ用の画面から作っても積み先は recent (recent_archive ではない)
+class RecentHistoryTest(unittest.TestCase):
+
+    # 履歴は os.path.abspath/normpath で書き方をそろえて積まれる。
+    # 突き合わせはその形で行うため、期待値もここで通しておく。
+    def _norm(self, path):
+        return os.path.normpath(os.path.abspath(path))
+
+    def test_remember_recent_pushes_to_the_front(self):
+        old = self._norm("work/a.timeline.json")
+        settings = {"timeline": {"project": {"recent": [old]}}}
+
+        self.assertTrue(
+            project_io.remember_recent(settings, "work/b.timeline.json"))
+
+        recent = settings["timeline"]["project"]["recent"]
+        self.assertEqual(recent, [self._norm("work/b.timeline.json"), old])
+
+    # 区切り文字・大文字小文字の違いで二重に積まない (resolve.md §9-8)
+    def test_remember_recent_dedupes(self):
+        settings = {"timeline": {"project": {
+            "recent": [self._norm("work/A.timeline.json")]}}}
+
+        project_io.remember_recent(settings, "work/a.timeline.json")
+
+        self.assertEqual(len(settings["timeline"]["project"]["recent"]), 1)
+
+    def test_remember_recent_respects_the_limit(self):
+        settings = {"timeline": {"project": {"recent_limit": 2, "recent": [
+            self._norm("work/a.timeline.json"),
+            self._norm("work/b.timeline.json")]}}}
+
+        project_io.remember_recent(settings, "work/c.timeline.json")
+
+        recent = settings["timeline"]["project"]["recent"]
+        self.assertEqual([os.path.basename(path) for path in recent],
+                         ["c.timeline.json", "a.timeline.json"])
+
+    def test_remember_recent_splits_by_kind(self):
+        settings = {}
+
+        project_io.remember_recent(settings, "work/a.archive.timeline.json",
+                                   project_io.KIND_ARCHIVE)
+
+        project_cfg = settings["timeline"]["project"]
+        self.assertEqual(len(project_cfg["recent_archive"]), 1)
+        self.assertNotIn("recent", project_cfg)
+
+    # 編集画面が作成後に履歴へ積むこと。アーカイブ用の画面でも積み先は recent
+    # (作られるのは縦のクリップ用プロジェクトで、開くのはクリップ用タブ)。
+    def test_editor_records_the_created_vertical_project(self):
+        from src.gui.timeline import timeline_editor_dialog as editor_module
+        from src.gui.timeline import vertical_project_dialog as vertical_module
+
+        created = self._norm("work/vod_vertical.timeline.json")
+
+        class _FakeDialog:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def exec(self):
+                return 1
+
+            def saved_path(self):
+                return created
+
+        dialog = editor_module.TimelineEditorDialog.__new__(
+            editor_module.TimelineEditorDialog)
+        dialog._settings = {}
+        dialog._project_kind = lambda: project_io.KIND_ARCHIVE
+        dialog._vertical_target_clips = lambda: [object()]
+        dialog._vertical_rebase = lambda _clips: None
+        dialog.controller = type("C", (), {"timeline": _timeline()})()
+        dialog.preview = type("P", (), {"set_status": lambda _self, _text: None})()
+
+        saved = []
+        original_save = editor_module.save_settings
+        original_dialog = vertical_module.VerticalProjectDialog
+        editor_module.save_settings = saved.append
+        vertical_module.VerticalProjectDialog = _FakeDialog
+        try:
+            dialog._open_vertical_project()
+        finally:
+            editor_module.save_settings = original_save
+            vertical_module.VerticalProjectDialog = original_dialog
+
+        project_cfg = dialog._settings["timeline"]["project"]
+        self.assertEqual(project_cfg["recent"], [created])
+        self.assertNotIn("recent_archive", project_cfg)
+        # setting.json へ書き戻すところまで (書かないと次の起動で消える)
+        self.assertEqual(len(saved), 1)
 
 
 if __name__ == "__main__":

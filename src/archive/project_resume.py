@@ -21,6 +21,7 @@ from ..timeline.builder import timeline_config
 from ..utils.logger import get_logger
 from ..version import __version__
 from . import clip_writer
+from . import intro_source
 from . import timeline_builder as archive_timeline
 
 _logger = get_logger(__name__)
@@ -176,9 +177,12 @@ def rebuild_prepared(timeline, media_dir=""):
             # このキーが無いため既定 (False/空) で補う。
             "marker": bool(entry.get("marker")),
             "marker_labels": [str(label) for label in (entry.get("marker_labels") or [])],
-            # イントロカードの素の控え (無ければ空文字 = 元 VOD から作る / §9-7)
+            # イントロカードの素の控え (無ければ空文字 = 元 VOD から作る / §9-7)。
+            # 控えは「セクション開始を担当する素材」の名前で持つ (ver9 resolve12 §3.2)。
+            # 統合セクションでは代表 (media_id) と開始を持つ素材が食い違うため、
+            # ここで取り違えるとカードの背景が無関係な位置の映像になる。
             "intro_source": clip_writer.existing_intro_source(
-                media_dir, str(entry.get("media_id", "") or "")),
+                media_dir, archive_timeline.intro_media_id(timeline, entry.get("index"))),
         })
     prepared.sort(key=lambda p: p["index"] if p["index"] is not None else 0)
     return prepared
@@ -335,6 +339,15 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
         # ③ 確定後の上書き保存 (クリップ用 _review_timeline と同じ扱い / 回答 Q6)
         _save_after_confirm(timeline, project_path, meta.get("created_at"))
 
+        # ③' イントロカードの素を補う (ver9 resolve12 §3.3)
+        #
+        # 元 VOD を手放したプロジェクトでは、テーマを入れてもカードの素が無く、
+        # カードだけが黙って省かれていた。テーマが入っているセクションに限り、
+        # その区間 ([開始 - buffer_sec, 開始]) だけを取り直して素を作る。
+        # 元 VOD が手元にある場合・テーマが無い場合は何も起きない (通信しない)。
+        _ensure_intro_sources(prepared, edited, timeline, settings, media_dir,
+                              workdir, ffmpeg_cfg, progress_cb)
+
         # ④ 書き出し (通常の切り抜きと同じ経路)
         return clip_writer.finish_clips(
             timeline.source.get("input_path", ""), settings, clip_settings, timeline,
@@ -399,6 +412,24 @@ def _log_recovery(stats):
 
 
 # 確定後の状態を上書き保存する (失敗しても書き出しは続ける)
+# 書き出しの直前にイントロカードの素を補う (ver9 resolve12 §3.3)。
+# 進捗は素材の復元 (〜0.55) と焼き込み (0.6〜) の隙間へ収める。
+# 補えなくても書き出しは続ける (カードが出ないだけで本編は出る)。
+def _ensure_intro_sources(prepared, edited, timeline, settings, media_dir,
+                          workdir, ffmpeg_cfg, progress_cb=None):
+    intro_progress = None
+    if progress_cb:
+        def intro_progress(ratio, label):
+            progress_cb(0.55 + min(max(float(ratio), 0.0), 1.0) * 0.05, label)
+    try:
+        intro_source.ensure_intro_sources(
+            prepared, edited, timeline, settings, media_dir=media_dir,
+            workdir=workdir, ffmpeg_cfg=ffmpeg_cfg, progress_cb=intro_progress)
+    except Exception:  # noqa: BLE001 (補えなくても書き出しは続ける)
+        _logger.warning("イントロカードの素を補えませんでした (書き出しは続けます)",
+                        exc_info=True)
+
+
 def _save_after_confirm(timeline, project_path, created_at):
     try:
         project_io.save(timeline, project_path,
@@ -408,11 +439,10 @@ def _save_after_confirm(timeline, project_path, created_at):
         _logger.warning("確定後のプロジェクト保存に失敗しました (処理は続行します)")
 
 
-# 一覧・画面から使う: プロジェクトが指す VOD のパス (存在しなくても記録値を返す)
+# 一覧・画面から使う: プロジェクトが指す VOD のパス (存在しなくても記録値を返す)。
+# 実体は timeline_builder にある (ver9 resolve12 §3.5)。ここは従来の呼び口を保つための委譲。
 def recorded_vod_path(timeline):
-    source = timeline.source or {}
-    archive = source.get("archive") or {}
-    return str(archive.get("vod_path", "") or source.get("input_path", "") or "")
+    return archive_timeline.recorded_vod_path(timeline)
 
 
 __all__ = [

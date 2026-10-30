@@ -332,6 +332,15 @@ class VerticalProjectDialog(QDialog):
             self._dest_path = path
             self.dest_label.setText(path)
 
+    # 複製しない素材のパス (ver9 resolve14 §3.1)
+    #
+    # ・クリップ用の元動画 … 利用者のファイルで消えないため参照したままでよい
+    # ・元 VOD           … media_mode="rebase" のときの張り替え先。10〜25GB あり、
+    #                      複製すると置き場が破綻する
+    def _keep_media_paths(self):
+        source = self._timeline.source or {}
+        return [str(source.get("input_path", "") or "")]
+
     def _on_create(self):
         if self._media is None:
             QMessageBox.warning(self, tr("作成できません"),
@@ -353,6 +362,15 @@ class VerticalProjectDialog(QDialog):
             vertical, warnings = vertical_builder.build(
                 self._timeline, [clip.id for clip in self._clips], self._layout(),
                 self._settings, close_gaps=self._cfg["close_gaps"], rebase=rebase)
+            # 素材を隣へ複製して自己完結させる (ver9 resolve14 §3.1)。
+            # これをしないと、元 VOD の自動整理や元プロジェクトの削除で
+            # 開けない縦プロジェクトになる。JSON を書く前に行い、
+            # 複製後のパスを保存へ載せる。
+            if self._cfg["keep_media"]:
+                with _busy_cursor():
+                    vertical_builder.copy_media_beside(
+                        vertical, self._dest_path, self._settings,
+                        skip_paths=self._keep_media_paths(), warnings=warnings)
             project_io.save(vertical, self._dest_path, generator="vertical",
                             project_path=self._dest_path)
         except Exception as e:            # noqa: BLE001 (画面へ集約通知)
