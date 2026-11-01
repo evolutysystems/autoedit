@@ -68,6 +68,12 @@
   ライセンス : BSD License
   全文       : colorama\LICENSE.txt
 
+[cryptography]
+  版         : 50.0.2
+  配布元     : https://cryptography.io/
+  ライセンス : Apache-2.0 OR BSD-3-Clause
+  全文       : cryptography\LICENSE / cryptography\LICENSE.APACHE / cryptography\LICENSE.BSD
+
 [ctranslate2]
   版         : 4.7.1
   配布元     : https://opennmt.net

@@ -19,6 +19,7 @@
   ],
   "python_extra": [
     "certifi",
+    "cryptography",
     "charset-normalizer",
     "librosa",
     "llvmlite",
