@@ -1578,7 +1578,9 @@ class _InspectorPanel(QWidget):
         # 字幕用の編集欄
         self.subtitle_widget = QWidget()
         form = QFormLayout(self.subtitle_widget)
-        form.setContentsMargins(0, 6, 0, 0)
+        # 上の余白は情報欄 (番号・開始・尺) と離すためのものだった。
+        # 字幕では情報欄を出さなくなったため 0 にして見出しの直下へ詰める。
+        form.setContentsMargins(0, 0, 0, 0)
         self.text_edit = _CommitOnFocusOutEdit()
         self.text_edit.setPlaceholderText(tr("字幕テキスト (改行できます)"))
         self.text_edit.setFixedHeight(80)
@@ -1786,6 +1788,7 @@ class _InspectorPanel(QWidget):
                 self.info_label.setText(
                     tr("Timeline のクリップ、またはプレビュー上の画像・字幕を選ぶと"
                     "ここに詳細が出ます。"))
+                self.info_label.setVisible(True)
                 self.subtitle_widget.setVisible(False)
                 self.overlay_widget.setVisible(False)
                 self.base_widget.setVisible(False)
@@ -1804,7 +1807,11 @@ class _InspectorPanel(QWidget):
                 self._show_base_zoom(clip)
             self.reset_position_button.setVisible(True)
             self.title_label.setText(self._title_for(clip))
-            self.info_label.setText(self._info_for(clip))
+            info = self._info_for(clip)
+            self.info_label.setText(info)
+            # 出す内容が無いときは欄ごと隠す。空の QLabel を残すと
+            # レイアウトに高さだけが残り、下の編集欄との間に隙間ができる。
+            self.info_label.setVisible(bool(info))
             if is_subtitle:
                 self.text_edit.setPlainText(clip.text.replace("\\N", "\n"))
                 if self.role_combo is not None:
@@ -1976,8 +1983,13 @@ class _InspectorPanel(QWidget):
                    "silence_cut": "本編クリップ",
                    "user_media": "追加メディア"}.get(origin, "クリップ"))
 
+    # インスペクタ上部の情報行を組む。
+    # 字幕 (テロップ) は番号・開始・尺を出さない (利用者要望 / 2026-11-01)。
+    # 空文字を返すと show_clip が情報欄ごと隠し、下の編集欄が上へ詰まる。
     def _info_for(self, clip):
         timeline = self._controller.timeline
+        if isinstance(clip, SubtitleClip):
+            return ""
         if isinstance(clip, AudioClip):
             start = clip.timeline_start(timeline)
             return tr("{id} / リンク: {link}\n"
