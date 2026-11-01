@@ -27,6 +27,7 @@ from ..modules import (
     watermark_overlay,
 )
 from ..settings.settings_window import resolve_fonts_dir
+from ..utils import stage_timer
 from ..utils.logger import get_logger
 from . import compositor
 from .builder import timeline_config
@@ -59,24 +60,37 @@ def render(timeline, context):
     fade_sec = (float(silence_cfg.get("fade_duration_sec", 0.05))
                 if silence_cfg.get("fade_enabled", False) else 0.0)
 
-    # ── Step 1: ベース映像 (OP / 本編 / ED / ギャップ)
-    base_path = _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec)
-    context.set_current_video_path(base_path)
-
-    # ── Step 1.5: ぼかしマスクの用意 (ver5 resolve2 §5.5.2)
+    # ── Step 1.5': ぼかしマスクの用意 (ver5 resolve2 §5.5.2)
     # 機能 OFF・指定なしなら None が返り、以降のコマンドは 1 文字も変わらない (R9)。
+    # 直結の判定 (条件 7) がマスクの有無を見るため、ベース構築より先に用意する。
     context.blur_mask_path = _prepare_blur_mask(timeline, context, settings)
 
+    # ── Step 1: ベース映像 (OP / 本編 / ED / ギャップ)
+    #
+    # 区間 1 件・字幕のみのクリップでは、ベース映像構築は
+    # 「素材を -ss/-t で切ってキャンバスへ正規化してエンコードする」だけで、
+    # 続く字幕焼き込みが同じ映像をもう一度エンコードする。1 パス省ける
+    # (resolve3 R3b)。条件を 1 つでも外したら従来どおりベースを作る。
+    direct = _direct_source(timeline, context, cfg, ffmpeg_cfg, fade_sec)
+    if direct is not None:
+        base_path = direct["input_path"]
+    else:
+        with stage_timer.timed("ベース"):
+            base_path = _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec)
+        context.set_current_video_path(base_path)
+
     # ── Step 2 / 3: オーバーレイ合成と字幕焼き込み
-    result_path = _render_overlays_and_subtitles(
-        timeline, context, base_path, cfg, ffmpeg_cfg)
+    with stage_timer.timed("焼き込み"):
+        result_path = _render_overlays_and_subtitles(
+            timeline, context, base_path, cfg, ffmpeg_cfg, direct=direct)
 
     # ベース映像は焼き込み先ができた時点で用済みになる
     # (docs/error/fromUser/resolve.md §6-7-3)。
     # 中間形式 (PCM 音声) のため本編と同じかそれ以上の大きさがあり、
     # 最後まで抱えているとピークが素材 1 本分ぶん余計に膨らむ。
     # ※ normalized.mp4 は Timeline の素材として参照され続けるため解放しない。
-    if result_path != base_path:
+    # 直結経路ではベース映像を作っていないため解放する物が無い (resolve3 R3b)
+    if direct is None and result_path != base_path:
         context.release_intermediate(os.path.basename(base_path))
 
     # ── Step 3.4: ぼかしが未適用のまま先へ進めない (§5.5.3)
@@ -99,6 +113,80 @@ def render(timeline, context):
 
     context.set_current_video_path(result_path)
     return result_path
+
+
+# ベース映像の構築を省けるかを判定し、省ける場合は焼き込み用の入力を組み立てる
+# (resolve3 R3b)。
+#
+# 戻り値 (省けるとき): {"input_path", "input_args", "pre_chains", "duration"}
+#   input_args : burn_subtitle の入力指定 (["-ss", …, "-i", 素材, "-t", …])
+#   pre_chains : ベースが行っていた正規化 (crop / zoom / scale+pad / fps / fade) を
+#                字幕より前へ入れるための 1 チェーン
+# 省けないときは None (= 従来どおり _render_base を通る)。
+#
+# 適用条件 (すべて満たすときだけ / 1 つでも外したら None):
+#   1 V1 のクリップが 1 本        2 本以上は PCM 中間 + demuxer 連結が A/V 同期対策として要る
+#   2 ギャップが無い              黒+無音の挿入が要らない
+#   3 オーバーレイのメディアが無い _composite 経路は多入力のため対象外
+#   4 素材が静止画でない / 音声を持つ / ミュートでない  無音生成の 2 入力構成を避ける
+#   5 音声ゲインが 0              -af の組み立てを増やさない
+#   6 ぼかしマスクが無い          ぼかしは pre_chains を既に使うため鎖が競合する
+#   7 timeline.render.direct_burn=true  既定 false (A/V 同期は過去の地雷のため様子見)
+def _direct_source(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
+    if not cfg["render"].get("direct_burn", False):
+        return None                                     # 条件 7
+    if context.blur_mask_path:
+        return None                                     # 条件 6
+
+    segments = _build_segments(timeline, cfg)
+    if len(segments) != 1 or segments[0]["kind"] == "gap":
+        return None                                     # 条件 1 / 2
+
+    layers = _build_layers(timeline, cfg)
+    if not layers or any(layer["kind"] == "media" for layer in layers):
+        return None                                     # 条件 3 (字幕が無いなら省く意味も無い)
+
+    clip = segments[0]["clip"]
+    media = timeline.media_by_id(clip.media_id)
+    if media is None or not media.path or not os.path.exists(media.path):
+        return None
+    if media.is_image() or not media.has_audio:
+        return None                                     # 条件 4
+    audio_clip = timeline.audio_clip_for(clip.id)
+    if audio_clip is None or audio_clip.muted:
+        return None                                     # 条件 4
+    if abs(audio_clip.gain_db) > 1e-6:
+        return None                                     # 条件 5
+
+    duration = segments[0]["duration"]
+    if duration <= _MIN_RENDER_SEC:
+        return None
+
+    # ベースが行っていた正規化をそのまま前段へ移す。
+    # 計算は compositor が唯一の置き場 (ver6 resolve3 §3.1) のため、ここでは呼ぶだけ。
+    profile = compositor.CanvasProfile.production(timeline, ffmpeg_cfg)
+    filters = compositor.base_filters(
+        timeline, media, clip, profile, fade_sec=fade_sec,
+        duration=duration, settings=context.settings)
+    pre_chains = ["[0:v]" + ",".join(filters) + "[vpre]"] if filters else None
+
+    _logger.info(
+        "ベース映像構築を省いて素材から直接焼き込みます (resolve3 R3b / %.3fs)", duration)
+    return {
+        "input_path": media.path,
+        "input_args": ["-ss", f"{clip.source_in:.3f}", "-i", media.path,
+                       "-t", _duration_arg(duration)],
+        "pre_chains": pre_chains,
+        "duration": duration,
+    }
+
+
+# context から中止コールバックを取り出す (resolve3 R9-5)
+#
+# PipelineContext は cancel_cb 属性を持たない呼び出し (CLI / テスト) もあるため、
+# getattr で拾う。無ければ None = 従来と完全に同一の挙動になる。
+def _cancel_cb(context):
+    return getattr(context, "cancel_cb", None)
 
 
 # ぼかしマスクを用意する (ver5 resolve2 §5.4 prepare)
@@ -215,6 +303,7 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
 
     total = sum(s["duration"] for s in segments) or 1.0
     on_progress = context.progress_subcallback("ベース映像構築")
+    cancel_cb = _cancel_cb(context)
 
     gap_count = sum(1 for s in segments if s["kind"] == "gap")
     _logger.info(
@@ -235,11 +324,12 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
 
             if segment["kind"] == "gap":
                 _render_gap(timeline, duration, part_path, ffmpeg_cfg, _part_progress,
-                            audio_codec)
+                            audio_codec, cancel_cb=cancel_cb)
             else:
                 _extract_clip(timeline, segment["clip"], part_path,
                               cfg, ffmpeg_cfg, _part_progress, fade_sec,
-                              duration, audio_codec, context.settings)
+                              duration, audio_codec, context.settings,
+                              cancel_cb=cancel_cb)
             part_paths.append(part_path)
             done += duration
 
@@ -247,6 +337,7 @@ def _render_base(timeline, context, cfg, ffmpeg_cfg, fade_sec=0.0):
         silence_cutter.concat_files(
             part_paths, output_path, ffmpeg_cfg,
             reencode=cfg["render"]["concat_reencode"],
+            cancel_cb=cancel_cb,
         )
         if on_progress is not None:
             on_progress(1.0, {})
@@ -284,8 +375,9 @@ def _verify_base_duration(output_path, total, segment_count, ffmpeg_cfg):
 # OP/ED や D&D 素材など規格が異なる場合だけ正規化チェーンを挟む (§8.2)。
 # duration: レンダリング上の尺 (フレームタイル化した値 / None ならモデルの尺をそのまま使う)
 # audio_codec: 中間ファイル用の音声コーデック (None なら setting.json の ffmpeg.audio_codec)
+# cancel_cb: 中止の問い合わせ (resolve3 R9-5)。省略時は従来と同一。
 def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_sec=0.0,
-                  duration=None, audio_codec=None, settings=None):
+                  duration=None, audio_codec=None, settings=None, cancel_cb=None):
     media = timeline.media_by_id(clip.media_id)
     if media is None or not media.path or not os.path.exists(media.path):
         raise TimelineError(
@@ -347,6 +439,7 @@ def _extract_clip(timeline, clip, out_path, cfg, ffmpeg_cfg, on_progress, fade_s
     ffmpeg_runner.execute(
         cmd, total_duration=duration, on_progress=on_progress,
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+        cancel_cb=cancel_cb,
     )
     return out_path
 
@@ -372,7 +465,9 @@ def _audio_filters(audio_clip):
 
 
 # ギャップ (削除で残した空白) を黒 + 無音のセグメントとして生成する (§8.2)
-def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress, audio_codec=None):
+# cancel_cb: 中止の問い合わせ (resolve3 R9-5)。省略時は従来と同一。
+def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress,
+                audio_codec=None, cancel_cb=None):
     fps = ffmpeg_runner.get_output_fps(ffmpeg_cfg)
     sample_rate = ffmpeg_cfg.get("audio_sample_rate", 48000)
     ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
@@ -392,6 +487,7 @@ def _render_gap(timeline, duration, out_path, ffmpeg_cfg, on_progress, audio_cod
     ffmpeg_runner.execute(
         cmd, total_duration=duration, on_progress=on_progress,
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+        cancel_cb=cancel_cb,
     )
     return out_path
 
@@ -428,6 +524,7 @@ def _finalize_base(timeline, context, video_path, ffmpeg_cfg):
         cmd, total_duration=total_duration,
         on_progress=context.progress_subcallback("最終化"),
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+        cancel_cb=_cancel_cb(context),
     )
     return output_path
 
@@ -457,7 +554,9 @@ def _build_layers(timeline, cfg):
 
 
 # オーバーレイと字幕を適用する。どちらも無ければベースをそのまま返す。
-def _render_overlays_and_subtitles(timeline, context, base_path, cfg, ffmpeg_cfg):
+# direct: ベースを省いた場合の入力情報 (resolve3 R3b)。None なら従来経路。
+def _render_overlays_and_subtitles(timeline, context, base_path, cfg, ffmpeg_cfg,
+                                   direct=None):
     layers = _build_layers(timeline, cfg)
     if not layers:
         _logger.info("オーバーレイ・字幕が無いため合成をスキップします")
@@ -467,7 +566,7 @@ def _render_overlays_and_subtitles(timeline, context, base_path, cfg, ffmpeg_cfg
     if not media_layers:
         # 字幕のみ = 既存の burn_subtitle をそのまま使う (既知の A/V 同期対策を共有する)
         return _burn_subtitles_only(timeline, context, base_path, layers[0]["clips"],
-                                    ffmpeg_cfg)
+                                    ffmpeg_cfg, direct=direct)
     return _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg)
 
 
@@ -481,10 +580,17 @@ def _write_ass(timeline, context, clips, name):
 
 
 # 字幕のみのケース: 既存 burn_subtitle をそのまま使う
-def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
+# direct: ベースを省いた場合の入力情報 (resolve3 R3b)。None なら従来と完全に同一。
+def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg, direct=None):
     used = [c for c in clips if c.use]
     if not used:
         _logger.info("使用する字幕が無いため焼き込みをスキップします")
+        if direct is not None:
+            # 直結したのに焼き込まない = 成果物が無い。従来経路でベースを作り直す。
+            base = _render_base(timeline, context, timeline_config(context.settings),
+                                ffmpeg_cfg)
+            context.set_current_video_path(base)
+            return base
         return base_path
 
     ass_path, items = _write_ass(timeline, context, used, "timeline_subtitle.ass")
@@ -499,6 +605,13 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
         items, eff_cfg, profile, "[vsub]", "")
     # ぼかしは字幕より**前**へ入れる (字幕やアイコンはぼかさない / R8)
     pre_chains, _label = _blur_chains(context, profile, "", "[vpre]")
+    input_args = None
+    if direct is not None:
+        # ベースを省いた経路では、ベースが行っていた正規化を前段へ入れる (resolve3 R3b)。
+        # ぼかしとは排他 (_direct_source の条件 6) のため鎖が競合しない。
+        input_args = direct["input_args"]
+        pre_chains = direct["pre_chains"]
+        total_duration = direct["duration"]
     subtitle_generator.burn_subtitle(
         base_path, ass_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -510,6 +623,8 @@ def _burn_subtitles_only(timeline, context, base_path, clips, ffmpeg_cfg):
         filter_script_path=context.allocate_intermediate("timeline_subtitle_vf.txt"),
         filter_script_chars=eff_cfg.get("comment_icon_filter_script_chars", 8000),
         pre_chains=pre_chains,
+        input_args=input_args,
+        cancel_cb=_cancel_cb(context),
     )
     if pre_chains:
         context.blur_applied = True
@@ -664,5 +779,6 @@ def _composite(timeline, context, base_path, layers, cfg, ffmpeg_cfg):
         cmd, total_duration=total_duration,
         on_progress=context.progress_subcallback("オーバーレイ・字幕合成"),
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+        cancel_cb=_cancel_cb(context),
     )
     return output_path

@@ -113,7 +113,9 @@
         "speaker_filter": "off",
         "speaker_threshold": 0.45,
         "speaker_core_ratio": 0.5,
-        "speaker_min_sec": 0.6
+        "speaker_min_sec": 0.6,
+        "whisper_model_cache": true,
+        "asr_audio_prefetch": true
     },
     "silence_cut": {
         "enabled": true,
@@ -147,7 +149,9 @@
         "min_duration_sec": 5.0,
         "verify_output": true,
         "correct_output": true,
-        "correct_tolerance_lu": 0.5
+        "correct_tolerance_lu": 0.5,
+        "measure_scope": "selected",
+        "measure_max_ranges": 20
     },
     "preview": {
         "enabled": true,
@@ -188,10 +192,11 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011_vertical.timeline.json"
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276_vertical.timeline.json"
             ],
             "archive_suffix": ".archive",
             "recent_archive": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2915684832.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json"
             ],
@@ -276,8 +281,8 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAUuAAAAFAAAC1MAAAUdAAAFLgAAADMAAAtTAAAFHQAAAAAAAAAADXAAAAUuAAAAMwAAC1MAAAUd",
-                "clip": "AdnQywADAAAAAAAA////+AAADW8AAAVvAAAELgAAARUAAAktAAAESAAAAAACAAAADXAAAAAAAAAAFwAADW8AAAVv"
+                "archive": "AdnQywADAAAAAAVsAAAAIQAAC5EAAAUqAAAFbAAAAEAAAAuRAAAFKgAAAAAAAAAADXAAAAVsAAAAQAAAC5EAAAUq",
+                "clip": "AdnQywADAAAAAATOAAAAAAAACc0AAAVtAAAEzgAAAB8AAAnNAAAFbQAAAAAAAAAADXAAAATOAAAAHwAACc0AAAVt"
             },
             "splitter_state": {
                 "archive": {
@@ -285,8 +290,8 @@
                     "upper": "AAAA/wAAAAEAAAACAAADBgAAAwUB/////wEAAAABAA=="
                 },
                 "clip": {
-                    "main": "AAAA/wAAAAEAAAACAAD0fgAAJ4gB/////wEAAAACAA==",
-                    "upper": "AAAA/wAAAAEAAAACAAAQ4AAAAPIB/////wEAAAABAA=="
+                    "main": "AAAA/wAAAAEAAAACAAADNQAAAdsB/////wEAAAACAA==",
+                    "upper": "AAAA/wAAAAEAAAACAAACdgAAAm8B/////wEAAAABAA=="
                 }
             },
             "window_min_visible_px": 120,
@@ -408,7 +413,8 @@
             "overlay_enabled": true,
             "intermediate_audio_codec": "pcm_s16le",
             "intermediate_container": ".mov",
-            "frame_quantize": true
+            "frame_quantize": true,
+            "direct_burn": false
         },
         "waveform": {
             "enabled": true,
@@ -432,6 +438,17 @@
         "output_fps": 60,
         "audio_sample_rate": 48000,
         "audio_bitrate": "256k",
+        "output_scale_mode": "source",
+        "output_fps_standards": [
+            24,
+            25,
+            30,
+            50,
+            60
+        ],
+        "intermediate_preset": "",
+        "intermediate_crf": "",
+        "quality_profile": "custom",
         "progress_timeout_sec": 600
     },
     "vertical": {
@@ -460,7 +477,9 @@
             "close_gaps": true,
             "keyframe_window_sec": 30.0,
             "media_mode": "copy",
-            "keep_media": true
+            "keep_media": true,
+            "carry_subtitle_tracks": true,
+            "apply_to_all_media": true
         }
     },
     "logging": {
@@ -528,7 +547,8 @@
                     "laugh_word_point": 1
                 },
                 "normalize_weights": true
-            }
+            },
+            "feature_mode": "single_pass"
         },
         "markers": {
             "enabled": true,
@@ -553,6 +573,11 @@
                 "allow_quality_fallback": false
             }
         },
+        "estimate": {
+            "sec_per_content_sec": 1.06,
+            "fixed_sec": 60,
+            "sec_per_clip": 8
+        },
         "clip_pipeline": {
             "silence_cut": true,
             "subtitle_review": true,
@@ -564,7 +589,8 @@
             "enabled": true,
             "opening_ending": true,
             "keep_individual": false,
-            "combined_suffix": "combined"
+            "combined_suffix": "combined",
+            "reencode": false
         },
         "intro_card": {
             "enabled": true,

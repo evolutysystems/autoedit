@@ -681,6 +681,9 @@ def timeline_config(settings):
             # 部品の尺を絶対フレーム番号の差で決める (丸め誤差を累積させない)。
             # false にすると従来どおりモデルの秒をそのまま -t へ渡す。
             "frame_quantize": bool(render.get("frame_quantize", True)),
+            # 区間 1 件のクリップでベース映像の構築を省き、素材から直接焼き込む
+            # (quality resolve3 R3b)。A/V 同期に関わるため既定は false (§13-5)。
+            "direct_burn": bool(render.get("direct_burn", False)),
         },
         "media": media_probe.media_config(settings),
     }

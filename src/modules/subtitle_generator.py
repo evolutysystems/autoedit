@@ -578,6 +578,38 @@ def wrap_lines(text, min_line_length, max_line_length, engine="budoux", measure=
 
 # faster-whisper による音声認識でテキストタイムラインを生成する TextSource 実装
 # 参照元 ../StreamPipeline/dev と同一エンジン (faster-whisper) を採用
+# Whisper モデルのプロセス内キャッシュ (resolve3 R6)
+#
+# large-v3 は読み込みに 7.5 秒かかり、クリップ数ぶん繰り返すと丸ごと無駄になる。
+# (モデル名, device, compute_type) ごとに 1 つだけ作って使い回す。
+# 別設定のモデルは抱えない (int8 でも約 1.5 GB あるためメモリ 1 本ぶんに保つ)。
+_model_cache = {}
+
+
+# キャッシュを使ってモデルを得る (resolve3 R6)
+# use_cache=False のときは従来どおり毎回構築する (切り戻し経路)。
+def _get_model(whisper_model_cls, key, use_cache):
+    model_name, device, compute_type = key
+    if not use_cache:
+        return whisper_model_cls(model_name, device=device, compute_type=compute_type)
+    model = _model_cache.get(key)
+    if model is not None:
+        _logger.info("Whisper モデルを再利用します (%s / %s / %s)", *key)
+        return model
+    model = whisper_model_cls(model_name, device=device, compute_type=compute_type)
+    _model_cache.clear()        # 別設定のモデルは抱えない
+    _model_cache[key] = model
+    return model
+
+
+# モデルキャッシュを解放する (resolve3 R6)
+# 書き出し完了時・設定保存時に呼ぶ。保持し続けるとメモリを占有したままになる。
+def release_models():
+    if _model_cache:
+        _logger.info("Whisper モデルキャッシュを解放します (%d 件)", len(_model_cache))
+    _model_cache.clear()
+
+
 class WhisperTextSource(TextSource):
 
     # 設定 (subtitle セクション) から認識パラメータを取り込む (ハードコード回避)
@@ -616,6 +648,18 @@ class WhisperTextSource(TextSource):
         self._hotwords = build_hotwords(subtitle_settings)
         # 行の折り返しに使う物差し (G5)。None なら文字数で折る。
         self._measure = None
+        # モデルをプロセス内で使い回すか (resolve3 R6)
+        self._use_model_cache = bool(subtitle_settings.get("whisper_model_cache", True))
+        # 認識の進捗通知 (resolve3 R9-4)。None なら従来どおり何も通知しない。
+        self._progress = None
+
+    # 認識の進捗を通知する (resolve3 R9-4)
+    #
+    # faster-whisper は進捗を返さないが、セグメントを取り出すたびに
+    # 「どこまで認識したか」(seg.end) が分かるため、これを比率にする。
+    # callback は Callable[[float], None] (0.0〜1.0)。
+    def set_progress(self, callback):
+        self._progress = callback
 
     # 認識前にドメイン知識を注入する (B1)
     # vod_title / vod_game は Twitch API の取得値 (切り抜き経路)。
@@ -653,11 +697,17 @@ class WhisperTextSource(TextSource):
     # モデル構築〜デコードを実行し [{"start", "end", "text"}] を返す
     def _recognize(self, whisper_model_cls, input_path, language, device, compute_type):
         _logger.info("音声認識実行 (device=%s, compute_type=%s)", device, compute_type)
-        model = whisper_model_cls(self._model_name, device=device, compute_type=compute_type)
-        segments, _info = self._transcribe(model, input_path, language)
+        # モデルはプロセス内で使い回す (resolve3 R6)
+        model = _get_model(whisper_model_cls,
+                           (self._model_name, device, compute_type),
+                           self._use_model_cache)
+        segments, info = self._transcribe(model, input_path, language)
+        # 進捗の分母 (認識対象の尺)。取れなければ進捗は通知しない (resolve3 R9-4)。
+        total_sec = float(getattr(info, "duration", 0.0) or 0.0)
 
         timeline = []
         for seg in segments:
+            self._notify_progress(seg, total_sec)
             text = seg.text.strip()
             if self._remove_fillers:
                 text = self._strip_fillers(text)
@@ -684,8 +734,27 @@ class WhisperTextSource(TextSource):
                 entry["words"] = words
             timeline.append(entry)
 
+        # 認識が終わったことを 100% として通知する (resolve3 R9-4)
+        if self._progress is not None:
+            self._notify(1.0)
         _logger.info("音声認識完了 (%d セグメント)", len(timeline))
         return timeline
+
+    # セグメントの終了時刻から認識の進捗を通知する (resolve3 R9-4)
+    def _notify_progress(self, seg, total_sec):
+        if self._progress is None or total_sec <= 0:
+            return
+        end = getattr(seg, "end", None)
+        if end is None:
+            return
+        self._notify(min(1.0, max(0.0, float(end) / total_sec)))
+
+    # 進捗コールバックを安全に呼ぶ (通知側の例外で認識を落とさない)
+    def _notify(self, ratio):
+        try:
+            self._progress(ratio)
+        except Exception:  # noqa: BLE001 (進捗通知の失敗で認識を壊さない)
+            _logger.exception("認識進捗コールバックで例外発生")
 
     # セグメントの発話実時間(先頭語start〜末尾語end)を返す (対策A)
     # 単語タイムスタンプが無い/取得不能な場合はセグメント境界へフォールバックする
@@ -1382,10 +1451,15 @@ def _format_ass_range(start, end):
 # これにより mux 時の "Application provided duration ... is invalid" (EINVAL=-22) と
 # vsync による大量フレーム脱落 (drop) を回避する。
 # CFR 化は fps フィルタ (実PTS基準) で行い、映像と音声の同期を保つ (resolve 20260719 対策A)。
+# input_args: 入力の前へ置く引数 (["-ss","12.300","-i",src,"-t","180.000"] など /
+#   resolve3 R3b)。None なら従来と完全に同一のコマンドになる。
+#   ベース映像を作らず素材から直接焼き込むときに使う。
+# cancel_cb: 中止の問い合わせ (resolve3 R9-5)。省略時は従来と同一。
 def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
                   total_duration=0.0, on_progress=None, target_size=None,
                   fonts_dir=None, extra_chains=None, filter_script_path=None,
-                  filter_script_chars=0, pre_chains=None, pre_out_label="[vpre]"):
+                  filter_script_chars=0, pre_chains=None, pre_out_label="[vpre]",
+                  input_args=None, cancel_cb=None):
     # subtitles フィルタは2段階エスケープに従う (resolve 20260630 resolve2.md 対策A):
     #   ・シングルクォートでフィルタグラフ階層(空白/カンマ)を保護し、内側の '\' を下位へ通す
     #   ・フィルタ内オプション階層では ':' がなお区切り文字のため '\:' でエスケープする
@@ -1462,12 +1536,15 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
                          len(filter_spec), filter_script_path)
         except OSError as e:
             _logger.warning("フィルタスクリプトを書けないため直接指定します: %s", e)
+    # 入力の指定 (resolve3 R3b)。input_args を渡すと素材を直接読み、区間も切る。
+    # 省略時は従来どおり input_path を 1 本読む = コマンドが 1 文字も変わらない。
+    input_part = list(input_args) if input_args else ["-i", input_path]
     cmd = [
         ffmpeg,
         "-y",
         "-hide_banner",
         "-fflags", "+genpts",          # 欠落PTSを再生成して読み込む
-        "-i", input_path,
+        *input_part,
         *filter_args,
         "-af", "aresample=async=1:first_pts=0",  # 音声を実時刻・先頭0基準で保持し同期維持
         *ffmpeg_runner.build_encode_options(ffmpeg_settings),
@@ -1475,7 +1552,8 @@ def burn_subtitle(input_path, subtitle_path, output_path, ffmpeg_settings,
         "-r", str(fps),                # 出力フレームレート (setting.json: ffmpeg.output_fps)
         output_path,
     ]
-    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress,
+                          cancel_cb=cancel_cb)
     return output_path
 
 
@@ -1767,6 +1845,9 @@ def run(context):
     canvas_width = int(profile["width"]) if profile else 1920
     canvas_height = int(profile["height"]) if profile else 1080
     target_size = (canvas_width, canvas_height) if is_portrait else None
+    # テロップの絶対 px が前提にしている基準キャンバスと、実キャンバスへの換算倍率
+    # (resolve3 R2 の付帯対応)。素材等倍で 1080p 未満になっても見た目が相似になる。
+    ref_width, ref_height, canvas_scale = reference_canvas(profile)
 
     # テキストソース解決 (subtitle.engine に応じた音声認識エンジン)
     # 実効字幕設定を渡し、縦動画では音声認識の改行文字数(10〜15)を反映する。
@@ -1824,17 +1905,24 @@ def run(context):
         _logger.info("使用するテロップが無いため焼き込みをスキップ")
         return context.current_video_path()
 
-    # ASS の PlayRes を出力キャンバス寸法に一致させる (縦=1080x1920 / 横=1920x1080)
+    # ASS の PlayRes は**基準キャンバス**に合わせる (resolve3 R2 の付帯対応)。
+    #
+    # font_size / margin / outline_width は絶対 px で 1080p を前提に調整された値である。
+    # PlayRes を実キャンバス (素材等倍) に合わせると、720p では文字が 1.5 倍になる。
+    # PlayRes を基準に固定すれば libass が実フレーム寸法へ相似変換するため、
+    # 1080p と完全に相似な見た目になる (編集画面のプロキシと同じ手口)。
+    # 等倍・拡大していない場合 (1080p 以上) は基準 = 実キャンバスで従来と同一の ASS。
     build_subtitle_file(
         timeline, font_profile, subtitle_path,
-        video_width=canvas_width, video_height=canvas_height,
+        video_width=ref_width, video_height=ref_height,
         # コメントの背景 (角丸の箱) を出す (ver3 resolve11 §5.6-3)
         subtitle_cfg=subtitle_cfg,
     )
-    # コメントアイコンを字幕の上へ重ねる (対象が無ければコマンドは従来と同一)
+    # コメントアイコンを字幕の上へ重ねる (対象が無ければコマンドは従来と同一)。
+    # 配置は基準キャンバスで計算し、結果へ scale を掛ける (compositor.icon_chains と同じ)。
     icon_chains, _icon_count, _icon_groups = comment_decor.build_icon_chains(
-        timeline, subtitle_cfg, canvas_width, canvas_height,
-        in_label="[vsub]", out_label="")
+        timeline, subtitle_cfg, ref_width, ref_height,
+        in_label="[vsub]", out_label="", scale=canvas_scale)
     burn_subtitle(
         input_path, subtitle_path, output_path, ffmpeg_cfg,
         total_duration=total_duration,
@@ -1849,6 +1937,61 @@ def run(context):
     )
     context.set_current_video_path(output_path)
     return output_path
+
+
+# 出力プロファイルから (基準幅, 基準高, 換算倍率) を返す (resolve3 R2 の付帯対応)
+#
+# 基準キャンバス = テロップの絶対 px が前提にしている寸法 (既定 1920x1080)。
+# output_profile が reference_* を持たない古い呼び出しでは実キャンバスをそのまま返す
+# = 従来と完全に同一の挙動になる。
+def reference_canvas(profile):
+    cfg = profile or {}
+    width = int(cfg.get("width") or 1920)
+    height = int(cfg.get("height") or 1080)
+    ref_w = int(cfg.get("reference_width") or width)
+    ref_h = int(cfg.get("reference_height") or height)
+    try:
+        scale = float(cfg.get("scale") or 0.0)
+    except (TypeError, ValueError):
+        scale = 0.0
+    if scale <= 0.0:
+        scale = height / float(ref_h) if ref_h > 0 else 1.0
+    return ref_w, ref_h, scale
+
+
+
+# プレビューの初回再生ソースを用意する (resolve3 R8)
+#
+# subtitle.asr_audio_prefetch=true (既定) なら従来どおり今ここで作る。
+# false のときは作り方だけを context へ預け、初回再生時に 1 回だけ作らせる。
+# 預け先 (set_asr_audio_builder) が無い context では必ず今作る = 従来と同一。
+def _prepare_asr_audio(context, keep_segments, eff_cfg, ffmpeg_cfg):
+    source_path = context.current_video_path()
+
+    if not eff_cfg.get("asr_audio_prefetch", True):
+        setter = getattr(context, "set_asr_audio_builder", None)
+        if callable(setter):
+            setter(lambda dest: silence_cutter.extract_audio_segments(
+                source_path, keep_segments, dest, ffmpeg_cfg))
+            _logger.info("プレビュー音声は初回再生まで作りません (asr_audio_prefetch=false)")
+            return
+
+    audio_path = context.allocate_intermediate("asr_audio.m4a")
+    try:
+        silence_cutter.extract_audio_segments(
+            source_path, keep_segments, audio_path, ffmpeg_cfg,
+            on_progress=context.progress_subcallback("プレビュー音声を準備中…"),
+        )
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
+    except AutoEditError:
+        _logger.exception("プレビュー用音声の抽出に失敗しました (字幕生成は続行します)")
+        return
+    setter = getattr(context, "set_asr_audio_path", None)
+    if callable(setter):
+        setter(audio_path)
+
 
 
 # ==================================================================
@@ -2487,27 +2630,30 @@ def recognize_for_timeline(context, keep_segments):
         prompt_setter(eff_cfg,
                       vod_title=getattr(context, "vod_title", "") or "",
                       vod_game=getattr(context, "vod_game", "") or "")
+    # 認識の進捗を通知させる (resolve3 R9-4)。
+    # faster-whisper は進捗を返さないが、セグメントの終了時刻で「どこまで認識したか」が
+    # 分かる。これで数分の無反応区間が消える。
+    progress_setter = getattr(text_source, "set_progress", None)
+    if callable(progress_setter):
+        notify = context.progress_subcallback("文字起こし")
+        progress_setter(lambda ratio: notify(ratio, {}))
 
     # ── プレビューの初回再生ソース用に、残す区間の音声を連結しておく (§6.4-5)
     # 認識には使わない (認識は素材そのままに対して行う / 20260812 resolve2.md §4)。
     # 失敗してもプレビューが都度生成へ切り替わるだけなので、字幕は作り続ける。
-    audio_path = context.allocate_intermediate("asr_audio.m4a")
-    try:
-        silence_cutter.extract_audio_segments(
-            context.current_video_path(), keep_segments, audio_path, ffmpeg_cfg,
-            on_progress=context.progress_subcallback("プレビュー音声を準備中…"),
-        )
-    except AutoEditError:
-        _logger.exception("プレビュー用音声の抽出に失敗しました (字幕生成は続行します)")
-    else:
-        setter = getattr(context, "set_asr_audio_path", None)
-        if callable(setter):
-            setter(audio_path)
+    #
+    # asr_audio_prefetch=false のときは**作らず**、「どう作るか」だけを context へ預ける
+    # (resolve3 R8)。プレビューを触らない利用者には丸ごと無駄になるためである
+    # (実測 41 秒)。預け先が無い呼び出しでは従来どおり先に作る。
+    _prepare_asr_audio(context, keep_segments, eff_cfg, ffmpeg_cfg)
 
     # ── 音声認識 (素材そのまま = 無音カット前に対して行う / 20260812 resolve2.md §4)
     try:
         timeline_items = text_source.extract(
             context.current_video_path(), eff_cfg.get("language", "ja"))
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
     except Exception:  # noqa: BLE001 (認識失敗で処理全体を止めない / §10)
         _logger.exception("音声認識に失敗したため字幕を作成しません")
         return [], eff_cfg

@@ -30,6 +30,9 @@ def detect_silence(input_path, noise_threshold_db, min_duration_sec, ffmpeg_sett
         ffmpeg,
         "-hide_banner",
         "-i", input_path,
+        # 音声解析に映像の復号は不要 (resolve3 R4)。
+        # 出力は -f null で捨てており、使うのは stderr のログだけなので結果は変わらない。
+        "-vn",
         "-af", f"silencedetect=noise={noise_threshold_db}dB:d={min_duration_sec}",
         "-f", "null",
         "-",
@@ -54,6 +57,13 @@ def detect_silence(input_path, noise_threshold_db, min_duration_sec, ffmpeg_sett
 
     # silencedetect は stderr に出力する
     return _parse_silence_log(result.stderr)
+
+
+# silencedetect ログから (開始秒, 終了秒) のリストを構築する公開入口 (resolve3 R5)
+# 全長 1 パス解析 (archive/features.scan_audio) が同じログ形式を読むため、
+# 解析の規則を 2 か所へ書かずにここへ寄せる。
+def parse_silence_log(stderr_text):
+    return _parse_silence_log(stderr_text)
 
 
 # silencedetect ログから (開始秒, 終了秒) のリストを構築する
@@ -337,7 +347,8 @@ def cut_and_concat_batched(input_path, keep_segments, output_path, ffmpeg_settin
 
 # 複数の中間動画を concat デマルチプレクサ (ファイルリスト方式) で1本に結合する。
 # reencode=False のときはストリームコピー (高速・劣化なし) で結合する。
-def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False):
+def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False,
+                  total_duration=0.0, on_progress=None, cancel_cb=None):
     if not batch_paths:
         raise InputError(tr("結合対象のバッチが存在しません"))
 
@@ -371,7 +382,11 @@ def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False):
 
         ffmpeg_runner.execute(
             cmd,
+            # 結合の進捗を呼び出し側へ流す (resolve3 R9-2)。省略時は従来と同一。
+            total_duration=total_duration,
+            on_progress=on_progress,
             progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_settings),
+            cancel_cb=cancel_cb,
         )
     finally:
         if os.path.exists(list_path):
@@ -382,8 +397,13 @@ def _concat_demux(batch_paths, output_path, ffmpeg_settings, reencode=False):
 # 複数の中間動画を 1 本へ連結する公開エントリ (ver3 renderer から再利用するための薄い委譲)
 # 連結時の既知対策 (+genpts / avoid_negative_ts / max_interleave_delta) を共有するため、
 # 新規に書き直さず _concat_demux をそのまま使う (resolve.md §2.5)。
-def concat_files(paths, output_path, ffmpeg_settings, reencode=False):
-    return _concat_demux(paths, output_path, ffmpeg_settings, reencode=reencode)
+# total_duration / on_progress / cancel_cb は省略可 (resolve3 R1 / R9-2)。
+# 省略時は従来と完全に同一の挙動になる。
+def concat_files(paths, output_path, ffmpeg_settings, reencode=False,
+                 total_duration=0.0, on_progress=None, cancel_cb=None):
+    return _concat_demux(paths, output_path, ffmpeg_settings, reencode=reencode,
+                         total_duration=total_duration, on_progress=on_progress,
+                         cancel_cb=cancel_cb)
 
 
 # フィルタグラフを一時ファイルへ書き出しパスを返す

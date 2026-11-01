@@ -27,6 +27,38 @@ _SOURCE_NAME_RE = re.compile(r"^(?:vod_\d+\.mp4|chat_\d+\.json)$")
 INTRO_SOURCE_SUFFIX = "_intro.mp4"
 
 
+# 書き出し時間の目安を返す (resolve3 R13)
+#
+# 書き出し対象の尺は top_n x window_sec で固定され、VOD の長さに依存しない。
+# 利用者からはセクション数しか見えないため、何分ぶんを書き出すのか分からなかった。
+#
+# 係数は setting.json に持つ (機械によって 2 倍以上変わるためハードコードしない)。
+#   archive.estimate.sec_per_content_sec : 尺 1 秒あたりの秒数 (既定 1.06)
+#   archive.estimate.fixed_sec           : 尺に依存しない固定費 (既定 60)
+#   archive.estimate.sec_per_clip        : クリップ 1 本あたりの固定費 (既定 8)
+# 戻り値: 想定秒数 (0 以上)。係数が壊れていても負にはしない。
+def estimate_export_sec(settings, content_sec, clip_count):
+    cfg = (settings or {}).get("archive", {}).get("estimate", {})
+    if not isinstance(cfg, dict):
+        cfg = {}
+    per_sec = _coerce_float(cfg.get("sec_per_content_sec"), 1.06)
+    fixed = _coerce_float(cfg.get("fixed_sec"), 60.0)
+    per_clip = _coerce_float(cfg.get("sec_per_clip"), 8.0)
+    total = (max(float(content_sec or 0.0), 0.0) * per_sec
+             + fixed
+             + max(int(clip_count or 0), 0) * per_clip)
+    return max(total, 0.0)
+
+
+# 値を float へ寄せる (欠落・不正は既定へ / resolve3 R13)
+def _coerce_float(value, default):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number >= 0 else default
+
+
 # src/settings ディレクトリの絶対パスを返す (work_dir/トークン等の相対解決の基準)。
 # settings_window.SETTINGS_DIR と同一だが、PySide 依存を避けるため独立に算出する。
 def _settings_dir():

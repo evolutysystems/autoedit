@@ -268,6 +268,65 @@ def probe_dimensions(input_path, ffmpeg_settings):
     return width, height
 
 
+# 結合可否の判定に使う主要ストリーム情報を ffprobe で取る (resolve3 R1)
+#
+# concat デマルチプレクサのストリームコピーは「同じコーデック・同じ規格」が前提で、
+# 違う物を繋ぐと再生できない成果物になる。繋ぐ前にここで必ず確かめる。
+# 戻り値: {"v_codec","width","height","pix_fmt","fps","a_codec","sample_rate","channels"}
+#   取得できない項目は None。probe 自体の失敗は FFmpegError を送出する。
+# fps は r_frame_rate の文字列をそのまま持つ (60/1 と 60000/1001 を同一とみなさない)。
+def probe_stream_params(input_path, ffmpeg_settings):
+    _ensure_probeable(input_path)
+    ffprobe = get_ffprobe_exe(ffmpeg_settings)
+    # 映像と音声を 1 回の呼び出しで取る (部品数ぶん ffprobe を回すため回数を増やさない)
+    cmd = [
+        ffprobe,
+        "-v", "error",
+        "-show_entries",
+        "stream=codec_type,codec_name,width,height,pix_fmt,r_frame_rate,"
+        "sample_rate,channels",
+        "-of", "json",
+        input_path,
+    ]
+    _logger.debug("ffprobe(ストリーム規格) 実行: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=no_window_creationflags(),
+        )
+    except FileNotFoundError as e:
+        raise FFmpegError(tr("ffprobe 実行に失敗: {error}", error=e)) from e
+
+    if result.returncode != 0:
+        raise _probe_failure(cmd, input_path, result)
+
+    try:
+        streams = json.loads(result.stdout).get("streams", []) or []
+    except json.JSONDecodeError as e:
+        raise FFmpegError(tr("ffprobe 出力解析に失敗: {error}", error=e)) from e
+
+    video = next((st for st in streams if st.get("codec_type") == "video"), {})
+    audio = next((st for st in streams if st.get("codec_type") == "audio"), {})
+    return {
+        "v_codec": video.get("codec_name"),
+        "width": _probe_int(video.get("width")),
+        "height": _probe_int(video.get("height")),
+        "pix_fmt": video.get("pix_fmt"),
+        "fps": video.get("r_frame_rate"),
+        "a_codec": audio.get("codec_name"),
+        "sample_rate": _probe_int(audio.get("sample_rate")),
+        "channels": _probe_int(audio.get("channels")),
+    }
+
+
+# ffprobe の値を int へ寄せる (欠落・不正は None / resolve3 R1)
+def _probe_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # FFmpeg コマンドから出力先 (最後の引数) のフォルダを取り出す。
 # 容量不足を報告するとき「どこが足りないのか」を示すために使う。
 # 推定できなければ現在の作業フォルダを返す (空きの桁が分かれば用は足りる)。
@@ -283,12 +342,15 @@ def _output_path_of(command):
 # 進捗通知付きで FFmpeg コマンドを実行する
 # 失敗時は FFmpegError を送出
 # progress_timeout_sec : 無進捗タイムアウト秒数 (0 以下で監視無効)
-def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=0):
+# cancel_cb            : 中止の問い合わせ (resolve3 R9-5)。省略時は従来と同一。
+def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=0,
+            cancel_cb=None):
     returncode, stderr_tail = run_ffmpeg_progress(
         command,
         total_duration=total_duration,
         on_progress=on_progress,
         progress_timeout_sec=progress_timeout_sec,
+        cancel_cb=cancel_cb,
     )
     if returncode != 0:
         _logger.error("FFmpeg 失敗 (code=%s): %s", returncode, stderr_tail)
@@ -313,12 +375,14 @@ def execute(command, total_duration=0.0, on_progress=None, progress_timeout_sec=
 # execute と同じだが stderr の末尾も返す (docs/quality/resolve1.md §4.3 F13)
 # loudnorm の測定 JSON のように「成功時の stderr を読みたい」場合に使う。
 # 失敗時の扱い (例外・容量不足の判定) は execute と完全に同一。
-def execute_capture(command, total_duration=0.0, on_progress=None, progress_timeout_sec=0):
+def execute_capture(command, total_duration=0.0, on_progress=None, progress_timeout_sec=0,
+                    cancel_cb=None):
     returncode, stderr_tail = run_ffmpeg_progress(
         command,
         total_duration=total_duration,
         on_progress=on_progress,
         progress_timeout_sec=progress_timeout_sec,
+        cancel_cb=cancel_cb,
     )
     if returncode != 0:
         _logger.error("FFmpeg 失敗 (code=%s): %s", returncode, stderr_tail)
@@ -365,6 +429,10 @@ def audio_bitrate_options(ffmpeg_settings, audio_codec=None):
 # 音声を非圧縮にするのは、AAC のエンコーダ遅延 (1024 サンプル = 21.3ms) が部品ごとに
 # 尺へ乗り、concat デマルチプレクサでの連結時に部品数ぶん累積するためである。
 # 最終出力は焼き込み (または最終化) の 1 回だけ AAC 化されるので、遅延も 1 回しか乗らない。
+#
+# 映像の preset / crf も中間用の値を見る (quality resolve3 R3a)。
+# 中間物は直後に焼き込みで再エンコードされるため、最終出力と同じ preset を使う必要がない。
+# intermediate_preset / intermediate_crf が空のときは従来と完全に同一の内容を返す。
 # audio_codec が空 / None のときは build_encode_options と完全に同一の内容を返す (切り戻し経路)。
 def build_intermediate_encode_options(ffmpeg_settings, audio_codec=None):
     if not audio_codec:
@@ -373,11 +441,25 @@ def build_intermediate_encode_options(ffmpeg_settings, audio_codec=None):
     # ビットレートは差し替え後のコーデックで判断する (pcm_* には付けない / F11)。
     return [
         "-c:v", ffmpeg_settings.get("video_codec", "libx264"),
-        "-preset", ffmpeg_settings.get("preset", "medium"),
-        "-crf", str(ffmpeg_settings.get("crf", 20)),
+        "-preset", intermediate_preset(ffmpeg_settings),
+        "-crf", intermediate_crf(ffmpeg_settings),
         "-c:a", str(audio_codec),
         *audio_bitrate_options(ffmpeg_settings, audio_codec),
     ]
+
+
+# 中間ファイル用の preset を返す (quality resolve3 R3a)
+# ffmpeg.intermediate_preset が空なら最終出力と同じ preset = 従来と同一。
+def intermediate_preset(ffmpeg_settings):
+    value = str((ffmpeg_settings or {}).get("intermediate_preset", "") or "").strip()
+    return value or str((ffmpeg_settings or {}).get("preset", "medium") or "medium")
+
+
+# 中間ファイル用の crf を返す (quality resolve3 R3a)
+# ffmpeg.intermediate_crf が空なら最終出力と同じ crf = 従来と同一。
+def intermediate_crf(ffmpeg_settings):
+    value = str((ffmpeg_settings or {}).get("intermediate_crf", "") or "").strip()
+    return value or str((ffmpeg_settings or {}).get("crf", 20))
 
 
 # 中間ファイルの拡張子を決める (20260812 resolve3 §5.2)

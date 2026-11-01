@@ -29,7 +29,9 @@ _MIN_PIECE_SEC = 0.02
 # タイル長の下限 (秒)。短すぎるとプロセス起動ばかりになる
 MIN_TILE_SEC = 0.5
 # 鍵の書式の版。計算を変えたら上げる = 既存のキャッシュが一斉に無効になる
-_KEY_VERSION = "proxy-tile-1"
+# ver9 resolve16: 切り抜きの解決を素材ごとに変えたため、黒帯のまま作られた
+# タイルが残らないように上げる (resolve16 §3.6)
+_KEY_VERSION = "proxy-tile-2"
 # 生成の打ち切りを確認する間隔 (秒)
 _CANCEL_POLL_SEC = 0.1
 

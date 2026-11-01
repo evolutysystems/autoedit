@@ -12,7 +12,13 @@ import shutil
 import tempfile
 import time
 
-from ..exceptions import DiskSpaceError, FFmpegError
+from ..exceptions import (
+    AutoEditError,
+    DiskSpaceError,
+    FFmpegError,
+    PipelineCancelled,
+    TimelineError,
+)
 from ..i18n import tr
 from ..modules import (
     comment_decor,
@@ -31,11 +37,20 @@ from ..services import points as points_service
 from ..services import telemetry
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline import renderer
+from ..utils import stage_timer
 from ..utils.logger import get_logger
 from . import config
+from . import features
 from . import timeline_builder as archive_timeline
 
 _logger = get_logger(__name__)
+
+
+# 認識の進捗が名乗る工程名 (resolve3 R9-4)。
+# subtitle_generator が context.progress_subcallback へ渡す文言と一致させること。
+# 一致しなくなった場合は「文字起こし中…（n%）」が出なくなるだけで、
+# 進捗自体は工程名の表示へ落ちるため書き出しは壊れない。
+_ASR_STEP_LABEL = "文字起こし"
 
 
 # 出力ディレクトリを解決する (general.output_directory。未設定/不在なら入力と同じ場所)
@@ -213,6 +228,21 @@ def _canvas(ffmpeg_cfg):
     return w, h, fps
 
 
+# ASS の PlayRes に使う基準キャンバスを返す (resolve3 R2 の付帯対応)
+#
+# イントロカードの title_font_size / タグの tag_font_size は**絶対 px** で、
+# 1080p を前提に調整された値である。PlayRes を素材等倍の実キャンバスに合わせると
+# 720p では文字が 1.5 倍になるため、PlayRes は基準キャンバスへ固定し、
+# libass の相似変換に任せる。実フレーム寸法 (_normalize_chain / -s) は実キャンバスのまま。
+# 1080p 以上では基準 = 実キャンバスになり、従来と完全に同一の ASS を書く。
+def _ass_canvas(ffmpeg_cfg, w, h):
+    ref_h = output_profile.reference_height(ffmpeg_cfg)
+    if h <= 0 or ref_h <= 0 or h >= ref_h:
+        return w, h
+    scale = h / float(ref_h)
+    return max(int(w / scale) // 2 * 2, 2), ref_h
+
+
 # 出力キャンバスへ正規化する scale+pad+setsar チェーンを返す (アスペクト維持・中央寄せ)
 def _normalize_chain(w, h):
     return (
@@ -313,8 +343,10 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
             "(元 VOD: %s)", index, source)
         return None
     w, h, fps = _canvas(ffmpeg_cfg)
+    # PlayRes は基準キャンバス / 実フレームは実キャンバス (resolve3 R2 の付帯対応)
+    ass_w, ass_h = _ass_canvas(ffmpeg_cfg, w, h)
     ass_path = os.path.join(workdir, f"intro{index}.ass")
-    _write_intro_ass(ass_path, theme, card, subtitle_cfg, w, h, length)
+    _write_intro_ass(ass_path, theme, card, subtitle_cfg, ass_w, ass_h, length)
     filter_spec = (
         f"{_normalize_chain(w, h)},"
         f"gblur=sigma={card['blur_sigma']},"
@@ -357,9 +389,11 @@ def _build_intro_card(source, clip_start, theme, card, subtitle_cfg,
 def _build_tag_overlay(body_in, theme, card, subtitle_cfg,
                        ffmpeg_cfg, fonts_dir, workdir, index):
     w, h, fps = _canvas(ffmpeg_cfg)
+    # PlayRes は基準キャンバス / 実フレームは実キャンバス (resolve3 R2 の付帯対応)
+    ass_w, ass_h = _ass_canvas(ffmpeg_cfg, w, h)
     duration = ffmpeg_runner.probe_duration(body_in, ffmpeg_cfg)
     ass_path = os.path.join(workdir, f"tag{index}.ass")
-    _write_tag_ass(ass_path, theme, card, subtitle_cfg, w, h, duration)
+    _write_tag_ass(ass_path, theme, card, subtitle_cfg, ass_w, ass_h, duration)
     filter_spec = (
         f"fps={fps},{_normalize_chain(w, h)},"
         f"{_ass_filter_opt(ass_path, fonts_dir)}"
@@ -392,6 +426,9 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
     try:
         body = _build_tag_overlay(out, theme, card, subtitle_cfg,
                                   ffmpeg_cfg, fonts_dir, workdir, index)
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
     except Exception:  # noqa: BLE001 (演出失敗で本編を失わない)
         _logger.exception("clip%d: タグ焼き込みに失敗 → 素の本編で継続", index)
         return [out], out
@@ -401,6 +438,9 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
                                   ffmpeg_cfg, fonts_dir, workdir, index,
                                   intro_source=clip.get("intro_source", ""),
                                   gain_db=gain_db)
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
     except Exception:  # noqa: BLE001
         _logger.exception("clip%d: イントロ生成に失敗 → タグ付き本編のみで継続", index)
         intro = None
@@ -423,15 +463,26 @@ def _decorate_clip(source, out, clip, theme, card, subtitle_cfg,
 # 1 本にまとめて出力する運用では「VOD 全体で 1 回」が正しい (§9.1 Q3)。
 # 戻り値: {"cut_db": int|None, "measured": dict|None}
 #   どちらも取れなければ None を入れ、呼び出し側はクリップ単位へ落ちる (安全側)。
-def analyze_vod(input_path, settings, progress_cb=None):
+# used  : 採用クリップ [{"start","end",...}] (resolve3 R7)。
+#         渡すとラウドネスを採用区間だけで測る (出力に入るのはこの部分だけ)。
+# scan  : 採点で測った全長 1 パス解析の結果 (resolve3 R5)。
+#         測定条件が今の設定と一致すれば、音量解析を測り直さない。
+# progress_cb: callable(ratio 0..1, label) (resolve3 R9-3)。
+#         従来は 0% 固定で数分止まって見えていた。
+def analyze_vod(input_path, settings, progress_cb=None, used=None, scan=None,
+                cancel_cb=None):
     pipe = config.clip_pipeline_config(settings)
     result = {"cut_db": None, "measured": None}
 
     if pipe["cut_db_scope"] == "vod":
         if progress_cb:
-            progress_cb(tr("音量解析 (VOD 全体)"))
+            progress_cb(0.0, tr("音量解析 (VOD 全体)"))
         try:
-            analysis = volume_analyzer.analyze_min_speech_db(input_path, settings)
+            analysis = volume_analyzer.analyze_min_speech_db(
+                input_path, settings, scan=scan)
+        except (PipelineCancelled, DiskSpaceError):
+            # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+            raise
         except Exception:  # noqa: BLE001 (失敗してもクリップ単位へ落ちる)
             _logger.exception("VOD 全体の音量解析に失敗 → クリップごとの解析へ落ちます")
         else:
@@ -450,13 +501,20 @@ def analyze_vod(input_path, settings, progress_cb=None):
             # 進捗の文言は実際に測るときだけ出す。音量調節を切っていると
             # (設定画面の「音量調節」/ ver9 request1) 何もしないため出さない。
             if progress_cb:
-                progress_cb(tr("ラウドネス解析 (VOD 全体)"))
+                progress_cb(0.3, tr("ラウドネス解析 (VOD 全体)"))
             try:
                 duration = ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg)
             except Exception:  # noqa: BLE001 (進捗の総尺は取れなくてもよい)
                 duration = 0.0
+            # 採用区間だけを測る (resolve3 R7)。ranges=None なら従来どおり全長。
+            ranges = [(float(c["start"]), float(c["end"])) for c in (used or [])
+                      if float(c.get("end", 0)) > float(c.get("start", 0))]
             measured = loudness_normalizer.measure_loudness(
-                input_path, cfg, ffmpeg_cfg, duration)
+                input_path, cfg, ffmpeg_cfg, duration,
+                on_progress=((lambda ratio, _kv: progress_cb(0.3 + ratio * 0.7,
+                                                             tr("ラウドネス解析 (VOD 全体)")))
+                             if progress_cb else None),
+                ranges=ranges or None, cancel_cb=cancel_cb)
             if measured is None:
                 _logger.warning(
                     "VOD 全体のラウドネス測定に失敗 → クリップごとの測定へ落ちます")
@@ -465,6 +523,8 @@ def analyze_vod(input_path, settings, progress_cb=None):
                 _logger.info(
                     "VOD 全体のラウドネス I=%.1f LUFS を全クリップで共有 (F9)",
                     measured["input_i"])
+    if progress_cb:
+        progress_cb(1.0, tr("音量解析 (VOD 全体)"))
     return result
 
 
@@ -496,6 +556,9 @@ def _apply_volume_analysis(prepared_path, clip_settings, saved_db, index,
         return
     try:
         analysis = volume_analyzer.analyze_min_speech_db(prepared_path, clip_settings)
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
     except Exception:  # noqa: BLE001 (解析失敗でクリップを失わない → 保存値で継続)
         _logger.exception("clip%d: 音量解析に失敗 → 保存済み閾値で継続", index)
         return
@@ -537,14 +600,22 @@ def _silence_cut(raw, clip_settings, clip_dir):
 # 戻り値: (keep_segments, items, 素材尺)
 #   keep_segments : normalized 相対の残す区間。無音カット無効時は全長 1 区間
 #   items         : [{"start","end","text","use","role","font","font_size"}]
-def _prepare_edit_points(normalized, clip_settings, clip_dir, profile):
+def _prepare_edit_points(normalized, clip_settings, clip_dir, profile,
+                         asr_progress_cb=None):
     # 中間物は clip_dir (= workdir 配下) に置き、write_clips の TemporaryDirectory へ
     # 後始末を任せる (_render_clips の PipelineContext と同じ扱い。cleanup は呼ばない)。
-    ctx = PipelineContext(input_path=normalized, settings=clip_settings,
-                          working_dir=clip_dir)
+    #
+    # 認識の進捗をクリップの帯へ流す (resolve3 R9-4)。
+    # 外側が帯を割り当てているため単一工程として扱う。
+    ctx = PipelineContext(
+        input_path=normalized, settings=clip_settings, working_dir=clip_dir,
+        # 工程名も渡す。受け手が文字起こしの比率だけを帯へ写すために要る。
+        progress_callback=asr_progress_cb)
+    ctx.use_single_step()
     ctx.output_profile = profile
     keep_segments, meta = silence_cutter.detect_edit_points(ctx)
-    items, _eff_cfg = subtitle_generator.recognize_for_timeline(ctx, keep_segments)
+    with stage_timer.timed("文字起こし"):
+        items, _eff_cfg = subtitle_generator.recognize_for_timeline(ctx, keep_segments)
     source_duration = float(meta.get("source_duration_sec") or 0.0)
     kept = sum(float(e) - float(s) for s, e in keep_segments)
     _logger.info(
@@ -568,7 +639,11 @@ def _transcribe(prepared_path, settings, eff_cfg):
         return []
     language = eff_cfg.get("language", "ja")
     try:
-        timeline = text_source.extract(prepared_path, language)
+        with stage_timer.timed("文字起こし"):
+            timeline = text_source.extract(prepared_path, language)
+    except (PipelineCancelled, DiskSpaceError):
+        # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+        raise
     except Exception:  # noqa: BLE001 (文字起こし失敗でクリップを失わない)
         _logger.exception("文字起こしに失敗 → 空字幕で継続")
         return []
@@ -594,9 +669,10 @@ def _transcribe(prepared_path, settings, eff_cfg):
 # progress_cb  : callable(工程名) — 呼び出し側が進捗率と文言を組み立てる
 # saved_db     : 元設定の保存済みカット閾値 (None なら settings から引く)
 # 戻り値: prepared 1 件ぶんの辞書 (_prepare_clips の要素と同一構成)
+# asr_progress_cb: 文字起こしの実比率 (0..1) を受け取るコールバック (resolve3 R9-4)
 def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
                      use_timeline=False, progress_cb=None, saved_db=None,
-                     vod_analysis=None, source_origin_sec=0.0):
+                     vod_analysis=None, source_origin_sec=0.0, asr_progress_cb=None):
     subtitle_cfg = clip_settings.get("subtitle", {})
     vertical_cfg = settings.get("vertical", {})
     if saved_db is None:
@@ -648,7 +724,8 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         # 実カット後ファイルは作らない (参照するのは従来画面だけのため)
         prepared_path = ""
         keep_segments, items, normalized_duration = _prepare_edit_points(
-            normalized, clip_settings, clip_dir, profile)
+            normalized, clip_settings, clip_dir, profile,
+            asr_progress_cb=asr_progress_cb)
     else:
         # 従来画面経路: 実カット後クリップをプレビュー・焼き込みに使う
         if progress_cb:
@@ -704,26 +781,72 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
 #                  (ver9 resolve5 §4.4)。元 VOD を手放すと測り直せないため、
 #                  追加セクションだけ音量が違う状態を避けるのに要る。
 def _prepare_clips(input_path, settings, clip_settings, used, ffmpeg_cfg, workdir,
-                   progress_cb, use_timeline=False):
+                   progress_cb, use_timeline=False, vod_scan=None, cancel_cb=None):
     prepared = []
     total = len(used)
     # 元設定の保存済みカット閾値 (クリップごとの音量解析が失敗した場合の戻し先)
     saved_db = settings.get("volume_analysis", {}).get("last_cut_db")
+    # 採点で測った全長 1 パス解析を引き継ぐ (resolve3 R5)。
+    # 測定条件が今の設定と違っていたら使わず、従来どおり測り直す
+    # (採点のあと設定画面で閾値を変えられた場合に古い値で切らないため)。
+    scan = vod_scan if features.scan_matches(vod_scan, settings) else None
+    if vod_scan is not None and scan is None:
+        _logger.info("採点時の音声解析は測定条件が違うため使いません (測り直します)")
     # VOD 全体の解析は 1 回だけ (F7 / F9)。スコープが per_clip なら何もしない。
-    vod_analysis = analyze_vod(
-        input_path, settings,
-        progress_cb=(lambda label: progress_cb(0.0, label)) if progress_cb else None)
+    # 進捗は 0.00〜0.05 を割り当てる (resolve3 R9-3)。
+    with stage_timer.timed("解析"):
+        vod_analysis = analyze_vod(
+            input_path, settings, used=used, scan=scan, cancel_cb=cancel_cb,
+            progress_cb=((lambda ratio, label: progress_cb(ratio * 0.05, label))
+                         if progress_cb else None))
     for pos, clip in enumerate(used, 1):
-        # 工程名だけを受け取り、ここで進捗率と文言を組み立てる (文言は従来と同一)
+        _check_cancel(cancel_cb)
+        # 工程名だけを受け取り、ここで進捗率と文言を組み立てる (文言は従来と同一)。
+        # 帯は 0.05〜0.55 (resolve3 R9 の配分)。
         def phase(label, _pos=pos):
             if progress_cb:
-                progress_cb((_pos - 1) / total * 0.55,
-                            f"クリップ {_pos}/{total} を準備中…（{label}）")
-        prepared.append(prepare_one_clip(
-            input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
-            use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db,
-            vod_analysis=vod_analysis))
+                progress_cb(0.05 + (_pos - 1) / total * 0.50,
+                            tr("クリップ {pos}/{total} を準備中…（{label}）",
+                               pos=_pos, total=total, label=label))
+
+        # 文字起こしの実比率をクリップの帯へ写す (resolve3 R9-4)。
+        # 認識はクリップ準備の約 85% を占めるため、ここが動けば無反応区間が消える。
+        #
+        # **写すのは文字起こしの比率だけにする。** 同じ context からは
+        # プレビュー音声の抽出 (R8) も比率を上げてくるため、区別せずに写すと
+        # 「文字起こし 100% のあと認識でまた 0% へ戻る」ことになる。
+        # 他の工程名は phase と同じく帯の先頭で文言だけ出す。
+        def phase_ratio(ratio, label=_ASR_STEP_LABEL, _pos=pos):
+            if not progress_cb:
+                return
+            if str(label) != _ASR_STEP_LABEL:
+                phase(label, _pos)
+                return
+            within = max(0.0, min(1.0, float(ratio)))
+            progress_cb(0.05 + (_pos - 1 + within) / total * 0.50,
+                        tr("クリップ {pos}/{total} を文字起こし中…（{pct}%）",
+                           pos=_pos, total=total, pct=int(within * 100)))
+
+        with stage_timer.timed("準備"):
+            prepared.append(prepare_one_clip(
+                input_path, settings, clip_settings, clip, ffmpeg_cfg, workdir,
+                use_timeline=use_timeline, progress_cb=phase, saved_db=saved_db,
+                vod_analysis=vod_analysis, asr_progress_cb=phase_ratio))
     return prepared, vod_analysis
+
+
+# 中止を問い合わせ、要求されていれば PipelineCancelled を送出する (resolve3 R9-5)
+# 工程の境目 (クリップの切り替わり) で呼ぶ。ffmpeg 実行中は cancel_cb が直接効く。
+def _check_cancel(cancel_cb):
+    if cancel_cb is None:
+        return
+    try:
+        requested = bool(cancel_cb())
+    except Exception:  # noqa: BLE001 (中止判定の失敗で処理を壊さない)
+        _logger.exception("cancel_cb コールバックで例外発生")
+        return
+    if requested:
+        raise PipelineCancelled(tr("書き出しを中止しました"))
 
 
 # ------------------------------------------------------------------
@@ -767,20 +890,23 @@ def _burn_one(prepared, items, settings, ffmpeg_cfg, fonts_dir):
     font_profile = subtitle_generator.build_font_profile(eff_cfg)
     canvas_w = int(profile["width"])
     canvas_h = int(profile["height"])
+    # ASS の PlayRes とアイコンの配置は基準キャンバスで行い、scale で実寸へ換算する
+    # (resolve3 R2 の付帯対応。1080p 以上では基準 = 実キャンバス = 従来と同一)。
+    ref_w, ref_h, canvas_scale = subtitle_generator.reference_canvas(profile)
     target_size = (canvas_w, canvas_h) if profile.get("is_portrait") else None
     clip_dir = os.path.dirname(src)
     ass_path = os.path.join(clip_dir, "subtitle.ass")
     out_path = os.path.join(clip_dir, "burned.mp4")
     subtitle_generator.build_subtitle_file(
         used_timeline, font_profile, ass_path,
-        video_width=canvas_w, video_height=canvas_h,
+        video_width=ref_w, video_height=ref_h,
         # コメントの背景 (角丸の箱) を出す (ver3 resolve11 §5.6-4)
         subtitle_cfg=eff_cfg)
     total_dur = ffmpeg_runner.probe_duration(src, ffmpeg_cfg)
     # コメントアイコンを重ねる (対象が無ければコマンドは従来と同一)
     icon_chains, _count, _groups = comment_decor.build_icon_chains(
-        used_timeline, eff_cfg, canvas_w, canvas_h,
-        in_label="[vsub]", out_label="")
+        used_timeline, eff_cfg, ref_w, ref_h,
+        in_label="[vsub]", out_label="", scale=canvas_scale)
     subtitle_generator.burn_subtitle(
         src, ass_path, out_path, ffmpeg_cfg,
         total_duration=total_dur, target_size=target_size, fonts_dir=fonts_dir,
@@ -845,10 +971,15 @@ def _watermark_one(source, prepared, settings, ffmpeg_cfg):
         watermark_overlay.config(settings), ffmpeg_cfg, total_duration=total_duration)
 
 
+# クリップごとのレンダリングを行う
+# 戻り値: (burned, skipped)  skipped = レンダリングに失敗して除いたクリップ番号 (resolve3 R10)
 def _render_clips(input_path, timeline, edited, prepared_by_index, settings, clip_settings,
                   ffmpeg_cfg, workdir, progress_cb, card, fonts_dir,
-                  watermark_required=False):
+                  watermark_required=False, cancel_cb=None):
     burned = []
+    # レンダリングに失敗して成果物から落ちたクリップ (resolve3 R10)。
+    # 黙って短い成果物を出すと、見るまで気づけないため完了の文言へ並べる。
+    skipped = []
     edited_by_index = {e.get("index"): e for e in (edited or [])}
     groups = archive_timeline.split_by_clip(timeline)
     total = max(1, len(groups))
@@ -867,14 +998,33 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
 
         clip_dir = os.path.join(workdir, f"clip{clip_index}")
         os.makedirs(clip_dir, exist_ok=True)
+
+        # クリップ内の比率を全体の帯 [0.6 + (pos-1)*w, 0.6 + pos*w] へ写す (resolve3 R9-1)。
+        # これで renderer の「ベース映像構築」「字幕焼き込み」の実比率が画面へ出る。
+        def _clip_progress(ratio, label, _pos=pos, _w=0.3 / total, _n=len(groups)):
+            if progress_cb:
+                within = max(0.0, min(1.0, float(ratio)))
+                progress_cb(0.6 + (_pos - 1 + within) * _w,
+                            tr("クリップ {pos}/{total} を書き出し中…（{label}）",
+                               pos=_pos, total=_n, label=label))
+
         context = PipelineContext(input_path=prepared["normalized_path"],
-                                  settings=clip_settings, working_dir=clip_dir)
+                                  settings=clip_settings, working_dir=clip_dir,
+                                  progress_callback=_clip_progress if progress_cb else None)
+        # 外側が帯を割り当てているため、工程内比率をそのまま 0..1 として扱う (R9-1)
+        context.use_single_step()
+        context.cancel_cb = cancel_cb
         # 合成が走る経路のため、renderer が合成へ混ぜ込む (再エンコードは増えない)
         context.watermark_required = watermark_required
         try:
-            renderer.render(sub_timeline, context)
+            with stage_timer.timed("レンダリング"):
+                renderer.render(sub_timeline, context)
+        except (PipelineCancelled, DiskSpaceError):
+            # 中止と容量不足は「継続してはいけない」失敗なので必ず貫通させる (resolve3 R9-6)
+            raise
         except Exception:  # noqa: BLE001 (1 クリップの失敗で全体を止めない)
             _logger.exception("clip%s のレンダリングに失敗 → このクリップを飛ばします", clip_index)
+            skipped.append(clip_index)
             continue
         out = context.current_video_path()
 
@@ -892,7 +1042,7 @@ def _render_clips(input_path, timeline, edited, prepared_by_index, settings, cli
             # 本編と同じゲインをイントロへ掛ける (F8)
             gain_db=prepared.get("gain_db"))
         burned.append({"clip": clip_meta, "body": body, "parts": parts})
-    return burned
+    return burned, skipped
 
 
 # keep_individual 用: 本編クリップを出力先へ複製する (イントロは含めない)
@@ -905,11 +1055,12 @@ def _copy_individual(entry, out_dir, prefix, stem):
 
 
 # 結合しない設定での個別出力: テーマ有りは [イントロ, 本編] を1本へ結合、無しは本編を複製
-def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
+def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg, settings=None):
     clip = entry["clip"]
     name = f"{prefix}_{stem}_clip{clip['index']}_{_fmt_ts(clip['start'])}-{_fmt_ts(clip['end'])}.mp4"
     dest = os.path.join(out_dir, name)
-    _combine(entry["parts"], dest, ffmpeg_cfg)  # 1本ならコピー / 2本(intro+本編)なら結合
+    # 1本ならコピー / 2本(intro+本編)なら結合 (規格が揃えばストリームコピー / resolve3 R1)
+    _combine(entry["parts"], dest, ffmpeg_cfg, settings=settings)
     return dest
 
 
@@ -926,9 +1077,11 @@ def _write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg):
 #   (ver9 resolve5 §4.3)。プロジェクトへ残し、元 VOD を手放したあとに
 #   「追加する区間だけを取り直す」ために使う。ローカル動画経路では None。
 # 戻り値: 出力ファイルパスの一覧 (結合時は [..., 結合1本]、非結合時は個別クリップ群)。
+# vod_scan  : 採点で測った全長 1 パス解析の結果 (resolve3 R5)。渡すと測り直さない。
+# cancel_cb : 中止の問い合わせ (resolve3 R9-5)。True を返すと PipelineCancelled で抜ける。
 def write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
                 curve=None, points=None, watermark_confirm_callback=None,
-                vod_source=None):
+                vod_source=None, vod_scan=None, cancel_cb=None):
     # ログ送信 (request1 / resolve1 §7.2 / §7.3)
     project_id = telemetry.register_project(input_path, settings)
     started_at = telemetry.export_started(project_id)
@@ -944,7 +1097,14 @@ def write_clips(input_path, settings, clips, progress_cb=None, result_callback=N
     try:
         outputs = _write_clips(input_path, settings, clips, progress_cb, result_callback,
                                curve, points_service.watermark_required(reservation),
-                               vod_source=vod_source)
+                               vod_source=vod_source, vod_scan=vod_scan,
+                               cancel_cb=cancel_cb)
+    except PipelineCancelled as e:
+        # 中止は異常終了ではない (resolve3 R9-5)。ポイントを戻し、キャンセルとして記録する。
+        points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
+        _logger.info("書き出しを中止しました: %s", e)
+        return []
     except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 失敗・中断では消費しない (R6)
         points_service.cancel(points, reservation)
@@ -973,9 +1133,17 @@ def _log_export(project_id, settings, started_at, success, cancelled=False, erro
 
 
 def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=None,
-                 curve=None, watermark_required=False, vod_source=None):
+                 curve=None, watermark_required=False, vod_source=None,
+                 vod_scan=None, cancel_cb=None):
+    # 工程ごとの所要の計測を初期化する (§7.1)。計装なしで次回と比べられるようにする。
+    stage_timer.reset()
+    started_at = time.monotonic()
+    ffmpeg_runner.ensure_available(settings.get("ffmpeg", {}))
+    # 出力キャンバスを素材等倍へ解決し、実行用の設定コピーへ書き戻す (resolve3 R2)。
+    # これで ffmpeg.output_* を読む既存の全工程が解決値を見る。
+    # setting.json の保存値は変えない (deepcopy するため)。
+    settings = output_profile.apply_canvas_to_settings(settings, input_path=input_path)
     ffmpeg_cfg = settings.get("ffmpeg", {})
-    ffmpeg_runner.ensure_available(ffmpeg_cfg)
 
     used = [c for c in clips if c.get("use", True)]
     if not used:
@@ -996,7 +1164,7 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
         # ① prepare: 全クリップを 切り出し→編集点検出(または無音カット)→文字起こし (ダイアログ無し)
         prepared, vod_analysis = _prepare_clips(
             input_path, settings, clip_settings, used, ffmpeg_cfg, workdir, progress_cb,
-            use_timeline=use_timeline)
+            use_timeline=use_timeline, vod_scan=vod_scan, cancel_cb=cancel_cb)
         if not prepared:
             _logger.info("準備できたクリップが0件")
             return []
@@ -1043,9 +1211,17 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
         for p in prepared:
             p.pop("keep_segments", None)
 
-        return finish_clips(input_path, settings, clip_settings, timeline, edited,
-                            prepared, workdir, ffmpeg_cfg, progress_cb=progress_cb,
-                            watermark_required=watermark_required)
+        try:
+            return finish_clips(input_path, settings, clip_settings, timeline, edited,
+                                prepared, workdir, ffmpeg_cfg, progress_cb=progress_cb,
+                                watermark_required=watermark_required,
+                                cancel_cb=cancel_cb)
+        finally:
+            # 書き出しが終わればモデルは不要 (int8 で約 1.5GB / resolve3 R6)
+            subtitle_generator.release_models()
+            # 工程ごとの所要を 1 行で残す (§7.1)。
+            # 失敗・中止でも「どこで何秒かかったか」を残すため finally へ置く。
+            stage_timer.report("書き出し", total_sec=time.monotonic() - started_at)
 
 
 # 書き出し完了時の進捗ラベル (ver9 resolve12 §3.7)
@@ -1053,13 +1229,20 @@ def _write_clips(input_path, settings, clips, progress_cb=None, result_callback=
 # テーマを入れたのにイントロカードが付かなかったクリップは、黙って省かれると
 # 成果物を見るまで気づけない。完了の文言へ並べ、画面からも分かるようにする。
 # parts は [イントロ, タグ付き本編] か [本編] のため、2 本未満 = カードが無い。
-def _finish_label(burned):
+# skipped: レンダリングに失敗して除いたクリップ番号 (resolve3 R10)
+def _finish_label(burned, skipped=None):
+    notes = []
     missing = [str(entry["clip"]["index"]) for entry in burned
                if entry["clip"].get("theme") and len(entry["parts"]) < 2]
-    if not missing:
+    if missing:
+        notes.append(tr("clip {list} はイントロカードを作れませんでした",
+                        list="・".join(missing)))
+    if skipped:
+        notes.append(tr("clip {list} は書き出しに失敗したため除きました",
+                        list="・".join(str(index) for index in skipped)))
+    if not notes:
         return tr("完了")
-    return tr("完了（clip {list} はイントロカードを作れませんでした）",
-              list="・".join(missing))
+    return tr("完了（{notes}）", notes="／".join(notes))
 
 
 # レビュー後の書き出し (burn → テーマ演出 → 個別出力 → 結合) を行う (ver3 resolve9 §5.6)
@@ -1071,7 +1254,8 @@ def _finish_label(burned):
 #   各クリップの本編へ焼き込むため、個別出力も結合出力も透かし入りになる。
 #   イントロカードと OP/ED には入らない (本編の全長に入っていれば印として足りる)。
 def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared,
-                 workdir, ffmpeg_cfg=None, progress_cb=None, watermark_required=False):
+                 workdir, ffmpeg_cfg=None, progress_cb=None, watermark_required=False,
+                 cancel_cb=None):
     ffmpeg_cfg = ffmpeg_cfg if ffmpeg_cfg is not None else settings.get("ffmpeg", {})
     archive_cfg = settings.get("archive", {})
     combine_cfg = archive_cfg.get("combine", {})
@@ -1085,11 +1269,12 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
     if progress_cb:
         progress_cb(0.6, tr("字幕焼き込み中…"))
     prepared_by_index = {p["index"]: p for p in prepared}
+    skipped = []
     if timeline is not None:
-        burned = _render_clips(
+        burned, skipped = _render_clips(
             input_path, timeline, edited, prepared_by_index, settings, clip_settings,
             ffmpeg_cfg, workdir, progress_cb, card, fonts_dir,
-            watermark_required=watermark_required)
+            watermark_required=watermark_required, cancel_cb=cancel_cb)
     else:
         burned = _burn_clips(
             input_path, edited, prepared_by_index, settings, ffmpeg_cfg,
@@ -1097,14 +1282,21 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
             watermark_required=watermark_required)
 
     if not burned:
+        # 脱落が原因で 0 件になった場合は例外にする (キャンセルと区別する / resolve3 R10)。
+        # 黙って「出力 0 件」を返すと、呼び出し側がキャンセル扱いにしてしまう。
+        if skipped:
+            raise TimelineError(
+                tr("すべてのクリップの書き出しに失敗しました (clip {list})",
+                   list="・".join(str(index) for index in skipped)))
         _logger.info("焼き込み済みクリップが0件")
         return []
 
     # keep_individual: 個別クリップ(本編)も出力先へ残す
     outputs = []
     if combine_cfg.get("keep_individual", False):
-        for entry in burned:
-            outputs.append(_copy_individual(entry, out_dir, prefix, stem))
+        with stage_timer.timed("個別出力"):
+            for entry in burned:
+                outputs.append(_copy_individual(entry, out_dir, prefix, stem))
 
     # 各クリップの結合用パーツを時系列で平坦化 (テーマ有りは [intro, tagged])
     clip_parts = [path for entry in burned for path in entry["parts"]]
@@ -1112,11 +1304,13 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
     # 結合しない設定なら個別出力のみ (keep_individual 未指定でも個別を出す)
     if not combine_cfg.get("enabled", True):
         if not outputs:
-            for entry in burned:
-                outputs.append(_write_individual(entry, out_dir, prefix, stem, ffmpeg_cfg))
+            with stage_timer.timed("個別出力"):
+                for entry in burned:
+                    outputs.append(_write_individual(
+                        entry, out_dir, prefix, stem, ffmpeg_cfg, settings=settings))
         _logger.info("個別クリップ %d 件を出力 (結合なし)", len(outputs))
         if progress_cb:
-            progress_cb(1.0, _finish_label(burned))
+            progress_cb(1.0, _finish_label(burned, skipped))
         return outputs
 
     # 結合: [Opening?] + (intro?+本編)群 + [Ending?] を 1 本へ (OP/ED を1回だけ)
@@ -1126,11 +1320,17 @@ def finish_clips(input_path, settings, clip_settings, timeline, edited, prepared
 
     suffix = combine_cfg.get("combined_suffix", "combined") or "combined"
     final = os.path.join(out_dir, f"{prefix}_{stem}_{suffix}.mp4")
-    _combine(parts, final, ffmpeg_cfg)
+    # 結合の進捗を 0.92〜1.00 の帯へ流す (resolve3 R9-2)。
+    # ストリームコピーでも数十秒かかるため、ここが止まって見えないようにする。
+    with stage_timer.timed("結合"):
+        _combine(parts, final, ffmpeg_cfg, settings=settings, cancel_cb=cancel_cb,
+                 on_progress=((lambda ratio, _kv: progress_cb(0.92 + ratio * 0.08,
+                                                              tr("結合中…")))
+                              if progress_cb else None))
 
-    _logger.info("結合出力: %s (使用%d)", final, len(burned))
+    _logger.info("結合出力: %s (使用%d / 除外%d)", final, len(burned), len(skipped))
     if progress_cb:
-        progress_cb(1.0, _finish_label(burned))
+        progress_cb(1.0, _finish_label(burned, skipped))
     return outputs + [final]
 
 
@@ -1152,16 +1352,65 @@ def _build_combine_parts(settings, combine_cfg, clip_parts):
 
 
 # パーツを結合して final を作る (2本以上は concat、1本のみはコピー)
-def _combine(parts, final, ffmpeg_cfg):
-    if len(parts) >= 2:
-        total_dur = 0.0
-        for p in parts:
-            try:
-                total_dur += ffmpeg_runner.probe_duration(p, ffmpeg_cfg)
-            except Exception:  # noqa: BLE001 (進捗総尺の取得失敗は致命でない)
-                pass
-        concat_processor.concat(parts, final, ffmpeg_cfg, total_duration=total_dur)
-    else:
+#
+# 部品 (字幕焼き込みの出力) は同一規格のため、既定ではストリームコピーで繋ぐ
+# (resolve3 R1)。concat フィルタの scale/pad/setsar/fps/format は恒等変換であり、
+# 全体の再エンコードは丸ごと無駄だった。
+# OP/ED のように利用者が用意した任意規格が混ざる場合だけ再エンコードへ落とす。
+# archive.combine.reencode=true なら常に従来どおり再エンコードする (切り戻し)。
+def _combine(parts, final, ffmpeg_cfg, settings=None, on_progress=None, cancel_cb=None):
+    if len(parts) < 2:
         # クリップ1本のみ・OP/ED 無し → そのまま出力先へ複製 (原本は一時領域で破棄)
         shutil.copy(parts[0], final)
+        return final
+
+    total_dur = _total_duration(parts, ffmpeg_cfg)
+    if _can_stream_copy(parts, ffmpeg_cfg, settings):
+        try:
+            silence_cutter.concat_files(
+                parts, final, ffmpeg_cfg, reencode=False,
+                total_duration=total_dur, on_progress=on_progress, cancel_cb=cancel_cb)
+            _logger.info("結合: ストリームコピー (%d 部品 / %.1fs)", len(parts), total_dur)
+            return final
+        except (PipelineCancelled, DiskSpaceError):
+            # 中止と容量不足は再試行しても無意味なので貫通させる (resolve3 R9-6)
+            raise
+        except FFmpegError:
+            # 規格は揃っていたのに繋げなかった場合だけ、再エンコードで 1 回だけ繋ぎ直す。
+            # ここで握らないと「成果物が出ない」ため、安全側へ落とす。
+            _logger.warning("コピー結合に失敗したため再エンコードで繋ぎ直します", exc_info=True)
+
+    concat_processor.concat(parts, final, ffmpeg_cfg, total_duration=total_dur,
+                            on_progress=on_progress, cancel_cb=cancel_cb)
+    _logger.info("結合: 規格が揃わないため再エンコード (%d 部品)", len(parts))
     return final
+
+
+# 進捗表示用に部品の総尺を足し上げる (取得失敗は 0 扱い = 進捗率が不明になるだけ)
+def _total_duration(parts, ffmpeg_cfg):
+    total = 0.0
+    for path in parts:
+        try:
+            total += ffmpeg_runner.probe_duration(path, ffmpeg_cfg)
+        except Exception:  # noqa: BLE001 (進捗総尺の取得失敗は致命でない)
+            pass
+    return total
+
+
+# 全部品の規格が一致し、ストリームコピーで繋げるか (resolve3 R1)
+# 1 件でも取得に失敗したら False (安全側 = 再エンコード)。
+# fps は r_frame_rate の文字列をそのまま比較する (60/1 と 60000/1001 を区別する)。
+def _can_stream_copy(parts, ffmpeg_cfg, settings):
+    if (settings or {}).get("archive", {}).get("combine", {}).get("reencode", False):
+        _logger.info("結合: archive.combine.reencode=true のため再エンコードで繋ぐ")
+        return False
+    try:
+        first = ffmpeg_runner.probe_stream_params(parts[0], ffmpeg_cfg)
+        for path in parts[1:]:
+            if ffmpeg_runner.probe_stream_params(path, ffmpeg_cfg) != first:
+                return False
+    except AutoEditError:
+        _logger.warning("部品の規格を確かめられないため再エンコードで結合します")
+        return False
+    # 主要項目が欠けている (映像か音声が無い等) ならコピーで繋がない
+    return all(first.get(key) for key in ("v_codec", "a_codec", "width", "height"))

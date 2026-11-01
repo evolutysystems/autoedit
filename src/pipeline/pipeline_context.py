@@ -109,6 +109,9 @@ class PipelineContext:
         # 新規実行では None のまま = 保存時の時刻がそのまま created_at になる。
         self.project_created_at = None
         self._asr_audio_path = None
+        # プレビュー音声の遅延生成 (resolve3 R8)。
+        # 「どう作るか」だけを預かり、初回再生で必要になったときに 1 回だけ実行する。
+        self._asr_audio_builder = None
 
     # 現在の処理対象動画パスを取得する
     def current_video_path(self):
@@ -137,6 +140,35 @@ class PipelineContext:
     # 認識用音声のパスを保持する (subtitle_generator が生成直後に呼ぶ)
     def set_asr_audio_path(self, path):
         self._asr_audio_path = path
+
+    # プレビュー音声の作り方を預かる (resolve3 R8)
+    #
+    # builder は Callable[[str], None] で、渡したパスへ音声を書き出す。
+    # 先に作っておくと、プレビューを触らない利用者には丸ごと無駄になるため
+    # (実測 41 秒)、初回再生で必要になるまで実行しない。
+    def set_asr_audio_builder(self, builder):
+        self._asr_audio_builder = builder
+
+    # 預かった作り方でプレビュー音声を 1 回だけ作る (resolve3 R8)
+    #
+    # 既に作られていればそのパスを返す。作り方が無い / 失敗したときは None を返し、
+    # プレビュー側の「無ければ都度生成」経路へ任せる (従来どおり再生はできる)。
+    def build_asr_audio(self):
+        if self._asr_audio_path:
+            return self._asr_audio_path
+        builder = self._asr_audio_builder
+        if builder is None:
+            return None
+        # 1 回で結果を確定させる (失敗しても再試行で待たせない)
+        self._asr_audio_builder = None
+        path = self.allocate_intermediate("asr_audio.m4a")
+        try:
+            builder(path)
+        except Exception:  # noqa: BLE001 (プレビュー音声の失敗で再生を壊さない)
+            _logger.exception("プレビュー用音声の遅延生成に失敗しました")
+            return None
+        self._asr_audio_path = path
+        return path
 
     # 中間ファイル用パスを割り当てる
     def allocate_intermediate(self, filename):
@@ -202,6 +234,14 @@ class PipelineContext:
 
         return _inner
 
+    # 工程分割を持たない呼び出し用に「単一工程」として扱う (resolve3 R9-1)
+    #
+    # progress_subcallback が返す比率が、そのまま 0..1 の工程内比率になる。
+    # 切り抜きの書き出しのように、外側が自前で帯を割り当てている場合に使う。
+    def use_single_step(self):
+        self.total_steps = 1
+        self.current_step = 1
+
     # 作業ディレクトリの後処理 (パイプライン終了時に一時ファイルを削除する)
     def cleanup(self):
         # 中断した工程を失敗として残す (例外で end_step を通らなかった分)
@@ -211,6 +251,7 @@ class PipelineContext:
         # Timeline と認識用音声も同じ寿命で破棄する (ver3 / 回答 Q10)
         self.timeline = None
         self._asr_audio_path = None
+        self._asr_audio_builder = None
 
         # 自動生成した一時ディレクトリは中身ごと削除する
         if self._tempdir_obj is not None:

@@ -32,10 +32,14 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
         if progress_cb:
             progress_cb(ratio * 0.9, label)
 
-    duration, cells = features.extract_cells(input_path, settings, cell_sec, _feat_progress)
+    # audio_scan は全長 1 パス解析の結果 (resolve3 R5)。書き出しへ引き継ぎ、
+    # 同じ測定を 2 度流さないために戻り値へ同梱する (per_cell モードでは None)。
+    duration, cells, audio_scan = features.extract_cells(
+        input_path, settings, cell_sec, _feat_progress)
     if not cells:
         _logger.warning("特徴が空のため採点できません")
-        return {"duration": duration, "curve": [], "clips": []}
+        return {"duration": duration, "curve": [], "clips": [],
+                "audio_scan": audio_scan}
 
     # コメントをセルへ集計し、急増ボーナス(平均コメント数/分)を有効化する (R3 / resolve17 §4.4.1)。
     # コメント未取得なら comment_spike=False のまま = 従来どおり音声のみ採点で完走する。
@@ -84,4 +88,6 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
 
     if progress_cb:
         progress_cb(1.0, tr("採点完了"))
-    return {"duration": duration, "curve": curve, "clips": clips}
+    return {"duration": duration, "curve": curve, "clips": clips,
+            # 書き出しへ引き継ぐ全長 1 パス解析の結果 (resolve3 R5)
+            "audio_scan": audio_scan}

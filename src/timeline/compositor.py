@@ -65,8 +65,10 @@ class CanvasProfile:
     # 本番 (出力) のプロファイル
     @staticmethod
     def production(timeline, ffmpeg_cfg):
+        # fps は Timeline (= プロジェクトに保存された軸) を唯一の正とする (resolve3 R2)。
+        # 設定だけを見ると、保存済みプロジェクトを設定変更後に開いたとき軸がずれる。
         return CanvasProfile(timeline.width, timeline.height,
-                             ffmpeg_runner.get_output_fps(ffmpeg_cfg))
+                             _timeline_fps(timeline, ffmpeg_cfg))
 
     # プロキシ (確認用の低解像度) のプロファイル
     @staticmethod
@@ -74,7 +76,7 @@ class CanvasProfile:
         ratio = min(max(float(scale), PROXY_SCALE_MIN), PROXY_SCALE_MAX)
         return CanvasProfile(
             _even(timeline.width * ratio), _even(timeline.height * ratio),
-            ffmpeg_runner.get_output_fps(ffmpeg_cfg), scale=ratio,
+            _timeline_fps(timeline, ffmpeg_cfg), scale=ratio,
             production_width=timeline.width, production_height=timeline.height)
 
     # 本番と同じ寸法か (= 出力用か)
@@ -93,6 +95,18 @@ class CanvasProfile:
     def __repr__(self):
         return (f"CanvasProfile({self.width}x{self.height} @{self.fps}fps "
                 f"scale={self.scale:g})")
+
+
+# Timeline の fps を取る (無ければ設定値 / resolve3 R2)
+#
+# 素材等倍 (output_scale_mode="source") では fps も素材に合わせるため、
+# 保存済みプロジェクトの軸と設定値が食い違い得る。保存された軸を優先する。
+def _timeline_fps(timeline, ffmpeg_cfg):
+    try:
+        fps = int(getattr(timeline, "fps", 0) or 0)
+    except (TypeError, ValueError):
+        fps = 0
+    return fps if fps > 0 else ffmpeg_runner.get_output_fps(ffmpeg_cfg)
 
 
 # 偶数へ丸める (yuv420p は奇数の幅・高さを扱えない / crop._even と同じ理由)
@@ -292,23 +306,46 @@ def _clamp_int(value, low, high):
 
 # 縦動画の切り抜きのフィルタを返す (ver5 resolve9 §5.5 / 旧 renderer._crop_chain)
 #
-# 指定が無い / 別の素材に対する指定 / 枠が素材の外を指している場合は None を返し、
+# 指定が無い / 幾何を計算する材料が無い (素材が不明・寸法が 0) 場合は None を返し、
 # 従来の正規化へ落とす。開けない・書き出せないプロジェクトを作らないため (§4-4)。
 # boxblur の半径は絶対 px なので profile.scale を渡して換算する (§3.3)。
 def crop_chain(timeline, media, profile, settings=None):
     layout = crop.load(timeline)
     if layout is None:
         return None
-    if not crop.is_valid(layout, media, profile.width, profile.height):
-        _logger.warning("切り抜きの指定が素材と噛み合わないため、従来の正規化で出力します")
-        return None
 
     # 背景の種類は指定に入っている (作ったときの見え方を保つ)。
     # ぼかしの強さだけは設定から読む。
     cfg = crop.config(settings or {})
     cfg["background"] = str(layout.get("background") or cfg["background"])
-    return crop.filter_chain(layout, profile.width, profile.height, profile.fps, cfg,
+
+    # 素材ごとに「実際に当てる枠」を決める (ver9 resolve16 §3.2)。
+    # 寸法が同じ素材なら layout がそのまま返るため、素材 1 本の既存プロジェクトでは
+    # フィルタ文字列が 1 文字も変わらない。
+    applied = crop.resolve_layout(layout, media, profile.width, profile.height, cfg)
+    if applied is None:
+        _warn_crop_once(media, "切り抜きの指定が素材と噛み合わないため、従来の正規化で出力します")
+        return None
+    if applied is not layout:
+        _warn_crop_once(media, "切り抜きの枠を素材の寸法へ換算しました")
+    return crop.filter_chain(applied, profile.width, profile.height, profile.fps, cfg,
                              scale=profile.scale)
+
+
+# 切り抜きの扱いを素材ごとに 1 回だけ通知する (§11 ログ方針)
+#
+# クリップ 1 件ごとに呼ばれるため、そのまま出すと同じ行が数百件並んでログが読めなくなる
+# (ver9 resolve16 §1.7)。_warn_normalize_once と同じ流儀で (素材, 文言) を覚える。
+_warned_crop = set()
+
+
+def _warn_crop_once(media, message):
+    key = (str(getattr(media, "id", "") or ""), message)
+    if key in _warned_crop:
+        return
+    _warned_crop.add(key)
+    _logger.warning("%s (素材: %s)", message,
+                    os.path.basename(str(getattr(media, "path", "") or "")) or "不明")
 
 
 # 正規化を適用した旨を 1 回だけ通知する (§11 ログ方針)

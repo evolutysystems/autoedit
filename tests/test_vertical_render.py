@@ -212,14 +212,19 @@ class BrokenLayoutTest(unittest.TestCase):
         self.assertNotIn("crop=", joined)
         self.assertTrue(any("scale=1080:1920" in s for s in harness.filters()))
 
-    # 素材を差し替えて寸法が変わった場合も同じ
-    def test_source_size_changed_falls_back(self):
+    # 素材を差し替えて寸法が変わったら、枠を換算して当てること (ver9 resolve16 §3.2)
+    #
+    # 以前は黒帯の正規化へ落としていたが、場面ごとに見え方がばらつく原因になるため
+    # 「枠の縦横比を保ったまま素材の寸法へ換算して当てる」に変えた。
+    def test_source_size_changed_is_fitted(self):
         timeline = _with_crop(_build_timeline())
         media = timeline.media_by_id("m1")
-        media.width, media.height = 1280, 720
-        harness = _render(timeline)
+        media.width, media.height = 1280, 720      # 枠を決めたときは 1920x1080
+        crops = [s for s in _render(timeline).filters() if "crop=" in s]
 
-        self.assertNotIn("crop=", " ".join(" ".join(c) for c in harness.commands))
+        self.assertTrue(crops)
+        # 枠 1080x1080+420+0 を 2/3 倍 → 720x720、中心の相対位置はそのまま
+        self.assertIn("crop=720:720:280:0", crops[0])
 
 
 if __name__ == "__main__":

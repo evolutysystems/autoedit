@@ -101,8 +101,10 @@ class TimelineEditorDialog(QDialog):
     # project_path  : 保存先のプロジェクトファイル (未保存なら None / resolve7 §5.7)
     # created_at    : 読み込んだプロジェクトの初回作成時刻 (上書き保存で引き継ぐ)
     # mode          : "pipeline" (パイプラインの途中) / "resume" (保存済みを開き直した)
+    # asr_audio_builder: 認識用音声を「初回再生で必要になってから」作る関数 (resolve3 R8)
     def __init__(self, timeline, settings, work_dir, asr_audio_path=None, parent=None,
-                 project_path=None, created_at=None, mode="pipeline"):
+                 project_path=None, created_at=None, mode="pipeline",
+                 asr_audio_builder=None):
         super().__init__(parent)
         self.setWindowTitle(tr("Timeline 編集"))
         self._timeline = timeline
@@ -131,7 +133,8 @@ class TimelineEditorDialog(QDialog):
         # (ver8 resolve3 §3-1)。記憶が無ければ setting.json の既定サイズ。
         self._restore_geometry(ui_cfg)
 
-        self._build_ui(work_dir, asr_audio_path, ui_cfg)
+        self._build_ui(work_dir, asr_audio_path, ui_cfg,
+                       asr_audio_builder=asr_audio_builder)
         self._register_shortcuts()
         # 自動保存 (timeline.autosave_sec > 0 のときだけ動く / resolve7 §5.9)
         self._autosave_timer = None
@@ -170,12 +173,13 @@ class TimelineEditorDialog(QDialog):
     # 画面構築 (§5.2)
     # ------------------------------------------------------------------
 
-    def _build_ui(self, work_dir, asr_audio_path, ui_cfg):
+    def _build_ui(self, work_dir, asr_audio_path, ui_cfg, asr_audio_builder=None):
         root = QVBoxLayout(self)
 
         # 上部: プレビュー + インスペクタ
         upper = QSplitter(Qt.Horizontal)
-        self.preview = PreviewPanel(self.controller, work_dir, asr_audio_path, parent=self)
+        self.preview = PreviewPanel(self.controller, work_dir, asr_audio_path, parent=self,
+                                    asr_audio_builder=asr_audio_builder)
         upper.addWidget(self.preview)
         # プロキシ (ver6 resolve3)。設定が "off" / 作れない環境なら
         # ProxyManager 側が縮退し、従来の近似プレビューのまま動く (§7)。

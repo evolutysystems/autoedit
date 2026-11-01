@@ -25,8 +25,11 @@ class AudioChunkSource:
     # work_dir           : 一時ファイルの置き場 (PipelineContext.working_dir)
     # initial_audio_path : 音声認識用に生成済みの音声 (再利用できる場合のみ渡す)
     # preview_cfg        : timeline.preview の設定 (生成方式・品質・保持本数 / resolve6 §5.6)
+    # initial_audio_builder : 初回音声を「必要になってから」作る関数 (resolve3 R8)。
+    #   戻り値はパス (作れなければ None)。初回再生でワーカースレッドから 1 回だけ呼ぶ。
+    #   None なら従来どおり initial_audio_path だけを見る。
     def __init__(self, timeline, settings, work_dir, initial_audio_path=None,
-                 preview_cfg=None):
+                 preview_cfg=None, initial_audio_builder=None):
         self._timeline = timeline
         self._settings = settings or {}
         self._ffmpeg_cfg = self._settings.get("ffmpeg", {})
@@ -52,6 +55,8 @@ class AudioChunkSource:
         self._initial_valid = self._can_reuse_initial(timeline, initial_audio_path)
         if self._initial_valid:
             _logger.info("プレビュー音声に認識用音声を再利用します (未編集)")
+        # 初回音声の遅延生成 (resolve3 R8)。先に作られていれば使う必要がない。
+        self._initial_builder = None if initial_audio_path else initial_audio_builder
 
     # ------------------------------------------------------------------
     # 初回音声の再利用判定
@@ -84,8 +89,31 @@ class AudioChunkSource:
                 return path, chunk_start
         return None
 
+    # 初回音声を「必要になってから」作る (resolve3 R8)
+    #
+    # 作るのに数十秒かかるため、ワーカースレッド (build) からのみ呼ぶ。
+    # UI スレッドから呼ばれる cached() では決して実行しない。
+    # 失敗しても印を落とすだけで、以降は従来どおりチャンクのオンデマンド生成になる。
+    def _resolve_initial(self):
+        builder = self._initial_builder
+        if builder is None:
+            return
+        self._initial_builder = None        # 成否に関わらず 1 回だけ試す
+        try:
+            path = builder()
+        except Exception:  # noqa: BLE001 (初回音声の失敗で再生を止めない)
+            _logger.exception("初回プレビュー音声の生成に失敗しました")
+            return
+        if not path:
+            return
+        self._initial_audio_path = path
+        self._initial_valid = self._can_reuse_initial(self._timeline, path)
+        if self._initial_valid:
+            _logger.info("プレビュー音声を初回再生時に生成しました (resolve3 R8)")
+
     # 指定区間の音声を生成して (パス, チャンク開始秒) を返す (ワーカースレッドから呼ぶ)
     def build(self, start_sec, length_sec):
+        self._resolve_initial()
         hit = self.cached(start_sec, length_sec)
         if hit is not None:
             return hit
@@ -125,6 +153,7 @@ class AudioChunkSource:
     # Timeline が編集されたら生成済みを捨てる (以降はオンデマンド生成に切り替わる)
     def invalidate(self):
         self._initial_valid = False
+        self._initial_builder = None        # 編集後は初回音声を作っても使えない (R8)
         self._drop_chunks()
 
     # 生成した一時ファイルをすべて削除する (画面クローズ時)

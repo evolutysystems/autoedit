@@ -61,6 +61,13 @@ def loudness_config(settings):
         "verify_output": bool(cfg.get("verify_output", True)),
         "correct_output": bool(cfg.get("correct_output", True)),
         "correct_tolerance_lu": float(cfg.get("correct_tolerance_lu", 0.5) or 0.0),
+        # ラウドネスを「どの範囲で測るか」(resolve3 R7)
+        #   "selected" : 採用区間だけを繋いで測る (推奨)
+        #   "vod"      : 全長を測る (従来 / 切り戻し)
+        "measure_scope": str(cfg.get("measure_scope", "selected")
+                             or "selected").strip().lower(),
+        # 区間測定で concat へ渡す入力数の上限 (超えたら長い順に間引く)
+        "measure_max_ranges": max(int(cfg.get("measure_max_ranges", 20) or 0), 1),
     }
 
 
@@ -170,22 +177,46 @@ def has_audio_stream(input_path, ffmpeg_cfg):
 
 # 1パス目: ラウドネスを測定して実測値 dict を返す (失敗時は None / §5.2)
 # 戻り値: {"input_i","input_tp","input_lra","input_thresh","target_offset"}
-def measure_loudness(input_path, cfg, ffmpeg_cfg, total_duration=0.0, on_progress=None):
-    ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
+#
+# ranges: [(start, end)] を渡すと**その区間だけ**を繋いで測る (resolve3 R7)。
+#   None なら従来どおり全長を測る。出力に入るのは採用区間だけなので、
+#   全長 6170 秒を流して基準を決めるのは無駄である (実測 144 秒 -> 約 42 秒)。
+#   「全クリップへ同じゲインを掛ける」性質は変わらず、基準点が
+#   「VOD 全体」から「実際に出す部分」へ移るだけである。
+#   区間数が多いと入力数が増えるため、上限 (loudness.measure_max_ranges) を
+#   超えたら長い順に間引く。間引いた旨はログへ残す。
+# cancel_cb: 中止の問い合わせ (resolve3 R9-5)。
+def measure_loudness(input_path, cfg, ffmpeg_cfg, total_duration=0.0, on_progress=None,
+                     ranges=None, cancel_cb=None):
+    picked = _pick_ranges(ranges, cfg)
+    if picked:
+        measured = _measure_ranges(input_path, cfg, ffmpeg_cfg, picked,
+                                   on_progress=on_progress, cancel_cb=cancel_cb)
+        if measured is not None:
+            return measured
+        # 多入力 concat が失敗したら全長測定へ 1 回だけ落ちる (安全側)
+        _logger.warning("採用区間のラウドネス測定に失敗 → 全長測定へ落ちます")
+
     cmd = [
-        ffmpeg, "-hide_banner",
+        ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg), "-hide_banner",
         "-i", input_path,
         "-af", build_loudnorm_filter(cfg, print_json=True),
         # 測定は音声のみで足りるため映像デコードを省いて高速化する
         "-vn",
         "-f", "null", "-",
     ]
+    return _run_measure(cmd, ffmpeg_cfg, total_duration, on_progress, cancel_cb)
+
+
+# 測定コマンドを実行し loudnorm の測定 JSON を取り出す (失敗時は None)
+def _run_measure(cmd, ffmpeg_cfg, total_duration, on_progress, cancel_cb=None):
     # stderr 末尾 (run_ffmpeg_progress が保持) に loudnorm の測定 JSON が出力される
     returncode, stderr_tail = run_ffmpeg_progress(
         cmd,
         total_duration=total_duration,
         on_progress=on_progress,
         progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(ffmpeg_cfg),
+        cancel_cb=cancel_cb,
     )
     if returncode != 0:
         _logger.warning("ラウドネス測定の FFmpeg 実行に失敗 (code=%s)", returncode)
@@ -194,6 +225,54 @@ def measure_loudness(input_path, cfg, ffmpeg_cfg, total_duration=0.0, on_progres
     if measured is None:
         _logger.warning("loudnorm 測定結果 (JSON) の解析に失敗")
     return measured
+
+
+# 測定に使う区間を選ぶ (resolve3 R7)
+#
+# measure_scope="vod" / 区間 0 件なら None を返し、呼び出し側は全長測定へ進む。
+# 上限を超える件数は長い順に間引き、時系列へ戻して返す。
+def _pick_ranges(ranges, cfg):
+    if cfg.get("measure_scope", "selected") != "selected":
+        return None
+    valid = []
+    for item in (ranges or []):
+        try:
+            start, end = float(item[0]), float(item[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if end - start > 0:
+            valid.append((start, end))
+    if not valid:
+        return None
+    limit = int(cfg.get("measure_max_ranges", 20) or 20)
+    if len(valid) > limit:
+        kept = sorted(sorted(valid, key=lambda r: r[1] - r[0], reverse=True)[:limit])
+        _logger.info(
+            "ラウドネス測定の区間を %d 件から %d 件へ間引きました (長い順 / 上限 %d)",
+            len(valid), len(kept), limit)
+        return kept
+    return sorted(valid)
+
+
+# 採用区間だけを繋いでラウドネスを測る (resolve3 R7)
+#
+# 区間ごとに -ss/-t を付けた入力を並べ、concat フィルタで 1 本の音声にしてから
+# loudnorm へ流す。得られる JSON は linear=true の適用に必要な 5 項目をすべて含むため、
+# 正規化の計算は 1 行も変わらない。
+def _measure_ranges(input_path, cfg, ffmpeg_cfg, ranges, on_progress=None,
+                    cancel_cb=None):
+    cmd = [ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg), "-hide_banner"]
+    labels = ""
+    for index, (start, end) in enumerate(ranges):
+        cmd += ["-ss", "%.3f" % start, "-t", "%.3f" % (end - start), "-i", input_path]
+        labels += "[%d:a:0]" % index
+    total = sum(end - start for start, end in ranges)
+    filter_spec = "%sconcat=n=%d:v=0:a=1,%s[ao]" % (
+        labels, len(ranges), build_loudnorm_filter(cfg, print_json=True))
+    cmd += ["-filter_complex", filter_spec, "-map", "[ao]", "-f", "null", "-"]
+    _logger.info("ラウドネス測定: 採用区間 %d 件 / 合計 %.1fs (resolve3 R7)",
+                 len(ranges), total)
+    return _run_measure(cmd, ffmpeg_cfg, total, on_progress, cancel_cb)
 
 
 # 入力動画を正規化して output_path へ書き出す (resolve22 §5.2)

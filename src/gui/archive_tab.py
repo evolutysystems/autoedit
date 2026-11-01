@@ -117,6 +117,15 @@ class TwitchRestoreWorker(QThread):
 
 # 取得(Twitch)+採点(analyze)をワーカースレッドで実行する
 # job: {"mode","input_path","url","chat_path"}。twitch モードは VOD/コメントを取得してから採点する。
+# 秒を「約 n 分」の形へ整える (resolve3 R13)
+# 1 分未満は秒で出す (「約 0 分」にならないようにする)。
+def _fmt_minutes(seconds):
+    total = max(float(seconds or 0.0), 0.0)
+    if total < 60.0:
+        return tr("{sec} 秒", sec=int(round(total)))
+    return tr("{min} 分", min=int(round(total / 60.0)))
+
+
 class ArchiveAnalyzeWorker(QThread):
     progress = Signal(float, str)
     finished_ok = Signal(object)   # {"result": analyze結果, "input_path": ローカル実体パス}
@@ -246,11 +255,16 @@ class ArchiveClipWorker(QThread):
 
     def __init__(self, input_path, settings, clips, result_callback=None,
                  curve=None, parent=None, points=None,
-                 watermark_confirm_callback=None, vod_source=None):
+                 watermark_confirm_callback=None, vod_source=None, vod_scan=None):
         super().__init__(parent)
         self._input_path = input_path
         self._settings = settings
         self._clips = clips
+        # 採点で測った全長 1 パス解析 (resolve3 R5)。渡すと書き出しで測り直さない。
+        self._vod_scan = vod_scan
+        # 中止の要求 (resolve3 R9-5)。フラグを立てるだけで、
+        # 実際の打ち切りは ffmpeg の進捗 1 行ごと・工程の境目で行われる。
+        self._cancel_requested = False
         self._result_callback = result_callback
         self._curve = curve or []
         # ポイント (ver5 resolve §5.4)。未注入なら従来どおり消費も透かしも無い。
@@ -268,7 +282,8 @@ class ArchiveClipWorker(QThread):
                 progress_cb=self._emit, result_callback=self._result_callback,
                 curve=self._curve, points=self._points,
                 watermark_confirm_callback=self._watermark_confirm_callback,
-                vod_source=self._vod_source)
+                vod_source=self._vod_source, vod_scan=self._vod_scan,
+                cancel_cb=self._is_cancelled)
             self.finished_ok.emit(outputs)
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("切り抜き+焼き込みに失敗")
@@ -276,6 +291,16 @@ class ArchiveClipWorker(QThread):
 
     def _emit(self, ratio, label):
         self.progress.emit(float(ratio), str(label))
+
+    # 中止を要求する (resolve3 R9-5)。GUI スレッドから呼ぶ。
+    # スレッドを強制終了はせず、問い合わせに True を返すだけにする
+    # (途中のファイルを壊さず、一時フォルダの後始末も通る)。
+    def cancel(self):
+        self._cancel_requested = True
+
+    # 中止が要求されているか (write_clips が進捗 1 行ごとに呼ぶ)
+    def _is_cancelled(self):
+        return self._cancel_requested
 
 
 # 保存済みアーカイブ用プロジェクトの再編集をワーカースレッドで実行する
@@ -297,6 +322,8 @@ class ArchiveResumeWorker(QThread):
         self._restore_path = restore_path
         self._points = points
         self._watermark_confirm_callback = watermark_confirm_callback
+        # 中止の要求 (resolve3 R9-5)
+        self._cancel_requested = False
 
     def run(self):
         try:
@@ -305,7 +332,12 @@ class ArchiveResumeWorker(QThread):
                 result_callback=self._result_callback,
                 relink_callback=self._relink_callback,
                 restore_path=self._restore_path, points=self._points,
-                watermark_confirm_callback=self._watermark_confirm_callback)
+                watermark_confirm_callback=self._watermark_confirm_callback,
+                cancel_cb=self._is_cancelled)
+            if not outputs and self._cancel_requested:
+                # 中止で 0 件になった場合はキャンセルとして扱う (resolve3 R9-5)
+                self.cancelled.emit()
+                return
             self.finished_ok.emit(outputs)
         except PipelineCancelled:
             self.cancelled.emit()
@@ -315,6 +347,14 @@ class ArchiveResumeWorker(QThread):
 
     def _emit(self, ratio, label):
         self.progress.emit(float(ratio), str(label))
+
+    # 中止を要求する (resolve3 R9-5)。GUI スレッドから呼ぶ。
+    def cancel(self):
+        self._cancel_requested = True
+
+    # 中止が要求されているか (書き出しが進捗 1 行ごとに呼ぶ)
+    def _is_cancelled(self):
+        return self._cancel_requested
 
 
 # アーカイブ切り抜き用タブ
@@ -586,6 +626,12 @@ class ArchiveTabWidget(QWidget):
         theme.setup_primary_action_button(
             self.analyze_button, theme.RUN_GLYPH, tr("採点開始"))
         button_row.addWidget(self.analyze_button)
+        # 中止 (resolve3 R9-5)。書き出しは数十分かかるため、やめる手段を必ず置く。
+        # 処理を破壊的に止める動作のため輪郭ボタンにする (resolve3 §5.2-2/3 の規約)。
+        self.cancel_button = QPushButton(tr("中止"))
+        self.cancel_button.clicked.connect(self._on_cancel)
+        self.cancel_button.setEnabled(False)
+        button_row.addWidget(self.cancel_button)
         button_row.addStretch(1)
         root.addLayout(button_row)
 
@@ -899,6 +945,19 @@ class ArchiveTabWidget(QWidget):
             self.status_label.setText(tr("候補なし"))
             return
 
+        # 書き出し対象の尺と想定時間を見せる (resolve3 R13)。
+        # 対象の尺は top_n x window_sec で固定され VOD の長さに依存しないため、
+        # セクション数だけでは「何分ぶん書き出すのか」が分からなかった。
+        total_sec = sum(max(float(c.get("end", 0)) - float(c.get("start", 0)), 0.0)
+                        for c in clips)
+        estimate_sec = config.estimate_export_sec(self._settings, total_sec, len(clips))
+        self.status_label.setText(
+            tr("{n} セクション / 合計 {length} / 想定 約 {estimate}",
+               n=len(clips), length=_fmt_minutes(total_sec),
+               estimate=_fmt_minutes(estimate_sec)))
+        _logger.info("書き出し対象: %d セクション / 合計 %.0fs / 想定 %.0fs (R13)",
+                     len(clips), total_sec, estimate_sec)
+
         # 追加フォント(settings/fonts)を Qt へ登録し編集画面の一覧へ反映する (resolve16 §4.2)
         register_fonts_in_dir(resolve_fonts_dir(self._settings))
         subtitle_cfg = self._settings.get("subtitle", {})
@@ -923,7 +982,9 @@ class ArchiveTabWidget(QWidget):
             result_callback=self._review_bridge, curve=curve, parent=self,
             points=self._points, watermark_confirm_callback=self._watermark_bridge,
             vod_source=(payload.get("vod_source")
-                        if isinstance(payload, dict) else None))
+                        if isinstance(payload, dict) else None),
+            # 採点で測った全長 1 パス解析を書き出しへ引き継ぐ (resolve3 R5)
+            vod_scan=result.get("audio_scan") if isinstance(result, dict) else None)
         self._clip_worker.progress.connect(self._on_progress)
         self._clip_worker.finished_ok.connect(self._on_clip_done)
         self._clip_worker.failed.connect(self._on_failed)
@@ -931,11 +992,39 @@ class ArchiveTabWidget(QWidget):
         self._set_running(True)
         self._clip_worker.start()
 
+    # 中止ボタン (resolve3 R9-5)
+    #
+    # ワーカーへフラグを立てるだけにする。スレッドを強制終了すると書きかけの
+    # ファイルや一時フォルダが残るため、工程の境目と ffmpeg の進捗 1 行ごとに
+    # ワーカー側が自分で止まるのを待つ。
+    def _on_cancel(self):
+        requested = False
+        for name in ("_clip_worker", "_resume_worker", "_analyze_worker"):
+            worker = getattr(self, name, None)
+            if worker is None or not worker.isRunning():
+                continue
+            canceller = getattr(worker, "cancel", None)
+            if callable(canceller):
+                canceller()
+                requested = True
+        if not requested:
+            return
+        self.cancel_button.setEnabled(False)
+        self._spinner_message = tr("中止しています…")
+        self.status_label.setText(tr("中止しています…"))
+        _logger.info("利用者の操作により書き出しの中止を要求しました")
+
     # 切り抜き完了 (結合1本を出力)
     def _on_clip_done(self, outputs):
         self._set_running(False)
         self.progress_bar.setValue(100)
         if not outputs:
+            # 中止したときも出力 0 件で返る (resolve3 R9-5)。
+            # 利用者の操作で止めた場合はエラーダイアログを出さない。
+            if self._cancel_was_requested():
+                self.status_label.setText(tr("中止しました"))
+                self.progress_bar.setValue(0)
+                return
             self.status_label.setText(tr("出力なし (全てスキップ)"))
             QMessageBox.information(self, tr("完了"),
                                     tr("出力するクリップがありませんでした。"))
@@ -1059,10 +1148,21 @@ class ArchiveTabWidget(QWidget):
         self.progress_bar.setValue(int(ratio * 100))
         self._spinner_message = label
 
+    # 直前の実行で中止が要求されていたか (resolve3 R9-5)
+    def _cancel_was_requested(self):
+        for name in ("_clip_worker", "_resume_worker"):
+            worker = getattr(self, name, None)
+            if worker is not None and getattr(worker, "_cancel_requested", False):
+                return True
+        return False
+
     def _set_running(self, running):
         # タブ外の設定ボタンを無効化するため親へ通知する (ver3 resolve4 §5.7-4)
         self.running_changed.emit(running)
         self.analyze_button.setEnabled(not running)
+        # 中止は実行中だけ押せる (resolve3 R9-5)
+        if getattr(self, "cancel_button", None) is not None:
+            self.cancel_button.setEnabled(running)
         self.browse_button.setEnabled(not running)
         self.input_edit.setEnabled(not running)
         self.chat_browse_button.setEnabled(not running)

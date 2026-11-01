@@ -22,6 +22,7 @@ from ..settings.settings_window import save_settings
 from ..timeline import builder as timeline_builder
 from ..timeline import media_recovery, project_io, renderer
 from ..utils import disk
+from ..utils import stage_timer
 from ..utils.logger import get_logger
 from ..version import __version__
 from .pipeline_context import PipelineContext
@@ -78,6 +79,16 @@ def run_pipeline(input_path, settings, progress_cb=None, subtitle_review_callbac
     # 「ffprobe が失敗」という分かりにくい形で落ちていた。
     _ensure_readable_input(input_path, settings)
     _ensure_space_for_run(input_path, settings)
+
+    # 工程ごとの所要の計測を初期化する (§7.1)
+    stage_timer.reset()
+
+    # 出力キャンバスを素材等倍へ解決し、実行用の設定コピーへ書き戻す
+    # (resolve3 R2 / §13-4 の判断により本流にも適用する)。
+    # これで ffmpeg.output_* を読む既存の全工程が解決値を見る。
+    # setting.json の保存値は変えない (apply_canvas_to_settings が deepcopy する)。
+    settings = output_profile.apply_canvas_to_settings(settings, input_path=input_path)
+    ffmpeg_cfg = settings.get("ffmpeg", {})
 
     use_timeline = is_timeline_mode(settings)
     context = _prepare_context(input_path, settings, progress_cb, subtitle_review_callback,
@@ -463,6 +474,9 @@ def _review_timeline(context, timeline, mode="pipeline"):
         "created_at": getattr(context, "project_created_at", None),
         "mode": mode,
         "asr_audio_path": context.asr_audio_path(),
+        # 先に作らない設定のときの作り方 (resolve3 R8)。
+        # 画面はプレビューの初回再生で必要になってから 1 回だけ呼ぶ。
+        "asr_audio_builder": context.build_asr_audio,
         # プレビューの一時ファイルは中間ファイルと同じ寿命にする (cleanup で消える)
         "working_dir": context.working_dir,
     })
@@ -547,6 +561,14 @@ def _apply_volume_analysis(context):
 # 失敗時はデバッグのため一時ディレクトリを保持する選択肢もあるが、
 # デフォルトは tempfile が自動 cleanup する
 def _cleanup(context):
+    # 工程ごとの所要を 1 行で残す (§7.1)
+    stage_timer.report("パイプライン")
+    # 書き出しが終わればモデルは不要 (int8 で約 1.5GB / resolve3 R6)。
+    # 後始末より先に行う (例外が出ても中間ファイルの削除は必ず通す)。
+    try:
+        subtitle_generator.release_models()
+    except Exception:  # noqa: BLE001 (解放の失敗で後処理を止めない)
+        _logger.debug("Whisper モデルキャッシュの解放に失敗しました", exc_info=True)
     try:
         context.cleanup()
     except Exception:

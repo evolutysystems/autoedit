@@ -164,7 +164,10 @@ class PreviewPanel(QWidget):
     # 再生状態の変化 (再生中は編集操作を止めるため画面側へ通知する / §4-8)
     playing_changed = Signal(bool)
 
-    def __init__(self, controller, work_dir, asr_audio_path=None, parent=None):
+    # asr_audio_builder: 初回音声を必要になってから作る関数 (resolve3 R8)。
+    #   None なら従来どおり asr_audio_path だけを見る。
+    def __init__(self, controller, work_dir, asr_audio_path=None, parent=None,
+                 asr_audio_builder=None):
         super().__init__(parent)
         self._controller = controller
         self._cfg = controller.cfg["preview"]
@@ -191,7 +194,7 @@ class PreviewPanel(QWidget):
         # 音声 (生成方式・品質・保持本数は preview 設定から / resolve6 §5.6)
         self._audio_source = AudioChunkSource(
             controller.timeline, self._settings, work_dir, asr_audio_path,
-            preview_cfg=self._cfg)
+            preview_cfg=self._cfg, initial_audio_builder=asr_audio_builder)
         self._audio_worker = None
         self._audio_job = 0
         # 完了したら再生を始めるジョブ ID (先読みジョブと区別する)
@@ -795,8 +798,15 @@ class PreviewPanel(QWidget):
         if layout is None:
             return pixmap
 
-        media = timeline.media_by_id(str(layout.get("media_id") or ""))
-        if not crop.is_valid(layout, media, timeline.width, timeline.height):
+        # 枠は「再生ヘッド位置のクリップの素材」に対して解決する (ver9 resolve16 §3.5)。
+        # layout 側の素材 (枠を決めた素材) で検査すると、出力では枠が当たらない素材の
+        # クリップでも画面には当たって見え、画面と出力が食い違う。
+        clip = self._base_clip_at_playhead()
+        media_id = str(getattr(clip, "media_id", "") or "") if clip is not None else ""
+        media = timeline.media_by_id(media_id or str(layout.get("media_id") or ""))
+        layout = crop.resolve_layout(layout, media, timeline.width, timeline.height,
+                                     crop.config(self._settings))
+        if layout is None:
             return pixmap
 
         canvas = self._canvas_buffer(timeline.width, timeline.height)

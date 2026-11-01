@@ -132,9 +132,12 @@ class ValidationTest(unittest.TestCase):
     def test_source_size_changed(self):
         self.assertFalse(crop.is_valid(self.layout, _media(1280, 720), *_CANVAS))
 
-    # 別の素材のクリップには当てない
+    # 寸法が同じなら別 ID の素材にも当てる (ver9 resolve16 §3.1)
+    #
+    # 縦プロジェクトの V1 は、同じ正規化プロファイルで作った複数の素材
+    # (アーカイブのセクションごと) を正当に持つため、ID で弾いてはいけない。
     def test_other_media(self):
-        self.assertFalse(crop.is_valid(self.layout, _media(media_id="m2"), *_CANVAS))
+        self.assertTrue(crop.is_valid(self.layout, _media(media_id="m2"), *_CANVAS))
 
     def test_none(self):
         self.assertFalse(crop.is_valid(None, self.media, *_CANVAS))

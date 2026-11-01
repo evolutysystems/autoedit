@@ -173,6 +173,44 @@ ALIGNMENT_OPTIONS = [
 
 # デフォルト値(setting.jsonが空または欠落キーがある場合に補完)
 # 新規セクション (silence_cut/ffmpeg/logging) を追加しつつ既存キーは維持
+# 出力サイズの選択肢 (resolve3 R11)。保存されるのは value のため言語に依存しない。
+OUTPUT_SCALE_MODE_OPTIONS = [
+    ("source", "素材と同じ (推奨)"),
+    ("fixed", "1920x1080 固定"),
+]
+
+# 画質と速度の 3 択 (resolve3 R11)。
+# "custom" は setting.json を手で書いた値を保つための隠し値で、コンボには出さない。
+QUALITY_PROFILE_OPTIONS = [
+    ("speed", "速度優先"),
+    ("standard", "標準 (推奨)"),
+    ("quality", "品質優先"),
+]
+QUALITY_PROFILE_CUSTOM = "custom"
+
+# 画質と速度プロファイルの実値への展開表 (resolve3 R11)。
+# 保存時に ffmpeg.preset / crf / intermediate_* と subtitle.asr_audio_prefetch へ展開する。
+# "quality" は output_scale_mode も fixed に倒す = 従来と同じ出力になる。
+QUALITY_PROFILE_VALUES = {
+    "speed": {
+        "preset": "veryfast", "crf": 20,
+        "intermediate_preset": "veryfast", "intermediate_crf": "18",
+        "asr_audio_prefetch": False,
+    },
+    "standard": {
+        "preset": "medium", "crf": 20,
+        "intermediate_preset": "veryfast", "intermediate_crf": "18",
+        "asr_audio_prefetch": True,
+    },
+    "quality": {
+        "preset": "medium", "crf": 18,
+        "intermediate_preset": "", "intermediate_crf": "",
+        "asr_audio_prefetch": True,
+        "output_scale_mode": "fixed",
+    },
+}
+
+
 DEFAULT_SETTINGS = {
     "general": {
         "video_directory": "",
@@ -418,6 +456,12 @@ DEFAULT_SETTINGS = {
         "speaker_core_ratio": 0.5,
         # これより短い発話は声紋が安定しないため判定しない
         "speaker_min_sec": 0.6,
+        # Whisper モデルをプロセス内で使い回す (resolve3 R6)。
+        # false で従来どおりクリップごとに読み直す (int8 で約 1.5GB / 読込 7.5 秒)。
+        "whisper_model_cache": True,
+        # プレビューの初回再生ソースを認識の前に作るか (resolve3 R8)。
+        # false にすると初回再生で必要になってから作る (触らなければ作らない)。
+        "asr_audio_prefetch": True,
     },
     "silence_cut": {
         # 無音カット ON/OFF (resolve12)。既定 True で従来挙動を維持する。
@@ -471,6 +515,14 @@ DEFAULT_SETTINGS = {
         # 映像は -c:v copy なので無劣化・短時間で済む。
         "correct_output": True,
         "correct_tolerance_lu": 0.5,
+        # ラウドネスを「どの範囲で測るか」(resolve3 R7)
+        #   "selected" : 採用区間だけを繋いで測る (推奨)。出力に入るのはこの部分だけ
+        #   "vod"      : 全長を測る (従来 / 切り戻し)
+        # archive.clip_pipeline.loudness_scope (「どの範囲で揃えるか」) とは別物。
+        "measure_scope": "selected",
+        # 区間測定で concat へ渡す入力数の上限 (resolve3 R7)。
+        # 超えたら長い順に間引く (入力数が増えすぎると ffmpeg 側が重くなる)。
+        "measure_max_ranges": 20,
     },
     # 字幕編集画面の動画プレビュー (resolve23) — 選択行の時刻から segment_sec 秒を
     # 字幕焼き込み付きの低解像度 mp4 として生成し QtMultimedia で再生する。
@@ -945,6 +997,10 @@ DEFAULT_SETTINGS = {
             # 部品の尺をフレーム境界へタイル化する (絶対フレーム番号の差で決める)。
             # false にすると従来どおりモデルの秒をそのまま -t へ渡す。
             "frame_quantize": True,
+            # 区間 1 件のクリップでベース映像の構築を省き、素材から直接焼き込む
+            # (resolve3 R3b)。A/V 同期に関わるため既定は false (§13-5 の判断)。
+            # 手元で確認できたら true にする。
+            "direct_burn": False,
         },
     },
     "ffmpeg": {
@@ -964,6 +1020,25 @@ DEFAULT_SETTINGS = {
         # 従来は指定が無く FFmpeg の aac 既定 (ステレオで概ね 128kbps) になっていた。
         # 空文字にすると従来どおり指定しない。
         "audio_bitrate": "256k",
+        # 出力キャンバスの決め方 (resolve3 R2)
+        #   "source" : 素材等倍。拡大もフレーム複製もしない (推奨)。
+        #              output_width/height/output_fps は**上限**として効く。
+        #   "fixed"  : 従来どおり output_width/height/output_fps をそのまま使う
+        "output_scale_mode": "source",
+        # 素材 fps を丸める標準値の候補 (resolve3 R2)。
+        # 非整数の fps (実測 28.8) をそのまま使うと CFR 化の前提が崩れるため、
+        # 最も近い候補へ丸める。空リストにすると丸めずに素材値を使う。
+        "output_fps_standards": [24, 25, 30, 50, 60],
+        # 中間ファイル (連結前の部品) のエンコード設定 (resolve3 R3a)。
+        # 中間物は直後に焼き込みで再エンコードされるため、最終出力と同じ preset は要らない。
+        # 空文字のときは preset / crf をそのまま使う = 従来と完全に同一。
+        "intermediate_preset": "",
+        "intermediate_crf": "",
+        # 設定画面の「画質と速度」3 択 (resolve3 R11)。
+        #   "speed" / "standard" / "quality" は保存時に preset/crf 等へ展開する。
+        #   "custom" は展開せず現在値を保つ (setting.json を手で書いた値を壊さない)。
+        # 新規インストールの既定は "standard"、既存利用者は "custom" のままになる。
+        "quality_profile": "standard",
     },
     # 縦動画(YouTube Shorts / TikTok)対応 (request14 / resolve14)
     # 縦検出時のみ有効。フォント/改行/配置/余白は横(subtitle)設定を上書きする。
@@ -1016,6 +1091,17 @@ DEFAULT_SETTINGS = {
             # 素材を複製するか。false なら今のパスを指したままにする
             # (容量を使わない代わりに、素材が消えると開けなくなる)。
             "keep_media": True,
+            # テロップトラックの構成 (本数・名前・ヘッダーで決めた色・有効) を
+            # 縦プロジェクトへ引き継ぐか (ver9 resolve15)。
+            # false で v1.7.1 以前と同じく S1 の 1 本へ潰す。
+            "carry_subtitle_tracks": True,
+            # 切り抜きの枠を全ての素材へ当てるか (ver9 resolve16)。
+            #   True  = 素材 ID が違っても当てる (アーカイブ切り抜きから作った縦
+            #           プロジェクトは、セクションごとに素材を持つため既定で必要)。
+            #           寸法が違う素材へは、枠の縦横比を保ったまま換算して当てる。
+            #   False = 枠を決めた素材だけに当てる (v1.7.1 以前と同じ。他の素材は
+            #           従来の正規化で上下に黒帯が入る)。
+            "apply_to_all_media": True,
         },
     },
     "logging": {
@@ -1080,6 +1166,11 @@ DEFAULT_SETTINGS = {
             "clip_pad_sec": 0,          # 採用区間の前後パディング
             "loud_percentile": 0.8,     # 大声セル判定 (max_db の上位分位)
             "silence_ratio_threshold": 0.6,  # 無音セル判定 (無音率がこれ以上)
+            # 特徴抽出の方式 (resolve3 R5)
+            #   "single_pass" : 全長 1 パス (silencedetect + astats) で抽出する。
+            #                   実測 259.5 秒 → 13.2 秒。結果は書き出しへも引き継ぐ。
+            #   "per_cell"    : セルごとに volumedetect を呼ぶ (従来 / 切り戻し)
+            "feature_mode": "single_pass",
             "method_a": {
                 "weights": {"emotion": 0.55, "comment": 0.45},
                 # R1 は音声のみのため loud/long_silence を使用 (他はML必要=後続)
@@ -1156,6 +1247,15 @@ DEFAULT_SETTINGS = {
             },
         },
         # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
+        # 書き出し時間の目安 (resolve3 R13)。
+        # 機械によって 2 倍以上変わるためハードコードせず設定で持つ。
+        # 既定値はフェーズ 1 適用後の実機 (resolve2.md) の実測から算出:
+        #   (42+2+73+29+7.5+949+390+402+12) / 1800 ≒ 1.06 秒/秒
+        "estimate": {
+            "sec_per_content_sec": 1.06,  # 尺 1 秒あたりの所要秒数
+            "fixed_sec": 60,              # 尺に依存しない固定費 (解析・結合など)
+            "sec_per_clip": 8,            # クリップ 1 本あたりの固定費
+        },
         "clip_pipeline": {
             "silence_cut": True,       # 各クリップで無音カットを行う
             "subtitle_review": True,   # 各クリップでテロップ編集画面を出す
@@ -1177,6 +1277,9 @@ DEFAULT_SETTINGS = {
             "opening_ending": True,    # 結合1本に OP/ED を付ける (実体は general フラグ+素材有無)
             "keep_individual": False,  # 個別クリップも残すか (既定: 残さない)
             "combined_suffix": "combined",
+            # true で最終結合を従来どおり全体再エンコードする (resolve3 R1 の切り戻し)。
+            # 既定 false では部品の規格が揃っていればストリームコピーで繋ぐ。
+            "reencode": False,
         },
         # テーマ・イントロカード (resolve19): 字幕一覧画面でテーマを入力した
         # クリップにのみ発火。開始前 buffer_sec を復元しブラー+黒帯+中央テーマを重ね、
@@ -2008,6 +2111,33 @@ class SettingsWindow(QWidget):
         grid.addWidget(self.auto_update_check_check, row, 1)
         row += 1
 
+        # ===== 出力 (resolve3 R11) =====
+        # output_width/height/output_fps/preset/crf は従来ウィジェットが無く、
+        # setting.json を手で書くしか変更手段が無かった。
+        # 細かい値ではなく「出力サイズ」と「画質と速度」の 2 つに畳んで出す。
+        self.output_scale_mode_combo = self._make_value_combo(OUTPUT_SCALE_MODE_OPTIONS)
+        self.output_scale_mode_combo.currentIndexChanged.connect(
+            self._update_output_note)
+        grid.addWidget(self._make_column_label("出力サイズ"), row, 0)
+        grid.addWidget(self.output_scale_mode_combo, row, 1)
+        row += 1
+        grid.addWidget(
+            self._make_note_label(
+                "「素材と同じ」は配信の解像度そのままで書き出します "
+                "(拡大しないため速く、画質も落ちません)。"
+                "設定の 1920x1080 は上限として効くため、2K/4K は 1080p へ縮小されます"),
+            row, 1)
+        row += 1
+
+        self.quality_profile_combo = self._make_value_combo(QUALITY_PROFILE_OPTIONS)
+        self.quality_profile_combo.currentIndexChanged.connect(self._update_output_note)
+        grid.addWidget(self._make_column_label("画質と速度"), row, 0)
+        grid.addWidget(self.quality_profile_combo, row, 1)
+        row += 1
+        self.output_note = self._make_note_label("")
+        grid.addWidget(self.output_note, row, 1)
+        row += 1
+
         # ===== 音量調節 (loudness) =====
         # YouTube 向けラウドネス正規化 ON/OFF (ver9 request1)。
         # クリップ用・アーカイブ用の両方が loudness.enabled を見るため、
@@ -2729,6 +2859,27 @@ class SettingsWindow(QWidget):
             combo.addItem(tr(text), value)
         return combo
 
+    # 出力設定の注記を現在の選択で書き換える (resolve3 R11 / R13 と同じ係数を使う)
+    #
+    # 想定時間は 1800 秒 (TOP10 x 180 秒の既定) を書き出したときの概算で、
+    # プロファイルを選ぶ前に「どれくらい変わるか」が分かるようにする。
+    def _update_output_note(self):
+        note = getattr(self, "output_note", None)
+        if note is None:
+            return
+        profile = self.quality_profile_combo.currentData()
+        mode = self.output_scale_mode_combo.currentData()
+        if profile == "speed":
+            text = "速さを優先します (中間ファイルを軽い設定で作ります)"
+        elif profile == "quality":
+            text = ("画質を優先します。出力サイズは 1920x1080 固定になり、"
+                    "書き出しは「標準」の 4〜5 倍かかります")
+        else:
+            text = "通常はこれで足ります (画質と速さの釣り合いが最も良い設定です)"
+        if profile != "quality" and mode == "fixed":
+            text += "。1920x1080 固定のため、素材が 1080p 未満だと拡大のぶん時間が増えます"
+        note.setText(tr(text))
+
     # ディレクトリ選択用の入力欄+ボタンを生成する
     def _make_dir_picker(self, line_edit):
         line_edit.setMinimumWidth(INPUT_FIELD_MIN_WIDTH)
@@ -2867,6 +3018,20 @@ class SettingsWindow(QWidget):
         self.work_dir_edit.setText(general.get("work_directory", ""))
         self.min_free_space_spin.setValue(
             _coerce_int(general.get("min_free_space_gb", 20), 20))
+        # 出力 (resolve3 R11)。quality_profile="custom" はコンボに無いため
+        # 「標準」を表示しつつ、保存時は選び直されるまで展開しない (_collect_settings)。
+        ffmpeg_cfg = self._loaded_settings.get("ffmpeg", {})
+        self._loaded_quality_profile = str(
+            ffmpeg_cfg.get("quality_profile", QUALITY_PROFILE_CUSTOM)
+            or QUALITY_PROFILE_CUSTOM)
+        self._set_combo_data(
+            self.output_scale_mode_combo,
+            str(ffmpeg_cfg.get("output_scale_mode", "source") or "source"))
+        self._set_combo_data(
+            self.quality_profile_combo,
+            self._loaded_quality_profile if self._loaded_quality_profile
+            in QUALITY_PROFILE_VALUES else "standard")
+        self._update_output_note()
         self._update_work_dir_note()
         self.auto_update_check_check.setChecked(bool(general.get("auto_update_check", True)))
 
@@ -3141,6 +3306,8 @@ class SettingsWindow(QWidget):
         settings.setdefault("loudness", {}).update({
             "enabled": self.loudness_enabled_check.isChecked(),
         })
+        # 出力 (resolve3 R11)。プロファイルは保存時に実値へ展開する。
+        self._collect_output_settings(settings)
         # 無音音量閾値(dB)/無音最小継続時間 は resolve7 により UI から削除。
         # 既存値は base (load_settings) からそのまま引き継がれ上書きしない。
         settings.setdefault("silence_cut", {}).update({
@@ -3271,6 +3438,9 @@ class SettingsWindow(QWidget):
             save_settings(settings)
             # 保存後の状態を loaded として保持しておく
             self._loaded_settings = settings
+            # モデル名・精度を変えた可能性があるため、使い回しているモデルを捨てる
+            # (resolve3 R6)。次の書き出しで新しい設定のモデルが作られる。
+            _release_whisper_models()
             if show_message:
                 QMessageBox.information(self, tr("保存完了"),
                                         tr("設定を保存しました。"))
@@ -3280,9 +3450,56 @@ class SettingsWindow(QWidget):
                                  tr("保存に失敗しました。\n{error}", error=e))
             return False
 
+    # 出力設定を収集する (resolve3 R11)
+    #
+    # quality_profile は「適用ボタン」ではなく**保存時に実値へ展開する**方式にする。
+    # setting.json を手で書いている利用者の値を壊さないため、
+    # 読み込み時が "custom" でコンボを触っていない場合は展開しない。
+    def _collect_output_settings(self, settings):
+        ffmpeg_cfg = settings.setdefault("ffmpeg", {})
+        ffmpeg_cfg["output_scale_mode"] = str(
+            self.output_scale_mode_combo.currentData() or "source")
+
+        selected = str(self.quality_profile_combo.currentData() or "standard")
+        loaded = getattr(self, "_loaded_quality_profile", QUALITY_PROFILE_CUSTOM)
+        if loaded == QUALITY_PROFILE_CUSTOM and selected == "standard":
+            # 手書きの値をそのまま保つ (コンボは「標準」を表示しているだけ)
+            ffmpeg_cfg["quality_profile"] = QUALITY_PROFILE_CUSTOM
+            return
+
+        values = QUALITY_PROFILE_VALUES.get(selected)
+        if values is None:
+            ffmpeg_cfg["quality_profile"] = QUALITY_PROFILE_CUSTOM
+            return
+        ffmpeg_cfg["quality_profile"] = selected
+        for key in ("preset", "crf", "intermediate_preset", "intermediate_crf"):
+            ffmpeg_cfg[key] = values[key]
+        # 「品質優先」は出力サイズも固定に倒す (= 従来と同じ出力)
+        if "output_scale_mode" in values:
+            ffmpeg_cfg["output_scale_mode"] = values["output_scale_mode"]
+            self._set_combo_data(self.output_scale_mode_combo,
+                                     values["output_scale_mode"])
+        settings.setdefault("subtitle", {})["asr_audio_prefetch"] = bool(
+            values["asr_audio_prefetch"])
+        self._loaded_quality_profile = selected
+
     # 保存ボタン押下処理
     def _on_save(self):
         self._save_current(show_message=True)
+
+
+# Whisper モデルのプロセス内キャッシュを解放する (resolve3 R6)
+#
+# subtitle_generator は faster-whisper を遅延 import するため軽いが、
+# 設定画面が常に読み込む必要はないためここでも遅延 import する。
+# 解放できなくても設定の保存は成功させる (次の書き出しが遅くなるだけ)。
+def _release_whisper_models():
+    try:
+        from ..modules import subtitle_generator   # noqa: PLC0415 (遅延 import)
+
+        subtitle_generator.release_models()
+    except Exception:  # noqa: BLE001 (解放できなくても保存は成功させる)
+        _logger.debug("Whisper モデルキャッシュの解放に失敗しました", exc_info=True)
 
 
 # エントリーポイント

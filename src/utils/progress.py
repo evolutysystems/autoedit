@@ -7,6 +7,8 @@ import threading
 import time
 from collections import deque
 
+from ..exceptions import PipelineCancelled
+from ..i18n import tr
 from .logger import get_logger
 from .proc import no_window_creationflags
 
@@ -16,6 +18,8 @@ _logger = get_logger(__name__)
 _READ_BUFSIZE = 1
 # stderr で末尾保持する行数
 _STDERR_TAIL_LINES = 30
+# 中止時に terminate の応答を待つ秒数 (超えたら kill / resolve3 R9-5)
+_TERMINATE_WAIT_SEC = 5
 
 
 # stderr を別スレッドで読み続け、末尾 N 行のみ保持する。
@@ -34,9 +38,13 @@ def _drain_stderr(stderr, sink):
 # on_progress          : Callable[[float, dict], None] 進捗率(0.0-1.0)とkey/value辞書を渡す
 # progress_timeout_sec : この秒数 progress 更新が無ければ停滞と判断しプロセスを終了する
 #                        (0 以下で監視無効=従来どおりタイムアウトなし)
+# cancel_cb            : 進捗 1 行ごとに中止を問い合わせる (resolve3 R9-5)。
+#                        True が返ったらプロセスを終わらせて PipelineCancelled を送出する。
+#                        archive/twitch_source._run と同じ規約に揃えている。
+#                        省略時 (None) は従来と 1 文字も挙動が変わらない。
 # 戻り値               : (returncode, stderr_tail)
 def run_ffmpeg_progress(command, total_duration=0.0, on_progress=None,
-                        progress_timeout_sec=0):
+                        progress_timeout_sec=0, cancel_cb=None):
     # progress pipe を追加してプロセス起動
     cmd = list(command) + ["-progress", "pipe:1", "-nostats"]
     _logger.debug("FFmpeg 実行: %s", " ".join(cmd))
@@ -75,6 +83,8 @@ def run_ffmpeg_progress(command, total_duration=0.0, on_progress=None,
         watchdog_thread.start()
 
     progress_kv = {}
+    # 中止を検知したか (finally でプロセスを片付けた後に例外を送出するためのフラグ)
+    cancelled = False
     try:
         # stdout から progress pipe を逐次パース
         for line in iter(process.stdout.readline, ""):
@@ -87,6 +97,13 @@ def run_ffmpeg_progress(command, total_duration=0.0, on_progress=None,
             # progress=continue/end のたびにコールバックを呼ぶ
             if key == "progress":
                 last_progress_at["t"] = _now()  # 最終進捗時刻を更新 (監視用)
+                # 中止の問い合わせ (resolve3 R9-5)。
+                # ここで break すると finally がプロセスの終了を待つため、
+                # 先に terminate → kill の順で確実に止めてから抜ける。
+                if cancel_cb is not None and _ask_cancel(cancel_cb):
+                    cancelled = True
+                    _terminate(process)
+                    break
                 ratio = _calc_ratio(progress_kv, total_duration)
                 if on_progress is not None:
                     try:
@@ -104,12 +121,41 @@ def run_ffmpeg_progress(command, total_duration=0.0, on_progress=None,
         stderr_thread.join(timeout=5)
 
     stderr_tail = "\n".join(stderr_tail_buf)
+    if cancelled:
+        # 中止は「異常終了」ではないため returncode ではなく専用の例外で知らせる
+        _logger.info("FFmpeg の実行を中止しました (利用者の操作)")
+        raise PipelineCancelled(tr("処理を中止しました"))
     if timed_out["flag"]:
         # 停滞による強制終了をログに残し、上位で異常終了として扱えるようにする
         _logger.error(
             "FFmpeg が %d 秒間 進捗を更新しなかったため強制終了しました", progress_timeout_sec
         )
     return process.returncode, stderr_tail
+
+
+# 中止コールバックを安全に呼ぶ (resolve3 R9-5)
+# コールバック側の例外で書き出しを落とさない。問い合わせに失敗したら「中止でない」とみなす。
+def _ask_cancel(cancel_cb):
+    try:
+        return bool(cancel_cb())
+    except Exception:  # noqa: BLE001 (中止判定の失敗で処理を壊さない)
+        _logger.exception("cancel_cb コールバックで例外発生")
+        return False
+
+
+# ffmpeg プロセスを終了させる (terminate → 応答しなければ kill / resolve3 R9-5)
+def _terminate(process):
+    try:
+        process.terminate()
+    except Exception:  # noqa: BLE001 (既に終了していれば何もしない)
+        return
+    try:
+        process.wait(timeout=_TERMINATE_WAIT_SEC)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except Exception:  # noqa: BLE001
+            _logger.exception("FFmpeg プロセスの強制終了に失敗")
 
 
 # 現在時刻 (単調増加クロック) を返す。Date 系が使えない環境差を避けるため monotonic を使う

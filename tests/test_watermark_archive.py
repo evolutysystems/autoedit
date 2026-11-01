@@ -44,8 +44,10 @@ class ArchiveReservationTest(unittest.TestCase):
         self.flags = []
 
     def _stub(self, outputs=None, error=None):
+        # vod_scan / cancel_cb のように後から増えた省略可引数は **_kwargs で受ける
+        # (quality resolve3 R5 / R9)。増えるたびにここを直さずに済ませる。
         def _fake(_input_path, _settings, _clips, _progress_cb=None, _result_callback=None,
-                  _curve=None, watermark_required=False, vod_source=None):
+                  _curve=None, watermark_required=False, vod_source=None, **_kwargs):
             self.flags.append(watermark_required)
             if error is not None:
                 raise error

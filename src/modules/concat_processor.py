@@ -23,7 +23,9 @@ def is_available(path):
 
 
 # 複数動画を concat filter で結合する
-def concat(parts, output_path, ffmpeg_settings, total_duration=0.0, on_progress=None):
+# cancel_cb は省略可 (resolve3 R9-5)。省略時は従来と完全に同一の挙動。
+def concat(parts, output_path, ffmpeg_settings, total_duration=0.0, on_progress=None,
+           cancel_cb=None):
     if len(parts) < 2:
         raise InputError(tr("結合対象が2つ未満です"))
 
@@ -73,7 +75,8 @@ def concat(parts, output_path, ffmpeg_settings, total_duration=0.0, on_progress=
         *ffmpeg_runner.build_encode_options(ffmpeg_settings),
         output_path,
     ]
-    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress)
+    ffmpeg_runner.execute(cmd, total_duration=total_duration, on_progress=on_progress,
+                          cancel_cb=cancel_cb)
     return output_path
 
 

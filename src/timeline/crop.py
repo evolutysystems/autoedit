@@ -48,6 +48,10 @@ _DEFAULTS = {
     # 素材の持ち方 (ver9 resolve14)。既定は複製して自己完結。
     "media_mode": MEDIA_COPY,
     "keep_media": True,
+    # テロップトラックの構成を引き継ぐか (ver9 resolve15)。既定は引き継ぐ。
+    "carry_subtitle_tracks": True,
+    # 枠を全ての素材へ当てるか (ver9 resolve16)。既定は当てる。
+    "apply_to_all_media": True,
 }
 
 
@@ -81,6 +85,15 @@ def config(settings):
         "media_mode": _media_mode(section.get("media_mode")),
         # 複製するか (ver9 resolve14 §3.4)。false なら今のパスを指したままにする。
         "keep_media": bool(section.get("keep_media", _DEFAULTS["keep_media"])),
+        # テロップトラックの構成 (本数・名前・色・有効) を引き継ぐか
+        # (ver9 resolve15 §3.4)。false で v1.7.1 以前と同じく S1 の 1 本へ潰す。
+        "carry_subtitle_tracks": bool(section.get(
+            "carry_subtitle_tracks", _DEFAULTS["carry_subtitle_tracks"])),
+        # 枠を全ての素材へ当てるか (ver9 resolve16 §3.7)。
+        #   True  = 素材 ID が違っても当てる。寸法が違う素材へは枠を換算して当てる。
+        #   False = 枠を決めた素材だけに当てる (v1.7.1 以前と同じ振る舞い)。
+        "apply_to_all_media": bool(section.get(
+            "apply_to_all_media", _DEFAULTS["apply_to_all_media"])),
     }
 
 
@@ -225,9 +238,12 @@ def is_valid(layout, media, canvas_width, canvas_height):
     if mode not in _MODES or len(frames) != expected:
         return False
 
-    media_id = str(layout.get("media_id") or "")
-    if media_id and media_id != str(getattr(media, "id", "") or ""):
-        return False
+    # 素材 ID (layout["media_id"]) は「どの素材の絵で枠を決めたか」の控えであり、
+    # **合否の条件にはしない** (ver9 resolve16 §2.2)。縦プロジェクトの V1 は、
+    # 同じ正規化プロファイルで作った複数の素材 (アーカイブのセクションごとの
+    # normalized.mp4) を正当に持つため (resolve14 の media_mode="copy")、ID で弾くと
+    # 9 割のクリップが黒帯の正規化へ落ちていた。枠はソース px の矩形なので、
+    # 寸法が一致していれば ID が違っても同じ意味で当たる。
 
     width = int(getattr(media, "width", 0) or 0)
     height = int(getattr(media, "height", 0) or 0)
@@ -248,6 +264,41 @@ def is_valid(layout, media, canvas_width, canvas_height):
             return False
 
     return int(canvas_width or 0) > 0 and int(canvas_height or 0) > 0
+
+
+# 素材 1 本へ実際に当てる枠を決める (ver9 resolve16 §3.2)
+#
+#   (1) 寸法が一致する         → layout をそのまま返す (素材 ID は問わない)
+#   (2) 寸法が違う             → 枠を素材の寸法へ換算した layout を返す
+#   (3) 素材が不明・寸法が 0 /
+#       設定で (2) を切っている → None (呼び側は従来の正規化へ落ちる)
+#
+# 戻り値が layout そのもの (is で同一) なら、換算は起きていない。
+def resolve_layout(layout, media, canvas_width, canvas_height, cfg):
+    if not layout or media is None:
+        return None
+
+    if not (cfg or {}).get("apply_to_all_media", _DEFAULTS["apply_to_all_media"]):
+        # 逃げ道 (v1.7.1 と同じ振る舞い): 枠を決めた素材だけに当てる。
+        # is_valid は素材 ID を見なくなったため、ID の照合はここで行う。
+        decided = str(layout.get("media_id") or "")
+        if decided and decided != str(getattr(media, "id", "") or ""):
+            return None                                 # (3)
+        return layout if is_valid(layout, media, canvas_width, canvas_height) else None
+
+    if is_valid(layout, media, canvas_width, canvas_height):
+        return layout                                   # (1)
+
+    # (2) の対象は「寸法が違う」場合だけに限る。寸法が同じなのに噛み合わないのは
+    # 指定そのものが壊れている場合 (mode と枠数の不一致・枠が素材の外を指す) なので、
+    # 枠を勝手に動かさず従来の正規化へ落とす (resolve9 §4-4 の判断をそのまま残す)。
+    if not _source_size_differs(layout, media):
+        return None                                     # (3)
+
+    fitted = _fitted_layout(layout, media)
+    if fitted is not None and is_valid(fitted, media, canvas_width, canvas_height):
+        return fitted                                   # (2)
+    return None                                         # (3)
 
 
 # ------------------------------------------------------------------
@@ -330,6 +381,77 @@ def _scaled_radius(value, scale):
     if abs(float(scale) - 1.0) < 1e-9:
         return radius
     return max(int(round(radius * float(scale))), 1)
+
+
+# 枠を決めたときの素材と、当てようとしている素材で寸法が違うか (ver9 resolve16 §3.2)
+def _source_size_differs(layout, media):
+    source = layout.get("source") or []
+    if len(source) != 2:
+        return False
+    size = (int(getattr(media, "width", 0) or 0), int(getattr(media, "height", 0) or 0))
+    return (int(source[0] or 0), int(source[1] or 0)) != size
+
+
+# 枠を素材の寸法へ換算した指定を作る (ver9 resolve16 §3.2)
+#
+# **枠の縦横比は変えない。** 幅と高さを別々の比率で伸ばすと
+#   ・single … 前景の形が変わる (人物が縦長・横長になる)
+#   ・split  … 枠と置き場所の縦横比がずれ、scale で引き伸ばされる
+# ため、縦横比を保ったまま「素材に収まる最大」へ合わせ、同じ相対位置へ置く。
+#
+# dest (キャンバス上の置き場所) は触らない。split は canvas だけで決まり
+# (dest_rects)、single は書き出しもプレビューも src から計算し直すためである。
+# 戻り値: 換算した layout の複製 / 材料が足りなければ None
+def _fitted_layout(layout, media):
+    source = layout.get("source") or []
+    width = int(getattr(media, "width", 0) or 0)
+    height = int(getattr(media, "height", 0) or 0)
+    if len(source) != 2 or width <= 0 or height <= 0:
+        return None
+
+    source_size = (int(source[0] or 0), int(source[1] or 0))
+    if source_size[0] <= 0 or source_size[1] <= 0:
+        return None
+
+    fitted = []
+    for frame in layout.get("frames") or []:
+        rect = frame.get("src") or []
+        if len(rect) != 4:
+            return None
+        fitted.append(dict(frame, src=list(_fit_rect(rect, source_size, (width, height)))))
+    if not fitted:
+        return None
+
+    out = dict(layout)
+    out["frames"] = fitted
+    # 枠がこの素材の px になったので、控えの寸法も合わせる (is_valid を通すため)。
+    # media_id は「どの素材の絵で枠を決めたか」の控えなので書き換えない。
+    out["source"] = [width, height]
+    return out
+
+
+# 枠 1 つを素材の寸法へ換算する (ver9 resolve16 §3.2 の規約)
+#
+#   倍率 = min(素材幅 / 枠を決めた素材の幅, 素材高 / 枠を決めた素材の高さ)
+#   中心 = 元の枠の中心の相対位置 (素材の幅・高さに対する比) をそのまま使う
+#   丸め = 幅・高さは _even (yuv420p)、位置は素材の中へ収める
+#
+# 倍率に min を採るため、換算後の枠は必ず素材の中へ収まる (is_valid を通る)。
+def _fit_rect(rect, source_size, media_size):
+    x, y, width, height = _int_rect(rect)
+    src_w, src_h = (max(int(v), 1) for v in source_size)
+    media_w, media_h = (max(int(v), 2) for v in media_size)
+
+    scale = min(media_w / float(src_w), media_h / float(src_h))
+    new_w = min(_even(round(width * scale)), _even(media_w))
+    new_h = min(_even(round(height * scale)), _even(media_h))
+
+    # 中心の相対位置を保ったまま置き、素材の外へ出ないように収める
+    center_x = (x + width / 2.0) / float(src_w) * media_w
+    center_y = (y + height / 2.0) / float(src_h) * media_h
+    new_x = int(min(max(round(center_x - new_w / 2.0), 0), media_w - new_w))
+    new_y = int(min(max(round(center_y - new_h / 2.0), 0), media_h - new_h))
+    return (new_x, new_y, new_w, new_h)
 
 
 def _crop_filter(rect):

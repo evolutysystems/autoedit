@@ -37,6 +37,11 @@ _logger = get_logger(__name__)
 # 切り詰めた結果これより短くなった字幕は捨てる (見えないため)
 _MIN_SUBTITLE_SEC = 0.05
 
+# クリップの境目は縫い目とみなす許容差 (秒 / ver9 resolve15 §3.5)。
+# フレーム量子化で 1 フレーム未満のずれ・重なりが残るため、
+# project_io._OVERLAP_TOLERANCE_SEC と同じ値で「繋がっている」とみなす。
+_SEAM_TOLERANCE_SEC = 0.0015
+
 
 # 縦プロジェクト用の Timeline を作る
 #   timeline   : 元 (横) の Timeline
@@ -97,7 +102,10 @@ def build(timeline, clip_ids, layout, settings, close_gaps=True, rebase=None):
         vertical.media_pool.insert(0, replacement)
 
     # ── ③ 字幕 (重なるものを時刻シフト / R10)
-    _copy_subtitles(timeline, vertical, offsets, warnings)
+    # トラックの構成 (本数・色) と Timeline 上の配置をそのまま引き継ぐ
+    # (ver9 resolve15)。設定で従来どおり S1 の 1 本へ潰すこともできる。
+    _copy_subtitles(timeline, vertical, offsets, warnings,
+                    carry_tracks=crop.config(settings)["carry_subtitle_tracks"])
 
     # ── ④ 引き継がないもの (§3.6 / §5.4-10)
     _warn_dropped(timeline, clips, warnings)
@@ -182,8 +190,11 @@ def _apply_rebase(timeline, video_track, rebase, warnings):
 
 # 切り抜きの指定が指す素材を張り替え先へ向け直す
 #
-# crop.is_valid は素材 ID と寸法の一致を見るため、張り替えたまま放っておくと
-# 「指定が噛み合わない」として切り抜きごと捨てられてしまう (§5.5)。
+# crop.is_valid が見るのは**寸法の一致だけ**で、素材 ID は合否にしない
+# (ver9 resolve16 §3.1)。そのため ID の向け直しは必須ではないが、
+# 「どの素材の絵で枠を決めたか」の控えを張り替え後の素材へ合わせておく
+# (控えが実在しない素材を指したままになるのを避ける)。
+# 寸法が変わっている場合は換算で当てることになるため、ここでは指定を入れない。
 def _rebase_layout(layout, rebase, replacement, warnings):
     if layout is None:
         return None
@@ -204,34 +215,98 @@ def _rebase_layout(layout, rebase, replacement, warnings):
     return layout
 
 
-# 選択区間に重なる字幕を、同じ時間差で移す。はみ出しは端で切り詰める。
-def _copy_subtitles(timeline, vertical, offsets, warnings):
-    subtitle_track = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
-    vertical.tracks.append(subtitle_track)
+# 元のテロップトラック構成 (本数・名前・ヘッダーで決めた色) をそのまま複製する
+# (ver9 resolve15 §3.1)
+#
+# 1 本へ潰していたため、(a) トラックの既定色 (ver9 resolve13) が消える
+# (b) S1 と S2 のテロップが同じトラックで重なり、開き直すときの
+# project_io._validate_overlaps が後ろへ押し出す — の 2 つが起きていた。
+# アーカイブの書き出し (archive/timeline_builder._build_group_timeline) と同じ流儀。
+#
+# 中身が空のトラックも作る (「トラック数を引き継ぐ」= 空も数える)。
+# locked は写さない: 作りたてのプロジェクトで編集を止める理由は引き継がれない。
+# carry=False のときは従来どおり S1 を 1 本だけ作る。
+# 戻り値: 元のトラック ID → 縦 Timeline の対応トラック
+def _copy_subtitle_tracks(timeline, vertical, carry=True):
+    mapping = {}
+    if carry:
+        for track in sorted(timeline.subtitle_tracks(), key=lambda t: t.index):
+            copied = Track(track.id, TRACK_SUBTITLE, track.index, name=track.name,
+                           enabled=track.enabled, color=track.color)
+            vertical.tracks.append(copied)
+            mapping[track.id] = copied
+    if not mapping:
+        # 字幕トラックが 1 本も無い横 Timeline (従来どおり S1 を用意する)
+        base = Track(BASE_SUBTITLE_TRACK_ID, TRACK_SUBTITLE, 1, name="Subtitle 1")
+        vertical.tracks.append(base)
+        mapping[base.id] = base
+    return mapping
 
-    dropped = 0
+
+# テロップ 1 本を縦 Timeline の時刻へ写す (ver9 resolve15 §3.5)
+#
+# 従来は「最初に重なったクリップ」だけを採ってその端で打ち切っていたため、
+# 無音カットの境目をまたぐテロップが尻切れになっていた。重なったクリップぶんの
+# 欠片をすべて作り、縦 Timeline 上で隣り合うものを 1 本へ結合する。詰めても
+# 繋がっている区間では元の尺がそのまま残り、選んでいない区間を挟んだところで
+# だけ 2 本に分かれる。
+#
+# 欠片の時刻はクリップごとの差分 (new - old) で写す。区間の先頭の差分で
+# まとめて写すと、クリップ間に残る 1 フレーム未満のずれが積もって終端がずれる。
+# 戻り値: [(開始, 終了), ...] (縦 Timeline の時刻 / 時系列順)
+def _map_spans(start, end, offsets):
+    pieces = []
+    for old_start, new_start, duration in offsets:          # 時系列順
+        overlap_start = max(start, old_start)
+        overlap_end = min(end, old_start + duration)
+        if overlap_end <= overlap_start:
+            continue
+        shift = new_start - old_start
+        piece = [overlap_start + shift, overlap_end + shift]
+        if pieces and piece[0] - pieces[-1][1] <= _SEAM_TOLERANCE_SEC:
+            pieces[-1][1] = max(pieces[-1][1], piece[1])    # 縫い目なので繋ぐ
+        else:
+            pieces.append(piece)
+    # 短すぎる欠片は捨てる。判定は結合したあとの 1 本に対して行う
+    # (繋ぐ前に捨てると、またいだテロップに穴が開く)。
+    return [(a, b) for a, b in pieces if b - a >= _MIN_SUBTITLE_SEC]
+
+
+# 選択区間に重なる字幕を、元のトラックへ元の配置のまま移す。
+# 選んでいない区間にかかる部分だけを切り詰める (ver9 resolve15 §3.2 / §3.5)。
+def _copy_subtitles(timeline, vertical, offsets, warnings, carry_tracks=True):
+    tracks = _copy_subtitle_tracks(timeline, vertical, carry_tracks)
+    fallback = min(tracks.values(), key=lambda t: t.index)
+
+    dropped = trimmed = 0
     for track in timeline.subtitle_tracks():
+        # 元のトラックに対応する側へ入れる (役割ごとの重なりを保つ)
+        target = tracks.get(track.id, fallback)
         for clip in track.clips:
-            start = clip.timeline_start
-            end = start + clip.duration
-            for old_start, new_start, duration in offsets:
-                overlap_start = max(start, old_start)
-                overlap_end = min(end, old_start + duration)
-                if overlap_end - overlap_start < _MIN_SUBTITLE_SEC:
-                    continue
-                moved = copy.deepcopy(clip)
-                moved.timeline_start = new_start + (overlap_start - old_start)
-                moved.duration = overlap_end - overlap_start
-                subtitle_track.clips.append(moved)
-                break
-            else:
+            spans = _map_spans(clip.timeline_start,
+                               clip.timeline_start + clip.duration, offsets)
+            if not spans:
                 if clip.use:
                     dropped += 1
+                continue
+            carried = sum(end - start for start, end in spans)
+            if clip.use and carried < clip.duration - _MIN_SUBTITLE_SEC:
+                trimmed += 1
+            for span_start, span_end in spans:
+                moved = copy.deepcopy(clip)
+                moved.timeline_start = span_start
+                moved.duration = span_end - span_start
+                target.clips.append(moved)
 
-    subtitle_track.clips.sort(key=lambda c: c.timeline_start)
-    _renumber(vertical, subtitle_track)
+    for target in tracks.values():
+        target.clips.sort(key=lambda c: c.timeline_start)
+        _renumber(vertical, target)
     if dropped:
         warnings.append(f"選んだ範囲の外にある字幕 {dropped} 件は引き継ぎませんでした。")
+    if trimmed:
+        warnings.append(
+            tr("選んだ範囲の境目にかかる字幕 {count} 件は、はみ出した部分を切り詰めました。",
+               count=trimmed))
 
 
 # 同じ ID が重なった字幕に新しい ID を振る (1 つの字幕が複数区間へまたがった場合)

@@ -353,6 +353,8 @@ class TimelineReviewBridge(QObject):
             dialog = TimelineEditorDialog(
                 timeline, payload["settings"], work_dir,
                 asr_audio_path=payload.get("asr_audio_path"),
+                # 初回再生まで作らない場合の作り方 (resolve3 R8)
+                asr_audio_builder=payload.get("asr_audio_builder"),
                 parent=self._parent_window,
                 # 保存・再編集 (ver3 resolve7 §5.7 / §5.10)
                 project_path=payload.get("project_path"),

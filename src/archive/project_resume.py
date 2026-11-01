@@ -13,7 +13,12 @@ import time
 
 from ..exceptions import InputError, PipelineCancelled
 from ..i18n import tr
-from ..modules import ffmpeg_runner, loudness_normalizer
+from ..modules import (
+    ffmpeg_runner,
+    loudness_normalizer,
+    output_profile,
+    subtitle_generator,
+)
 from ..services import points as points_service
 from ..services import telemetry
 from ..timeline import media_recovery, media_sidecar, project_io
@@ -203,7 +208,7 @@ def rebuild_prepared(timeline, media_dir=""):
 def run_from_archive_project(project_path, settings, progress_cb=None,
                              result_callback=None, relink_callback=None,
                              restore_path=None, points=None,
-                             watermark_confirm_callback=None):
+                             watermark_confirm_callback=None, cancel_cb=None):
     # ログ送信 (request1 / resolve1 §7.2 / §7.3)。projectId はプロジェクト
     # ファイルに紐づけるため、再開を何度しても Projects は 1 行のままになる。
     project_id = telemetry.register_project(None, settings, project_path=project_path)
@@ -219,7 +224,14 @@ def run_from_archive_project(project_path, settings, progress_cb=None,
     try:
         outputs = _run_from_archive_project(
             project_path, settings, progress_cb, result_callback, relink_callback,
-            restore_path, points_service.watermark_required(reservation))
+            restore_path, points_service.watermark_required(reservation),
+            cancel_cb=cancel_cb)
+    except PipelineCancelled as e:
+        # 中止は異常終了ではない (resolve3 R9-5)。ポイントを戻してキャンセルを記録する。
+        points_service.cancel(points, reservation)
+        _log_export(project_id, settings, started_at, False, cancelled=True)
+        _logger.info("書き出しを中止しました: %s", e)
+        return []
     except Exception as e:  # noqa: BLE001 (記録して再送出する)
         # 失敗・中断では消費しない (R6)
         points_service.cancel(points, reservation)
@@ -244,9 +256,19 @@ def _log_export(project_id, settings, started_at, success, cancelled=False, erro
         telemetry.report_error("project_resume", error)
 
 
+# 保存済み Timeline の fps を取る (無ければ設定値 / resolve3 R2)
+def _timeline_fps(timeline, settings):
+    try:
+        fps = int(getattr(timeline, "fps", 0) or 0)
+    except (TypeError, ValueError):
+        fps = 0
+    return fps if fps > 0 else ffmpeg_runner.get_output_fps(settings.get("ffmpeg", {}))
+
+
 def _run_from_archive_project(project_path, settings, progress_cb=None,
                               result_callback=None, relink_callback=None,
-                              restore_path=None, watermark_required=False):
+                              restore_path=None, watermark_required=False,
+                              cancel_cb=None):
     _logger.info("=" * 50)
     _logger.info("保存済みアーカイブプロジェクトから再開: %s", project_path)
 
@@ -268,6 +290,20 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
         raise InputError(
             tr("アーカイブ切り抜き用のプロジェクトではありません。"
             "クリップ用タブの「編集の続き」から開いてください。"))
+
+    # 保存済みプロジェクトのキャンバスを設定へ書き戻す (resolve3 R2)。
+    #
+    # **素材から再解決してはならない。** 保存時と違うキャンバスになると
+    # 字幕位置・クロップがずれる。プロジェクトファイルが持つ fps/width/height を
+    # 唯一の正とし、ffmpeg.output_* を読む既存の全工程がその値を見るようにする。
+    # setting.json の保存値は変えない (apply_canvas_to_settings が deepcopy する)。
+    settings = output_profile.apply_canvas_to_settings(
+        settings, canvas={"width": timeline.width, "height": timeline.height,
+                          "fps": _timeline_fps(timeline, settings)})
+    ffmpeg_cfg = settings.get("ffmpeg", {})
+    _logger.info("保存済みプロジェクトのキャンバスを採用: %dx%d@%dfps",
+                 ffmpeg_cfg.get("output_width"), ffmpeg_cfg.get("output_height"),
+                 ffmpeg_cfg.get("output_fps"))
 
     # 元 VOD はここでは確かめない (resolve.md §9-6)。
     # archive_keep_media で保存したプロジェクトは <プロジェクト>.media/ に映像素材を
@@ -349,10 +385,15 @@ def _run_from_archive_project(project_path, settings, progress_cb=None,
                               workdir, ffmpeg_cfg, progress_cb)
 
         # ④ 書き出し (通常の切り抜きと同じ経路)
-        return clip_writer.finish_clips(
-            timeline.source.get("input_path", ""), settings, clip_settings, timeline,
-            edited, prepared, workdir, ffmpeg_cfg=ffmpeg_cfg, progress_cb=progress_cb,
-            watermark_required=watermark_required)
+        try:
+            return clip_writer.finish_clips(
+                timeline.source.get("input_path", ""), settings, clip_settings, timeline,
+                edited, prepared, workdir, ffmpeg_cfg=ffmpeg_cfg,
+                progress_cb=progress_cb, watermark_required=watermark_required,
+                cancel_cb=cancel_cb)
+        finally:
+            # 書き出しが終わればモデルは不要 (resolve3 R6)
+            subtitle_generator.release_models()
 
 
 # 元 VOD を「要るときだけ」解決する遅延フックを作る (resolve.md §9-6)

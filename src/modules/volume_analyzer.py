@@ -34,6 +34,8 @@ def measure_region_volume(input_path, start, end, ffmpeg_settings):
         "-ss", f"{start:.3f}",
         "-t", f"{duration:.3f}",
         "-i", input_path,
+        # 音声解析に映像の復号は不要 (resolve3 R4)
+        "-vn",
         "-af", "volumedetect",
         "-f", "null", "-",
     ]
@@ -68,7 +70,10 @@ def _parse_volumedetect(stderr_text):
 # 発話区間の最低dBを解析する
 # 戻り値: {"min_db": int|None, "region_count": int, "measured_count": int}
 #   min_db   : 発話候補区間の代表音量の最小値 (整数化)。算出不能時は None
-def analyze_min_speech_db(input_path, settings):
+# scan: 全長 1 パス解析の結果 (resolve3 R5)。渡すと ffmpeg を 1 回も起動せず、
+#   1 秒ごとの RMS/Peak から区間の代表音量を求める (実測 122 秒 -> 0 秒)。
+#   測定条件の照合は呼び出し側 (features.scan_matches) が済ませている前提。
+def analyze_min_speech_db(input_path, settings, scan=None):
     if not os.path.exists(input_path):
         raise InputError(tr("入力動画が見つかりません: {path}", path=input_path))
 
@@ -83,12 +88,18 @@ def analyze_min_speech_db(input_path, settings):
     max_regions = int(va_cfg.get("max_regions", 100))
     metric = str(va_cfg.get("metric", "mean")).strip().lower()
 
-    total_duration = ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg)
-
-    # 発話候補区間 = 無音(緩い基準)の補集合 (既存関数を再利用)
-    silence_ranges = silence_cutter.detect_silence(
-        input_path, base_noise_db, base_min_silence_sec, ffmpeg_cfg
-    )
+    # 引き継いだ 1 パス解析があれば、総尺と無音区間もそこから採る (resolve3 R5)。
+    # 無ければ従来どおり ffprobe と silencedetect を回す。
+    per_sec = (scan or {}).get("per_sec") or None
+    if per_sec:
+        total_duration = float(scan.get("duration") or 0.0)
+        silence_ranges = scan.get("silence_ranges") or []
+    else:
+        total_duration = ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg)
+        # 発話候補区間 = 無音(緩い基準)の補集合 (既存関数を再利用)
+        silence_ranges = silence_cutter.detect_silence(
+            input_path, base_noise_db, base_min_silence_sec, ffmpeg_cfg
+        )
     regions = silence_cutter.build_keep_segments(silence_ranges, total_duration)
 
     # 0.8秒以下の発話は無視する (R8)。「以下を無視」のため厳密超過で採用する。
@@ -108,10 +119,15 @@ def analyze_min_speech_db(input_path, settings):
     # metric="mean"/"max" は従来どおり最小値を採り、"percentile" は下側分位点を採る。
     values = []
     for (s, e) in regions:
-        result = measure_region_volume(input_path, s, e, ffmpeg_cfg)
-        if result is None:
-            continue
-        mean_db, max_db = result
+        if per_sec:
+            # 1 秒値から求める (resolve3 R5)。mean は**エネルギー平均**にすること。
+            # volumedetect の mean_volume は RMS なので、dB の算術平均では値がずれる。
+            mean_db, max_db = _region_levels_from_scan(per_sec, s, e)
+        else:
+            result = measure_region_volume(input_path, s, e, ffmpeg_cfg)
+            if result is None:
+                continue
+            mean_db, max_db = result
         value = max_db if metric == "max" else mean_db
         if value is None:
             continue
@@ -131,14 +147,25 @@ def analyze_min_speech_db(input_path, settings):
 
     rounded = int(round(representative))
     _logger.info(
-        "発話区間の代表dB=%d (%s, 測定 %d/%d 区間)",
+        "発話区間の代表dB=%d (%s, 測定 %d/%d 区間%s)",
         rounded, metric, measured_count, region_count,
+        " / 1 パス解析から" if per_sec else "",
     )
     return {
         "min_db": rounded,
         "region_count": region_count,
         "measured_count": measured_count,
     }
+
+# 1 パス解析の 1 秒値から区間の (mean_db, max_db) を求める (resolve3 R5)
+#
+# 実装は archive/features.region_levels にある。循環 import を避けるため遅延 import する
+# (features は modules を参照するが、modules は本来 archive を参照しない)。
+def _region_levels_from_scan(per_sec, start, end):
+    from ..archive import features        # noqa: PLC0415 (循環回避のため遅延 import)
+
+    return features.region_levels(per_sec, start, end)
+
 
 # 下側分位点を返す (docs/quality/resolve1.md §2.3 F7)
 #
