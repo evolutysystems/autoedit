@@ -63,6 +63,10 @@ class _FakeAuth:
     def user(self):
         return self._user
 
+    # ver9 resolve18 §4.1 でログインのプロバイダを持つようになった
+    def provider(self):
+        return "twitch" if self._logged_in else ""
+
     def logout(self):
         self.logged_out += 1
         self._logged_in = False

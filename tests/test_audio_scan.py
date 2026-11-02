@@ -26,7 +26,72 @@ def _settings(noise_db=-30, min_silence=0.3, mode="single_pass"):
 
 class ParsePerSecTest(unittest.TestCase):
 
-    # RMS と Peak を出現順に 1 件ずつ対応させる
+    # frame ヘッダの pts_time を秒インデックスへ使う (error 20261102 R2)
+    def test_frame_header_decides_the_second(self):
+        text = ("frame:0    pts:0       pts_time:0\n"
+                "lavfi.astats.Overall.Peak_level=-10.0\n"
+                "lavfi.astats.Overall.RMS_level=-23.4\n"
+                "frame:1    pts:48000   pts_time:1\n"
+                "lavfi.astats.Overall.Peak_level=-18.5\n"
+                "lavfi.astats.Overall.RMS_level=-31.2\n")
+        self.assertEqual(features._parse_per_sec(text), [
+            {"rms": -23.4, "peak": -10.0},
+            {"rms": -31.2, "peak": -18.5},
+        ])
+
+    # 秒が飛んでいても後ろがずれない (飛んだ秒は穴として残す)
+    # 出現順に詰めると以降の時刻がすべてずれ、発話区間へ無音部の値が割り当たる
+    def test_a_missing_second_stays_a_hole(self):
+        text = ("frame:0    pts:0       pts_time:0\n"
+                "lavfi.astats.Overall.Peak_level=-10.0\n"
+                "lavfi.astats.Overall.RMS_level=-23.4\n"
+                "frame:3    pts:144000  pts_time:3\n"
+                "lavfi.astats.Overall.Peak_level=-18.5\n"
+                "lavfi.astats.Overall.RMS_level=-31.2\n")
+        self.assertEqual(features._parse_per_sec(text), [
+            {"rms": -23.4, "peak": -10.0},
+            {"rms": None, "peak": None},
+            {"rms": None, "peak": None},
+            {"rms": -31.2, "peak": -18.5},
+        ])
+
+    # 行が壊れた出力でも、壊れた行だけを捨てて残りは正しい秒へ入る
+    # (error 20261102 §3 で実際に出ていた混線の実物を縮めたもの)
+    def test_broken_lines_are_discarded(self):
+        text = ("frame:0    pts:0       pts_time:0\n"
+                "lavfi.astats.Overall.Peak_level=-10.0\n"
+                "lavfi.astats.Overall.RMS_level=-tats.Overall.Peak_level=-34.4\n"
+                "frame:1    pts:48000   pts_time:1\n"
+                "lavfi.astats.Overall.Peak_level=-4avfi.astats.Overall.RMS=-24.8\n"
+                "lavfi.astats.Overall.RMS_level=-31.2\n"
+                "frame:2    pts:96000   pts_time:2\n"
+                "lavfi.as18  pts:20064000 pts_time:418\n"
+                "lavfi.astats.Overall.RMS_level=-27.0\n")
+        self.assertEqual(features._parse_per_sec(text), [
+            {"rms": None, "peak": -10.0},     # RMS の行が壊れた
+            {"rms": -31.2, "peak": None},     # Peak の行が壊れた
+            {"rms": -27.0, "peak": None},     # frame ヘッダに混ざった行は捨てる
+        ])
+
+    # silencedetect のメタデータが混ざっても無視する (ametadata を key 無しで出すため)
+    def test_silencedetect_metadata_is_ignored(self):
+        text = ("frame:0    pts:0       pts_time:0\n"
+                "lavfi.silence_end=104.9885\n"
+                "lavfi.silence_duration=0.342062\n"
+                "lavfi.astats.Overall.Peak_level=-10.0\n"
+                "lavfi.astats.Overall.RMS_level=-23.4\n")
+        self.assertEqual(features._parse_per_sec(text),
+                         [{"rms": -23.4, "peak": -10.0}])
+
+    # CRLF の出力でも行末一致のパターンが外れない
+    def test_crlf_output(self):
+        text = ("frame:0    pts:0       pts_time:0\r\n"
+                "lavfi.astats.Overall.Peak_level=-10.0\r\n"
+                "lavfi.astats.Overall.RMS_level=-23.4\r\n")
+        self.assertEqual(features._parse_per_sec(text),
+                         [{"rms": -23.4, "peak": -10.0}])
+
+    # RMS と Peak を出現順に 1 件ずつ対応させる (frame ヘッダが無い旧形式 / 後方互換)
     def test_pairs_rms_and_peak_in_order(self):
         text = ("lavfi.astats.Overall.RMS_level=-23.4\n"
                 "lavfi.astats.Overall.Peak_level=-10.0\n"

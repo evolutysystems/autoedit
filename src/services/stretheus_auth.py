@@ -33,8 +33,20 @@ from .device_id import device_id
 
 _logger = get_logger(__name__)
 
-_AUTHORIZE_PARAMS_PATH = "/api/auth/twitch/authorize-params"
-_LOGIN_PATH = "/api/auth/twitch/login"
+# 認証プロバイダ (ver9 resolve18 §4.1)。
+# API は /api/auth/<provider>/... で名前空間が切られているため、
+# パスを辞書で持つだけでプロバイダを増やせる。
+PROVIDER_TWITCH = "twitch"
+PROVIDER_GOOGLE = "google"
+
+_AUTHORIZE_PARAMS_PATHS = {
+    PROVIDER_TWITCH: "/api/auth/twitch/authorize-params",
+    PROVIDER_GOOGLE: "/api/auth/google/authorize-params",
+}
+_LOGIN_PATHS = {
+    PROVIDER_TWITCH: "/api/auth/twitch/login",
+    PROVIDER_GOOGLE: "/api/auth/google/login",
+}
 _DEVICE_LOGIN_PATH = "/api/auth/device"
 _REFRESH_PATH = "/api/auth/refresh"
 _LOGOUT_PATH = "/api/auth/logout"
@@ -157,7 +169,10 @@ class StretheusAuth:
     def client(self):
         return self._client
 
-    # Twitch でログイン済みか。匿名セッションでは False を返す。
+    # 身元を持つセッションか (Twitch / Google)。匿名セッションでは False を返す。
+    #
+    # 判定は**サーバーが返す isAnonymous だけ**を見ており、プロバイダを問わない。
+    # Google を足しても変更不要だった (ver9 resolve18 §4.1)。
     def is_logged_in(self):
         return bool(self.has_session() and not self._data.get("anonymous"))
 
@@ -172,6 +187,13 @@ class StretheusAuth:
     # ログイン中のユーザー情報 (id / twitchUserId / displayName)。未ログインなら None。
     def user(self):
         return (self._data or {}).get("user")
+
+    # どちらでログインしたか ("twitch" / "google")。表示にだけ使う。
+    # 記録を持たない既存の auth.dat は Twitch と見なす (ver9 resolve18 §4.1)。
+    def provider(self):
+        if not self.is_logged_in():
+            return ""
+        return str((self._data or {}).get("provider") or PROVIDER_TWITCH)
 
     # リフレッシュ可能な最終期限。これを過ぎると再ログインが必要 (§2.7)。
     def session_expires_at(self):
@@ -264,11 +286,22 @@ class StretheusAuth:
 
     # 認可コードフローでログインする。成功でユーザー情報を返す。
     # timeout 秒以内にブラウザで許可されなければ AutoEditError。
-    def login(self, timeout=180, open_browser=True):
+    #
+    # provider は "twitch" / "google" (ver9 resolve18 §4.1)。
+    # 認可 URL の組み立ても受け口も**プロバイダ非依存**で、
+    # clientId / redirectUri / scopes / authorizeUrl はすべて API から受け取る
+    # (ver6 resolve2 §2.4)。足すのはパスの選択と、どちらで入ったかの記録だけ。
+    def login(self, timeout=180, open_browser=True, provider=PROVIDER_TWITCH):
+        provider = str(provider or PROVIDER_TWITCH)
+        params_path = _AUTHORIZE_PARAMS_PATHS.get(provider)
+        login_path = _LOGIN_PATHS.get(provider)
+        if params_path is None or login_path is None:
+            raise AutoEditError(tr("不明なログイン方法です: {provider}", provider=provider))
+
         if not _LOGIN_LOCK.acquire(blocking=False):
             raise AutoEditError(tr("別のログインが進行中です。完了してから実行してください。"))
         try:
-            params = self._client.request("GET", _AUTHORIZE_PARAMS_PATH, authenticated=False)
+            params = self._client.request("GET", params_path, authenticated=False)
             redirect_uri = str((params or {}).get("redirectUri") or "")
             client_id = str((params or {}).get("clientId") or "")
             if not redirect_uri or not client_id:
@@ -276,12 +309,12 @@ class StretheusAuth:
 
             code = self._receive_code(params, redirect_uri, timeout, open_browser)
             response = self._client.request(
-                "POST", _LOGIN_PATH,
+                "POST", login_path,
                 body={"code": code, "redirectUri": redirect_uri},
                 authenticated=False)
 
-            self._apply(response)
-            _logger.info("Stretheus へログインしました。")
+            self._apply(response, provider=provider)
+            _logger.info("Stretheus へログインしました (%s)。", provider)
             return self.user()
         finally:
             _LOGIN_LOCK.release()
@@ -364,7 +397,7 @@ class StretheusAuth:
         return authorize_url + "?" + urllib.parse.urlencode(query)
 
     # ログイン / リフレッシュの応答を保存する。
-    def _apply(self, response):
+    def _apply(self, response, provider=PROVIDER_TWITCH):
         response = response or {}
         if not response.get("accessToken"):
             raise ApiError(tr("API から JWT を取得できませんでした。"))
@@ -377,6 +410,9 @@ class StretheusAuth:
             "user": user,
             # 匿名かどうかはサーバーの応答だけで決める (残高と同じ流儀)。
             "anonymous": bool(user.get("isAnonymous")),
+            # どちらでログインしたか (ver9 resolve18 §4.1)。**表示にだけ使う。**
+            # 加入判定は GET /api/points の subscriptionType が権威。
+            "provider": provider,
         }
         self._store.save(self._data)
 

@@ -37,6 +37,27 @@ class BillingConfigWorker(QThread):
         self.loaded.emit(config)
 
 
+# Google ログインを提供できる構成かの確認 (ver9 resolve18 §3 / §4.2)。
+# 未ログインの画面で勝手に走る取得なので、失敗は握って False を返す。
+# 出せないときに Google のボタンを出さないための判定であり、
+# 判定できなければ「出さない」側へ倒す。
+class GoogleAvailableWorker(QThread):
+
+    loaded = Signal(bool)
+
+    def __init__(self, billing, parent=None):
+        super().__init__(parent)
+        self._billing = billing
+
+    def run(self):
+        available = False
+        try:
+            available = self._billing.google_available()
+        except Exception:  # noqa: BLE001 (判定できなくても画面は開いたままにする)
+            _logger.exception("Google ログインの可否の取得に失敗")
+        self.loaded.emit(available)
+
+
 # Stripe の決済ページ / カスタマーポータルの URL 取得。
 # 利用者が押した操作なので、失敗は理由つきで通知する (ver6 resolve §4.2)。
 class BillingUrlWorker(QThread):

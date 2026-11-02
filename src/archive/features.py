@@ -15,10 +15,19 @@ from ..utils.proc import no_window_creationflags
 
 _logger = get_logger(__name__)
 
-# 1 パス解析の 1 秒値を取り出すパターン (resolve3 R5)
-# ametadata=print は "lavfi.astats.Overall.RMS_level=-23.456" の形で標準出力へ出す。
-_RE_SCAN_RMS = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?[0-9.eE+]+|-?inf|nan)")
-_RE_SCAN_PEAK = re.compile(r"lavfi\.astats\.Overall\.Peak_level=(-?[0-9.eE+]+|-?inf|nan)")
+# 1 パス解析の 1 秒値を取り出すパターン (resolve3 R5 / error 20261102 R2)
+# ametadata=print は 1 フレームにつき
+#   frame:12   pts:576000  pts_time:12
+#   lavfi.astats.Overall.Peak_level=-10.0
+#   lavfi.astats.Overall.RMS_level=-23.456
+# の形で標準出力へ出す (silencedetect は標準エラー)。
+# 値の行は**行頭から行末までの完全一致**で拾う。途中一致にすると、
+# 行が壊れた出力 ("RMS_level=-4avfi.astats...") から誤った値を拾ってしまう。
+_RE_SCAN_FRAME = re.compile(r"^frame:\d+\s+pts:\S+\s+pts_time:(-?[0-9.eE+]+)$", re.MULTILINE)
+_RE_SCAN_RMS = re.compile(
+    r"^lavfi\.astats\.Overall\.RMS_level=(-?[0-9.eE+]+|-?inf|nan)$", re.MULTILINE)
+_RE_SCAN_PEAK = re.compile(
+    r"^lavfi\.astats\.Overall\.Peak_level=(-?[0-9.eE+]+|-?inf|nan)$", re.MULTILINE)
 # 1 秒値を取る粒度 (サンプル数は入力のレートではなく asetnsamples の指定値で決まる)
 _SCAN_STEP_SEC = 1.0
 
@@ -78,6 +87,11 @@ def scan_matches(scan, settings):
 #   ・asetnsamples は silencedetect の**後ろ**へ置く。前に置くと silencedetect が
 #     1 秒粒度でしか判定できなくなる。
 #   ・ametadata=print:file=- は**標準出力**へ出る (silencedetect は標準エラー)。
+#   ・**ametadata は 1 本だけにする** (error 20261102 R1)。key= を変えて 2 本並べると、
+#     2 つのフィルタが同じ標準出力をそれぞれのバッファで書くため、約 830 行ごとに
+#     行が途中で混ざって壊れ、1 秒値が落ちる。落ちた分だけ「index = 秒」の対応が
+#     後ろへずれ、発話区間へ無音部の値 (-119dB) が割り当たってカット閾値が崩壊した。
+#     代わりに astats 側の measure_overall で出すキーを 2 つへ絞る。
 #   ・無音部では RMS_level=-inf / Peak_level=-inf が出るため必ず弾く。
 #
 # 戻り値: {"duration", "silence_ranges", "per_sec", "params"}
@@ -99,9 +113,11 @@ def scan_audio(input_path, settings, progress_cb=None):
         "silencedetect=noise={noise}dB:d={dur},".format(
             noise=params["noise_db"], dur=params["min_silence_sec"])
         + "asetnsamples=n={n}:p=0,".format(n=samples)
-        + "astats=metadata=1:reset=1,"
-        + "ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-,"
-        + "ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-"
+        # 出すキーは 2 つへ絞る。絞らないと 1 フレームにつき約 30 キー出て標準出力が肥大する。
+        + "astats=metadata=1:reset=1:measure_perchannel=none"
+          ":measure_overall=Peak_level+RMS_level,"
+        # ametadata は 1 本だけ (error 20261102 R1)。2 本を file=- へ向けると出力が壊れる。
+        + "ametadata=print:file=-"
     )
     cmd = [
         ffmpeg, "-hide_banner", "-nostats",
@@ -139,17 +155,77 @@ def scan_audio(input_path, settings, progress_cb=None):
             "per_sec": per_sec, "params": params}
 
 
-# ametadata の標準出力から 1 秒ごとの RMS / Peak を取り出す (resolve3 R5)
+# ametadata の標準出力から 1 秒ごとの RMS / Peak を取り出す (resolve3 R5 / error 20261102 R2)
 #
-# RMS と Peak は同じフレームについて続けて出るため、出現順に 1 件ずつ対応させる。
+# frame ヘッダの pts_time を**秒インデックスへ直に使う**。出現順に詰めると、
+# 値が 1 件落ちただけで以降の時刻がすべてずれる (error 20261102 §3.1)。
+# 欠損した秒は穴 (None) のまま残す。energy_mean_db が None を弾くため平均は壊れない。
+# frame ヘッダが 1 件も無い出力は、従来どおり出現順で対応させる (後方互換)。
 # -inf / nan (無音部) は None にする。
 def _parse_per_sec(stdout_text):
-    rms_values = [_scan_float(m) for m in _RE_SCAN_RMS.findall(stdout_text or "")]
-    peak_values = [_scan_float(m) for m in _RE_SCAN_PEAK.findall(stdout_text or "")]
+    # 行の切り出しは splitlines に任せる (CRLF でも行末の CR が残らない)
+    lines = (stdout_text or "").splitlines()
+    for line in lines:
+        if _RE_SCAN_FRAME.match(line):
+            return _parse_per_sec_by_frame(lines)
+    return _parse_per_sec_in_order(lines)
+
+
+# frame ヘッダの pts_time を秒として RMS / Peak を並べる (error 20261102 R2)
+# ヘッダより前に出た値の行と、壊れて書式の合わない行は捨てる。
+def _parse_per_sec_by_frame(lines):
+    by_sec = {}
+    index = None
+    for line in lines:
+        m_frame = _RE_SCAN_FRAME.match(line)
+        if m_frame:
+            index = _scan_index(m_frame.group(1))
+            if index is not None:
+                by_sec.setdefault(index, {"rms": None, "peak": None})
+            continue
+        if index is None:
+            continue
+        m_rms = _RE_SCAN_RMS.match(line)
+        if m_rms:
+            by_sec[index]["rms"] = _scan_float(m_rms.group(1))
+            continue
+        m_peak = _RE_SCAN_PEAK.match(line)
+        if m_peak:
+            by_sec[index]["peak"] = _scan_float(m_peak.group(1))
+    if not by_sec:
+        return []
+    return [by_sec.get(i) or {"rms": None, "peak": None}
+            for i in range(max(by_sec) + 1)]
+
+
+# frame ヘッダが無い出力を出現順に 1 件ずつ対応させる (従来方式 / 後方互換)
+def _parse_per_sec_in_order(lines):
+    rms_values = []
+    peak_values = []
+    for line in lines:
+        m_rms = _RE_SCAN_RMS.match(line)
+        if m_rms:
+            rms_values.append(_scan_float(m_rms.group(1)))
+            continue
+        m_peak = _RE_SCAN_PEAK.match(line)
+        if m_peak:
+            peak_values.append(_scan_float(m_peak.group(1)))
     count = max(len(rms_values), len(peak_values))
     return [{"rms": rms_values[i] if i < len(rms_values) else None,
              "peak": peak_values[i] if i < len(peak_values) else None}
             for i in range(count)]
+
+
+# frame ヘッダの pts_time を秒インデックスへ直す (error 20261102 R2)
+# 負や数値でない値 (タイムスタンプ無しの N/A など) は None = その行を捨てる。
+def _scan_index(text):
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    if math.isinf(value) or math.isnan(value) or value < 0:
+        return None
+    return int(round(value / _SCAN_STEP_SEC))
 
 
 # astats の値を float へ寄せる (-inf / nan は None / resolve3 R5)

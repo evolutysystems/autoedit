@@ -24,10 +24,18 @@ from PySide6.QtWidgets import (
 from ..i18n import tr
 from ..services import billing as billing_module
 from ..services.billing import BillingService
-from ..services.stretheus_auth import login_in_progress
+from ..services.stretheus_auth import (
+    PROVIDER_GOOGLE,
+    PROVIDER_TWITCH,
+    login_in_progress,
+)
 from ..utils.logger import get_logger
 from . import theme
-from .billing_workers import ActivationWorker, BillingConfigWorker, BillingUrlWorker
+from .billing_workers import (
+    BillingConfigWorker,
+    BillingUrlWorker,
+    GoogleAvailableWorker,
+)
 from .points_indicator import BalanceWorker, LoginWorker
 
 _logger = get_logger(__name__)
@@ -36,25 +44,42 @@ _logger = get_logger(__name__)
 WINDOW_WIDTH = 420
 WINDOW_HEIGHT = 320
 
-# 購入ボタンを押せない理由ごとの注記。コードは billing.py が決め、文言はここが持つ。
-_BLOCK_MESSAGES = {
-    billing_module.BLOCK_NOT_LOGGED_IN:
-        "Twitch でログインすると購入できます。",
-    billing_module.BLOCK_UNKNOWN:
-        "加入状態を確認しています…",
-    billing_module.BLOCK_UNAVAILABLE:
-        "現在サブスクリプションのお申し込みを受け付けていません。"
-        "しばらくしてからお試しください。",
-    billing_module.BLOCK_TWITCH:
-        "Twitch のサブスクリプションで特典が適用されています。購入は不要です。"
-        "Twitch のサブスクリプションが切れると、この画面から購入できるようになります。",
-    billing_module.BLOCK_STRIPE:
-        "すでにサブスクリプションに加入しています。"
-        "解約・カードの変更は設定画面の「アカウント」から行えます。",
+# 画面の段 (ver9 resolve18 §0 / §2)。
+# purchase_blocked_reason() が返すコードから決める。**真理値表そのものは変えない**
+# (ver6 resolve2 §6 / §4.6)。変えるのは「コードをどう描くか」だけである。
+_S_LOGIN = "login"              # S0 未ログイン → Twitch / Google の 2 ボタン
+_S_CHECKING = "checking"        # S1 確認中
+_S_TWITCH_SUB = "twitch_sub"    # S2 Twitch サブ → 閉じてメイン画面へ戻る
+_S_SUBSCRIBED = "subscribed"    # S3 Stripe 加入中
+_S_UNAVAILABLE = "unavailable"  # S4 受付停止
+_S_PURCHASE = "purchase"        # S5 購入可能
+
+_STAGES = {
+    billing_module.BLOCK_NOT_LOGGED_IN: _S_LOGIN,
+    billing_module.BLOCK_UNKNOWN: _S_CHECKING,
+    billing_module.BLOCK_TWITCH: _S_TWITCH_SUB,
+    billing_module.BLOCK_STRIPE: _S_SUBSCRIBED,
+    billing_module.BLOCK_UNAVAILABLE: _S_UNAVAILABLE,
+    "": _S_PURCHASE,
 }
 
-# 購入できるときの案内
-_PURCHASE_NOTE = "お支払いはブラウザ (Stripe) で行います。"
+# 段ごとの注記。コードは billing.py が決め、文言はここが持つ。
+_STAGE_MESSAGES = {
+    _S_LOGIN: "ログインしてからお申し込みいただけます。",
+    _S_CHECKING: "加入状態を確認しています…",
+    _S_UNAVAILABLE:
+        "現在サブスクリプションのお申し込みを受け付けていません。"
+        "しばらくしてからお試しください。",
+    _S_SUBSCRIBED:
+        "すでにサブスクリプションに加入しています。"
+        "解約・カードの変更は設定画面の「アカウント」から行えます。",
+    _S_PURCHASE: "お支払いはブラウザ (Stripe) で行います。",
+}
+
+# 未ログインのときに添える誘導 (ver9 resolve18 §2)。
+# Twitch サブの特典を持つ人が Google を選ぶと、別の利用者になって特典を受けられない。
+_LOGIN_HINT = ("Twitch のサブスクリプションをご利用中の方は、"
+               "Twitch でログインすると特典がそのまま適用されます。")
 
 # 加入種別ごとの状態表示
 _STATE_LABELS = {
@@ -69,6 +94,15 @@ class SubscriptionWindow(QWidget):
     # 加入が確認できた (メイン画面のボタンへ反映させるため)
     subscription_changed = Signal()
 
+    # ブラウザでの支払いを開始した (ver9 resolve17 §4.1)。
+    # 反映待ちはメイン画面が引き取る。この画面が閉じられても待ち続けるため。
+    checkout_started = Signal()
+
+    # この画面が閉じられた (ver9 resolve17 §1.2 / §4.1)。
+    # destroyed は WA_DeleteOnClose を設定していないため閉じても飛ばない。
+    # 「閉じた時点で取り直す」にはこちらを使う。
+    closed = Signal()
+
     def __init__(self, points, settings=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("サブスクリプション"))
@@ -78,12 +112,19 @@ class SubscriptionWindow(QWidget):
         self._login_worker = None
         self._config_worker = None
         self._url_worker = None
-        self._activation_worker = None
+        self._google_worker = None
         # 契約情報と加入種別は別々のタイミングで届く。両方そろってから可否を決める。
         self._billing_config = None
         self._subscription_type = None
+        # Google ログインを提供できる構成か (ver9 resolve18 §3)。
+        # 取得前は False として扱い、押せるのに失敗するボタンを出さない。
+        self._google_available = False
         # 手続き中 (ブラウザでの支払い待ち) はボタンを押せなくする
         self._in_progress = False
+        # S2 で閉じる処理の再入防止 (ver9 resolve18 §4.4)。
+        # _apply_state は残高と契約情報が別々に届くたび呼ばれるため、
+        # S2 の判定は 2 回以上起こりうる。
+        self._closing_for_subscription = False
         # points が無い (CLI / テスト) 場合は導線を出さない
         self._billing = BillingService(points, self._settings) if points is not None else None
 
@@ -119,10 +160,22 @@ class SubscriptionWindow(QWidget):
         self.twitch_button.clicked.connect(self._on_twitch_login)
         layout.addWidget(self.twitch_button)
 
+        # Google ログイン (ver9 resolve18 §2)。Twitch の下に置く。
+        # Twitch サブの特典を持つ人が先に Google を選ばないようにするため。
+        self.google_button = QPushButton(tr("Google でログイン"))
+        self.google_button.clicked.connect(self._on_google_login)
+        layout.addWidget(self.google_button)
+
         self.purchase_button = QPushButton(tr("購入"))
         theme.mark_primary(self.purchase_button, solid=True)
         self.purchase_button.clicked.connect(self._on_purchase)
         layout.addWidget(self.purchase_button)
+
+        # 反映を自分で確かめる手段 (ver9 resolve17 §4.4)。
+        # 待たされること自体より、確かめる手段が無いことが不安を生む。
+        self.refresh_button = QPushButton(tr("更新"))
+        self.refresh_button.clicked.connect(self.reload)
+        layout.addWidget(self.refresh_button)
 
         self.note_label = QLabel("")
         self.note_label.setWordWrap(True)
@@ -139,11 +192,28 @@ class SubscriptionWindow(QWidget):
         self._subscription_type = None
         self._apply_state()
 
-        if self._billing is None or not self._is_logged_in():
+        if self._billing is None:
+            return
+
+        if not self._is_logged_in():
+            # 未ログインのうちに Google を出せるかを確かめておく (§3)。
+            # ログイン後は使わないため、この段でだけ取得する。
+            self._start_google_check()
             return
 
         self._start_balance()
         self._start_config()
+
+    def _start_google_check(self):
+        if self._google_worker is not None and self._google_worker.isRunning():
+            return
+        self._google_worker = GoogleAvailableWorker(self._billing, parent=self)
+        self._google_worker.loaded.connect(self._on_google_available)
+        self._google_worker.start()
+
+    def _on_google_available(self, available):
+        self._google_available = bool(available)
+        self._apply_state()
 
     def _is_logged_in(self):
         return bool(self._points is not None and self._points.auth.is_logged_in())
@@ -175,45 +245,71 @@ class SubscriptionWindow(QWidget):
         self._apply_state()
 
     # ---- 表示 -------------------------------------------------------------
-    # ボタンの有効 / 無効と文言を、今分かっている情報だけから決める。
+    # 段を決めてから描く (ver9 resolve18 §4.3)。
+    #
+    # 段の決定は purchase_blocked_reason() の戻り値だけに依存する。
     # 契約情報と加入種別の**両方**がそろうまで購入ボタンは開かない
     # (片方だけで描くと加入中の人に購入ボタンが一瞬押せて見える / ver6 resolve §4.2)。
     def _apply_state(self):
         logged_in = self._is_logged_in()
         config = self._billing_config
 
+        reason = billing_module.purchase_blocked_reason(
+            config, self._subscription_type, logged_in)
+        stage = _STAGES.get(reason, _S_CHECKING)
+
+        # 手続き中 (ブラウザでの支払い待ち) は段を動かさない。
+        # 進行中の案内を出したまま、押せない購入ボタンを見せ続ける。
+        if self._in_progress:
+            stage = _S_PURCHASE
+
+        # Twitch サブで特典が適用されている場合、この画面に用は無い (要望 ②)。
+        if stage == _S_TWITCH_SUB:
+            self._close_for_twitch_subscription()
+            return
+
+        self._show_stage(stage, logged_in, config)
+
+    # 段ごとに出すものを切り替える (ver9 resolve18 §4.3 の表)。
+    def _show_stage(self, stage, logged_in, config):
         # 価格。取れていなければ空にしておく (クライアントに価格を持たせない)。
         self.price_label.setText(config.price_label if config is not None else "")
 
-        # Twitch のログインボタン。ログイン済みなら誰でログインしているかを出す。
-        if logged_in:
-            user = self._points.auth.user() or {}
-            name = user.get("displayName") or user.get("twitchUserId") or ""
-            self.twitch_button.setText(
-                tr("Twitch ログイン済み: {name}", name=name) if name
-                else tr("Twitch ログイン済み"))
-            self.twitch_button.setEnabled(False)
-        else:
+        self.price_label.setVisible(True)
+        self.description_label.setVisible(True)
+        self.state_label.setVisible(stage != _S_LOGIN)
+        self.refresh_button.setVisible(stage != _S_LOGIN)
+
+        # ログインボタンは未ログインの段だけに出す。
+        show_login = stage == _S_LOGIN
+        self.twitch_button.setVisible(show_login)
+        # Google は API が提供できる構成のときだけ (§3)。
+        self.google_button.setVisible(show_login and self._google_available)
+
+        if show_login:
             self.twitch_button.setText(tr("Twitch でログイン"))
+            self.google_button.setText(tr("Google でログイン"))
             # 別のログインが進行中のあいだは押させない。認可コードの受け口 (localhost)
             # を同じポートで開こうとして失敗するため (ver6 resolve §6.3)。
-            self.twitch_button.setEnabled(
-                self._billing is not None and not login_in_progress()
-                and not self._in_progress)
+            can_login = (self._billing is not None and not login_in_progress()
+                         and not self._in_progress)
+            self.twitch_button.setEnabled(can_login)
+            self.google_button.setEnabled(can_login)
+
+        # 購入ボタンは購入可能な段だけ。
+        self.purchase_button.setVisible(stage == _S_PURCHASE)
+        self.purchase_button.setEnabled(stage == _S_PURCHASE and not self._in_progress)
 
         self.state_label.setText(self._state_text(logged_in))
 
-        # 購入ボタン。押せない理由は billing.py の純関数が決める (§4.6)。
-        reason = billing_module.purchase_blocked_reason(
-            config, self._subscription_type, logged_in)
+        # 手続き中は注記を上書きしない (進行中の案内が出ている)。
         if self._in_progress:
-            # 手続き中は理由の表示を上書きしない (進行中の案内が出ている)。
-            self.purchase_button.setEnabled(False)
             return
 
-        self.purchase_button.setEnabled(not reason)
-        self.note_label.setText(tr(_BLOCK_MESSAGES.get(reason, "")) if reason
-                                else tr(_PURCHASE_NOTE))
+        note = tr(_STAGE_MESSAGES.get(stage, ""))
+        if stage == _S_LOGIN:
+            note = tr("{note}\n{hint}", note=note, hint=tr(_LOGIN_HINT))
+        self.note_label.setText(note)
 
     # 文言を現在の言語へ貼り替える (ver8 resolve §5)。
     # 状態・注記・ボタンの可否は _apply_state が一手に組み立てるため、
@@ -224,20 +320,54 @@ class SubscriptionWindow(QWidget):
         self.description_label.setText(
             tr("ポイントを消費せず、透かしの入らない出力を回数無制限で行えます。"))
         self.purchase_button.setText(tr("購入"))
+        self.refresh_button.setText(tr("更新"))
+        self.twitch_button.setText(tr("Twitch でログイン"))
+        self.google_button.setText(tr("Google でログイン"))
         self._apply_state()
 
     def _state_text(self, logged_in):
         if not logged_in:
             return tr("状態: 未ログイン")
-        if self._subscription_type is None:
-            return tr("状態: 確認中…")
-        return tr("状態: {state}", state=tr(_STATE_LABELS.get(
-            self._subscription_type, self._subscription_type)))
 
-    # ---- ① Twitch ログイン ------------------------------------------------
-    # 既存の Stretheus ログイン (Twitch の認可コードフロー) をそのまま使う。
-    # 新しいログイン機構は作らない (ver6 resolve2 §1.1)。
+        if self._subscription_type is None:
+            state = tr("状態: 確認中…")
+        else:
+            state = tr("状態: {state}", state=tr(_STATE_LABELS.get(
+                self._subscription_type, self._subscription_type)))
+
+        # 誰でログインしているかを添える (ver9 resolve18 §4.3)。
+        # ログイン済みの段ではログインボタンを隠すため、ここに出さないと
+        # どのアカウントで入っているのかが画面から分からなくなる。
+        account = self._account_text()
+        return tr("{state}\n{account}", state=state, account=account) if account else state
+
+    # ログイン済みのアカウント表示。未ログインなら空文字。
+    def _account_text(self):
+        if self._points is None or not self._is_logged_in():
+            return ""
+
+        user = self._points.auth.user() or {}
+        name = user.get("displayName") or user.get("twitchUserId") or ""
+        google = self._points.auth.provider() == PROVIDER_GOOGLE
+
+        if name:
+            return (tr("Google ログイン済み: {name}", name=name) if google
+                    else tr("Twitch ログイン済み: {name}", name=name))
+        return tr("Google ログイン済み") if google else tr("Twitch ログイン済み")
+
+    # ---- ① ログイン (Twitch / Google) --------------------------------------
+    # 既存の Stretheus ログイン (認可コードフロー) をそのまま使い、
+    # プロバイダだけを渡し分ける。新しいログイン機構は作らない
+    # (ver6 resolve2 §1.1 / ver9 resolve18 §4.1)。
     def _on_twitch_login(self):
+        self._start_login(PROVIDER_TWITCH, self.twitch_button,
+                          tr("ブラウザで Twitch の認可を行ってください。"))
+
+    def _on_google_login(self):
+        self._start_login(PROVIDER_GOOGLE, self.google_button,
+                          tr("ブラウザで Google の認可を行ってください。"))
+
+    def _start_login(self, provider, button, note):
         if self._billing is None:
             QMessageBox.information(
                 self, tr("ログインできません"),
@@ -246,10 +376,14 @@ class SubscriptionWindow(QWidget):
         if self._login_worker is not None and self._login_worker.isRunning():
             return
 
+        # 受け口のポートを取り合わないよう、押した側だけでなく両方を止める
+        # (ver6 resolve §6.3)。
         self.twitch_button.setEnabled(False)
-        self.twitch_button.setText(tr("ブラウザで許可してください…"))
-        self.note_label.setText(tr("ブラウザで Twitch の認可を行ってください。"))
-        self._login_worker = LoginWorker(self._points.auth, parent=self)
+        self.google_button.setEnabled(False)
+        button.setText(tr("ブラウザで許可してください…"))
+        self.note_label.setText(note)
+
+        self._login_worker = LoginWorker(self._points.auth, parent=self, provider=provider)
         self._login_worker.logged_in.connect(self._on_logged_in)
         self._login_worker.failed.connect(self._on_login_failed)
         self._login_worker.start()
@@ -257,7 +391,8 @@ class SubscriptionWindow(QWidget):
     def _on_logged_in(self, user):
         _logger.info("サブスクリプション画面からログインしました: %s",
                      (user or {}).get("displayName", ""))
-        # 加入状態は残高の応答で初めて分かる。取り直してから可否を決める。
+        # 加入状態は残高の応答で初めて分かる。取り直してから段を決める。
+        # Twitch サブが判明すれば _apply_state が S2 へ進み、この画面は閉じる (要望 ②)。
         self.reload()
         # ログインで Twitch サブが判明する場合があるためメイン画面へも伝える。
         self.subscription_changed.emit()
@@ -266,6 +401,21 @@ class SubscriptionWindow(QWidget):
         self._apply_state()
         QMessageBox.warning(self, tr("ログインできません"),
                             tr("ログインに失敗しました。\n{message}", message=message))
+
+    # ---- S2: Twitch サブで特典が適用されている (要望 ②) --------------------
+    # この画面に用が無いので閉じ、メイン画面へ戻る。
+    # メイン画面のサブスクリプションボタンが無効になり、紫のチェックマークが付く
+    # (既存表示 / ver6 resolve2 §4.2)。
+    def _close_for_twitch_subscription(self):
+        if self._closing_for_subscription:
+            return
+        self._closing_for_subscription = True
+
+        # **先にメイン画面へ知らせる。** close() が先だと closed だけが飛び、
+        # チェックマークを付ける経路 (subscription_changed) と取得が二重になる
+        # (ver9 resolve18 §4.4)。
+        self.subscription_changed.emit()
+        self.close()
 
     # ---- ② 購入 -----------------------------------------------------------
     def _on_purchase(self):
@@ -287,7 +437,9 @@ class SubscriptionWindow(QWidget):
         QDesktopServices.openUrl(QUrl(url))
         self.note_label.setText(
             tr("ブラウザでお支払いを完了してください。反映を待っています…"))
-        self._start_activation()
+        # 反映待ちはメイン画面が行う (ver9 resolve17 §4.2)。
+        # ここで持つと、この画面を閉じた時点で待ち合わせが消えてしまう。
+        self.checkout_started.emit()
 
     def _on_checkout_failed(self, message):
         self._in_progress = False
@@ -298,39 +450,38 @@ class SubscriptionWindow(QWidget):
         # 409 (すでに加入) もここへ来る。状態を取り直して表示を作り直す。
         self.reload()
 
-    # 支払いがサーバーへ反映されるのを待つ。画面は操作可能なままにする。
-    def _start_activation(self):
-        if self._activation_worker is not None and self._activation_worker.isRunning():
-            return
-        self._activation_worker = ActivationWorker(self._billing, parent=self)
-        self._activation_worker.done.connect(self._on_activation)
-        self._activation_worker.start()
-
-    def _on_activation(self, activated):
+    # 反映待ちの結果をメイン画面から受け取る (ver9 resolve17 §4.2)。
+    #
+    # 待ち合わせ自体はメイン画面が持つ。この画面が閉じられていれば呼ばれない
+    # (閉じたあとの表示は無いため、結果を届ける先も無い)。
+    def apply_activation(self, activated):
         self._in_progress = False
         if activated:
             self.reload()
-            self.subscription_changed.emit()
             return
         # 支払いを取りやめた場合もここへ来る。失敗とは書かない。
         self._apply_state()
         self.note_label.setText(
-            tr("お支払いの反映を確認できませんでした。"
-               "手続きが完了している場合は、しばらくしてからこの画面を開き直してください。"))
+            tr("お支払いの反映をまだ確認できていません。"
+               "お支払いが完了している場合は、「更新」を押すと確認できます。"))
 
     # 画面を閉じるときの後始末。
     #
-    # 反映待ちは最大 180 秒動くため、中断を要求してから待ち合わせる。
     # 残高・契約情報・URL の取得は HTTP のタイムアウト (既定 15 秒) で必ず終わるため、
     # そのぶんだけ待つ。走ったままのスレッドを親ごと破棄すると Qt が異常終了する。
+    #
+    # **反映待ちはここで中断しない** (ver9 resolve17 §1.3 / §4.2)。
+    # メイン画面が持つため、閉じても支払いの反映は続く。以前はここで
+    # requestInterruption() を呼んでいたため、「ブラウザで支払い、アプリへ戻り、
+    # 画面を閉じる」という自然な操作が反映の仕組みを自分で壊していた。
     #
     # ログイン (LoginWorker) は利用者がブラウザで許可するまで終われないため待たない。
     # 認可待ちのあいだに閉じても、ログイン自体は完了し次回の表示に反映される。
     def closeEvent(self, event):
-        if self._activation_worker is not None and self._activation_worker.isRunning():
-            self._activation_worker.requestInterruption()
-        for worker in (self._activation_worker, self._url_worker,
-                       self._config_worker, self._balance_worker):
+        # destroyed は閉じても飛ばないため、閉じたことはここで知らせる (§1.2)。
+        self.closed.emit()
+        for worker in (self._url_worker, self._config_worker,
+                       self._balance_worker, self._google_worker):
             if worker is not None and worker.isRunning():
                 worker.wait(5000)
         super().closeEvent(event)

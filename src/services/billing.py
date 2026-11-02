@@ -23,6 +23,10 @@ from ..utils.logger import get_logger
 _logger = get_logger(__name__)
 
 _CONFIG_PATH = "/api/billing/config"
+# Google ログインを提供できる構成かの確認 (ver9 resolve18 §4.2)。
+# 認証の問い合わせだが、使うのはサブスクリプション画面だけで、同画面は
+# 既に BillingService を持っている。クラスを増やすより画面の依存を増やさない。
+_GOOGLE_PARAMS_PATH = "/api/auth/google/authorize-params"
 _CHECKOUT_PATH = "/api/billing/checkout-session"
 _PORTAL_PATH = "/api/billing/portal-session"
 _SUBSCRIPTION_PATH = "/api/billing/subscription"
@@ -136,6 +140,8 @@ class BillingService:
 
         self._config = None
         self._config_at = None
+        self._google = None
+        self._google_at = None
 
     @property
     def auth(self):
@@ -169,6 +175,32 @@ class BillingService:
     # 登録ボタンはログイン後にしか押せない (JWT が要る)。
     def is_available(self):
         return self.config().is_available()
+
+    # ---- Google ログインの可否 --------------------------------------------
+    # Google でログインできる構成か (ver9 resolve18 §3)。
+    #
+    # **例外は投げない。** 503 (API 未設定) もオフラインも False として返す。
+    # 押しても必ず失敗するボタンを出さないための判定で、
+    # config() と同じく取得結果をキャッシュする。
+    def google_available(self, force=False):
+        if not force and self._google is not None and self._google_at is not None:
+            if (_now() - self._google_at).total_seconds() < self._cache_sec:
+                return self._google
+
+        try:
+            # 認証不要。未ログインの画面で使う。
+            response = self._points.auth.client.get(_GOOGLE_PARAMS_PATH, authenticated=False)
+        except AutoEditError as e:
+            # 503 = API が未設定。404 (未デプロイ) もオフラインもここへ来る。
+            _logger.info("Google ログインの可否を取得できませんでした: %s", e)
+            self._google = False
+            self._google_at = _now()
+            return self._google
+
+        # clientId が無い応答は不完全とみなして出さない (config と同じ扱い)。
+        self._google = bool((response or {}).get("clientId"))
+        self._google_at = _now()
+        return self._google
 
     # ---- 決済画面の URL ---------------------------------------------------
     # Checkout の URL を返す。**利用者が押した操作のため例外は通す** (§4.2)。

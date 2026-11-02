@@ -5,7 +5,7 @@ import os
 import shutil
 import sys
 import tempfile
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QDoubleValidator,
@@ -492,6 +492,9 @@ DEFAULT_SETTINGS = {
         "metric": "percentile",
         # metric="percentile" のときの分位点 (%)
         "percentile": 10,
+        # 旧既定 "mean" を "percentile" へ寄せる 1 回きりの移行済みフラグ
+        # (error 20261102 R3)。詳細は _migrate_volume_metric を参照。
+        "metric_migrated": False,
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -28,
     },
@@ -1581,6 +1584,8 @@ def _normalize_legacy_values(merged):
         changed = True
     if _migrate_preview_proxy_mode(merged):
         changed = True
+    if _migrate_volume_metric(merged):
+        changed = True
     return changed
 
 
@@ -1765,6 +1770,30 @@ def _migrate_preview_proxy_mode(merged):
     return True
 
 
+# 区間の代表音量の採り方を旧既定 "mean" から "percentile" へ寄せる 1 回きりの移行
+# (error 20261102 R3 / docs/quality/resolve1.md §2.3 F7)
+# 背景: "mean" は代表値の**最小値**を採るため、1 区間でも静かなものが混ざると
+#   カット閾値がノイズフロアまで落ち、無音が 1 件も検出されなくなる (実測 -102dB)。
+#   F7 で DEFAULT_SETTINGS を "percentile" にしたが、キーが既に在る旧 setting.json は
+#   _merge_with_defaults が既存値を温存するため "mean" のまま残り、更新しても直らない。
+#   この設定は設定画面に出していないため、利用者が自力で直す口も無い。
+#   移行済みフラグを持たせ、寄せたあとに意図して "mean" へ戻した場合は再び書き換えない。
+#   "max" は利用者が意図して選べる値なので触らない (旧既定値のときだけ寄せる)。
+def _migrate_volume_metric(merged):
+    va_cfg = merged.get("volume_analysis")
+    if not isinstance(va_cfg, dict):
+        return False
+    if va_cfg.get("metric_migrated"):
+        return False
+    va_cfg["metric_migrated"] = True
+    if str(va_cfg.get("metric", "")).strip().lower() == "mean":
+        va_cfg["metric"] = DEFAULT_SETTINGS["volume_analysis"]["metric"]
+        _logger.info(
+            "音量解析の代表値を %s へ寄せました (最小値採用によるカット閾値の崩壊の回避)",
+            va_cfg["metric"])
+    return True
+
+
 # 読み込んだデータに不足項目があればデフォルトで補完する
 def _merge_with_defaults(data):
     merged = DEFAULT_SETTINGS.copy()
@@ -1839,6 +1868,14 @@ def register_fonts_in_dir(fonts_dir):
 
 # 設定画面ウィンドウクラス
 class SettingsWindow(QWidget):
+
+    # この画面が閉じられた (ver9 resolve17 §1.6 / §4.5)。
+    #
+    # メイン画面は以前 destroyed を使っていたが、この画面は WA_DeleteOnClose を
+    # 設定しておらず、呼び出し側が参照を保持し続けるため**閉じても飛ばない**。
+    # アカウントタブでのログイン / ログアウトを残高インジケータへ反映するには
+    # 閉じた瞬間が要るので、専用のシグナルを持つ。
+    closed = Signal()
 
     # 初期化処理
     def __init__(self):
@@ -3486,6 +3523,12 @@ class SettingsWindow(QWidget):
     # 保存ボタン押下処理
     def _on_save(self):
         self._save_current(show_message=True)
+
+    # 閉じたことを知らせる (ver9 resolve17 §4.5)。
+    # 待ち合わせるワーカーは持たないため、通知だけ行う。
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event)
 
 
 # Whisper モデルのプロセス内キャッシュを解放する (resolve3 R6)

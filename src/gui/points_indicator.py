@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from shiboken6 import isValid
 
 from ..i18n import tr
-from ..services.stretheus_auth import parse_timestamp
+from ..services.stretheus_auth import PROVIDER_TWITCH, parse_timestamp
 from ..utils.logger import get_logger
 from . import theme
 
@@ -89,14 +89,18 @@ class LoginWorker(QThread):
     logged_in = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, auth, timeout=180, parent=None):
+    # provider は "twitch" / "google" (ver9 resolve18 §4.1)。
+    # 既定が twitch なので、既存の呼び出しは変更不要。
+    def __init__(self, auth, timeout=180, parent=None, provider=PROVIDER_TWITCH):
         super().__init__(parent)
         self._auth = auth
         self._timeout = timeout
+        self._provider = provider
 
     def run(self):
         try:
-            self.logged_in.emit(self._auth.login(timeout=self._timeout))
+            self.logged_in.emit(
+                self._auth.login(timeout=self._timeout, provider=self._provider))
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知するため広く捕捉)
             _logger.exception("ログインに失敗")
             self.failed.emit(str(e))
@@ -141,6 +145,11 @@ class PointsIndicator(QWidget):
         self._points = points
         self._worker = None
         self._login_worker = None
+        # 取得中に来た更新要求の保留 (ver9 resolve17 §4.3)。
+        # キューにはしない。欲しいのは「最新を 1 回」だけで、
+        # 同じ GET /api/points を並べても意味が無い。
+        self._pending = False
+        self._pending_force = False
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -167,10 +176,18 @@ class PointsIndicator(QWidget):
         self.refresh(force=True)
 
     # 残高を取り直す。未ログインでも端末の残高を取りに行く (ver7 resolve §4)。
+    #
+    # 取得中に重なった要求は**捨てずに保留する** (ver9 resolve17 §4.3)。
+    # 捨てると、支払いの反映のような 1 回しか来ない通知を取り逃がし、
+    # 次の更新が定期更新 (既定 300 秒) まで来なくなる。
     def refresh(self, force=False):
         if self._worker is not None and self._worker.isRunning():
+            self._pending = True
+            self._pending_force = self._pending_force or force
             return
 
+        self._pending = False
+        self._pending_force = False
         self._worker = BalanceWorker(self._points, force=force, parent=self)
         self._worker.loaded.connect(self._on_loaded)
         self._worker.start()
@@ -195,6 +212,13 @@ class PointsIndicator(QWidget):
         # 表示に使った値をそのまま流す。購読側 (メイン画面) が
         # GET /api/points をもう一度叩かずに加入状態を知れるようにする。
         self.balance_changed.emit(shown)
+
+        # 取得中に来ていた要求を処理する (ver9 resolve17 §4.3)
+        if self._pending:
+            force = self._pending_force
+            self._pending = False
+            self._pending_force = False
+            self.refresh(force=force)
 
     def _apply_state(self, balance=None, offline=False):
         # 言語切替で表示を組み立て直すため控える (ver8 resolve §5)

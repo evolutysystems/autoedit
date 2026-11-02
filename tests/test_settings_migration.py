@@ -397,6 +397,75 @@ class ProxyBlackoutMigrationTest(unittest.TestCase):
             "配布 setting.json の proxy.mode が DEFAULT_SETTINGS と揃っていません")
 
 
+# 音量解析の代表値 metric の移行 (error 20261102 R3)
+#
+# 背景: "mean" は代表値の最小値を採るため、1 区間でも静かなものが混ざると
+#   カット閾値がノイズフロアまで落ち、無音が 1 件も検出されなくなる (実測 -102dB)。
+#   F7 で既定を "percentile" にしたが、キーが在る旧 setting.json には届かない。
+
+
+class VolumeMetricMigrationTest(unittest.TestCase):
+
+    def _settings(self, metric):
+        data = copy.deepcopy(sw.DEFAULT_SETTINGS)
+        va_cfg = dict(data["volume_analysis"], metric=metric)
+        va_cfg.pop("metric_migrated", None)         # 旧ファイルにはフラグが無い
+        data["volume_analysis"] = va_cfg
+        return data
+
+    # 旧既定 "mean" のまま残っている既存利用者は "percentile" へ寄る
+    def test_legacy_mean_is_migrated(self):
+        merged = sw._merge_with_defaults(self._settings("mean"))
+        # マージだけでは既存値が残る (キーが在るため既定が届かない)
+        self.assertEqual(merged["volume_analysis"]["metric"], "mean")
+        self.assertTrue(sw._normalize_legacy_values(merged))
+        self.assertEqual(merged["volume_analysis"]["metric"], "percentile")
+        self.assertTrue(merged["volume_analysis"]["metric_migrated"])
+
+    # "max" は利用者が意図して選べる値なので触らない
+    def test_max_is_kept(self):
+        merged = sw._merge_with_defaults(self._settings("max"))
+        self.assertTrue(sw._migrate_volume_metric(merged))
+        self.assertEqual(merged["volume_analysis"]["metric"], "max")
+
+    # 移行後に利用者が意図して "mean" へ戻した場合は二度と触らない
+    def test_mean_after_migration_is_kept(self):
+        data = self._settings("mean")
+        data["volume_analysis"]["metric_migrated"] = True
+        merged = sw._merge_with_defaults(data)
+        sw._normalize_legacy_values(merged)
+        self.assertEqual(merged["volume_analysis"]["metric"], "mean")
+
+    # 2 度目は何も変えない (起動のたびに保存し直さない)
+    def test_migration_is_idempotent(self):
+        merged = sw._merge_with_defaults(self._settings("mean"))
+        self.assertTrue(sw._migrate_volume_metric(merged))
+        self.assertFalse(sw._migrate_volume_metric(merged))
+
+    # 既に "percentile" の環境では値を変えずフラグだけ立てる
+    def test_already_percentile_only_marks_the_flag(self):
+        merged = sw._merge_with_defaults(self._settings("percentile"))
+        self.assertTrue(sw._migrate_volume_metric(merged))
+        self.assertEqual(merged["volume_analysis"]["metric"], "percentile")
+        self.assertTrue(merged["volume_analysis"]["metric_migrated"])
+
+    # セクションごと無い壊れた setting.json でも落ちない
+    def test_missing_section_is_ignored(self):
+        self.assertFalse(sw._migrate_volume_metric({}))
+        self.assertFalse(sw._migrate_volume_metric({"volume_analysis": None}))
+
+    # 配布 setting.json も "percentile" であること (新規インストールと既存で揃える)
+    def test_shipped_settings_is_percentile(self):
+        import json
+        with io.open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "src", "settings", "setting.json"),
+                     encoding="utf-8-sig") as handle:
+            shipped = json.load(handle)
+        self.assertEqual(
+            shipped["volume_analysis"]["metric"], "percentile",
+            "配布 setting.json の volume_analysis.metric が DEFAULT_SETTINGS と揃っていません")
+
+
 if __name__ == "__main__":
     unittest.main()
 

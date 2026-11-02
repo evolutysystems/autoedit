@@ -40,6 +40,8 @@ if __package__ is None or __package__ == "":
     from src.archive import legacy_cache
     from src.services import config as services_config
     from src.services import telemetry
+    from src.services.billing import BillingService
+    from src.gui.billing_workers import ActivationWorker
     from src.gui.log_workers import LogFlushWorker
     from src.settings.settings_window import (
         SettingsWindow,
@@ -81,7 +83,9 @@ else:
     from ..utils.logger import get_logger
     from ..version import __version__
     from . import theme
+    from ..services.billing import BillingService
     from .archive_tab import ArchiveTabWidget
+    from .billing_workers import ActivationWorker
     from .failure_message import format_failure_message
     from .file_drop_area import FileDropArea
     from .log_workers import LogFlushWorker
@@ -95,6 +99,9 @@ else:
     from .volume_threshold_dialog import VolumeThresholdDialog
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
+# 終了処理中に解放済みのウィジェットを触らないための判定
+# (points_indicator.py と同じ作法 / ver9 resolve17 §4.2)
+from shiboken6 import isValid
 from PySide6.QtGui import QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -1084,6 +1091,9 @@ class MainWindow(QWidget):
         self._settings_window = None
         # サブスクリプション画面の参照 (同上 / ver6 resolve2 §4.2)
         self._subscription_window = None
+        # 支払いの反映待ち (ver9 resolve17 §4.2)。最大 180 秒走るため、
+        # サブスクリプション画面ではなくメイン画面が持つ。
+        self._activation_worker = None
         # 実行中のタブ (resolve4 §5.7-4)。空でないあいだ設定ボタンを無効化する。
         self._running_tabs = set()
         # 加入済みの印の種類 ("twitch" / "stripe" / 未加入は "")。
@@ -1285,9 +1295,13 @@ class MainWindow(QWidget):
             return
         self._settings_window = SettingsWindow()
         # アカウントタブでログイン / ログアウトされた可能性があるため、
-        # 閉じたら残高インジケータを作り直す (ver5 resolve §5.6)
-        self._settings_window.destroyed.connect(
-            lambda *_a: self.points_indicator.reload())
+        # 閉じたら残高インジケータを作り直す (ver5 resolve §5.6)。
+        #
+        # destroyed ではなく closed を使う (ver9 resolve17 §1.6)。
+        # この画面は WA_DeleteOnClose を設定しておらず、上の参照が生き続けるため
+        # destroyed は閉じた時点では飛ばない (飛ぶのは次回オープン時か終了時)。
+        self._settings_window.closed.connect(
+            lambda: self.points_indicator.reload())
         self._settings_window.show()
 
     # サブスクリプション画面を開く (ver6 resolve2 §4.2 / 要望 A)
@@ -1298,14 +1312,47 @@ class MainWindow(QWidget):
             self._subscription_window.activateWindow()
             return
         self._subscription_window = SubscriptionWindow(self._points, self._settings)
-        # 画面を開いたまま加入が確認できた場合にも印を付ける。
+        # 画面を開いたままログインで加入が判明した場合にも印を付ける。
         self._subscription_window.subscription_changed.connect(
             lambda: self.points_indicator.refresh(force=True))
+        # 支払いの反映待ちはメイン画面が引き取る (ver9 resolve17 §4.2)。
+        # 画面側で待つと、閉じた時点で待ち合わせが消えてしまう。
+        self._subscription_window.checkout_started.connect(self._start_activation_wait)
         # 「main_window に戻ってきた際に」加入状態を反映する (要望 ①後 / ②後)。
         # ログイン / 支払いはブラウザ側で進むため、閉じた時点で取り直す。
-        self._subscription_window.destroyed.connect(
-            lambda *_a: self.points_indicator.reload())
+        #
+        # destroyed ではなく closed を使う (ver9 resolve17 §1.2)。
+        # destroyed は閉じた時点では飛ばないため、ここが長らく機能していなかった。
+        self._subscription_window.closed.connect(
+            lambda: self.points_indicator.reload())
         self._subscription_window.show()
+
+    # ---- 支払いの反映待ち (ver9 resolve17 §4.2) ---------------------------
+    # サブスクリプション画面ではなく**メイン画面が持つ**。
+    # 親をメイン画面にすることで、画面を閉じてもスレッドが道連れにならず、
+    # 支払いの反映を最後まで待てる。
+    def _start_activation_wait(self):
+        if self._activation_worker is not None and self._activation_worker.isRunning():
+            return
+        # BillingService は PointsService を共有するため、画面側と状態が分かれない
+        # (持つのは契約情報のキャッシュだけで、加入判定は残高を見る)。
+        # 画面が閉じたあとも使うため、画面の属性へは依存させない。
+        billing = BillingService(self._points, self._settings)
+        self._activation_worker = ActivationWorker(billing, parent=self)
+        self._activation_worker.done.connect(self._on_activation_done)
+        self._activation_worker.start()
+
+    def _on_activation_done(self, activated):
+        # 画面が開いたままなら結果を渡す (注記と手続き中フラグを戻す)。
+        window = self._subscription_window
+        if window is not None and isValid(window) and window.isVisible():
+            window.apply_activation(activated)
+
+        if not activated:
+            # 支払いを取りやめた場合もここへ来る。失敗とは書かない。
+            return
+        # 残高を取り直す。ボタンの印と可否は balance_changed 経由で付く。
+        self.points_indicator.refresh(force=True)
 
     # 加入状態をサブスクリプションボタンへ反映する (ver6 resolve2 §4.2 / 要望 ①後 ②後)
     #
@@ -1509,6 +1556,18 @@ class MainWindow(QWidget):
             tr("更新のダウンロードに失敗しました。次回起動時に再試行します。\n{message}",
                message=message),
         )
+
+    # 終了時の後始末 (ver9 resolve17 §4.2)
+    #
+    # 支払いの反映待ちは最大 180 秒走る。走ったままのスレッドを親ごと破棄すると
+    # Qt が異常終了するため、中断を要求してから待ち合わせる。
+    # ポーリングの 1 周 (既定 3 秒) で抜けるので、ここで長く待たされることはない。
+    def closeEvent(self, event):
+        worker = self._activation_worker
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.wait(5000)
+        super().closeEvent(event)
 
 
 # アプリアイコン(app.ico)の実体パスを凍結/非凍結の双方で解決する

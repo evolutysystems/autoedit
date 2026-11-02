@@ -54,6 +54,10 @@ class _FakeAuth:
     def user(self):
         return {"displayName": "テスト配信者"}
 
+    # ver9 resolve18 §4.1 でログインのプロバイダを持つようになった
+    def provider(self):
+        return "twitch" if self._logged_in else ""
+
 
 class _FakePoints:
 
@@ -279,12 +283,14 @@ class SubscriptionWindowTest(unittest.TestCase):
         window = self._window(logged_in=False)
         self.assertEqual(theme.TWITCH_BUTTON, window.twitch_button.objectName())
 
-    # 要望 ①: Twitch のサブスクリプション中は購入させない
+    # 要望 ①: Twitch のサブスクリプション中は購入させない。
+    #
+    # ver9 resolve18 §2 の S2 から、注記を出す代わりに**画面を閉じて**
+    # メイン画面の紫のチェックマーク (既存表示) へ委ねる形になった。
+    # 閉じる挙動そのものは tests/test_subscription_stages.py で確認する。
     def test_a_twitch_subscriber_cannot_purchase(self):
         window = self._window(logged_in=True, subscription_type="TwitchSub")
         self.assertFalse(window.purchase_button.isEnabled())
-        self.assertIn("Twitch", window.note_label.text())
-        self.assertIn("購入は不要", window.note_label.text())
 
     def test_a_stripe_subscriber_cannot_purchase(self):
         window = self._window(logged_in=True, subscription_type="Stripe")
@@ -309,22 +315,29 @@ class SubscriptionWindowTest(unittest.TestCase):
         self.assertEqual("", window.price_label.text())
         self.assertIn("受け付けていません", window.note_label.text())
 
-    # ログイン済みなら誰でログインしているかを出し、ボタンは押せなくする
+    # ログイン済みなら誰でログインしているかを出す。
+    #
+    # ver9 resolve18 §4.3 でログインボタンは未ログインの段にしか出さなくなったため、
+    # アカウントの表示は状態ラベルへ移した。隠したままにすると
+    # どのアカウントで入っているのかが画面から分からなくなる。
     def test_it_shows_who_is_logged_in(self):
         window = self._window(logged_in=True, subscription_type="None")
-        self.assertIn("テスト配信者", window.twitch_button.text())
-        self.assertFalse(window.twitch_button.isEnabled())
+        self.assertIn("テスト配信者", window.state_label.text())
+        self.assertIn("Twitch ログイン済み", window.state_label.text())
 
-    # 文言は billing.py が返す理由コードから引く (対応が抜けていないこと)
-    def test_every_reason_has_a_message(self):
-        from src.gui.subscription_window import _BLOCK_MESSAGES
+    # 文言は billing.py が返す理由コードから引く (対応が抜けていないこと)。
+    # ver9 resolve18 §0 でコード → 段 → 文言の 2 段になったため、
+    # **コードが段へ漏れなく対応している**ことを確かめる。
+    def test_every_reason_maps_to_a_stage(self):
+        from src.gui.subscription_window import _STAGES
 
         for code in (billing_module.BLOCK_NOT_LOGGED_IN,
                      billing_module.BLOCK_UNKNOWN,
                      billing_module.BLOCK_UNAVAILABLE,
                      billing_module.BLOCK_TWITCH,
-                     billing_module.BLOCK_STRIPE):
-            self.assertTrue(_BLOCK_MESSAGES.get(code), code)
+                     billing_module.BLOCK_STRIPE,
+                     ""):
+            self.assertTrue(_STAGES.get(code), code)
 
 
 if __name__ == "__main__":

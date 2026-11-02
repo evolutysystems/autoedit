@@ -26,7 +26,7 @@
         "speech_gate_mode": "trim",
         "speech_pad_sec": 0.0,
         "font_family": "Yu Gothic UI",
-        "font_size": 130,
+        "font_size": 100,
         "custom_fonts_dir": "fonts",
         "font_file_dirs": [],
         "wrap_engine": "budoux",
@@ -136,6 +136,7 @@
         "max_regions": 100,
         "metric": "percentile",
         "percentile": 10,
+        "metric_migrated": true,
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -20
     },
@@ -196,7 +197,7 @@
             ],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2915684832.archive.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2916963434.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json"
             ],

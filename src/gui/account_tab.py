@@ -250,8 +250,13 @@ class AccountTab(QWidget):
 
         user = self._points.auth.user() or {}
         name = user.get("displayName") or user.get("twitchUserId") or ""
+        # どちらでログインしたかを添える (ver9 resolve18 §5)。
+        # Twitch と Google では受けられる特典が違う (Twitch サブの特典は
+        # Twitch でログインした場合のみ) ため、見分けが付く必要がある。
+        provider = tr("Google") if self._points.auth.provider() == "google" else tr("Twitch")
         self.status_label.setText(
-            tr("ログイン中: {name}", name=name) if name else tr("ログイン中"))
+            tr("ログイン中: {name} ({provider})", name=name, provider=provider) if name
+            else tr("ログイン中 ({provider})", provider=provider))
         self.balance_label.setText(tr("残高を取得しています…"))
         self._start_balance()
         self._start_history()
