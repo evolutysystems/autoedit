@@ -300,6 +300,21 @@
             "subtitle_color_swatch_width_px": 28,
             "subtitle_align_button_width_px": 56
         },
+        "help": {
+            "enabled": true,
+            "images": [
+                "t1.jpg",
+                "t2.jpg"
+            ],
+            "button_width_px": 32,
+            "window_width": 980,
+            "window_height": 760,
+            "window_min_width_px": 480,
+            "window_min_height_px": 360,
+            "image_min_width_px": 640,
+            "image_spacing_px": 12,
+            "image_margin_px": 12
+        },
         "preview": {
             "backend": "pyav",
             "subtitle_metrics_mode": "libass",

@@ -122,6 +122,12 @@ a = Analysis(
         ('ffmpeg/ffprobe.exe', 'ffmpeg'),
         # 透かし素材 (ver5 resolve §8-3)。watermark_overlay が _internal/src/watermark.png を解決する。
         ('watermark.png', 'src'),
+        # Timeline 画面の取り扱い説明 (ver9 resolve19 §3.6)。
+        # help_dialog.resolve_image_path が _internal/src/t1.jpg を解決する。
+        # setting.json の timeline.help.images で増やしたときは、ここにも足す
+        # (入れ忘れると配布版だけ「？」ボタンが消える)。
+        ('t1.jpg', 'src'),
+        ('t2.jpg', 'src'),
         # トラッキングぼかしのモデル (ver5 resolve8 §9.4)。_internal/src/models/ へ入る。
         # ver5 resolve8 で人物同定 (osnet) と輪郭 (silhouette) を廃止したため、
         # **使うモデルだけを名前で指定する** (models/ に古い .onnx が残っていても同梱しない)。

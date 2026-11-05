@@ -807,6 +807,29 @@ DEFAULT_SETTINGS = {
             # 字幕インスペクタの文字寄せボタン 1 つの幅 (ver9 resolve3 §R1)
             "subtitle_align_button_width_px": 56,
         },
+        # Timeline 画面の取り扱い説明 (ver9 resolve19 §3.7)。
+        # 下部ボタン列の「？」から説明画像を開く。
+        "help": {
+            # 「？」ボタンを出すか。false で機能ごと閉じる
+            "enabled": True,
+            # 説明画像。src/ からの相対パス (絶対パスも可)。この順に縦へ並ぶ。
+            # 増やしたときは main_window.spec / main.spec の datas にも足す
+            "images": ["t1.jpg", "t2.jpg"],
+            # 「？」ボタンの幅 (記号 1 文字ぶん / ズームボタンと同じ考え方)
+            "button_width_px": 32,
+            # 説明の窓を開いたときの大きさ
+            "window_width": 980,
+            "window_height": 760,
+            # 窓を縮められる下限
+            "window_min_width_px": 480,
+            "window_min_height_px": 360,
+            # 画像をこれ未満には縮めない。下回る窓では横スクロールで見せる
+            "image_min_width_px": 640,
+            # 画像どうしの縦の間隔
+            "image_spacing_px": 12,
+            # 画像の左右・上下に取る余白
+            "image_margin_px": 12,
+        },
         "preview": {
             "backend": "pyav",                 # "pyav" (既定) | "ffmpeg" (強制フォールバック)
             # 字幕プレビューのメトリクス基準 (ver8 resolve8 §5)。

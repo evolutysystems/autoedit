@@ -59,6 +59,7 @@ from ...version import __version__
 from .. import project_thumbnail, theme
 from ..color_field import ColorField
 from ..points_indicator import WATERMARK_MESSAGE_RESOLVE, watermark_confirm
+from . import help_dialog
 from .proxy_manager import ProxyManager
 from ..subtitle_editor_dialog import RESOLVE_EXPORT_BUTTON_TEXT, run_resolve_export
 from .preview_items import native_scale
@@ -218,6 +219,14 @@ class TimelineEditorDialog(QDialog):
 
         # 下部ボタン
         button_row = QHBoxLayout()
+
+        # 取り扱い説明 (ver9 resolve19 §3.2)。
+        # 置き場所は「元に戻す」の左 (要望 R2) なので、**undo より先に置く**。
+        # help.enabled が False、または説明画像が 1 枚も見つからないときは
+        # 何も置かない (押しても何も起きないボタンを残さないため)。
+        self.help_button = help_dialog.install_button(
+            button_row, self.controller.cfg["help"], self._open_help, parent=self)
+
         self.undo_button = QPushButton(tr("元に戻す"))
         self.undo_button.setToolTip("Ctrl+Z")
         self.undo_button.clicked.connect(self._undo)
@@ -802,6 +811,14 @@ class TimelineEditorDialog(QDialog):
         self._update_blur_markers()
         self._update_blur_button()
         self.timeline_panel.view.viewport().update()
+
+    # 取り扱い説明の画面を開く (ver9 resolve19 §3.3)。
+    # この画面自体がモーダルなため、非モーダルで開くと親の背後へ隠れて
+    # 行方不明になりやすい。そのため exec() で前面に留める。
+    def _open_help(self):
+        dialog = help_dialog.TimelineHelpDialog(
+            self.controller.cfg["help"], parent=self)
+        dialog.exec()
 
     # ぼかしの画面を開く (R1)。
     # 追従はこの画面の中で囲んだときに走るため、**ここでは待たない** (§5.10.7)。

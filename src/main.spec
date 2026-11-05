@@ -13,6 +13,10 @@ a = Analysis(
         ('comment_icon.png', 'src'),
         # 透かし素材 (ver5 resolve §8-3)
         ('watermark.png', 'src'),
+        # Timeline 画面の取り扱い説明 (ver9 resolve19 §3.6)。
+        # setting.json の timeline.help.images で増やしたときは、ここにも足す。
+        ('t1.jpg', 'src'),
+        ('t2.jpg', 'src'),
         # トラッキングぼかしのモデル (ver5 resolve2 §8-3)。
         # models/ が空でもビルドは通り、アプリは通常どおり起動する
         # (設定画面に「モデルが見つかりません」と出るだけ / §8-6)。

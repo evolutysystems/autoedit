@@ -250,6 +250,28 @@ def _one_of(value, choices, default):
 
 
 # 貼り付けの方針を検証して既定へ寄せる (ver3 resolve10 §7)
+# 取り扱い説明の既定画像 (ver9 resolve19 §3.7)。
+# 実体は src/t1.jpg / src/t2.jpg で、.spec の datas にも同じ名前で載せている。
+_HELP_IMAGES_DEFAULT = ("t1.jpg", "t2.jpg")
+
+
+# 説明画像の一覧を正規化する (ver9 resolve19 §3.7)
+# 文字列以外・空文字・重複を捨て、指定順を保つ。
+# 一覧になっていない値 (文字列・辞書など) は既定へ落とす。
+def _help_images(value):
+    if value is None:
+        return list(_HELP_IMAGES_DEFAULT)
+    if not isinstance(value, (list, tuple)):
+        _logger.warning("説明画像の設定が一覧ではないため既定を使用します: %r", value)
+        return list(_HELP_IMAGES_DEFAULT)
+    names = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in names:
+            names.append(text)
+    return names
+
+
 def _paste_config(values):
     values = values if isinstance(values, dict) else {}
     return {
@@ -388,6 +410,7 @@ def timeline_config(settings):
     preview = cfg.get("preview", {}) or {}
     render = cfg.get("render", {}) or {}
     opening_ending = cfg.get("opening_ending", {}) or {}
+    help_cfg = cfg.get("help", {}) or {}
     waveform = cfg.get("waveform", {}) or {}
     overlay = cfg.get("overlay", {}) or {}
     base_zoom = cfg.get("base_zoom", {}) or {}
@@ -686,6 +709,31 @@ def timeline_config(settings):
             "direct_burn": bool(render.get("direct_burn", False)),
         },
         "media": media_probe.media_config(settings),
+        # Timeline 画面の取り扱い説明 (ver9 resolve19 §3.7)。
+        # 「？」ボタンから開く説明画像の指定と、その窓の寸法。
+        "help": {
+            # 「？」ボタンを出すか。false で機能ごと閉じる
+            "enabled": bool(help_cfg.get("enabled", True)),
+            # 並べる画像。src/ からの相対 (絶対パスも可) で、この順に縦へ並ぶ
+            "images": _help_images(help_cfg.get("images")),
+            # 「？」ボタンの幅 (記号 1 文字ぶん / ズームボタンと同じ考え方)
+            "button_width_px": _positive_int(help_cfg.get("button_width_px"), 32),
+            # 説明の窓を開いたときの大きさ
+            "window_width": _positive_int(help_cfg.get("window_width"), 980),
+            "window_height": _positive_int(help_cfg.get("window_height"), 760),
+            # 窓を縮められる下限
+            "window_min_width_px": _positive_int(
+                help_cfg.get("window_min_width_px"), 480),
+            "window_min_height_px": _positive_int(
+                help_cfg.get("window_min_height_px"), 360),
+            # 画像をこれ未満には縮めない。下回る窓では横スクロールで見せる
+            "image_min_width_px": _positive_int(
+                help_cfg.get("image_min_width_px"), 640),
+            # 画像どうしの縦の間隔
+            "image_spacing_px": _positive_int(help_cfg.get("image_spacing_px"), 12),
+            # 画像の左右・上下に取る余白
+            "image_margin_px": _positive_int(help_cfg.get("image_margin_px"), 12),
+        },
     }
 
 
