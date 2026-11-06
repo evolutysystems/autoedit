@@ -3,10 +3,15 @@
 `src/gui/main_window.py` をメイン画面とする GUI アプリケーションを、**Web からダウンロードして実行する**
 配布物（Windows 向け実行ファイル）としてリリースするための手順書。
 
-> 対象 OS は Windows 11（開発環境）を基準とする。Python は CLAUDE.md 準拠で **Python 3.14**。
-> パッケージングには既存採用の **PyInstaller**（`src/main.spec` 実績あり）を用い、新規依存は増やさない。
+> 対象 OS は Windows 11（開発環境）を基準とする。Python は `docs/CLAUDE.md` 準拠で **Python 3.14**。
+> パッケージングには既存採用の **PyInstaller** を用い、新規依存は増やさない。
+> GUI 版の spec は `src/main_window.spec`（`src/main.spec` は CLI 版の旧 spec）。
 
-> **【重要・CUDA 不使用方針（`docs/request/resolve8.md`）】**
+> **本書の位置づけ**: ビルドと同梱物の考え方をまとめた手引きである。
+> **実際のリリース作業の正典は `installer/README.md`**（§10 の作業フロー参照）。
+> 現行のアーキテクチャは `docs/design/design.md`、文書全体の索引は `docs/README.md`。
+
+> **【重要・CUDA 不使用方針（`docs/request/ver1/resolve8.md`）】**
 > 音声認識は **CPU 実行に統一**し、**CUDA ランタイム（`nvidia-*-cu12`）の同梱は廃止**した
 > （配布ペイロードを約1.93GB 削減し、GitHub Releases の 2GiB 上限へ収めやすくするため）。
 > 本書中の **CUDA / GPU 同梱に関する記述（§2.2・§3.5・§4 の CUDA 収集・§6・§9 の該当行）は
@@ -126,10 +131,11 @@ GUI のため **ウィンドウモード（`console=False`）** でビルドす�
 配布時は exe のあるフォルダを作業ディレクトリにするショートカットを用意するか、`setting.json` の
 `logging.log_dir` を運用に合う値にする。
 
-> 既知の注意（§9）: `settings_window.py` の「開始」ボタンは `MAIN_SCRIPT`（`src/main.py`）を
-> `sys.executable` で起動する実装のため、凍結環境ではスクリプトが存在せず機能しない。
-> GUI のメイン処理は `main_window.py` のワーカースレッド実行（プロセス内）で完結するため、
-> 通常利用には影響しないが、設定画面の当該ボタンは凍結版では無効になる点を把握しておく。
+> 解消済み: かつて `settings_window.py` にあった「開始」ボタン（`MAIN_SCRIPT` =
+> `src/main.py` を `sys.executable` で起動する実装）は、凍結版で機能しないため**削除された**。
+> 現在の設定画面に当該ボタンは無く、実行はメイン画面（`src/gui/main_window.py`）の
+> 「実行」／「採点開始」がワーカースレッドでプロセス内実行する。
+> `src/main.py` は CLI 実行用として残っている（凍結版からは呼ばれない）。
 
 ### 3.4 音声認識モデル（faster-whisper）
 
@@ -183,7 +189,7 @@ GUI のため **ウィンドウモード（`console=False`）** でビルドす�
 #     setting.json の同梱先は settings_window.py が __file__ 基準で参照する
 #     'src/settings' に合わせる(実行時に初期設定を解決できるようにするため)。
 #
-# CUDA 不使用方針 (docs/request/resolve8.md): 音声認識は CPU 実行に統一したため、
+# CUDA 不使用方針 (docs/request/ver1/resolve8.md): 音声認識は CPU 実行に統一したため、
 # CUDA ランタイム DLL (nvidia-*-cu12) の同梱は廃止した。これにより配布ペイロードを
 # 大幅に削減し、GitHub Releases の 1ファイル 2GiB 上限に収めやすくする。
 
@@ -402,7 +408,7 @@ Stretheus/                      ← これを zip 化して配布
 
 ### 7.3 配布パッケージとチェックサム
 
-- 配布は **インストーラ方式**（`StretheusSetup.exe`）を基本とする（`docs/request/resolve8.md`）。
+- 配布は **インストーラ方式**（`StretheusSetup.exe`）を基本とする（`docs/request/ver1/resolve8.md`）。
   ユーザーは小さいインストーラーをDL→実行し、インストーラーが本体ペイロードを GitHub Releases から取得する。
   zip 直配布は後方互換の代替として残す。
 - 改ざん検知用に **SHA-256** を公開する。
@@ -437,7 +443,6 @@ Stretheus/                      ← これを zip 化して配布
 | 字幕生成が遅い | **CPU 実行**（CUDA 不使用方針 / resolve8.md）で `large-v3` を処理 | 仕様。必要に応じ軽量モデル（`medium`/`small`）へ変更（§3.4）。GPU(CUDA) 配布は廃止 |
 | SmartScreen 警告 | 署名なし新規 exe | コード署名、または README に実行手順記載（§7） |
 | AV に削除される | PyInstaller 製 exe の誤検知 | `upx=False`・署名・誤検知報告（§7.1） |
-| 設定画面の「開始」が動かない | 凍結版に `src/main.py` が存在しない（§3.3 注記） | メイン画面(`main_window.py`)の「実行」を使う／当該ボタンの凍結対応は別途改修 |
 | ログが見つからない | `log_dir` がカレント相対（§3.3） | exe フォルダを作業ディレクトリにするショートカット、または `logging.log_dir` を調整 |
 
 ---

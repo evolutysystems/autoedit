@@ -1,6 +1,6 @@
 # resolve6: 未使用項目の洗い出し と 設定画面の横幅縮小
 
-`docs/request/request6.md` への回答。`src/settings/settings_window.py` が画面表示している項目のうち、
+`docs/request/ver1/request6.md` への回答。`src/settings/settings_window.py` が画面表示している項目のうち、
 パイプライン側（`src/modules`・`src/pipeline`・`src/main.py`・`src/gui`）で**実際には参照されていない項目**を列挙し、
 あわせて設定画面の横幅を縮小した。
 

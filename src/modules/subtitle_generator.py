@@ -311,7 +311,7 @@ class TextSource:
 
 
 # whisper_device 設定から実際に使用するデバイスを解決する
-# CUDA 不使用方針 (docs/request/resolve8.md) により GPU(CUDA) 実行は廃止し、常に CPU を使用する。
+# CUDA 不使用方針 (docs/request/ver1/resolve8.md) により GPU(CUDA) 実行は廃止し、常に CPU を使用する。
 # 設定に旧値("auto"/"cuda")が残っていても CPU に正規化する(後方互換)。
 def _resolve_device(configured_device):
     return "cpu"
@@ -685,7 +685,7 @@ class WhisperTextSource(TextSource):
                 "(pip install faster-whisper)。subtitle.engine を 'none' にするとスキップできます。")
             ) from e
 
-        # CUDA 不使用方針 (docs/request/resolve8.md) により常に CPU で実行する
+        # CUDA 不使用方針 (docs/request/ver1/resolve8.md) により常に CPU で実行する
         device = _resolve_device(self._device_setting)
         compute_type = _resolve_compute_type(self._compute_type_setting, device)
         _logger.info(

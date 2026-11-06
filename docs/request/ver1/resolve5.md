@@ -1,6 +1,6 @@
 # 修正設計書: 実行環境に応じた GPU/CPU 自動選択
 
-`docs/request/request5.md` の要望に対する修正設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
+`docs/request/ver1/request5.md` の要望に対する修正設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
 
 ---
 

@@ -2,13 +2,13 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>autoedit 設計書</title>
+<title>Stretheus (autoedit) 設計書</title>
 <link rel="stylesheet" href="design.css">
 </head>
 <body>
 <header class="site-header">
-    <h1>自動編集パイプライン 設計書</h1>
-    <p class="subtitle">フルテロップ動画編集 1クリック自動化 / 最終更新: 2026-05-31</p>
+    <h1>Stretheus (autoedit) 設計書</h1>
+    <p class="subtitle">配信アーカイブ → フルテロップ切り抜きの自動化 / 対象 v1.8.2 / 最終更新: 2026-11-06</p>
 </header>
 
 <nav class="toc">
@@ -17,235 +17,415 @@
         <li><a href="#overview">システム概要</a></li>
         <li><a href="#flow">処理フロー図</a></li>
         <li><a href="#modules">モジュール構成図</a></li>
-        <li><a href="#classes">クラス構成</a></li>
-        <li><a href="#functions">関数一覧</a></li>
+        <li><a href="#classes">主要クラス・データモデル</a></li>
         <li><a href="#settings">setting.json 定義</a></li>
+        <li><a href="#external">外部連携</a></li>
         <li><a href="#error">エラー処理方針</a></li>
         <li><a href="#log">ログ出力方針</a></li>
-        <li><a href="#future">将来拡張方針</a></li>
-        <li><a href="#unknown">不明点</a></li>
-        <li><a href="#proposal">追加提案</a></li>
+        <li><a href="#release">配布・テスト</a></li>
+        <li><a href="#unknown">既知の未解決事項</a></li>
     </ol>
+    <p class="note">本ページは <code>design.md</code> の視覚版である。文章の正は <code>design.md</code>、
+    最終的な正は <code>src/</code> の実装。<code>docs/request/</code> などの履歴文書は現行仕様ではない
+    (<code>docs/README.md</code> 参照)。</p>
 </nav>
 
 <main>
 
 <section id="overview">
     <h2>1. システム概要</h2>
-    <p>入力動画 1 本に対し、無音カット → フルテロップ生成 → OP/ED 結合 → 出力 を 1 クリックで自動実行する。</p>
+    <p>配信アーカイブから YouTube 向けのフルテロップ切り抜き動画を作る工程を自動化する Windows デスクトップアプリ。
+       利用者の操作は「素材を選ぶ → 実行 → 編集画面で直す → 決定」の 4 手に収める。</p>
     <div class="card-grid">
         <div class="card"><h3>OS</h3><p>Windows 11</p></div>
         <div class="card"><h3>Python</h3><p>3.14</p></div>
         <div class="card"><h3>GUI</h3><p>PySide6</p></div>
-        <div class="card"><h3>外部ツール</h3><p>FFmpeg</p></div>
+        <div class="card"><h3>FFmpeg</h3><p>同梱 (PATH 非依存)</p></div>
+        <div class="card"><h3>音声認識</h3><p>faster-whisper / CPU</p></div>
+        <div class="card"><h3>サーバー</h3><p>Stretheus API</p></div>
     </div>
+
+    <h3>提供する 3 つの実行経路</h3>
+    <table>
+        <thead><tr><th>経路</th><th>入口</th><th>入力</th><th>概要</th></tr></thead>
+        <tbody>
+            <tr><td>A クリップ用 1 本編集</td><td>「クリップ用」タブ</td><td>動画 1 本</td>
+                <td>正規化 → 無音検出 → 文字起こし → Timeline 編集 → 書き出し</td></tr>
+            <tr><td>B アーカイブ切り抜き</td><td>「アーカイブ切り抜き用」タブ</td><td>Twitch VOD / 長尺動画</td>
+                <td>全長採点 → 候補区間の前処理 → 一括編集 → 結合して出力</td></tr>
+            <tr><td>C 編集の再開</td><td>各タブ「続きから」</td><td>プロジェクト JSON</td>
+                <td>素材を復旧 → Timeline 編集 → 書き出し</td></tr>
+        </tbody>
+    </table>
+    <p class="note">付随機能: 縦動画プロジェクトの作成 / DaVinci Resolve 出力 (.fcpxml + SRT) /
+       トラッキングぼかし / 透かし。</p>
 </section>
 
 <section id="flow">
     <h2>2. 処理フロー図</h2>
+
+    <h3>2.1 経路 A: クリップ用 1 本編集 (既定 = Timeline モード / 進捗 4 工程)</h3>
     <div class="flowchart">
-        <div class="node start">開始</div>
+        <div class="node start">実行</div>
         <div class="arrow">▼</div>
-        <div class="node">[1] 設定読込 (setting.json)</div>
+        <div class="node">事前確認<br><small>ffprobe で読めるか / 作業先と出力先の空き容量 / 出力キャンバス解決</small></div>
         <div class="arrow">▼</div>
-        <div class="node">[2] 入力動画選択 / 取得</div>
+        <div class="node">ポイント予約<br><small>points.reserve → 透かしが入るなら開始前に確認</small></div>
         <div class="arrow">▼</div>
-        <div class="node process">[3] 無音カット<br><small>silence_cutter</small></div>
+        <div class="node process">[1] 音声解析・正規化<br><small>loudness_normalizer: EBU R128 2 パス (映像は -c:v copy)</small></div>
         <div class="arrow">▼</div>
-        <div class="node process">[4] フルテロップ生成<br><small>subtitle_generator: 音声認識→ASS生成→焼き込み (ON/OFF対応)</small></div>
+        <div class="node">音量解析・カット閾値の確認<br><small>volume_analyzer → 確定値を volume_analysis.last_cut_db へ</small></div>
         <div class="arrow">▼</div>
-        <div class="node process">[5] オープニング結合<br><small>未設定時スキップ</small></div>
+        <div class="node process">[2] 無音検出 (実カットしない)<br><small>silence_cutter.detect_edit_points → 残す区間 = 編集点</small></div>
         <div class="arrow">▼</div>
-        <div class="node process">[6] エンディング結合<br><small>未設定時スキップ</small></div>
+        <div class="node process">[3] 音声認識<br><small>subtitle_generator: 残す区間の音声のみ faster-whisper へ</small></div>
         <div class="arrow">▼</div>
-        <div class="node">[7] 動画出力 (output_writer)</div>
+        <div class="node">Timeline 構築 + プロジェクト保存<br><small>V1 = OP → 本編 → ED / A1 = V1 にリンク / S1.. = 役割別字幕</small></div>
         <div class="arrow">▼</div>
-        <div class="node end">終了</div>
+        <div class="node">Timeline 編集画面<br><small>キャンセルは PipelineCancelled で中断 (異常終了ではない)</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[4] Timeline レンダリング<br><small>ベース連結 → オーバーレイ/ぼかし/透かし合成 → 字幕焼き込み</small></div>
+        <div class="arrow">▼</div>
+        <div class="node">出力<br><small>&lt;元名&gt;_edited.mp4 (衝突時連番) + ラウドネス検証</small></div>
+        <div class="arrow">▼</div>
+        <div class="node end">完了 (points.commit)</div>
     </div>
-    <p class="note">各 FFmpeg 工程は <code>run_ffmpeg_progress</code> 経由で進捗を通知。</p>
+
+    <h3>2.2 経路 A': 従来フロー (silence_cut.mode = physical / 進捗 5 工程)</h3>
+    <div class="flowchart">
+        <div class="node start">実行</div>
+        <div class="arrow">▼</div>
+        <div class="node process">[1] 音声解析・正規化</div>
+        <div class="arrow">▼</div>
+        <div class="node process">[2] 無音カット (実カット)</div>
+        <div class="arrow">▼</div>
+        <div class="node process">[3] フルテロップ生成<br><small>認識 → ASS → 焼き込み / 字幕一覧画面は subtitle.review_enabled</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[4] オープニング結合<br><small>未設定時スキップ</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[5] エンディング結合<br><small>未設定時スキップ</small></div>
+        <div class="arrow">▼</div>
+        <div class="node end">出力</div>
+    </div>
+
+    <h3>2.3 経路 B: アーカイブ切り抜き</h3>
+    <div class="flowchart">
+        <div class="node start">VOD 取得 (twitch-dl) / ローカル長尺動画</div>
+        <div class="arrow">▼</div>
+        <div class="node process">採点<br><small>特徴抽出 (音量/無音率) → コメント集計 → 方式 A 採点 → 窓積分 → 上位区間 (archive.scoring.top_n)</small></div>
+        <div class="arrow">▼</div>
+        <div class="node">ストリームマーカーを「必ず残す区間」として合流</div>
+        <div class="arrow">▼</div>
+        <div class="node process">クリップ前処理<br><small>区間切り出し → 正規化 → 無音カット → 文字起こし → クリップ単位の Timeline</small></div>
+        <div class="arrow">▼</div>
+        <div class="node">一括レビュー<br><small>採点グラフ / 字幕編集 / テーマ入力 / セクション追加 / 使用可否</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">書き出し<br><small>字幕焼き込み → イントロカード + 左上タグ → 1 本へ結合</small></div>
+        <div class="arrow">▼</div>
+        <div class="node end">archive_&lt;元名&gt;_clipN_&lt;開始&gt;-&lt;終了&gt;.mp4 + 結合 1 本</div>
+    </div>
+
+    <h3>2.4 経路 C: 保存済みプロジェクトの再開 (進捗 2 工程)</h3>
+    <div class="flowchart">
+        <div class="node start">プロジェクト JSON</div>
+        <div class="arrow">▼</div>
+        <div class="node">種別判定<br><small>アーカイブ用は専用経路へ案内して中断</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">[1] 素材の復旧<br><small>media_recovery: 消えた中間ファイルを元動画から作り直す / 再リンク画面</small></div>
+        <div class="arrow">▼</div>
+        <div class="node">Timeline 編集画面 (mode=resume)</div>
+        <div class="arrow">▼</div>
+        <div class="node process">[2] Timeline レンダリング</div>
+        <div class="arrow">▼</div>
+        <div class="node end">出力</div>
+    </div>
+
+    <h3>2.5 進捗表示</h3>
+    <ul>
+        <li>FFmpeg は必ず <code>utils/progress.run_ffmpeg_progress</code> 経由
+            (<code>ffmpeg_runner.execute</code> が唯一の呼び出し元)。<code>-progress pipe:1</code> を読む</li>
+        <li>工程の粒度は <code>PipelineContext.begin_step / end_step</code>、
+            工程内の細かい進捗は <code>progress_subcallback</code></li>
+        <li>無応答が <code>ffmpeg.progress_timeout_sec</code> を超えたら打ち切る</li>
+        <li>工程ごとの所要は <code>utils/stage_timer</code> が 1 行でまとめる</li>
+    </ul>
 </section>
 
 <section id="modules">
     <h2>3. モジュール構成図</h2>
     <div class="module-diagram">
         <div class="layer">
-            <h3>エントリ層</h3>
-            <div class="module">src/main.py</div>
-            <div class="module">settings_window.py</div>
+            <h3>GUI 層 (PySide6 / 表示と入力のみ)</h3>
+            <span class="module">gui/main_window</span>
+            <span class="module">gui/archive_tab</span>
+            <span class="module">gui/timeline/*</span>
+            <span class="module">gui/archive_result_window</span>
+            <span class="module">gui/subtitle_editor_dialog</span>
+            <span class="module">gui/account_tab</span>
+            <span class="module">gui/subscription_window</span>
+            <span class="module">gui/points_indicator</span>
+            <span class="module">gui/theme</span>
         </div>
         <div class="layer">
-            <h3>パイプライン層</h3>
-            <div class="module new">pipeline/pipeline_runner.py</div>
-            <div class="module new">pipeline/pipeline_context.py</div>
+            <h3>オーケストレーション層</h3>
+            <span class="module">pipeline/pipeline_runner</span>
+            <span class="module">pipeline/pipeline_context</span>
+            <span class="module">archive/pipeline</span>
+            <span class="module">archive/clip_writer</span>
+            <span class="module">export/resolve_export</span>
         </div>
         <div class="layer">
-            <h3>処理モジュール層</h3>
-            <div class="module new">modules/silence_cutter.py</div>
-            <div class="module new">modules/subtitle_generator.py</div>
-            <div class="module new">modules/concat_processor.py</div>
-            <div class="module new">modules/output_writer.py</div>
-            <div class="module new">modules/ffmpeg_runner.py</div>
+            <h3>処理層 (Qt 非依存)</h3>
+            <span class="module">timeline/model</span>
+            <span class="module">timeline/project_io</span>
+            <span class="module">timeline/builder</span>
+            <span class="module">timeline/commands</span>
+            <span class="module">timeline/compositor</span>
+            <span class="module">timeline/renderer</span>
+            <span class="module">modules/silence_cutter</span>
+            <span class="module">modules/subtitle_generator</span>
+            <span class="module">modules/loudness_normalizer</span>
+            <span class="module">modules/volume_analyzer</span>
+            <span class="module">modules/output_profile</span>
+            <span class="module">modules/output_writer</span>
+            <span class="module">modules/ffmpeg_runner</span>
+            <span class="module">archive/scoring</span>
+            <span class="module">archive/features</span>
+            <span class="module">blur/*</span>
+            <span class="module">export/fcpxml_builder</span>
         </div>
         <div class="layer">
-            <h3>共通基盤層</h3>
-            <div class="module new">utils/logger.py</div>
-            <div class="module new">utils/progress.py</div>
-            <div class="module">settings/setting.json</div>
+            <h3>基盤層</h3>
+            <span class="module">services/api_client</span>
+            <span class="module">services/points</span>
+            <span class="module">services/billing</span>
+            <span class="module">services/telemetry</span>
+            <span class="module">settings/settings_window</span>
+            <span class="module">i18n</span>
+            <span class="module">utils/logger</span>
+            <span class="module">utils/progress</span>
+            <span class="module">utils/disk</span>
+            <span class="module">utils/updater</span>
         </div>
     </div>
-    <p class="legend"><span class="badge new">new</span> = 新規追加 / <span class="badge">既存</span> = 既存維持</p>
+    <p class="note">依存は上から下への一方向。GUI は <code>timeline.commands</code> 経由でしかモデルを変更しない
+       (Undo/Redo が全操作へ一様に効く)。合成の計算は <code>timeline/compositor</code> だけが持ち、
+       出力とプレビューが同じ値を見る。</p>
+
+    <h3>パッケージの責務</h3>
+    <table>
+        <thead><tr><th>パッケージ</th><th>責務</th></tr></thead>
+        <tbody>
+            <tr><td><code>pipeline/</code></td><td>経路 A/C の工程順・ポイント・ログ・例外の集約</td></tr>
+            <tr><td><code>modules/</code></td><td>FFmpeg / Whisper を叩く単機能 (正規化・無音・認識・焼き込み・出力)</td></tr>
+            <tr><td><code>timeline/</code></td><td>編集情報の唯一のソースとレンダリング</td></tr>
+            <tr><td><code>archive/</code></td><td>VOD 取得・採点・クリップ処理・結合</td></tr>
+            <tr><td><code>blur/</code></td><td>囲みの指定・追従・マスク生成</td></tr>
+            <tr><td><code>export/</code></td><td>DaVinci Resolve 向け FCPXML / SRT 生成</td></tr>
+            <tr><td><code>services/</code></td><td>認証・ポイント・課金・ログ送信 (標準ライブラリのみ)</td></tr>
+            <tr><td><code>gui/</code></td><td>画面。編集ロジックを持たない</td></tr>
+            <tr><td><code>i18n/</code></td><td>日本語原文キーの対訳 (ja / en)</td></tr>
+            <tr><td><code>utils/</code></td><td>ログ・進捗・容量・ゴミ箱・残骸整理・自動更新</td></tr>
+        </tbody>
+    </table>
 </section>
 
 <section id="classes">
-    <h2>4. クラス構成</h2>
-    <pre class="code-block">PipelineRunner
- ├─ uses → SilenceCutter
- ├─ uses → SubtitleGenerator
- ├─ uses → ConcatProcessor
- ├─ uses → OutputWriter
- ├─ uses → FFmpegRunner
- └─ holds → PipelineContext
+    <h2>4. 主要クラス・データモデル</h2>
 
-PipelineContext
- ├─ input_path : str
- ├─ working_dir : str
- ├─ intermediate_paths : dict
- ├─ output_path : str
- ├─ settings : dict
- └─ progress_callback : Callable
+    <h3>PipelineContext (工程間で受け渡す唯一の状態)</h3>
+<pre>PipelineContext
+ ├─ input_path / working_dir / output_path
+ ├─ settings                   実行用コピー (キャンバス解決済み)
+ ├─ progress_callback / total_steps / current_step / begin_step / end_step
+ ├─ current_video_path()       直前の工程が作った動画
+ ├─ asr_audio_path() / build_asr_audio()
+ ├─ timeline / project_path / project_created_at
+ ├─ output_profile             {is_portrait, orientation, width, height}
+ ├─ project_id                 ログ送信の単位
+ ├─ watermark_required         透かしを焼くか (サーバー応答由来)
+ └─ cleanup()                  中間ファイルの後始末</pre>
 
-SubtitleGenerator
- ├─ TextSource (抽象)
- │   └─ WhisperTextSource (faster-whisper 音声認識)
- ├─ FontProfile (フォント差替吸収)
- └─ run(context) -> str
-       音声認識 → ASS 生成 → ASS 焼き込み</pre>
-</section>
+    <h3>Timeline</h3>
+<pre>Timeline
+ ├─ width / height / orientation
+ ├─ tracks[]
+ │    ├─ V1   ベース映像 (OP / 本編の残す区間 / ED)。最背面固定
+ │    ├─ V2+  オーバーレイ映像・画像 (z_order)
+ │    ├─ A1   V1 にリンクした音声 (独立した時刻を持たない)
+ │    └─ S1.. 字幕 (役割別。既定 3 / 最大 timeline.subtitle_tracks.max_tracks)
+ ├─ source    元動画・編集点メタ・ぼかし指定・crop 指定
+ └─ Clip = MediaRef (素材と素材内時刻) + Transform (位置・大きさ) + use</pre>
+    <ul>
+        <li>プロジェクト JSON は <code>schema_version = 1</code>。未知の版は <code>TimelineError</code>、古い版は移行</li>
+        <li>種別はファイル名の接尾辞 (<code>.archive</code>) で決まり、取り違えを読込時に弾く</li>
+        <li>追従ぼかしの結果は重いので JSON へ入れず <code>blur/store.py</code> が別ファイルへ持つ</li>
+    </ul>
 
-<section id="functions">
-    <h2>5. 関数一覧 (抜粋)</h2>
-    <table>
-        <thead><tr><th>モジュール</th><th>関数</th><th>役割</th></tr></thead>
-        <tbody>
-            <tr><td>pipeline_runner</td><td>run_pipeline</td><td>1クリック実行の本体</td></tr>
-            <tr><td>silence_cutter</td><td>detect_silence</td><td>FFmpeg silencedetect をパース</td></tr>
-            <tr><td>silence_cutter</td><td>cut_and_concat</td><td>有音区間を抽出して結合</td></tr>
-            <tr><td>subtitle_generator</td><td>WhisperTextSource.extract</td><td>faster-whisper で音声認識しタイムライン生成</td></tr>
-            <tr><td>subtitle_generator</td><td>build_subtitle_file</td><td>認識結果から ASS 字幕ファイル生成</td></tr>
-            <tr><td>subtitle_generator</td><td>burn_subtitle</td><td>FFmpeg subtitles フィルタで ASS を焼き込み</td></tr>
-            <tr><td>concat_processor</td><td>concat</td><td>FFmpeg concat demuxer 実行</td></tr>
-            <tr><td>ffmpeg_runner</td><td>execute</td><td>FFmpeg 実行 + 進捗通知</td></tr>
-            <tr><td>utils/logger</td><td>get_logger</td><td>ロガー取得</td></tr>
-        </tbody>
-    </table>
+    <h3>テロップの文字色の決定順 (timeline/subtitle_style.py)</h3>
+    <ol>
+        <li>クリップ個別の色 (<code>SubtitleClip.color</code>)</li>
+        <li>トラックの既定色 (<code>Track.color</code> / ヘッダの色見本)</li>
+        <li>役割の色 (<code>subtitle.own/sub/comment_subtitle_color</code>)</li>
+        <li>フォールバック (配信者色)</li>
+    </ol>
+    <p class="note">焼き込み・プレビュー・Resolve 出力はすべてこの 1 か所から引く。
+       役割は載っているトラックが決める一方通行で、編集画面の「役割」コントロールは既定で出さない。
+       フォント・サイズ・配置は <code>subtitle.*</code> を既定とし、縦動画では <code>vertical.*</code> が上書きする。</p>
 </section>
 
 <section id="settings">
-    <h2>6. setting.json 定義 (拡張案)</h2>
+    <h2>5. setting.json 定義</h2>
+    <p>既定値の唯一の出どころは <code>settings_window.DEFAULT_SETTINGS</code>。
+       <code>setting.json</code> だけに書いた新キーは <code>load_settings → save_settings</code> で消えるため、
+       設定を足すときは必ず両方を直す。</p>
+
+    <h3>セクション一覧 (全 19)</h3>
     <table>
-        <thead><tr><th>セクション</th><th>キー</th><th>型</th><th>デフォルト</th><th>説明</th><th>新規/既存</th></tr></thead>
+        <thead><tr><th>セクション</th><th>内容</th></tr></thead>
         <tbody>
-            <tr><td rowspan="4">general</td><td>video_directory</td><td>string</td><td>""</td><td>入力動画ディレクトリ</td><td>既存</td></tr>
-            <tr><td>opening_video</td><td>string</td><td>""</td><td>OP 動画パス (空でスキップ)</td><td>既存</td></tr>
-            <tr><td>ending_video</td><td>string</td><td>""</td><td>ED 動画パス (空でスキップ)</td><td>既存</td></tr>
-            <tr><td>output_directory</td><td>string</td><td>""</td><td>最終出力ディレクトリ</td><td class="new-cell">新規</td></tr>
-
-            <tr><td rowspan="15">subtitle</td><td>language</td><td>string</td><td>"ja"</td><td>字幕言語</td><td>既存</td></tr>
-            <tr><td>broadcast_style</td><td>string</td><td>"ソロ"</td><td>配信スタイル</td><td>既存</td></tr>
-            <tr><td>threshold</td><td>string</td><td>"0.6"</td><td>発話判定しきい値</td><td>既存</td></tr>
-            <tr><td>min_speech_ignore_time</td><td>string</td><td>"0.6"</td><td>最小発話無視時間</td><td>既存</td></tr>
-            <tr><td>own_subtitle_color</td><td>string</td><td>"#ED1C24"</td><td>自分の字幕色</td><td>既存</td></tr>
-            <tr><td>enabled</td><td>bool</td><td>true</td><td>テロップ ON/OFF</td><td class="new-cell">新規</td></tr>
-            <tr><td>font_family</td><td>string</td><td>"Yu Gothic UI"</td><td>テロップフォント</td><td class="new-cell">新規</td></tr>
-            <tr><td>font_size</td><td>int</td><td>48</td><td>テロップフォントサイズ</td><td class="new-cell">新規</td></tr>
-            <tr><td>engine</td><td>string</td><td>"whisper"</td><td>音声認識エンジン ("none" でスキップ)</td><td class="new-cell">新規</td></tr>
-            <tr><td>whisper_model</td><td>string</td><td>"large-v3"</td><td>faster-whisper モデル</td><td class="new-cell">新規</td></tr>
-            <tr><td>whisper_device</td><td>string</td><td>"cpu"</td><td>推論デバイス</td><td class="new-cell">新規</td></tr>
-            <tr><td>whisper_compute_type</td><td>string</td><td>"int8"</td><td>量子化方式</td><td class="new-cell">新規</td></tr>
-            <tr><td>whisper_beam_size</td><td>int</td><td>8</td><td>ビームサーチ幅</td><td class="new-cell">新規</td></tr>
-            <tr><td>max_line_length</td><td>int</td><td>15</td><td>ASS 1 行最大文字数</td><td class="new-cell">新規</td></tr>
-            <tr><td>remove_fillers</td><td>bool</td><td>false</td><td>フィラー(口癖)除去</td><td class="new-cell">新規</td></tr>
-
-            <tr><td rowspan="4">silence_cut</td><td>noise_threshold_db</td><td>int</td><td>-30</td><td>無音判定しきい値 (dB)</td><td class="new-cell">新規</td></tr>
-            <tr><td>min_silence_duration_sec</td><td>float</td><td>0.6</td><td>最小無音時間 (秒)</td><td class="new-cell">新規</td></tr>
-            <tr><td>fade_enabled</td><td>bool</td><td>false</td><td>カット境界フェード有無</td><td class="new-cell">新規</td></tr>
-            <tr><td>fade_duration_sec</td><td>float</td><td>0.05</td><td>フェード長 (秒)</td><td class="new-cell">新規</td></tr>
-
-            <tr><td rowspan="6">ffmpeg</td><td>executable</td><td>string</td><td>"ffmpeg"</td><td>ffmpeg 実行ファイル</td><td class="new-cell">新規</td></tr>
-            <tr><td>ffprobe_executable</td><td>string</td><td>"ffprobe"</td><td>ffprobe 実行ファイル</td><td class="new-cell">新規</td></tr>
-            <tr><td>video_codec</td><td>string</td><td>"libx264"</td><td>映像コーデック</td><td class="new-cell">新規</td></tr>
-            <tr><td>audio_codec</td><td>string</td><td>"aac"</td><td>音声コーデック</td><td class="new-cell">新規</td></tr>
-            <tr><td>preset</td><td>string</td><td>"medium"</td><td>x264 プリセット</td><td class="new-cell">新規</td></tr>
-            <tr><td>crf</td><td>int</td><td>20</td><td>CRF 品質値</td><td class="new-cell">新規</td></tr>
-
-            <tr><td rowspan="2">logging</td><td>log_dir</td><td>string</td><td>"logs"</td><td>ログ出力先</td><td class="new-cell">新規</td></tr>
-            <tr><td>level</td><td>string</td><td>"INFO"</td><td>ログレベル</td><td class="new-cell">新規</td></tr>
+            <tr><td><code>general</code></td><td>入出力フォルダ / OP・ED とその有効フラグ / 自動更新 / 作業フォルダ / 必要空き容量</td></tr>
+            <tr><td><code>subtitle</code></td><td>言語・役割色・フォント・折り返し・ASS スタイル・コメント装飾・Whisper・分割結合・語彙 (約 100 キー)</td></tr>
+            <tr><td><code>silence_cut</code></td><td>有効/無効 / <code>mode</code> (edit_points・physical) / 閾値 / 最小無音長 / フェード / 抽出方式</td></tr>
+            <tr><td><code>volume_analysis</code></td><td>解析の有無・測り方・確定カット閾値 <code>last_cut_db</code></td></tr>
+            <tr><td><code>loudness</code></td><td>目標 I / TP / LRA・2 パス・出力の検証と補正</td></tr>
+            <tr><td><code>preview</code></td><td>字幕プレビュー (尺・寸法・プリセット・音声)</td></tr>
+            <tr><td><code>timeline</code></td><td>編集画面の全設定 (プロジェクト・トラック・ショートカット・プレビュー・プロキシ・波形・UI 寸法)</td></tr>
+            <tr><td><code>ffmpeg</code></td><td>実行ファイルのパス・コーデック・出力寸法/FPS・品質プロファイル・進捗タイムアウト</td></tr>
+            <tr><td><code>vertical</code></td><td>縦動画のキャンバス・字幕配置・切り抜きの既定</td></tr>
+            <tr><td><code>logging</code></td><td>ログの出力先とレベル</td></tr>
+            <tr><td><code>archive</code></td><td>取得・認証・採点 (方式 A の重み)・マーカー・区間追加・見積り・クリップ処理・結合・イントロカード</td></tr>
+            <tr><td><code>export</code></td><td>Resolve 出力 (形式・字幕モード・座標系)</td></tr>
+            <tr><td><code>api</code></td><td>Stretheus API のベース URL とタイムアウト</td></tr>
+            <tr><td><code>watermark</code></td><td>透かしの大きさ・不透明度・位置</td></tr>
+            <tr><td><code>points</code></td><td>残高の更新間隔・サブスク状態のキャッシュ</td></tr>
+            <tr><td><code>billing</code></td><td>課金設定のキャッシュ・反映待ちのポーリング</td></tr>
+            <tr><td><code>telemetry</code></td><td>ログ送信の有無・保持日数・キュー上限・送信間隔</td></tr>
+            <tr><td><code>blur</code></td><td>有効/無効・UI 表示・検出モデル・追従・描画・編集画面</td></tr>
+            <tr><td><code>ui</code></td><td>言語・テーマ・アクセント・ガラスの不透明度・背景・メイン画面の寸法</td></tr>
         </tbody>
     </table>
+
+    <h3>経路の分岐に効く代表キー</h3>
+    <table>
+        <thead><tr><th>キー</th><th>既定</th><th>効果</th></tr></thead>
+        <tbody>
+            <tr><td><code>timeline.enabled</code></td><td>true</td><td>false で従来フローへ</td></tr>
+            <tr><td><code>silence_cut.mode</code></td><td>edit_points</td><td>physical で実カット</td></tr>
+            <tr><td><code>silence_cut.enabled</code></td><td>true</td><td>false で無音カットと閾値確認をスキップ</td></tr>
+            <tr><td><code>subtitle.enabled</code></td><td>true</td><td>false でテロップ工程をスキップ</td></tr>
+            <tr><td><code>subtitle.engine</code></td><td>whisper</td><td>none / 未導入で認識をスキップ (全体は継続)</td></tr>
+            <tr><td><code>archive.combine.enabled</code></td><td>true</td><td>クリップを 1 本へ結合</td></tr>
+            <tr><td><code>blur.ui_enabled</code></td><td>false</td><td>編集画面からぼかしを指定できるか</td></tr>
+            <tr><td><code>export.resolve.enabled</code></td><td>true</td><td>Resolve 出力ボタンを出すか</td></tr>
+        </tbody>
+    </table>
+
+    <h3>互換性方針</h3>
+    <ul>
+        <li><code>_merge_with_defaults</code> はセクション単位の浅いマージ。既存のユーザー値を温存する</li>
+        <li>入れ子キーの欠落は各パッケージの <code>config.py</code> が既定へ落とす</li>
+        <li>既定値を変えて既存値も直したいときは移行フラグで 1 回だけ書き換える
+            (<code>metric_migrated</code> / <code>ripple_delete_migrated</code> ほか)</li>
+        <li>既存キーの意味・型は変えない。意味を変えるなら新しいキーを足す</li>
+    </ul>
+</section>
+
+<section id="external">
+    <h2>6. 外部連携</h2>
+    <table>
+        <thead><tr><th>相手</th><th>内容</th><th>失敗時</th></tr></thead>
+        <tbody>
+            <tr><td>Stretheus API</td><td>ログイン (OAuth 認可コード / 匿名端末)・ポイント・課金・ログ送信</td>
+                <td>5xx・接続失敗は <code>ApiOfflineError</code> で縮退。編集と書き出しは止めない</td></tr>
+            <tr><td>Stripe</td><td>Checkout / カスタマーポータル (ホスト画面へ誘導)</td><td>カード情報はアプリで扱わない</td></tr>
+            <tr><td>Twitch</td><td>OAuth・所有判定・VOD / チャット取得 (twitch-dl)・ストリームマーカー</td>
+                <td><code>TwitchError</code>。ローカル動画経路は影響なし</td></tr>
+            <tr><td>GitHub Releases</td><td>自動更新 (インストーラ取得・起動)</td><td>静かにスキップ</td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li>JWT は <code>%LOCALAPPDATA%\Stretheus\auth.dat</code> へ Windows DPAPI で保存。トークンはログへ出さない</li>
+        <li>ポイントは「出力 1 回につき予約 → 成果物の完成で確定 / それ以外で取消」。
+            透かしの要否は<strong>サーバーの応答だけ</strong>で決める</li>
+        <li>ログは <code>telemetry</code> がファイルへ 1 本書くだけ (オフラインでも成功)。
+            送信は <code>log_sender</code> が低優先度で行う</li>
+    </ul>
 </section>
 
 <section id="error">
     <h2>7. エラー処理方針</h2>
-    <ul>
-        <li>独自例外階層 <code>AutoEditError</code> 配下に <code>ConfigError / FFmpegError / InputError / SubtitleError</code> を定義</li>
-        <li>FFmpeg は exit code != 0 で例外化、コマンドと stderr 末尾をログ</li>
-        <li>OP / ED 未設定は例外でなく <strong>スキップ</strong></li>
-        <li>失敗時、中間ファイルは保持しデバッグ可能に</li>
-    </ul>
+<pre>AutoEditError
+ ├─ ConfigError          設定不整合
+ ├─ InputError           入力動画・プロジェクトが無い / 読めない
+ ├─ FFmpegError          command / stderr_tail / returncode
+ ├─ DiskSpaceError       path / free / required
+ ├─ SubtitleError        テロップ生成
+ ├─ PipelineCancelled    利用者の意図による中断
+ ├─ ExportError          Resolve 出力
+ ├─ TwitchError          ログイン / 所有判定 / twitch-dl
+ ├─ TimelineError        モデル・JSON・編集の前提違反
+ └─ ApiError             status / code / retry_after
+      ├─ ReauthRequiredError  401 再ログインが必要
+      └─ ApiOfflineError      到達不能 (縮退)</pre>
+    <table>
+        <thead><tr><th>区分</th><th>方針</th></tr></thead>
+        <tbody>
+            <tr><td>入力不正</td><td>工程前に ffprobe で確認し、理由を名指しして中断</td></tr>
+            <tr><td>容量不足</td><td>作業先と出力先を開始前に確認。足りなければ即中断 (握り潰さない)</td></tr>
+            <tr><td>FFmpeg 失敗</td><td>戻り値 != 0 を例外化し、コマンドと stderr 末尾をログへ</td></tr>
+            <tr><td>OP/ED 未設定</td><td>例外にせずスキップして継続</td></tr>
+            <tr><td>正規化・字幕・プロジェクト保存の失敗</td><td>記録して続行 (出力は作れる)</td></tr>
+            <tr><td>利用者のキャンセル</td><td>ポイントを戻し「中断」として記録</td></tr>
+            <tr><td>想定外例外</td><td>最上位で記録して再送出。GUI は対象と理由を添えて表示</td></tr>
+            <tr><td>中間ファイル</td><td>成否に関わらず <code>finally</code> で後始末。残骸は次回起動時に掃除</td></tr>
+        </tbody>
+    </table>
 </section>
 
 <section id="log">
     <h2>8. ログ出力方針</h2>
     <ul>
-        <li>Python 標準 <code>logging</code> のみ使用 (追加依存なし)</li>
-        <li>コンソール + <code>logs/autoedit_YYYYMMDD.log</code></li>
-        <li>レベルは setting.json で切替 (デフォルト INFO)</li>
-        <li>FFmpeg コマンド全文は DEBUG レベル</li>
+        <li>標準 <code>logging</code> のみ。コンソール + <code>&lt;logging.log_dir&gt;/autoedit_YYYYMMDD.log</code> (5MB x 5 世代)</li>
+        <li>形式 <code>%(asctime)s [%(levelname)s] %(name)s: %(message)s</code> / レベルは <code>logging.level</code> (既定 INFO)</li>
+        <li>FFmpeg コマンド全文は DEBUG。例外は <code>logger.exception</code></li>
+        <li><code>log_dir</code> はカレント相対。配布時はショートカットの作業フォルダか設定値を運用に合わせる</li>
+        <li>サーバーへ送るログとローカルログは別系統</li>
     </ul>
 </section>
 
-<section id="future">
-    <h2>9. 将来拡張方針</h2>
+<section id="release">
+    <h2>9. 配布・テスト</h2>
     <ul>
-        <li><strong>フォント変更</strong>: <code>FontProfile</code> 経由で差替可能</li>
-        <li><strong>音声認識差替</strong>: 既定 <code>WhisperTextSource</code> (faster-whisper)。<code>TextSource</code> 抽象経由で Vosk 等へ差替 (<code>subtitle.engine</code> で選択)</li>
-        <li><strong>配信スタイル分岐</strong>: <code>broadcast_style</code> を参照する Strategy</li>
-        <li><strong>複数ファイル一括</strong>: <code>run_pipeline</code> を for ループで呼ぶ薄いラッパ</li>
-        <li><strong>クラウド出力</strong>: <code>OutputWriter</code> 抽象化</li>
+        <li>PyInstaller の onedir で <code>Stretheus.exe</code> (<code>src/main_window.spec</code>) →
+            Inno Setup のダウンローダ型インストーラ (<code>installer/AutoEdit.iss</code>)</li>
+        <li><code>src/version.py</code> と <code>.iss</code> の <code>MyAppVersion</code> を必ず一致させる</li>
+        <li>FFmpeg / ffprobe は同梱。CUDA ランタイムは同梱しない (CPU 実行に統一)</li>
+        <li>手順は <code>docs/HowToRelease.md</code> と <code>installer/README.md</code> (後者が正典)</li>
+        <li>テストは標準 <code>unittest</code>。<code>python -m unittest discover -s tests</code>。
+            対応表と不足観点は <code>docs/design/test_matrix.md</code></li>
     </ul>
 </section>
 
 <section id="unknown">
-    <h2>10. 不明点 (要ユーザ確認)</h2>
+    <h2>10. 既知の未解決事項</h2>
     <table>
-        <thead><tr><th>#</th><th>項目</th><th>状況</th></tr></thead>
+        <thead><tr><th>#</th><th>項目</th><th>現状</th></tr></thead>
         <tbody>
-            <tr><td>1</td><td><code>run_ffmpeg_progress</code> の実体</td><td>参照先 <code>../StreamPipeline/dev</code> がローカルに無く、仕様未確認</td></tr>
-            <tr><td>2</td><td><s>テロップのテキスト取得方法</s></td><td><strong>解決済 (2026-05-31)</strong>: claude.md ② により音声認識で ASS を生成し焼き込む。エンジンは参照元と同じ faster-whisper を既定採用し <code>WhisperTextSource</code> として実装済</td></tr>
-            <tr><td>3</td><td>配信スタイル「ソロ/複数人」の動作差</td><td>既存仕様未確認</td></tr>
-            <tr><td>4</td><td>出力ファイル命名規約</td><td>暫定: <code>&lt;original&gt;_edited.mp4</code></td></tr>
-            <tr><td>5</td><td>一時ファイル配置</td><td>暫定: OS 一時領域</td></tr>
-            <tr><td>6</td><td>テロップ ON/OFF UI</td><td>settings_window.py への追加可否</td></tr>
+            <tr><td>1</td><td><code>cut_region</code> のフレーム精度</td><td><code>-c copy</code> のためキーフレーム境界に丸められる。後回しと判断済み</td></tr>
+            <tr><td>2</td><td>「TOP5」という呼称</td><td>既定は <code>archive.scoring.top_n = 10</code>。コメントと履歴文書に旧称が残る</td></tr>
+            <tr><td>3</td><td><code>subtitle.broadcast_style</code></td><td>初版の「ソロ / 複数人」は現行設定に存在しない。役割色 + 話者照合が代替</td></tr>
+            <tr><td>4</td><td>設定画面に出ない設定</td><td>モデルのパス・互換フラグなどは <code>setting.json</code> を直接編集する</td></tr>
+            <tr><td>5</td><td><code>docs/third_party_licenses.md</code></td><td>計画のみで未作成。実体は <code>licenses/</code> と <code>tools/license_manifest.json</code></td></tr>
         </tbody>
     </table>
-</section>
-
-<section id="proposal">
-    <h2>11. 追加提案</h2>
-    <ul>
-        <li><code>src/main.py</code> — 1クリック実行エントリ</li>
-        <li><code>src/pipeline/</code> パッケージ — パイプライン制御</li>
-        <li><code>src/utils/</code> パッケージ — ロガー / 進捗ラッパ</li>
-        <li><code>logs/</code> ディレクトリ — ログ出力先</li>
-        <li><code>tests/</code> ディレクトリ — 単体テスト (標準 unittest)</li>
-    </ul>
-    <p class="note">本設計書のレビュー後に実装着手する。</p>
 </section>
 
 </main>
 
 <footer class="site-footer">
-    <p>autoedit / design.md ベース / ダークテーマ対応</p>
+    <p>Stretheus (autoedit) 設計書 — 文章の正は <code>docs/design/design.md</code>、最終的な正は <code>src/</code>。</p>
 </footer>
+
 </body>
 </html>

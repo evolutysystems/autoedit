@@ -1,6 +1,6 @@
 # 設計書: テロップ（字幕）フォント設定項目の追加
 
-`docs/request/request.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
+`docs/request/ver1/request.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
 
 ---
 

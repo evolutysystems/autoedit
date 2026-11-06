@@ -1,6 +1,6 @@
 # resolve8: インストーラー方式への移行（出力先指定・デスクトップショートカット）
 
-`docs/request/request8.md` への要望設計書。
+`docs/request/ver1/request8.md` への要望設計書。
 
 > ## 要望（原文）
 > インストーラーを作成したい。
@@ -116,7 +116,7 @@ resolve.md §3 の通り **GitHub Releases は1ファイル2GiB上限**。本体
 | A: 分割アップロード | `AutoEdit-v1.0.0.zip` を `.001/.002…`（各 <2GiB）へ分割。インストーラーが全 part を DL→**結合**→検証→展開。 | 予備案。CPU版でも 2GiB を超える場合に併用。 |
 | C: 外部ストレージ | payload を S3/Cloudflare R2/Drive 等に置き URL からDL。 | 非採用（Releases 一本化が崩れる）。 |
 
-> **決定（本タスクで実施）**：`docs/request/resolve8.md` に基づき **CUDA 不使用＝案B を採用**。CUDA ランタイム同梱（約1.93GB）を廃止し配布を軽量化する。**CPU版のサイズを実測**し、なお 2GiB を超える場合のみ案A（分割DL）を併用する。分割時の結合はインストーラー内（Pascal Script でバイナリ連結）で完結させ、ユーザーに手作業を求めない。
+> **決定（本タスクで実施）**：`docs/request/ver1/resolve8.md` に基づき **CUDA 不使用＝案B を採用**。CUDA ランタイム同梱（約1.93GB）を廃止し配布を軽量化する。**CPU版のサイズを実測**し、なお 2GiB を超える場合のみ案A（分割DL）を併用する。分割時の結合はインストーラー内（Pascal Script でバイナリ連結）で完結させ、ユーザーに手作業を求めない。
 
 #### 4.2.1 CUDA 削除の実施内容（実装済み）
 

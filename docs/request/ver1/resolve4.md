@@ -1,6 +1,6 @@
 # 設計書: 字幕タブの色設定をカラーピッカー化する
 
-`docs/request/request4.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
+`docs/request/ver1/request4.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
 
 ---
 

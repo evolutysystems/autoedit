@@ -3,14 +3,14 @@
 ## 0. 本書の位置づけ
 
 * 対象要望: `docs/request/ver3/request11.md`
-* 本書は **設計のみ**。実装は本書のレビュー後に着手する（`docs/claude.md`「実装前に設計を行うこと」）。
+* 本書は **設計のみ**。実装は本書のレビュー後に着手する（`docs/CLAUDE.md`「実装前に設計を行うこと」）。
 * 記載した実装位置・挙動はすべて本リポジトリの実コードを読んで確認した（2026-08-24 時点）。
   決めきれない点は推測実装せず §9 へ列挙し、**Q1〜Q12 のすべてについて 2026-08-24 に回答をもらって確定した**（§0.1 / §0.2 / §9）。
   **未確定事項は残っていない。**
 * **setting.json は本書では書き換えない**。追加キーは `DEFAULT_SETTINGS`
   （`settings_window.py:144` の `subtitle` / `vertical`）と `builder.timeline_config()` の既定へ足し、
   `load_settings()` の既定マージで自動補完させる（resolve7 / resolve9 / resolve10 と同じ方針）。
-* ハードコード禁止（`docs/claude.md`）に従い、アイコンの大きさ・間隔・配置・トラック名は
+* ハードコード禁止（`docs/CLAUDE.md`）に従い、アイコンの大きさ・間隔・配置・トラック名は
   すべて `setting.json` から変えられる形にする（§7）。
 
 ### 0.1 確認事項の回答（2026-08-24 / 本書はこの回答で改訂済み）
@@ -206,7 +206,7 @@ ASS の `BorderStyle` には文字の背後に箱を敷く機能があり、Styl
 
 * libass はフォントを自前で読み、字送り・カーニングを決めて描く。**その結果は ffmpeg プロセスの中にしか無い**。
 * Qt（`QFontMetrics`）で測る手はあるが、
-  ① `docs/claude.md`「GUI と編集処理の分離」に反する
+  ① `docs/CLAUDE.md`「GUI と編集処理の分離」に反する
   ② CLI 経路・書き出し経路には Qt が無い
   ③ **Qt と libass で結果が一致しない**（`preview_items.py:6` に「Qt による近似であり libass と完全一致しない」と明記済み）
   ため採れない。
@@ -251,7 +251,7 @@ ASS の `BorderStyle` には文字の背後に箱を敷く機能があり、Styl
 現在、ドラッグで位置を付けた字幕は `\an5\pos(x,y)` ＝ **文字列の中央**を指定している
 （`subtitle_generator.py:547`）。中央基準だと **左端 = 中央 − 文字幅/2** となり、
 **文字幅を知らないとアイコンを置けない**。文字幅は libass が決めるので Python 側では求まらない
-（Qt で測る案は `docs/claude.md`「GUI と編集処理の分離」に反するうえ、CLI 経路で Qt が無い）。
+（Qt で測る案は `docs/CLAUDE.md`「GUI と編集処理の分離」に反するうえ、CLI 経路で Qt が無い）。
 
 **決定**：**役割が `comment` のときだけ `\an4\pos(x,y)`（左中央アンカー）にする。**
 これで `pos_x` が **そのまま文字列の左端**になり、アイコン位置が一意に決まる。
@@ -335,7 +335,7 @@ movie='C\:/app/src/comment_icon.png',format=rgba,
 * 既存 setting.json に残る `"コメント："` は
   `_normalize_legacy_values()`（`settings_window.py:750`）に**移行処理を足して空へ寄せる**（§8）。
 * 「削除」を *コードの削除* ではなく *既定値の変更＋移行* で行う理由:
-  1. `docs/claude.md`「既存実装を破壊しない」「ハードコード禁止」。
+  1. `docs/CLAUDE.md`「既存実装を破壊しない」「ハードコード禁止」。
   2. ラベルを再び出したくなったら setting.json だけで戻せる。
   3. `tests/test_subtitle_color.py:99`（`test_comment_label_after_override`）が**そのまま通る**。
 
@@ -346,7 +346,7 @@ movie='C\:/app/src/comment_icon.png',format=rgba,
 | 案 | 方法 | 判定 |
 |---|---|---|
 | A | `BorderStyle=3`（libass の箱） | ❌ 角丸にできず、アイコンを囲えない（§2.8） |
-| B | 角丸 PNG を都度生成して `overlay` | ❌ 画像生成に外部ライブラリ（Pillow）が要る。手書き PNG エンコーダを足すのも本筋でない（`docs/claude.md`「不要なライブラリを追加しない」）。**大きさごとに別画像**が要るのも重い |
+| B | 角丸 PNG を都度生成して `overlay` | ❌ 画像生成に外部ライブラリ（Pillow）が要る。手書き PNG エンコーダを足すのも本筋でない（`docs/CLAUDE.md`「不要なライブラリを追加しない」）。**大きさごとに別画像**が要るのも重い |
 | **C** | **ASS の描画コマンド（`\p1` + ベジェ）で角丸矩形を 1 本の Dialogue として出す** | ⭕ **採用**。画像を作らない・入力を増やさない・libass が PlayRes 基準で綺麗に描く・色と透明度は `\1c` / `\1a` でそのまま指定できる |
 
 ```

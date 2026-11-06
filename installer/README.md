@@ -1,6 +1,6 @@
 # Stretheus インストーラー (ビルド & リリース手順)
 
-`docs/request/resolve8.md` に基づくダウンローダ型インストーラー `StretheusSetup.exe` のビルドと、
+`docs/request/ver1/resolve8.md` に基づくダウンローダ型インストーラー `StretheusSetup.exe` のビルドと、
 GitHub Releases への公開手順。
 
 - 配布方式: **オンライン・ダウンローダ型**（小さいインストーラーをDL→実行中に本体をDL）

@@ -7,7 +7,7 @@
   * `Stretheus-v1.4.6.zip`（本体ペイロード / 554,507,937 bytes）
   * `src/dist/Stretheus/`（PyInstaller onedir 出力）
   * それらを生む `installer/AutoEdit.iss` / `src/main_window.spec` / 自動更新 `src/utils/updater.py`
-* **本書は指摘と対策案のみ**。修正は本書のレビュー後に行う（`docs/claude.md`「実装前に設計を行うこと」）。
+* **本書は指摘と対策案のみ**。修正は本書のレビュー後に行う（`docs/CLAUDE.md`「実装前に設計を行うこと」）。
 * 調査方法: **配布物と実コードの読み取り・実測**。
   配布 `setting.json` の値、`_internal/` の同梱パッケージ、`.iss` の `[Code]`、
   `updater.py` の通信・実行経路を実際に確認した。

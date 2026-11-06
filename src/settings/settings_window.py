@@ -122,7 +122,7 @@ BORDER_STYLE_OPTIONS = [
 ]
 
 # 音声認識の実行デバイス選択肢 (value, 表示テキスト)
-# CUDA 不使用方針 (docs/request/resolve8.md) により GPU(CUDA) 実行は廃止し CPU のみ提供する
+# CUDA 不使用方針 (docs/request/ver1/resolve8.md) により GPU(CUDA) 実行は廃止し CPU のみ提供する
 WHISPER_DEVICE_OPTIONS = [
     ("cpu", "CPU"),
 ]

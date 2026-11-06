@@ -111,10 +111,13 @@ Qt と HTML の描画モデルの違いから、以下だけは近似になっ�
 
 ## 収録ページの版ずれ (未反映)
 
-`main_window.html` / `settings_window.html` は ver3 resolve4 時点の写しで、
-以下がまだ反映されていない。実装を読むときは `src/` を正とすること。
+3 ページはいずれも ver3 resolve4 時点の写しで、以下がまだ反映されていない。
+実装を読むときは `src/` を正とし、現行の構成は `docs/design/design.md` を見ること
+(最終確認: 2026-11-06 / v1.8.2)。
 
 | 版 | 未反映の内容 |
 | --- | --- |
-| ver5 | 右上コーナーの残高インジケータ (`src/gui/points_indicator.py`)、設定画面の「アカウント」タブ (`src/gui/account_tab.py`) |
+| ver5 | 右上コーナーの残高インジケータ (`src/gui/points_indicator.py`)、設定画面の「アカウント」タブ (`src/gui/account_tab.py`)、設定画面の「ぼかし」タブ (`blur.ui_enabled` が true のときだけ出る) |
 | ver6 | コーナーの「サブスクリプション」ボタンと加入済みのチェックマーク、アカウントタブのサブスクリプション状態・履歴 (ver6 resolve2 §2.1 / §2.3) |
+| ver8 | コーナーの表示言語コンボ (日本語 / English。`src/i18n`)、Timeline ウィンドウの位置・分割位置の復元 |
+| ver9 | Timeline 下部の「？」(取説) ボタン (`src/gui/timeline/help_dialog.py`)、テロップトラックが既定 3 本 (S1 / S2=Comment / S3) でヘッダに色見本が付くこと (ページは S1 / S2 の 2 本のまま) |

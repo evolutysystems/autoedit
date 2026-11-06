@@ -1,6 +1,6 @@
 # 設計書: 字幕編集画面の追加（フルテロップ後の確認・編集ステップ）
 
-`docs/request/request3.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
+`docs/request/ver1/request3.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
 
 ---
 

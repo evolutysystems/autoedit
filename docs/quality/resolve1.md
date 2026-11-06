@@ -7,7 +7,7 @@
       `docs/error/20260811/resolve.md` §2-3・§4-2 (切り抜きの字幕軸),
       `docs/error/20260626/resolve.md` (幻聴字幕),
       `docs/request/ver3/resolve16.md` (ストリームマーカー),
-      `docs/request/ver3/resolve19.md` (テーマ演出・イントロカード)
+      `docs/request/ver2/resolve19.md` (テーマ演出・イントロカード)
 
 作成日: 2026-10-23 (main `e38e085`)
 
@@ -383,7 +383,7 @@ _logger.info("clip%d: 音量解析によりカット閾値 %d dB を採用 (…�
 
 Silero VAD は **faster-whisper 1.2.1 に同梱**されており
 (`faster_whisper.vad.VadOptions`)、依存の追加なしに使えます
-(`docs/claude.md` の「不要なライブラリを追加しない」を満たす)。
+(`docs/CLAUDE.md` の「不要なライブラリを追加しない」を満たす)。
 
 ```
 現状: セル特徴 = mean_db / max_db / silence_ratio / w_count / comment_count
@@ -1425,7 +1425,7 @@ origin["asr_text"] = item.get("text", "")   # 生成時の認識結果を控え�
 
 - **すべての新機能を `setting.json` のキーで ON/OFF 可能にする**。既定値は
   「従来と完全一致」から始め、評価 (§6) で改善が確認できたものだけ既定を変える
-  (`docs/claude.md` の「既存実装を破壊しない」「ハードコード禁止」)。
+  (`docs/CLAUDE.md` の「既存実装を破壊しない」「ハードコード禁止」)。
 - **G1 は既定値の変更**なので `tests/test_subtitle_length_units.py` の期待値が変わります。
   旧挙動は `subtitle_min_chars` を旧式に設定したケースとして別テストで保持してください。
 - **F5 (`cut_mode`)** はプロジェクト再開時の素材復旧 (`project_resume`) の前提
@@ -1641,7 +1641,7 @@ origin["asr_text"] = item.get("text", "")   # 生成時の認識結果を控え�
 
 ### 11-4. 音源分離 — 本書では提案しない
 
-- 新規依存・数百 MB・実行時間大で `docs/claude.md` の
+- 新規依存・数百 MB・実行時間大で `docs/CLAUDE.md` の
   「不要なライブラリを追加しない」に触れます。
 - VOD 入力で声を分離する唯一の手段ではありますが、
   案 B′ で「相対値で測る」ことにより**分離せずに済ませる**方針を採ります。

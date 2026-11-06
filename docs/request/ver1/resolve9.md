@@ -1,6 +1,6 @@
 # resolve9: 字幕手動改行・コンソール窓抑制・稼働スピナー表示
 
-`docs/request/request9.md` への要望設計書。
+`docs/request/ver1/request9.md` への要望設計書。
 
 > ## 要望（原文）
 > 以下3つの要望がある。

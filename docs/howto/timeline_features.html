@@ -620,16 +620,16 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 <section id="inspector">
   <h2><span class="num">3</span>インスペクタ</h2>
 
-  <h3>字幕を選んだとき</h3>
+  <h3>3.1 字幕を選んだとき</h3>
   <div class="t-scroll">
   <table class="nowrap-first">
     <thead><tr><th>項目</th><th>説明</th></tr></thead>
     <tbody>
       <tr><td>字幕</td><td>テキスト（改行可）。入力欄から離れたときにまとめて確定（1 文字ごとに Undo 履歴が増えないように）</td></tr>
-      <tr><td>役割</td><td>配信者 / サブ / コメント。変更すると対応するトラックへ自動移動（設定次第）</td></tr>
+      <tr><td>トラック</td><td>そのテロップが載っているトラック（読み取り専用）。<strong>役割はトラックが決まり</strong>、別の役割にしたいときはそのトラックへドラッグします。設定 <code>timeline.subtitle_tracks.role_control_enabled</code> を true にすると、従来の「役割」選択に戻せます</td></tr>
       <tr><td>フォント</td><td>一覧から選択。先頭の「(設定のフォント)」= 設定値に従う。各項目はそのフォント自体で描画されます</td></tr>
       <tr><td>サイズ</td><td>数値指定。<code>0</code> で「既定」</td></tr>
-      <tr><td>文字色</td><td>このクリップだけの上書き。空欄にすると設定の役割色に戻る</td></tr>
+      <tr><td>文字色</td><td>このクリップだけの上書き。空欄にすると<strong>トラックの既定色 → 役割色</strong>の順で決まります</td></tr>
       <tr><td>縁の色</td><td>同上（透明度も指定可）</td></tr>
       <tr><td>位置を既定へ戻す</td><td>ドラッグで動かした位置を捨て、設定の配置・余白に従わせる</td></tr>
     </tbody>
@@ -640,7 +640,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     字幕を複数選択しているときは、色の変更が選択中すべてに適用されます（その旨の案内が出ます）。
   </div>
 
-  <h3>画像・動画（オーバーレイ）を選んだとき</h3>
+  <h3>3.2 画像・動画（オーバーレイ）を選んだとき</h3>
   <div class="t-scroll">
   <table class="nowrap-first">
     <thead><tr><th>項目</th><th>説明</th></tr></thead>
@@ -660,11 +660,11 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 4. Timeline 領域 -->
 <section id="timeline">
-  <h2><span class="num">4</span>Timeline 領域<span class="src">（原文 5 章）</span></h2>
+  <h2><span class="num">4</span>Timeline 領域</h2>
 
-  <h3>5.1 トラックの並び（上から下へ）</h3>
+  <h3>4.1 トラックの並び（上から下へ）</h3>
   <div class="tracks">
-    <div class="track t-sub"><span class="tag">S1 / S2</span><span class="desc">字幕トラック<small>S1 = 配信者／サブ、S2 = コメント</small></span></div>
+    <div class="track t-sub"><span class="tag">S1 … S8</span><span class="desc">字幕トラック<small>既定 3 本: S1 = Subtitle 1 / S2 = Comment / S3 = サブ色入り。max_tracks（既定 8）まで追加可</small></span></div>
     <div class="track t-ov"><span class="tag">V2 ↑</span><span class="desc">オーバーレイ映像トラック<small>V2 以上／番号の大きい順</small></span></div>
     <div class="track t-base"><span class="tag">V1</span><span class="desc">ベース映像トラック<small>本編・オープニング・エンディング</small></span></div>
     <div class="track t-aud"><span class="tag">A1 …</span><span class="desc">音声トラック<small>V1 のクリップとリンク</small></span></div>
@@ -675,9 +675,10 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     <li>音声トラックには波形を表示します（設定 <code>timeline.waveform.enabled</code>）。</li>
     <li>音声クリップは V1 のクリップに連動（リンク）しています。音声側を掴んでも V1 側の操作になります。</li>
     <li>ロックされたトラックのクリップは、移動・トリム・字幕追加ができません。</li>
+    <li>テロップトラックのヘッダの色見本を押すと、<strong>そのトラックの文字色</strong>を決められます（設定 <code>timeline.subtitle_tracks.header_color_enabled</code>）。コメント用トラックにはコメントアイコンが出ます。</li>
   </ul>
 
-  <h3>5.3 右クリックメニュー（クリップ上）</h3>
+  <h3>4.2 右クリックメニュー（クリップ上）</h3>
   <div class="t-scroll">
   <table>
     <thead><tr><th>項目</th><th>説明</th></tr></thead>
@@ -691,6 +692,8 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
       <tr><td>削除のみ（空白を残す） <kbd>BackSpace</kbd></td><td>削除して、跡は空白のまま</td></tr>
       <tr><td>レイヤー ▶ 最前面 / 前面 / 背面 / 最背面</td><td>重なり順の変更（V1 のクリップは最背面固定で対象外）</td></tr>
       <tr><td>使用する / 使用しない</td><td>書き出しに含めるかの切り替え</td></tr>
+      <tr><td>テロップの結合 <kbd>Ctrl</kbd>+<kbd>M</kbd>（字幕のみ）</td><td>選んだ 2 件以上のテロップを 1 本にまとめる</td></tr>
+      <tr><td>ここでテロップを分割（字幕のみ）</td><td>右クリックした位置で分ける（本文は複製されます）</td></tr>
       <tr><td>カット頭へ揃える（字幕のみ）</td><td>字幕の開始を V1 クリップ（カット）の頭へ揃える</td></tr>
       <tr><td>すべての字幕をカット頭へ揃える</td><td>全字幕を対象に実行</td></tr>
       <tr><td>ぼかし関連（V1 のクリップのみ）</td><td>「このクリップをぼかす」／「このクリップのぼかしを消す」／「ぼかし...」</td></tr>
@@ -699,7 +702,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
   </table>
   </div>
 
-  <h3>5.4 右クリックメニュー（何もない所）</h3>
+  <h3>4.3 右クリックメニュー（何もない所）</h3>
   <ul class="list">
     <li>ここへ再生ヘッドを移動</li>
     <li>再生ヘッドへ貼り付け（<kbd>Ctrl</kbd>+<kbd>V</kbd>）</li>
@@ -708,7 +711,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     </li>
   </ul>
 
-  <h3>5.5 右クリックメニュー（音声クリップ上）</h3>
+  <h3>4.4 右クリックメニュー（音声クリップ上）</h3>
   <ul class="list">
     <li>ミュート ／ ミュート解除</li>
     <li>音量 ▶ +6 dB / +3 dB / 0 dB / -3 dB / -6 dB</li>
@@ -718,7 +721,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     音声クリップには削除がありません（V1 側から消します）。
   </div>
 
-  <h3>5.6 ズーム・スクロール</h3>
+  <h3>4.5 ズーム・スクロール</h3>
   <div class="t-scroll">
   <table class="nowrap-first">
     <thead><tr><th>操作</th><th>説明</th></tr></thead>
@@ -734,7 +737,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 5. ショートカット -->
 <section id="shortcuts">
-  <h2><span class="num">5</span>ショートカット一覧（既定値）<span class="src">（原文 6 章）</span></h2>
+  <h2><span class="num">5</span>ショートカット一覧（既定値）</h2>
   <p class="lead">キー割り当ては設定（<code>timeline.shortcuts</code>）で変更できます。</p>
   <div class="note">
     <strong>重要</strong>
@@ -777,7 +780,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 6. ふるまい -->
 <section id="behavior">
-  <h2><span class="num">6</span>編集機能のふるまい<span class="src">（原文 7 章・説明時の注意点）</span></h2>
+  <h2><span class="num">6</span>編集機能のふるまい<span class="src">（説明時の注意点）</span></h2>
   <div class="t-scroll">
   <table>
     <thead><tr><th>機能</th><th>補足</th></tr></thead>
@@ -804,7 +807,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 7. 縦動画 -->
 <section id="vertical">
-  <h2><span class="num">7</span>縦動画プロジェクトの作成<span class="src">（原文 9 章）</span></h2>
+  <h2><span class="num">7</span>縦動画プロジェクトの作成</h2>
   <p>V1 のクリップを右クリック →「縦動画プロジェクトを作成」。</p>
   <div class="t-scroll">
   <table class="nowrap-first">
@@ -827,7 +830,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 8. Resolve -->
 <section id="resolve">
-  <h2><span class="num">8</span>DaVinci Resolve 出力<span class="src">（原文 11 章）</span></h2>
+  <h2><span class="num">8</span>DaVinci Resolve 出力</h2>
   <p>「DaVinci Resolve 出力」ボタンで、現在の Timeline を DaVinci Resolve 用プロジェクトファイル（<code>.fcpxml</code>）として出力します。</p>
   <div class="chips">
     <span class="chip">上書き確認が入る</span>
@@ -837,7 +840,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 9. 書き出し -->
 <section id="export">
-  <h2><span class="num">9</span>書き出し（決定）<span class="src">（原文 12 章）</span></h2>
+  <h2><span class="num">9</span>書き出し（決定）</h2>
   <ul class="list">
     <li>「決定」で Timeline の内容を反映した動画を書き出します。</li>
     <li>映像クリップが 0 件のときは書き出せません（警告）。</li>
@@ -847,7 +850,7 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
 
 <!-- 10. 切り抜き編集 -->
 <section id="scoring">
-  <h2><span class="num">10</span>切り抜き編集（採点結果）画面の固有機能<span class="src">（原文 13 章）</span></h2>
+  <h2><span class="num">10</span>切り抜き編集（採点結果）画面の固有機能</h2>
   <p>Timeline 編集画面の全機能に加えて、上部にクリップバー、ドックに採点グラフが付きます。</p>
   <div class="t-scroll">
   <table>

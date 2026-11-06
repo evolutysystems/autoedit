@@ -1,6 +1,6 @@
 # 設計書: 無音カット閾値と発話検出閾値の分離（テロップ表示タイミングの適正化）
 
-`docs/request/request2.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
+`docs/request/ver1/request2.md` の要望に対する設計書。CLAUDE.md の方針に従い、本書のレビュー後に実装する。
 
 ---
 

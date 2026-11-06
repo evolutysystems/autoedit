@@ -42,4 +42,4 @@ setting_jsonにも項目を追加し、字幕を設定する処理に対して�
 このボタンはmain.pyを実行する。
 
 # Output
-上記要望に対してdocs/request/resolve.mdに設計書を記載してください。
+上記要望に対してdocs/request/ver1/resolve.mdに設計書を記載してください。

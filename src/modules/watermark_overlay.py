@@ -214,7 +214,7 @@ def _body_span(clips):
     return offset, max(ends) - offset
 
 
-# PNG の寸法を IHDR から読む (外部ライブラリを足さないため / docs/claude.md)
+# PNG の寸法を IHDR から読む (外部ライブラリを足さないため / docs/CLAUDE.md)
 def _png_size(path):
     try:
         with open(path, "rb") as f:
