@@ -7,6 +7,7 @@
 # 許可するとトークンが URL フラグメントで返る → localhost の簡易サーバが JS 経由で受け取る。
 # 依存は標準ライブラリのみ (http.server / urllib / webbrowser / secrets)。requests/torch は使わない。
 # 機微情報 (トークン) はローカルのファイルにのみ保存し、ログには出力しない (resolve17 §7)。
+# 保存時は Windows DPAPI (CurrentUser) で暗号化する (sec2 S4)。平文では書かない。
 import json
 import os
 import secrets
@@ -17,6 +18,7 @@ import urllib.request
 
 from ..exceptions import TwitchError
 from ..i18n import tr
+from ..services.auth_store import protect, unprotect
 from ..utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -132,23 +134,62 @@ class TwitchAuth:
     def redirect_uri(self):
         return f"http://localhost:{self._redirect_port}"
 
-    # ---- トークンの永続化 (ローカル限定) ---------------------------------
+    # ---- トークンの永続化 (ローカル限定・DPAPI で保護) -------------------
+    # sec2 S4: 以前は平文 JSON で置いていたため、利用者の端末で動く任意のプロセスが
+    # ファイルを読むだけで Twitch のユーザーアクセストークンを持ち出せた。
+    # Stretheus の JWT と同じ DPAPI (CurrentUser) で保護する。
+    # 復号できるのは同じ Windows ユーザーだけで、コピーしても他端末では読めない。
+    # 暗号化できない環境では**保存しない** (平文では書かない / auth_store と同じ方針)。
     def _read_token_file(self):
         if not self._token_path or not os.path.isfile(self._token_path):
             return None
         try:
-            with open(self._token_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, ValueError):
+            with open(self._token_path, "rb") as f:
+                raw = f.read()
+        except OSError:
             return None
+        if not raw:
+            return None
+
+        plain = unprotect(raw)
+        if plain is not None:
+            return self._parse_token(plain)
+
+        # 旧版 (sec2 S4 の対応前) が書いた平文 JSON を引き継ぐ。
+        # 読めたらそのまま暗号化して置き換え、平文を残さない。
+        # 別ユーザーの暗号文もここへ来るが、JSON として読めないため None になる
+        # (再ログインで復旧する / auth_store と同じ振る舞い)。
+        token = self._parse_token(raw)
+        if token:
+            _logger.info("Twitch トークンを暗号化して保存し直します。")
+            self._token = token
+            self._write_token_file()
+        return token
+
+    @staticmethod
+    def _parse_token(raw):
+        try:
+            token = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
+        return token if isinstance(token, dict) else None
 
     def _write_token_file(self):
         if not self._token_path or not self._token:
             return
+
+        data = protect(json.dumps(self._token, ensure_ascii=False).encode("utf-8"))
+        if data is None:
+            # 平文で書くくらいなら保存しない。今回のセッションでは使えるため、
+            # 利用者には次回起動時の再ログインだけを求めることになる。
+            _logger.warning("Twitch トークンを暗号化できないため保存しません "
+                            "(次回起動時に再ログインが必要です)。")
+            return
+
         try:
             os.makedirs(os.path.dirname(self._token_path), exist_ok=True)
-            with open(self._token_path, "w", encoding="utf-8") as f:
-                json.dump(self._token, f)
+            with open(self._token_path, "wb") as f:
+                f.write(data)
         except OSError as e:  # 保存失敗は致命としない (今回セッションは継続可能)
             _logger.warning("Twitch トークン保存に失敗: %s", e)
 

@@ -22,7 +22,7 @@ import uuid
 
 from ..exceptions import ApiError, ApiOfflineError, AutoEditError, ReauthRequiredError
 from ..utils.logger import get_logger
-from .auth_store import default_auth_path
+from .auth_store import default_auth_path, protect, unprotect
 from .stretheus_auth import parse_timestamp
 
 _logger = get_logger(__name__)
@@ -41,8 +41,10 @@ OUTPUT_RESOLVE_PROJECT = "resolveProject"
 # 残高の再取得を抑える既定間隔 (秒)
 _DEFAULT_BALANCE_REFRESH_SEC = 300
 
-# オフライン時にサブスク判定を信用する既定の時間
-_DEFAULT_SUBSCRIPTION_CACHE_HOURS = 72
+# オフライン時にサブスク判定を信用する既定の時間 (sec2 N2 で 72 → 24 へ短縮)。
+# オフライン救済は「ローカルの値を信じる」仕組みで、長いほど悪用の窓が広がる。
+# 1 日あれば一時的な回線不調は十分にしのげる。
+_DEFAULT_SUBSCRIPTION_CACHE_HOURS = 24
 
 
 def _now():
@@ -341,11 +343,61 @@ class PointsService:
         return True
 
     # ---- 永続化 ----------------------------------------------------------
+    # サブスク判定のキャッシュだけ DPAPI で保護する (sec2 N2)。
+    #
+    # オフライン時はこの値だけで「透かしを入れない」と決めるため、平文だと
+    # {"subscribed": true} へ書き換えるだけで課金を回避できてしまう。
+    # 暗号化できない環境では**保存しない**。キャッシュが無ければオフライン時に
+    # 透かしを入れる側 (安全側) へ倒れるだけで、利用者の不利益は小さい。
+    #
+    # 送信待ちキュー (_queue_path) は平文のままにする。こちらは保存できないと
+    # ポイントの確定・解放がサーバーへ届かず**利用者の不利益**になるため、
+    # どんな環境でも必ず書けることを優先する。改ざんされてもサーバー側が
+    # 予約 ID を見て判断するため、得をする余地が小さい。
     def _read_state(self):
-        return self._read_json(self._state_path, {})
+        try:
+            with open(self._state_path, "rb") as f:
+                raw = f.read()
+        except OSError:
+            return {}
+        if not raw:
+            return {}
+
+        plain = unprotect(raw)
+        if plain is not None:
+            return self._parse_state(plain)
+
+        # 旧版 (sec2 N2 の対応前) が書いた平文 JSON。別ユーザーの暗号文もここへ来るが、
+        # その場合は JSON として読めないため {} になる (再取得されるだけで実害はない)。
+        state = self._parse_state(raw)
+        if state:
+            _logger.info("サブスク判定のキャッシュを暗号化して保存し直します。")
+            self._write_state(state)
+        return state
+
+    @staticmethod
+    def _parse_state(raw):
+        try:
+            state = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+        return state if isinstance(state, dict) else {}
 
     def _write_state(self, state):
-        self._write_json(self._state_path, state)
+        data = protect(json.dumps(state, ensure_ascii=False).encode("utf-8"))
+        if data is None:
+            _logger.warning("サブスク判定を暗号化できないため保存しません "
+                            "(オフライン時は透かしが入ります)。")
+            return
+
+        with self._lock:
+            try:
+                os.makedirs(os.path.dirname(self._state_path), exist_ok=True)
+                with open(self._state_path, "wb") as f:
+                    f.write(data)
+            except OSError as e:
+                # 保存できなくても出力は続ける。
+                _logger.warning("サブスク判定の保存に失敗: %s", e)
 
     def _read_queue(self):
         queue = self._read_json(self._queue_path, [])

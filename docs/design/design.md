@@ -515,7 +515,11 @@ Timeline
 
 ### 7.1 Stretheus API
 
-* ベース URL は `api.base_url` のみが出どころ (リリース時に本番へ戻すことを確認する)。
+* ベース URL の出どころは `services/config.py` の `_DEFAULT_BASE_URL` **1 箇所**。
+  `setting.json` の `api.base_url` と環境変数 `STRETHEUS_API_BASE_URL` で上書きできる
+  (優先順位: 環境変数 > `setting.json` > 既定)。環境変数は**凍結配布では無視**する。
+  配布 `setting.json` は `main_window.spec` が空にして同梱するため、
+  利用者は常に既定へ倒れる (sec2 N1)。
 * 認証は OAuth 認可コードフロー (Twitch / Google)。未ログイン利用者も
   `POST /api/auth/device` で匿名 JWT を得てポイント制の対象になる。
 * JWT は `%LOCALAPPDATA%\Stretheus\auth.dat` へ **DPAPI (CurrentUser)** で保存する。

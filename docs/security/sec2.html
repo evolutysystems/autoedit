@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sec2 — リリースビルド成果物のリバースエンジニアリング点検</title>
+<link rel="stylesheet" href="security.css">
+</head>
+<body>
+<header class="site-header">
+    <h1>sec2 — リリースビルド成果物のリバースエンジニアリング点検</h1>
+    <p class="subtitle">対象 v1.8.2 / 2026-11-07 のクリーンビルド成果物 / 指摘と対策案（修正はレビュー後）</p>
+</header>
+
+<nav class="toc">
+    <h2>目次</h2>
+    <ol>
+        <li><a href="#about">本書の位置づけ</a></li>
+        <li><a href="#summary">総評と指摘一覧</a></li>
+        <li><a href="#method">解析手法と、取り出せたもの</a></li>
+        <li><a href="#high">高</a></li>
+        <li><a href="#mid">中</a></li>
+        <li><a href="#low">低・情報</a></li>
+        <li><a href="#good">解消が確認できた点・守れている点</a></li>
+        <li><a href="#order">対応の順序（提案）</a></li>
+        <li><a href="#limit">本書の限界</a></li>
+    </ol>
+    <p class="note">本ページは <code>sec2.md</code> の視覚版である。文章の正は <code>sec2.md</code>。
+    本書は <strong>v1.8.2 のスナップショット</strong>であり、現行仕様の根拠として単独で引用してはならない
+    (<code>docs/README.md</code> 参照)。</p>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="about">
+    <h2>0. 本書の位置づけ</h2>
+
+    <p><strong>主題は「配布物を解析したときに、情報漏洩に繋がる情報が取り出せるか」</strong>である。
+       sec1（v1.4.6）が配布物の構成と設定値を読む調査だったのに対し、本書は
+       <strong>exe の内部アーカイブを実際に展開して中身を復元する</strong>ところまで行った（<a href="#method">§2</a>）。</p>
+
+    <h3>対象</h3>
+    <div class="card-grid">
+        <div class="card"><h3>版</h3><p>v1.8.2</p></div>
+        <div class="card"><h3>ビルド日</h3><p>2026-11-07</p></div>
+        <div class="card"><h3>Stretheus.exe</h3><p>66.9 MB</p></div>
+        <div class="card"><h3>配布フォルダ</h3><p>約 1.5 GB</p></div>
+        <div class="card"><h3>_internal/</h3><p>約 1.4 GB</p></div>
+        <div class="card"><h3>licenses/</h3><p>76 件・不足 0</p></div>
+    </div>
+
+    <ul>
+        <li><code>src/dist/Stretheus/</code>（<code>pyinstaller main_window.spec --clean --noconfirm</code> の onedir 出力）</li>
+        <li>それらを生む <code>src/main_window.spec</code> / <code>installer/AutoEdit.iss</code> / <code>src/utils/updater.py</code></li>
+    </ul>
+
+    <h3>未実施（<a href="#limit">§8</a> に再掲）</h3>
+    <ul>
+        <li>zip 化・Inno Setup によるインストーラ生成（<code>dist/</code> までを対象とした）</li>
+        <li>動的解析・ペネトレーションテスト・マルウェアスキャン</li>
+        <li>依存パッケージの CVE 照合</li>
+        <li>クリーン PC での挙動確認（<code>HowToRelease.md §6</code>）</li>
+        <li><strong>サーバー側（StretheusAPI）の認可の検証</strong>。本書は「クライアントから何が見えるか」までである</li>
+    </ul>
+
+    <p class="note"><strong>本書は指摘と対策案のみ。</strong>修正は本書のレビュー後に行う
+    （<code>docs/CLAUDE.md</code>「実装前に設計を行うこと」）。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="summary">
+    <h2>1. 総評と指摘一覧</h2>
+
+    <p><strong>配布物そのものから開発者の秘密が漏れる状態ではない。</strong>
+       sec1 で指摘した開発機パスの混入（S7）は解消しており、秘密鍵・API シークレットの類も入っていない
+       （<a href="#good">§6</a>）。</p>
+
+    <p>問題は 2 種類に分かれる。</p>
+
+    <div class="split">
+        <div class="panel leak">
+            <h3>1. 何を盗めばよいかが分かった</h3>
+            <p>Twitch トークンが平文で置かれており（S4）、解析者は保存先と形式を知ったうえで
+               それを直接持ち出せた。Stretheus の JWT は DPAPI で守られているのに、
+               <strong>同じ仕組みが同じコードベースにありながら Twitch 側だけ使っていなかった</strong>。
+               同日の是正で DPAPI 化し、既存の平文からの移行も入れた。</p>
+        </div>
+        <div class="panel leak">
+            <h3>2. 差し替えを止める手立てが乏しい</h3>
+            <p>漏洩そのものではないが、<strong>漏洩を仕込む側の経路</strong>として本書で最も重い。
+               同日の是正で自動更新の検証を入れた（S1）ため、取得経路の改ざんは検知できるようになった。
+               残るのは<strong>インストール済みのファイルを後から差し替える</strong>経路で、
+               これは<strong>コード署名でしか塞げない</strong>（S2。証明書の調達が要る）。</p>
+        </div>
+    </div>
+
+    <p class="note danger"><strong>初版（2026-11-07 午前）の訂正。</strong>
+    本書は当初、配布 <code>setting.json</code> の接続先が dev を指していることを
+    「リリース前の戻し忘れ」として<strong>最上位の指摘（N1・高）</strong>に挙げていた。
+    これは誤りで、<code>HowToRelease.md §6</code> と <code>StretheusPlan/plan.md §7.8.4</code> のとおり
+    <strong>prod が未デプロイのため dev が実運用を担うという意図的な運用</strong>である。
+    同日の是正で接続先の決まり方だけを直し、N1 は深刻度を下げて
+    <a href="#mid">§4</a> に訂正の経緯を残した。</p>
+
+    <h3>指摘一覧</h3>
+    <table>
+        <thead>
+            <tr><th>#</th><th>指摘</th><th>深刻度</th><th>初出</th><th>現況</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="badge id">N1</span></td>
+                <td>接続先が <strong>3 か所</strong>で決まり、そのときの値が配布物へ焼き付く</td>
+                <td><span class="badge mid">中</span></td><td>本書</td>
+                <td><span class="badge fixed">解消 2026-11-07</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S1</span></td>
+                <td>自動更新が取得した exe を<strong>無検証で実行</strong>する</td>
+                <td><span class="badge high">高</span></td><td>sec1</td>
+                <td><span class="badge fixed">解消 2026-11-07</span></td>
+            </tr>
+            <tr class="row-high">
+                <td><span class="badge id">S2</span></td>
+                <td>インストール先がユーザー書込可能／<strong>実行ファイルが未署名</strong></td>
+                <td><span class="badge high">高</span></td><td>sec1</td>
+                <td><span class="badge open">一部</span>署名は証明書待ち</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S4</span></td>
+                <td>Twitch アクセストークンを<strong>平文 JSON</strong> で保存</td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge fixed">解消 2026-11-07</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S5</span></td>
+                <td>OAuth トークンが<strong>ブラウザ履歴に残る</strong></td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S3</span></td>
+                <td><code>setting.json</code> の値が<strong>そのまま外部プロセスとして実行</strong>される</td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N2</span></td>
+                <td><code>points.json</code> の改ざんで<strong>透かしを回避</strong>できる</td>
+                <td><span class="badge mid">中</span></td><td>本書</td>
+                <td><span class="badge fixed">解消 2026-11-07</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S6</span></td>
+                <td>使っていない <strong>torch(322MB)/transformers(39MB)</strong> を同梱</td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge fixed">解消 2026-11-07</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N3</span></td>
+                <td>端末 ID の導出が決定論的で、<strong>ソルトが配布物から読める</strong></td>
+                <td><span class="badge low">低</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N4</span></td>
+                <td>内部 API のエンドポイント一覧が配布物から<strong>完全に読める</strong></td>
+                <td><span class="badge info">情報</span></td><td>本書</td>
+                <td>設計上は正常</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N1</span></td>
+                <td>接続先が 3 か所で決まり、そのときの値が配布物へ焼き付く</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    <code>config._DEFAULT_BASE_URL</code> 1 箇所へ集約し、環境変数での上書きと
+                    <code>spec</code> の安全柵を追加した。経緯と初版の訂正は <a href="#mid">§4</a> を見ること</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S1</span></td>
+                <td>自動更新が取得した exe を無検証で実行する</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    URL 検証・SHA-256 照合・専用一時フォルダ・タイムアウトを実装。
+                    期待ハッシュを得られないリリースへは更新しない。詳細は <a href="#high">§3</a></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S4</span></td>
+                <td>Twitch アクセストークンを平文 JSON で保存</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    <code>auth_store.protect</code>（DPAPI）で暗号化し、既存の平文は読み込み時に置き換える。
+                    詳細は <a href="#mid">§4</a></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N2</span></td>
+                <td><code>points.json</code> の改ざんで透かしを回避できる</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    サブスク判定を DPAPI 化し、救済の窓を 72 → 24 時間へ。
+                    送信待ちキューは平文のまま（理由は <a href="#mid">§4</a>）</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S6</span></td>
+                <td>使っていない重量依存を同梱</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    <code>excludes</code> へ <code>torch</code> / <code>torchaudio</code> /
+                    <code>transformers</code> を追加し、<strong>1.5GB → 837MB</strong>。
+                    音声認識の実走行まで確認済み。詳細と指摘の訂正は <a href="#mid">§4</a></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S7</span></td>
+                <td>配布 <code>setting.json</code> に開発機の絶対パスが残る</td>
+                <td><span class="badge info">—</span></td><td>sec1</td>
+                <td><span class="badge fixed">解消</span></td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="method">
+    <h2>2. 解析手法と、実際に取り出せたもの</h2>
+
+    <p>本章は「攻撃者と同じ手順を踏むと何が手に入るか」の記録である。
+       特別な道具は要らず、<strong>Python 標準ライブラリだけで完結した</strong>。</p>
+
+    <div class="flowchart">
+        <div class="node start">Stretheus.exe</div>
+        <div class="arrow">▼</div>
+        <div class="node process">末尾から <code>MEI\014\013\012\013\016</code> を検索
+            <small>クッキー 24 バイト + TOC を読む</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process">CArchive (PKG) の収録物 14 件を列挙
+            <small>pkglen=66,574,166 / pyver=312 / pylib=python312.dll</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process"><code>PYZ.pyz</code>（66,517,189 bytes）を取り出す
+            <small>暗号化なし（PyInstaller 6 系は暗号化オプション自体を廃止）</small></div>
+        <div class="arrow">▼</div>
+        <div class="node process"><code>zlib.decompress</code> → <code>marshal.loads</code>
+            <small>各エントリが code object として復元される</small></div>
+        <div class="arrow">▼</div>
+        <div class="node end">8,259 モジュール（うち自前 136）</div>
+    </div>
+
+    <h3>2.1 exe から内部アーカイブを取り出す</h3>
+    <p>PyInstaller の onedir 出力でも、Python のモジュール群は <code>Stretheus.exe</code> 末尾の
+       CArchive（PKG）に収められている。</p>
+<pre>pkglen=66,574,166  toc_off=66,573,438  toc_len=640  pyver=312  pylib=python312.dll
+entries: 14
+  struct / pyimod01_archive / pyimod02_importers / pyimod03_ctypes / pyimod04_pywin32
+  pyiboot01_bootstrap / pyi_rth_inspect / pyi_rth_pkgutil / pyi_rth_multiprocessing
+  pyi_rth_pyside6 / pyi_rth_cryptography_openssl
+  main_window              type=s  usize=82,734
+  PYZ.pyz                  type=z  usize=66,517,189</pre>
+
+    <h3>2.2 PYZ からモジュールを復元する</h3>
+    <ul>
+        <li><strong>総モジュール数 8,259 / うち自前モジュール 136</strong>
+            （<code>src.gui.*</code> <code>src.services.*</code> <code>src.archive.*</code>
+            <code>src.timeline.*</code> <code>src.blur.*</code> <code>src.export.*</code> などが名前ごと一覧できる）</li>
+        <li>code object からは <strong>関数名・引数名・分岐構造・全ての文字列定数</strong>が取れる。
+            Python 3.12 のバイトコードを元のソースへ戻す逆コンパイラは成熟していないが、
+            <code>dis</code> で読めば処理の流れは十分に追える</li>
+        <li>日本語のログ文言・エラーメッセージもそのまま読めるため、<strong>内部の設計意図まで分かる</strong></li>
+    </ul>
+
+    <h4>実例: <code>src.services.device_id</code> を復元して得られた文字列定数</h4>
+<pre class="bad">stretheus-device-v1
+SOFTWARE\Microsoft\Cryptography
+MachineGuid
+LOCALAPPDATA / Stretheus / device.dat</pre>
+
+    <h3>2.3 平文のまま置かれているデータ</h3>
+    <p><code>_internal/</code> 配下は展開済みであり、解析を要しない。</p>
+    <table>
+        <thead><tr><th>置き場所</th><th>中身</th></tr></thead>
+        <tbody>
+            <tr><td><code>_internal/src/settings/setting.json</code></td>
+                <td>初期設定の全文（点検時は API 接続先・Twitch <code>client_id</code>・採点アルゴリズムの重み。
+                    接続先は N1 の是正で空になった）</td></tr>
+            <tr><td><code>_internal/src/models/yolox_tiny.onnx</code></td><td>ぼかし用モデル</td></tr>
+            <tr><td><code>_internal/src/{t1,t2}.jpg</code> <code>watermark.png</code> <code>comment_icon.png</code></td>
+                <td>画面素材（点検したが利用者情報の写り込みなし）</td></tr>
+            <tr><td><code>_internal/ffmpeg/{ffmpeg,ffprobe}.exe</code></td>
+                <td>gyan.dev full build 2026-03-12-git-9dc44b43b2（<code>--enable-gpl --enable-version3</code>）</td></tr>
+        </tbody>
+    </table>
+
+    <h3>2.4 探して<strong>見つからなかった</strong>もの</h3>
+    <div class="split">
+        <div class="panel safe">
+            <h3>漏れていないことを実測で確認</h3>
+            <table>
+                <thead><tr><th>探索対象</th><th>結果</th></tr></thead>
+                <tbody>
+                    <tr><td><code>D:\develop</code> / <code>D:/develop</code></td><td><strong>0 件</strong></td></tr>
+                    <tr><td><code>C:\Users\&lt;開発者&gt;</code> 形式のパス</td><td><strong>0 件</strong></td></tr>
+                    <tr><td>開発者のメール・氏名・連絡先</td><td><strong>0 件</strong></td></tr>
+                    <tr><td>API シークレット・署名鍵・<code>client_secret</code></td><td><strong>0 件</strong></td></tr>
+                </tbody>
+            </table>
+            <p class="note ok">探索範囲は <code>_internal/</code> 全体・exe・PYZ 内 code object の
+            <code>co_filename</code> すべて。</p>
+        </div>
+        <div class="panel safe">
+            <h3>co_filename は相対パス</h3>
+<pre class="good">src\services\device_id.py</pre>
+            <p>ビルド機のディレクトリ構成は残っていない。PyInstaller 側の挙動と
+               <code>spec</code> のサニタイズの両方が効いている。</p>
+        </div>
+    </div>
+
+    <h3>2.5 再現手順</h3>
+    <p>本点検に使った解析スクリプトはセッション限りの一時領域に置いたため残していない。
+       再現する場合は以下で足りる（いずれも標準ライブラリのみ）。</p>
+    <ol class="steps">
+        <li><code>Stretheus.exe</code> を末尾から <code>b'MEI\014\013\012\013\016'</code> で検索し、
+            <code>struct.unpack('!8sIIII', …)</code> でクッキー（pkglen / toc_off / toc_len / pyvers）を読む</li>
+        <li><code>pkg_start = cookie_pos + 88 - pkglen</code> を起点に TOC を走査し、各エントリを切り出す
+            （エントリ構造: <code>!i</code> 長さ, <code>!IIIB</code> 位置・圧縮後・圧縮前・圧縮フラグ,
+            1 バイトの種別, 残りが名前）</li>
+        <li>取り出した <code>PYZ.pyz</code> の先頭 <code>PYZ\0</code> を確認し、
+            オフセット 8 の <code>!i</code> が指す位置から <code>marshal.load</code> で TOC（dict）を読む</li>
+        <li>各値 <code>(typ, pos, length)</code> について <code>zlib.decompress</code> →
+            <code>marshal.loads</code> で code object を得る</li>
+        <li><code>co_consts</code> を再帰的に辿れば入れ子の code object・文字列定数がすべて得られる</li>
+    </ol>
+
+    <p class="note danger"><strong>この手順を妨げる手立ては、Python で配布する限り存在しない。</strong>
+    難読化は時間稼ぎにしかならないため、<strong>「クライアントに秘密を置かない」設計を守ること</strong>で対処する。
+    現状その設計自体は守られている（<a href="#good">§6</a>）ので、崩さないことが要点である。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="high">
+    <h2>3. 高</h2>
+
+    <div class="finding">
+        <h3><span class="badge id">S1</span> <span class="badge high">高</span> <span class="badge open">sec1 から継続</span>
+            自動更新が取得した実行ファイルを無検証で起動する</h3>
+
+        <h4>現況</h4>
+        <p><code>src/utils/updater.py</code> は sec1 の指摘当時のままである。</p>
+<pre class="bad">def download_installer(url, on_progress=None):
+    dest = os.path.join(tempfile.gettempdir(), _INSTALLER_ASSET)   # 固定パス
+    urllib.request.urlretrieve(url, dest, reporthook=on_progress)  # タイムアウト無し
+    return dest
+
+def launch_installer(installer_path):
+    subprocess.Popen([installer_path], close_fds=True)             # 無検証で実行</pre>
+        <p>ハッシュ検証・署名確認・URL の検証（スキーム / ホスト）・ダウンロードのタイムアウトのいずれも無い。
+           インストーラ本体（<code>AutoEdit.iss</code> の <code>PrepareToInstall</code>）は payload を
+           SHA-256 で検証しているのに、<strong>その検証をする側の exe が無検証で降ってくる</strong>という
+           連鎖の切れ方も変わっていない。</p>
+
+        <p class="note danger">v1.4.6 から v1.8.2 まで <strong>9 回のリリースがこの経路を通って配布された</strong>。
+        既存利用者は全員この無検証の経路で更新している。</p>
+
+        <h4>是正（2026-11-07・実施済み）</h4>
+        <p>sec1 §2.1 の案に沿って <code>src/utils/updater.py</code> を書き換えた。</p>
+        <table>
+            <thead><tr><th>穴</th><th>対応</th></tr></thead>
+            <tbody>
+                <tr><td>a 完全性検証が無い</td>
+                    <td>取得しながら SHA-256 を計算し、期待値と一致しなければ<strong>実行経路へ残さない</strong>（一時フォルダごと削除）</td></tr>
+                <tr><td>b 保存先が固定・予測可能</td>
+                    <td><code>tempfile.mkdtemp(prefix="stretheus_update_")</code> で毎回作る専用フォルダへ置く</td></tr>
+                <tr><td>c URL を検証しない</td>
+                    <td><code>https</code> + <code>_ALLOWED_HOSTS</code>（<code>github.com</code> /
+                        <code>objects.githubusercontent.com</code> / <code>release-assets.githubusercontent.com</code>）に限定。
+                        <strong>リダイレクト先も同じ関数で確かめる</strong></td></tr>
+                <tr><td>d タイムアウトが無い</td>
+                    <td><code>_DOWNLOAD_TIMEOUT_SEC = 300</code> を設定</td></tr>
+            </tbody>
+        </table>
+        <p>期待ハッシュは次の順で解決する（sec1 の案 A）。</p>
+        <ol class="steps">
+            <li>GitHub API が返すアセットの <code>digest</code>（<code>sha256:&lt;hex&gt;</code>）。あれば追加の通信をしない</li>
+            <li>併置した <code>StretheusSetup.exe.sha256</code> アセット</li>
+        </ol>
+        <p><strong>どちらも得られないリリースへは更新しない</strong>（fail closed）。
+           検証できないものを実行しないためで、利用者には何も出さず、ログに <code>WARNING</code> を残す。
+           この運用が崩れると利用者が更新に気づけないため、<code>HowToRelease.md §8.1</code> と
+           <code>installer/README.md §3.1</code> に手順とチェック項目を足した。</p>
+        <p><code>tests/test_updater_verify.py</code> に 16 件を追加（URL 許可判定、ハッシュ形式の正規化、
+           不一致時に取得物が残らないこと、ハッシュが無いときに見送ること）。</p>
+        <p class="note danger"><strong>残る限界。</strong>ハッシュも GitHub 経由で取るため、
+        <strong>配布元アカウントの侵害には無力</strong>である。守れるのは経路上の改ざん・取り違え・TOCTOU までで、
+        配布元の侵害まで塞げるのは S2 のコード署名を前提とした署名検証（sec1 の案 B）だけである。<br>
+        <strong>移行</strong>: v1.8.2 以前のアプリは古い updater で動いているため、検証が効くのは
+        「この仕組みを載せた版から、さらに次の版へ」の更新からである。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">S2</span> <span class="badge high">高</span> <span class="badge open">sec1 から継続</span>
+            インストール先がユーザー書込可能で、実行ファイルが未署名</h3>
+
+        <h4>現況（実測）</h4>
+<pre class="bad">Get-AuthenticodeSignature Stretheus.exe  →  Status: NotSigned   Signer: (なし)
+AutoEdit.iss  →  DefaultDirName={localappdata}\Programs\Stretheus
+                 PrivilegesRequired=lowest</pre>
+        <p>同一ユーザー権限で動くプロセスが <code>_internal/</code> の DLL や <code>Stretheus.exe</code> を
+           差し替えられる。署名が無いため、利用者にも差し替えを検知する手段が無い。</p>
+        <p class="note danger">インストール先の <code>setting.json</code> を書き換えるだけで
+        <strong>接続先 API を攻撃者のサーバーへ向けられる</strong>点にも注意する
+        （JWT はそのサーバーへ送られる）。N1 の是正で配布 <code>setting.json</code> の
+        <code>api.base_url</code> は空になったが、<strong>利用者が後から書き足せば効いてしまう</strong>ことは変わらない。</p>
+
+        <h4>対策と現況（2026-11-07 時点）</h4>
+        <p class="note danger"><strong>本丸のコード署名は未実施のままである。証明書の調達が要るため、
+        実装だけでは解消できない。</strong>今回入れたのは「証明書が手に入った日に、手順どおり実行すれば
+        署名できる」状態までである。</p>
+        <table>
+            <thead><tr><th>#</th><th>対策</th><th>状況</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td><strong>Authenticode コード署名</strong></td>
+                    <td><span class="badge open">未実施</span>（証明書が無い）。土台のみ整備:
+                        <code>AutoEdit.iss</code> に <code>#ifdef SIGN</code> で <code>SignTool</code> /
+                        <code>SignedUninstaller</code> を追加し、<code>ISCC /DSIGN</code> で有効になるようにした。
+                        証明書が無い間は従来どおりビルドできる。手順は <code>HowToRelease.md §7.2</code> に具体化</td></tr>
+                <tr><td>2</td><td>管理者インストールを選べるようにする</td>
+                    <td><span class="badge open">未実施</span>。<code>PrivilegesRequired=dialog</code> にするだけでは
+                        <code>setting.json</code> の書き込み先が書けなくなるため、対策 3 とセットでなければ壊れる</td></tr>
+                <tr><td>3</td><td>設定・トークン・ログをインストール先から出す</td>
+                    <td><span class="badge open">部分的</span>。作業フォルダ・Twitch トークン・ポイントは
+                        <code>%LOCALAPPDATA%\Stretheus\</code> へ移っている。残るのは
+                        <strong><code>setting.json</code> 本体</strong>と<strong>ログ</strong>（S8）</td></tr>
+                <tr><td>4</td><td>正規の入手元 URL と SHA-256 を明記する</td>
+                    <td><span class="badge fixed">実施</span>。<code>installer/README.md §3.1</code> でハッシュの作成を
+                        手順化し、リリースへ <code>.sha256</code> を上げる形にした（S1 の是正と同じ作業）</td></tr>
+            </tbody>
+        </table>
+        <p>S1 のハッシュ検証が入ったことで、<strong>未署名のままでも更新経路の改ざんは検知できる</strong>
+           ようになった。ただし「インストール済みのファイルを後から差し替える」経路は署名でしか塞げない。</p>
+        <p class="note">対策 2 と 3 は、設定ファイルの置き場所を変える改修になる。既存利用者の設定移行と、
+        インストーラの退避・復元（<code>AutoEdit.iss</code>）の見直しを伴うため、本書では実施していない。
+        <strong>着手するなら設計から</strong>（<code>docs/CLAUDE.md</code>「実装前に設計を行うこと」）。</p>
+    </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="mid">
+    <h2>4. 中</h2>
+
+    <div class="finding">
+        <h3><span class="badge id">N1</span> <span class="badge mid">中</span>
+            <span class="badge fixed">2026-11-07 解消</span>
+            接続先が 3 か所で決まり、そのときの値が配布物へ焼き付く</h3>
+
+        <h4>初版の指摘の訂正</h4>
+        <p>本書は当初、配布 <code>setting.json</code> が dev を指すことを「リリース前の戻し忘れ」とみなし、
+           <strong>最上位の指摘（高）</strong>に挙げていた。これは誤りである。</p>
+        <ul>
+            <li><code>HowToRelease.md §6</code>:
+                「本番 API をデプロイするまでは dev のままで配る（prod は未デプロイ）」</li>
+            <li><code>StretheusPlan/plan.md §7.8.4</code>:
+                「④ 配布クライアントの接続先（<strong>prod を立てる場合のみ</strong>）」
+                「dev は live キーで動いている」</li>
+        </ul>
+        <p><strong>dev を指しているのは意図的な運用</strong>であり、<code>stretheusapi-dev</code> が
+           実運用を担っている。また接続先のホスト名は通信を観察すれば分かるため、
+           配布物から読めること自体を情報漏洩の指摘とするのは筋が悪い。
+           この 2 点で初版の判断は成り立たない。</p>
+
+        <h4>残っていた実質的な問題</h4>
+        <p>それでも次の 2 点は実際の事故リスクだった。</p>
+        <table>
+            <thead><tr><th>#</th><th>問題</th></tr></thead>
+            <tbody>
+                <tr><td>a</td><td><strong>接続先が 3 か所で決まる。</strong>
+                    <code>setting.json</code>（新規インストール）/ <code>DEFAULT_SETTINGS</code>（設定が欠けたとき）/
+                    <code>_normalize_legacy_values</code>（既存の利用者）。1 か所だけ直しても向き先が変わらず、
+                    <code>plan.md §7.8.4</code> 自身が「<strong>最も見落としやすい</strong>」と書いていた</td></tr>
+                <tr><td>b</td><td><strong><code>setting.json</code> は git 管理下かつ開発端末で日常的に書き換わる。</strong>
+                    そのときの接続先がリポジトリと配布物の両方へ焼き付く（sec1 S7 と同じ構図）</td></tr>
+            </tbody>
+        </table>
+
+        <h4>是正（2026-11-07・実施済み）</h4>
+        <p>接続先を <strong><code>services/config.py</code> の <code>_DEFAULT_BASE_URL</code> 1 箇所</strong>へ集約した。</p>
+        <table>
+            <thead><tr><th>箇所</th><th>変更</th></tr></thead>
+            <tbody>
+                <tr><td><code>services/config.py</code></td>
+                    <td><code>_DEFAULT_BASE_URL</code> を現運用（dev）に。優先順位を
+                        <strong>環境変数 &gt; <code>setting.json</code> &gt; 既定</strong> とし、環境変数
+                        <code>STRETHEUS_API_BASE_URL</code> を追加。<strong>凍結配布では環境変数を無視</strong>する
+                        （配布物の向き先を外から変えさせない / S2 の緩和）</td></tr>
+                <tr><td><code>settings/settings_window.py</code></td>
+                    <td><code>DEFAULT_SETTINGS</code> の <code>api.base_url</code> を空に。
+                        <code>_MANAGED_API_BASE_URLS</code> を追加し、既定として配ったことのある URL が
+                        保存されていたら空へ寄せて既定に追従させる</td></tr>
+                <tr><td><code>settings/setting.json</code></td>
+                    <td><code>api.base_url</code> を空に（リポジトリから接続先が消えた）</td></tr>
+                <tr><td><code>main_window.spec</code></td>
+                    <td>同梱時に <code>api.base_url</code> を必ず空へ落とす
+                        （<code>general</code> の 4 キーと同じ安全柵）</td></tr>
+                <tr><td><code>tests/test_api_base_url.py</code></td>
+                    <td>15 件を追加。「どの環境が現運用か」は固定せず、
+                        <code>_DEFAULT_BASE_URL</code> へ倒れることだけを見る</td></tr>
+            </tbody>
+        </table>
+        <p>これにより <strong>接続先の切り替えは 2 か所</strong>で済む（<code>_DEFAULT_BASE_URL</code> を変え、
+           <code>_MANAGED_API_BASE_URLS</code> へ切り替え前の URL を足す）。開発端末で別環境を試すときは
+           環境変数を使うため、<code>setting.json</code> を汚さない。</p>
+        <p class="note"><code>plan.md §7.8.4</code> の「3 か所セット」手順は autoedit 側のこの変更に
+        追従していない。別リポジトリのため本書では直していない。<strong>更新が要る。</strong></p>
+
+        <h4>残る論点（本書の範囲外）</h4>
+        <p><strong><code>dev</code> という名前の環境が、live 決済を含む実運用を担っている</strong>
+           （<code>plan.md §7.8.7</code>）。技術的な欠陥ではないが、命名と環境の役割が食い違っている状態は
+           事故のもとになる。prod を立てるのか、dev を正式な環境として扱い直すのかは、運用側で決める話である。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">S4</span> <span class="badge mid">中</span> <span class="badge open">sec1 から継続</span>
+            Twitch アクセストークンを平文 JSON で保存している</h3>
+
+        <h4>現況（実測）</h4>
+<pre class="bad">C:\Users\&lt;利用者&gt;\AppData\Local\Stretheus\archive_work\twitch_token.json   106 bytes
+  { "access_token": "&lt;30 文字&gt;", "scope": "user:read:broadcast", "token_type": "bearer" }</pre>
+        <p><code>src/archive/twitch_auth.py</code> の <code>_write_token_file</code> /
+           <code>_read_token_file</code> は <code>json.dump</code> / <code>json.load</code> のままである。</p>
+        <p class="note danger"><strong>同じコードベースに DPAPI の実装が既にある。</strong>
+        <code>src/services/auth_store.py</code> の <code>protect()</code> / <code>unprotect()</code> を
+        <code>src/services/device_id.py</code> は使っており、Stretheus の JWT（<code>auth.dat</code>）も
+        同様に守られている（<a href="#good">§6</a> で実測）。<strong>Twitch 側だけが取り残されている。</strong></p>
+
+        <h4>何が問題か</h4>
+        <p>配布物を解析すれば保存先も形式も分かる（§2.2 で <code>archive_work</code> /
+           <code>twitch_token.json</code> の文字列がそのまま得られる）。利用者の端末で動く任意のプロセスが、
+           このファイルを読むだけで Twitch のユーザーアクセストークンを持ち出せる。
+           <code>scope</code> に <code>user:read:broadcast</code> が付くため、
+           配信者のアカウントに対する読み取りが成立する。</p>
+
+        <h4>是正（2026-11-07・実施済み）</h4>
+        <p>sec1 §3.2 の案どおり、<code>src/services/auth_store.py</code> の
+           <code>protect</code> / <code>unprotect</code>（DPAPI / CurrentUser）を
+           <code>twitch_auth.py</code> から借りる形にした。<strong>同じ仕組みを 2 つ持たない</strong>ため、
+           新しい依存も新しい鍵管理も増えていない。</p>
+        <table>
+            <thead><tr><th>観点</th><th>対応</th></tr></thead>
+            <tbody>
+                <tr><td>保存</td><td><code>protect()</code> で暗号化してバイナリで書く。
+                    復号できるのは同じ Windows ユーザーだけ</td></tr>
+                <tr><td>暗号化できない環境</td><td><strong>保存しない</strong>（平文では書かない）。
+                    今回のセッションは使えるため、利用者には次回起動時の再ログインだけを求める</td></tr>
+                <tr><td>既存の平文からの移行</td><td>読み込み時に復号を試し、失敗したら平文 JSON として読む。
+                    読めたら<strong>その場で暗号化して置き換える</strong>ので、平文は残らない</td></tr>
+                <tr><td>他ユーザー・壊れたファイル</td><td><code>None</code> を返して再ログインへ倒す
+                    （<code>auth_store</code> と同じ振る舞い）</td></tr>
+            </tbody>
+        </table>
+        <p><code>tests/test_token_protection.py</code> に検証を追加した（平文が残らないこと、往復、
+           旧平文からの移行、暗号化できないときに保存しないこと、ログアウトでの削除）。</p>
+        <p class="note"><strong>実データでの移行確認は行っていない。</strong>同じ形のダミーで検証している。
+        既にログイン済みの端末では、<strong>次回アプリを起動した時点で自動的に暗号化へ置き換わる</strong>。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">S5</span> <span class="badge mid">中</span> <span class="badge open">sec1 から継続</span>
+            OAuth トークンがブラウザ履歴に残る</h3>
+        <p><code>_RELAY_HTML</code> は現状も <code>window.location.replace('/capture?' + h)</code> で
+           フラグメントをクエリへ付け替えている。<code>replace</code> なので「戻る」履歴には積まれないが、
+           <strong>URL 自体は履歴に残り、ローカルサーバのリクエストラインにも載る</strong>。
+           sec1 §3.3 の POST 化で解消する。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">S3</span> <span class="badge mid">中</span> <span class="badge open">sec1 から継続</span>
+            <code>setting.json</code> の値がそのまま外部プロセスとして実行される</h3>
+        <p><code>src/modules/ffmpeg_runner.py</code> の <code>_resolve_exe()</code> は現状も
+           「絶対パス指定はそのまま採用」で始まる。インストール先がユーザー書込可能（S2）なため、
+           <strong><code>setting.json</code> の <code>ffmpeg.executable</code> を書き換えるだけで
+           アプリ起動後に任意の exe が動く</strong>。sec1 §3.1 の案（凍結配布では同梱物のみを認める）で塞ぐ。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">N2</span> <span class="badge mid">中</span> <span class="badge open">新規</span>
+            <code>points.json</code> の改ざんで透かしを回避できる</h3>
+
+        <h4>該当（実測）</h4>
+<pre class="bad">C:\Users\&lt;利用者&gt;\AppData\Local\Stretheus\points.json   69 bytes
+  { "subscribed": true, "checkedAt": "2026-11-06T01:53:34.614983+00:00" }</pre>
+        <p><code>src/services/points.py</code> の <code>_write_json</code> は平文で書き出す。
+           <code>subscription_cache_hours</code> の既定は <strong>72</strong> である（配布 <code>setting.json</code>）。</p>
+
+        <h4>何が問題か</h4>
+        <p>ポイント処理はサーバー主導で設計されており（予約の応答だけで透かしの要否を決める）、その点は妥当である。
+           ただし<strong>オフライン時のサブスク救済だけはローカルの値を信じる</strong>。
+           このファイルを <code>{"subscribed": true, "checkedAt": &lt;現在時刻&gt;}</code> に書き換え、
+           ネットワークを遮断すれば、最大 72 時間は透かし無しで出力できる。</p>
+        <p>情報漏洩ではなく<strong>収益面のリスク</strong>だが、配布物の解析でキャッシュの場所・キー名・
+           判定ロジックが読めるため、再現は容易である。</p>
+
+        <h4>是正（2026-11-07・実施済み）</h4>
+        <p>完全に塞ぐことはできない（オフライン救済という仕様自体が「ローカルを信じる」ことを含むため）。
+           挙げた 3 段階のうち、1 と 2 を入れた。</p>
+        <table>
+            <thead><tr><th>#</th><th>対策</th><th>状況</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td><strong>DPAPI で保護する</strong></td>
+                    <td><span class="badge fixed">実施</span>。<code>_read_state</code> /
+                        <code>_write_state</code> を <code>auth_store.protect</code> 経由にした（S4 と同じ仕組み）。
+                        手で書き換える手口は止まる。暗号化できない環境では保存せず、
+                        オフライン時は<strong>透かしを入れる側（安全側）へ倒れる</strong></td></tr>
+                <tr><td>2</td><td><strong>救済の窓を狭める</strong></td>
+                    <td><span class="badge fixed">実施</span>。既定を <strong>72 → 24 時間</strong>へ。
+                        旧既定 72 を保存している利用者は読み込み時に 24 へ詰める
+                        (<code>_migrate_subscription_cache_hours</code>)。利用者が自分で変えた値は尊重する</td></tr>
+                <tr><td>3</td><td>サーバー署名を入れる</td>
+                    <td><span class="badge open">未実施</span>。サーバー側の変更が要るため、本書では扱わない</td></tr>
+            </tbody>
+        </table>
+        <p><strong>送信待ちキュー（<code>pending_commits.json</code>）は平文のまま</strong>にした。
+           こちらは保存できないとポイントの確定・解放がサーバーへ届かず<strong>利用者の不利益</strong>に
+           なるため、どんな環境でも必ず書けることを優先した。改ざんされてもサーバーが予約 ID を見て
+           判断するため、得をする余地が小さい。</p>
+        <p><code>tests/test_token_protection.py</code> に検証を追加した（平文が残らないこと、
+           旧平文からの移行、暗号化できないときに保存しないこと、キューが平文のままであること、72 → 24 の移行）。</p>
+        <p class="note">解析して自分で暗号化し直す相手には、1 も 2 も効かない。そこまで塞ぐには 3 が要る。
+        本書は「手で書き換えるだけで回避できる」状態を解消したにとどまる。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">S6</span> <span class="badge mid">中</span>
+            <span class="badge fixed">2026-11-07 解消</span>
+            使っていない重量依存を同梱している</h3>
+
+        <h4>指摘の訂正</h4>
+        <p>sec1 と本書の初版は <code>torch</code> を「<strong>使っていない</strong>」としていたが、これは誤りである。
+           <code>src/modules/speaker_filter.py</code>（話者照合によるテロップの絞り込み）が
+           <code>torch</code> / <code>torchaudio</code> を遅延 import している。</p>
+        <p>ただし次の事情があり、<strong>配布物から外す判断は変わらない</strong>。</p>
+        <ul>
+            <li><code>docs/quality/resolve1.md §12.6・§12.7</code> で「<strong>実装したが不採用</strong>」
+                「この素材では成立しない」と結論済み（ONNX 実装は既に撤去されている）</li>
+            <li>既定は <code>"off"</code> で、<strong>設定画面にも出さない</strong>
+                （<code>setting.json</code> を手で書く隠し設定）</li>
+            <li><code>torch</code> を読めないときは警告を出して<strong>素通りする</strong>
+                フォールバックが実装済み（<code>_import_torch</code>）</li>
+        </ul>
+        <p><code>transformers</code> のほうは本当にソースから一切参照していない
+           （<code>faster-whisper</code> の conversion extra や <code>sentence-transformers</code> などが
+           推移的に引いていただけ）。</p>
+
+        <h4>是正前（実測・<code>_internal/</code> の容量上位）</h4>
+        <div class="bar-row"><span class="label">ffmpeg</span>
+            <span class="track"><span class="fill" style="width:100%"></span></span><span class="size">426M</span></div>
+        <div class="bar-row"><span class="label">torch</span>
+            <span class="track"><span class="fill unused" style="width:75.6%"></span></span><span class="size">322M</span></div>
+        <div class="bar-row"><span class="label">PySide6</span>
+            <span class="track"><span class="fill" style="width:29.3%"></span></span><span class="size">125M</span></div>
+        <div class="bar-row"><span class="label">llvmlite</span>
+            <span class="track"><span class="fill unused" style="width:23.9%"></span></span><span class="size">102M</span></div>
+        <div class="bar-row"><span class="label">av.libs</span>
+            <span class="track"><span class="fill" style="width:15.3%"></span></span><span class="size">65M</span></div>
+        <div class="bar-row"><span class="label">ctranslate2</span>
+            <span class="track"><span class="fill" style="width:14.1%"></span></span><span class="size">60M</span></div>
+        <div class="bar-row"><span class="label">scipy</span>
+            <span class="track"><span class="fill unused" style="width:12.7%"></span></span><span class="size">54M</span></div>
+        <div class="bar-row"><span class="label">transformers</span>
+            <span class="track"><span class="fill unused" style="width:9.2%"></span></span><span class="size">39M</span></div>
+        <p class="note">赤いバーが<strong>この是正で消えたもの</strong>（ほかに scipy.libs 20M・sklearn 13M・torchaudio 1.4M）。</p>
+
+        <h4>是正（2026-11-07・実施済み）</h4>
+        <p><code>main_window.spec</code> の <code>excludes</code> へ
+           <code>torch</code> / <code>torchaudio</code> / <code>transformers</code> を追加した。</p>
+        <div class="card-grid">
+            <div class="card"><h3>是正前</h3><p>1.5 GB</p></div>
+            <div class="card good"><h3>是正後</h3><p>837 MB</p></div>
+            <div class="card good"><h3>削減</h3><p>約 663 MB</p></div>
+        </div>
+        <p>sec1 の見積もり（361MB）を上回ったのは、<code>torch</code> を引いていた
+           <code>llvmlite</code>(102M) / <code>scipy</code>(54M+20M) / <code>sklearn</code>(13M) も
+           連鎖で落ちたためである。除外後は <code>ffmpeg</code>(426M) と <code>PySide6</code>(125M) が
+           大半を占める形になった。</p>
+
+        <h4>確認（sec1 §3.4 が求めていた項目）</h4>
+        <table>
+            <thead><tr><th>確認</th><th>結果</th></tr></thead>
+            <tbody>
+                <tr><td>主要モジュール 15 本の import（<strong>配布物と同じ条件</strong>＝消えた 12 パッケージを遮断）</td>
+                    <td>すべて成功</td></tr>
+                <tr><td><code>faster_whisper</code> / <code>av</code> / <code>onnxruntime</code> /
+                    <code>numpy</code> / <code>PIL</code> の import</td><td>すべて成功</td></tr>
+                <tr><td><code>tests</code> 全件（同条件）</td><td>2,319 件すべて合格</td></tr>
+                <tr><td><code>speaker_filter</code> のフォールバック</td>
+                    <td><code>_import_torch()</code> → <code>(None, None)</code>、
+                        <code>build_embedder()</code> → <code>None</code>。例外を漏らさず素通り</td></tr>
+                <tr><td><strong>音声認識の実走行</strong>（<code>small</code> / 同条件）</td>
+                    <td>「This is a test of the speech-recognized system.」を認識</td></tr>
+                <tr><td><strong>音声認識の実走行</strong>（<code>large-v3</code> ＝配布設定 / 同条件）</td>
+                    <td>「This is a test of the Speech Reconnaissance System.」を認識。
+                        推論完了時点で torch 系の読み込み 0 件</td></tr>
+                <tr><td>配布 exe の起動</td><td>GUI が立ち上がり、25 秒後も生存（初期化を完走）</td></tr>
+            </tbody>
+        </table>
+        <p>実走行の音声は Windows の音声合成（SAPI）で作り、モデルはローカルキャッシュのみを使った
+           (<code>local_files_only=True</code>。外部からは取得していない)。</p>
+        <p class="note"><strong>話者照合は配布物では使えなくなった。</strong>
+        <code>speaker_filter.py</code> の冒頭にその旨を書いてある。マイク単独トラックなど綺麗な音声で
+        試したくなったら、<code>excludes</code> から <code>torch</code> / <code>torchaudio</code> を
+        外して再ビルドすれば戻る。<br>
+        <strong>CLI 用の <code>main.spec</code> は変更していない</strong>（<code>excludes</code> が空のまま）。
+        配布しているのは <code>main_window.spec</code> の成果物であり、CLI 版をビルドする場合は別途そろえること。</p>
+    </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="low">
+    <h2>5. 低・情報</h2>
+
+    <div class="finding">
+        <h3><span class="badge id">N3</span> <span class="badge low">低</span> <span class="badge open">新規</span>
+            端末 ID の導出が決定論的で、ソルトが配布物から読める</h3>
+<pre class="bad"># src/services/device_id.py （PYZ から復元した文字列定数にそのまま出る）
+_DERIVATION_SALT = "stretheus-device-v1"
+digest = hashlib.sha256(f"{_DERIVATION_SALT}:{seed}".encode("utf-8")).digest()</pre>
+        <p><code>seed</code> は Windows の <code>MachineGuid</code>。ソルトが配布物から読めるため、
+           <strong>ある端末の <code>MachineGuid</code> を知る立場なら、その端末の匿名セッション ID を計算できる</strong>。</p>
+        <p>個人を直接特定する値ではなく（<code>MachineGuid</code> 自体は外部へ出さずハッシュだけを送る設計で、
+           プライバシー配慮としては妥当）、悪用には <code>MachineGuid</code> の入手が別途要る。
+           影響は「匿名セッションのなりすまし（未ログイン利用者のポイント消費）」に限られるため <strong>低</strong>とする。</p>
+        <p class="note">対策を入れるならサーバー側で、匿名セッションの発行時に
+        <strong>サーバーが生成した乱数を混ぜて</strong>クライアントへ返し、以後はそれを使う
+        （クライアントだけでは ID を決められないようにする）。クライアント側の難読化では解決しない。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">N4</span> <span class="badge info">情報</span>
+            内部 API のエンドポイント一覧が配布物から完全に読める</h3>
+        <p>PYZ の復元で、以下がそのまま一覧できる。</p>
+<pre>/api/auth/twitch/authorize-params   /api/auth/google/authorize-params
+/api/auth/twitch/login              /api/auth/google/login
+/api/auth/device   /api/auth/refresh   /api/auth/logout
+/api/billing/config  /api/billing/checkout-session  /api/billing/portal-session
+/api/billing/subscription            /api/points
+/api/analytics/{sessions,projects,events,export-logs,processing-logs}   /api/errors</pre>
+        <p><strong>これ自体は設計上避けられない</strong>（クライアントが叩く以上、通信を見れば同じことが分かる）。
+           記録として残す趣旨であり、クライアント側の対応は不要である。</p>
+        <p class="note danger">ただし前提として、<strong>サーバー側がクライアントを信用していないこと</strong>が要る。
+        本書ではサーバー側を点検していないため、<code>StretheusAPI</code> 側で
+        「全エンドポイントが JWT の検証と所有者チェックを持つか」「<code>/api/points</code> が
+        クライアントの申告額をそのまま信じていないか」を別途確認すること（<a href="#limit">§8</a>）。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">N5</span> <span class="badge info">情報・対応不要</span>
+            Twitch Client-ID が配布物に含まれる</h3>
+        <p><code>archive.auth.client_id</code> は公開クライアントの設計上、配布物に載るのが正常である
+           （sec1 S11 と同じ扱い）。<code>client_secret</code> は空であり、
+           <code>spec</code> がビルド時に検査している。</p>
+    </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="good">
+    <h2>6. 解消が確認できた点・守れている点</h2>
+
+    <h3>6.1 解消した指摘</h3>
+    <table>
+        <thead><tr><th>#</th><th>指摘</th><th>現況（実測）</th></tr></thead>
+        <tbody>
+            <tr>
+                <td><span class="badge id">S1</span></td>
+                <td>自動更新が取得した exe を無検証で実行する</td>
+                <td><span class="badge fixed">解消</span>（2026-11-07）
+                    URL 検証・SHA-256 照合・専用一時フォルダ・タイムアウトを実装。
+                    期待ハッシュを得られないリリースへは更新しない。詳細は <a href="#high">§3</a></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S7</span></td>
+                <td>配布 <code>setting.json</code> に開発機の絶対パスが残る</td>
+                <td><span class="badge fixed">解消</span>
+                    <code>general</code> の 4 キーと <code>timeline.project.recent*</code> が空で出力され、
+                    配布物全体を検索しても絶対パスは 0 件。<code>spec</code> の
+                    <code>_build_shipped_settings()</code> が機械的に止める仕組みになっており、再発しにくい</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S8</span></td>
+                <td>ログ出力先がカレント相対</td>
+                <td>部分的に改善。利用者データ（作業フォルダ・トークン・ポイント）は
+                    <code>%LOCALAPPDATA%\Stretheus\</code> へ移っている。
+                    <code>logging.log_dir</code> は <code>"logs"</code> のままなので、ログだけは引き続きカレント相対である</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>6.2 維持すべき設計</h3>
+    <table>
+        <thead><tr><th>#</th><th>守れている点</th><th>根拠（実測）</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td><strong>配布物に秘密を置かない。</strong>OAuth は認可コードフローで、
+                <code>clientId</code> / <code>redirectUri</code> / <code>scopes</code> を<strong>サーバーから受け取る</strong></td>
+                <td><code>services/stretheus_auth.py</code>。Google 追加後も配布物側に秘密が増えていない</td></tr>
+            <tr><td>2</td><td><strong>Stretheus の JWT は DPAPI で保護</strong>されている</td>
+                <td><code>auth.dat</code>(984 bytes) の先頭が
+                    <code>01 00 00 00 D0 8C 9D DF 01 15 D1 11 8C 7A 00 C0</code> = DPAPI blob。
+                    平文では書かない実装（暗号化できなければ保存を諦める）</td></tr>
+            <tr><td>3</td><td>端末 ID は <code>MachineGuid</code> を<strong>そのまま送らず</strong> SHA-256 で導出</td>
+                <td><code>services/device_id.py</code>。生の GUID は端末外へ出ない</td></tr>
+            <tr><td>4</td><td><strong>テレメトリ送信前にマスクする</strong>（パス・UNC・URL クエリ・メール・
+                32 文字以上のトークン風文字列・環境変数由来のユーザー名）</td>
+                <td><code>services/log_payloads.py</code> の <code>_MASK_RULES</code> /
+                    <code>_mask_user_name</code>。送信本文に生のファイル名・パスは載らない</td></tr>
+            <tr><td>5</td><td><strong>ログにトークンを出さない</strong></td>
+                <td>実ログを検索し、<code>access_token</code> / <code>Bearer</code> / JWT 本体の出力 0 件</td></tr>
+            <tr><td>6</td><td>透かし・ポイント消費の判断を<strong>サーバーの応答だけで決める</strong>（残高から推測しない）</td>
+                <td><code>services/points.py</code>。クライアント側の計算を信じる作りになっていない</td></tr>
+            <tr><td>7</td><td>ビルド時に<strong>機械的な安全柵</strong>がある
+                （開発機パス・<code>client_secret</code> でビルドを止め、API 接続先を空へ落とす）</td>
+                <td><code>main_window.spec</code>。接続先の安全柵は N1 の是正で追加した</td></tr>
+            <tr><td>8</td><td>通信は全て HTTPS、<code>certifi</code> を同梱</td>
+                <td><code>collect_data_files('certifi')</code></td></tr>
+            <tr><td>9</td><td>UPX を使わない（AV 誤検知を避ける）</td>
+                <td><code>spec</code> の <code>upx=False</code></td></tr>
+            <tr><td>10</td><td>ライセンス表記を同梱し、不足を機械で確認できる</td>
+                <td><code>tools/collect_licenses.py --check</code> が 76 件・不足 0。
+                    <code>--scan-bundle</code> も指摘なし</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="order">
+    <h2>7. 対応の順序（提案）</h2>
+    <table>
+        <thead><tr><th>段</th><th>対象</th><th>内容</th><th>目安</th></tr></thead>
+        <tbody>
+            <tr><td>—</td><td><span class="badge id">N1</span></td>
+                <td><strong>完了（2026-11-07）。</strong>接続先を <code>config._DEFAULT_BASE_URL</code> 1 箇所へ集約し、
+                    環境変数での上書きと <code>spec</code> の安全柵を追加</td>
+                <td><span class="badge fixed">済</span></td></tr>
+            <tr><td>—</td><td><span class="badge id">S1</span></td>
+                <td><strong>完了（2026-11-07）。</strong>ハッシュ検証・URL 検証・専用一時フォルダ・タイムアウトを実装し、
+                    リリース手順へハッシュ添付を追加</td>
+                <td><span class="badge fixed">済</span></td></tr>
+            <tr><td>—</td><td><span class="badge id">S4</span></td>
+                <td><strong>完了（2026-11-07）。</strong>DPAPI 化と既存平文からの移行を実装</td>
+                <td><span class="badge fixed">済</span></td></tr>
+            <tr><td><strong>2</strong></td><td><span class="badge id">S3</span></td>
+                <td>実行ファイルパスの解決を「同梱 or 実在する絶対パス」に限定</td><td>小</td></tr>
+            <tr><td>—</td><td><span class="badge id">N2</span></td>
+                <td><strong>完了（2026-11-07）。</strong>サブスク判定を DPAPI 化し、既定を 72 → 24 時間へ（旧既定の移行つき）</td>
+                <td><span class="badge fixed">済</span></td></tr>
+            <tr><td><strong>3</strong></td><td><span class="badge id">S5</span></td>
+                <td>relay を POST 化し、<code>Host</code> 検証と <code>no-store</code> を追加</td><td>小</td></tr>
+            <tr><td>—</td><td><span class="badge id">S6</span></td>
+                <td><strong>完了（2026-11-07）。</strong><code>torch</code> / <code>torchaudio</code> /
+                    <code>transformers</code> を除外し、<strong>663MB 削減</strong>（1.5GB → 837MB）。
+                    音声認識の実走行まで確認</td>
+                <td><span class="badge fixed">済</span></td></tr>
+            <tr class="row-high"><td><strong>4</strong></td><td><span class="badge id">S2</span></td>
+                <td><strong>コード署名の導入（証明書調達）。</strong>土台（<code>.iss</code> の <code>/DSIGN</code>・手順書）は
+                    整備済みで、残るのは証明書そのもの。実現後に S1 へ署名検証を重ねる</td><td>大</td></tr>
+            <tr><td><strong>4</strong></td><td><span class="badge id">S2-2/3</span></td>
+                <td>管理者インストールを選べるようにする（<code>PrivilegesRequired=dialog</code>）。
+                    <strong><code>setting.json</code> の置き場所を <code>%LOCALAPPDATA%</code> へ移す改修とセット</strong>。
+                    既存設定の移行とインストーラの退避・復元の見直しを伴うため、着手するなら設計から</td><td>中〜大</td></tr>
+            <tr><td>—</td><td><span class="badge id">N3</span> <span class="badge id">N4</span> <span class="badge id">N5</span></td>
+                <td>記録のみ。N3・N4 はサーバー側で担保する</td><td>—</td></tr>
+        </tbody>
+    </table>
+    <p class="note ok"><strong>2026-11-07 に 5 件を是正した</strong>（N1 / S1 / S4 / N2 / S6）。
+    残っているのは 3 件である。</p>
+    <table>
+        <thead><tr><th>残り</th><th>内容</th><th>重さ</th></tr></thead>
+        <tbody>
+            <tr><td><span class="badge id">S3</span></td>
+                <td>実行ファイルパスの解決を「同梱 or 実在する絶対パス」に限定</td><td>小</td></tr>
+            <tr><td><span class="badge id">S5</span></td>
+                <td>relay を POST 化し、<code>Host</code> 検証と <code>no-store</code> を追加</td><td>小</td></tr>
+            <tr class="row-high"><td><span class="badge id">S2</span></td>
+                <td>コード署名。<strong>証明書の調達が前提で、実装では進められない</strong></td><td>大</td></tr>
+        </tbody>
+    </table>
+    <p class="note danger">S3 と S5 は小さく、次の着手先として妥当である。
+    S2 は<strong>証明書を買うかどうかの判断だけが残っている</strong>状態で、
+    これが片付かない限り「インストール済みのファイルを後から差し替える」経路は開いたままになる。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="limit">
+    <h2>8. 本書の限界</h2>
+    <ul>
+        <li><strong>サーバー側（<code>StretheusAPI</code>）を点検していない。</strong>
+            本書は「クライアントから何が見えるか」までである。§5 の N4 で挙げたエンドポイントが
+            実際に守られているかは、別リポジトリ側で確認が要る。特に <code>/api/points</code> と
+            <code>/api/billing/*</code> が<strong>クライアントの申告を信じていないこと</strong>を確かめること</li>
+        <li><strong>動的解析・侵入テスト・マルウェアスキャンは行っていない。</strong>
+            静的な読み取りと、既存のローカル保存データの保護状態の実測のみである</li>
+        <li><strong>依存パッケージの CVE 照合をしていない。</strong>
+            §4 の S6 は同梱の有無と容量の話であり、脆弱性の有無を示すものではない</li>
+        <li><strong>zip 化・インストーラ生成・クリーン PC での挙動確認をしていない。</strong>
+            対象は <code>src/dist/Stretheus/</code> である</li>
+        <li><strong>本書は v1.8.2 のスナップショットである。</strong>
+            同梱物・既定値・更新経路は版ごとに変わるため、件数・サイズ・パスをそのまま後の版へ引用してはならない</li>
+        <li>各対策のコード片は<strong>方針を示すためのもの</strong>で、そのままの動作確認はしていない。
+            実装時は本書をもとに設計・テストを行うこと</li>
+    </ul>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    sec2 — リリースビルド成果物のリバースエンジニアリング点検 / 対象 v1.8.2 / 2026-11-07<br>
+    文章の正は <code>docs/security/sec2.md</code>。本書は版を固定したスナップショットである。
+</footer>
+
+</body>
+</html>

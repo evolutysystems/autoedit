@@ -49,6 +49,8 @@ GUI のメイン画面は `src/gui/main_window.py` の `MainWindow`（入力動�
 | CUDA ランタイム（cuBLAS/cuDNN/cudart/nvrtc） | **GPU 実行時**に ctranslate2 が動的ロード | pip wheel（`nvidia-*-cu12`。GPU 同梱配布時のみ。§3.5） |
 | FFmpeg / ffprobe | 無音カット・焼き込み・結合・尺取得 | 外部バイナリ（pip 不可） |
 | PyInstaller | パッケージング（ビルド時のみ） | pip |
+| torch / torchaudio | 話者照合（`speaker_filter.py` で**遅延 import**） | pip（**配布物には同梱しない**。`main_window.spec` の `excludes` で外している / sec2 S6）。この機能は実測で不成立・既定 `off` のため、凍結配布では素通りする |
+| transformers ほか | **使っていない**（`faster-whisper` の conversion extra などが推移的に引くだけ） | 同上。`excludes` で外す |
 
 ### 2.2 依存の固定（推奨）
 
@@ -369,13 +371,22 @@ Stretheus/                      ← これを zip 化して配布
 - [ ] GPU 搭載PCで CUDA 実行が**同梱ランタイム**で動作する（§3.5）。
 - [ ] CUDA 未整備／古いドライバ／非 NVIDIA のPCで、音声認識が**CPU へ自動フォールバックして完走**する（対策B・§3.5）。
 - [ ] 設定変更→保存→再起動で保持される（onedir 前提。§3.3 の制約を確認）。
-- [ ] **`setting.json` の `api.base_url` が配布先の接続先になっている**（ver5 resolve.md §9-5）。
-      開発中は dev（`https://stretheusapi-dev.azurewebsites.net`）を指している。本番 API を
-      デプロイするまでは dev のままで配る（prod は未デプロイ）。
-      接続先を切り替えるときは **3 か所セット**で直す（`StretheusPlan/plan.md` §7.8.4）。
-      `setting.json`（新規インストール）／`settings_window.DEFAULT_SETTINGS`（既定）／
-      `_normalize_legacy_values`（**既存の利用者**。更新インストールでは旧 `setting.json` が
-      復元され既存値が温存されるため、ここを足さないと旧接続先のまま残る）。
+- [ ] **同梱される `setting.json` の `api.base_url` が空である**（sec2 N1）。
+      接続先は `src/services/config.py` の `_DEFAULT_BASE_URL` **1 箇所**で決まる仕組みに
+      変わった（2026-11-07）。`main_window.spec` が同梱時に空へ落とすため通常は手当て不要。
+      ビルド後の確認:
+      `python -c "import json;print(repr(json.load(open(r'src/dist/Stretheus/_internal/src/settings/setting.json',encoding='utf-8-sig'))['api']['base_url']))"`
+      （`''` が出れば正しい。URL が出たら spec の空へ落とす処理が効いていない）
+- [ ] **`config._DEFAULT_BASE_URL` が配布先の接続先になっている**。
+      現在は dev（`https://stretheusapi-dev.azurewebsites.net`）が実運用を担う（prod は未デプロイ）。
+      切り替えるときは **2 か所**で済む（旧 3 か所手順は `StretheusPlan/plan.md` §7.8.4。
+      同項は autoedit 側の変更に追従していないため、こちらを正とする）。
+      ① `services/config.py` の `_DEFAULT_BASE_URL` を新しい URL へ。
+      ② `settings_window._MANAGED_API_BASE_URLS` へ**切り替え前の URL を足す**
+      （**既存の利用者**。更新インストールでは旧 `setting.json` が復元され既存値が
+      温存されるため、ここを足さないと旧接続先のまま残る）。
+- [ ] 開発端末で別の環境を試すときは環境変数 `STRETHEUS_API_BASE_URL` を使う
+      （`setting.json` へ書くと git と配布物の両方へ載る）。凍結配布では無視される。
 - [ ] **同梱される `setting.json` に開発端末のローカルパスが載っていない**（`StretheusPlan/security.md` F5）。
       `main_window.spec` が `general` の 4 つのパスを空へ落とした複製を同梱し、想定外の場所に
       絶対パスが残っていればビルドを止める。ビルド後の確認:
@@ -397,14 +408,50 @@ Stretheus/                      ← これを zip 化して配布
 - PyInstaller 製 exe は **AV 誤検知**が起きやすい。`upx=False`（§4）、不要な hiddenimports を避ける、
   署名する、で低減する。誤検知が出たら各ベンダーへ誤検知報告を行う。
 
-### 7.2 コード署名（推奨）
+### 7.2 コード署名（**未実施**。sec2 S2 の本丸）
 
-- **Authenticode 証明書**（OV/EV）で `Stretheus.exe` と主要 dll に署名すると SmartScreen 評価が改善する
-  （EV はより強力）。
-  ```powershell
-  signtool sign /fd SHA256 /tr http://timestamp.example /td SHA256 /a "dist/Stretheus/Stretheus.exe"
-  ```
-- 署名は外部公開を伴う作業のため、証明書の管理・運用ポリシーに従って実施する。
+**現状は未署名である。** インストール先が `%LOCALAPPDATA%\Programs\Stretheus`（ユーザー書込可能）
+のため、`Stretheus.exe` や `_internal\*.dll` を同一ユーザー権限で差し替えられるが、
+**署名が無いので差し替えられても気づけない**（sec2 S2）。これを塞げるのは署名だけである。
+
+証明書を調達したら、以下の手順で署名する。**証明書が無い間はビルド手順を変えなくてよい**
+（`.iss` の署名設定は `/DSIGN` を渡したときだけ有効になる）。
+
+**① signtool を Inno Setup へ登録する**（初回のみ）
+
+Inno Setup Compiler の `[Tools]` → `[Configure Sign Tools...]` で、名前 `stretheus` として登録する。
+
+```
+"C:\Program Files (x86)\Windows Kits\10\bin\<ver>\x64\signtool.exe" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a $f
+```
+
+`$f` は Inno Setup が署名対象のパスへ置き換える。`/tr`（タイムスタンプ）は**必須**で、
+これが無いと**証明書の期限が切れた時点で既存の配布物まで無効になる**。
+
+**② 本体 exe に署名する**（zip 化の前。§5.2.1 のライセンスコピーと同じ段）
+
+```powershell
+$sign = "C:\Program Files (x86)\Windows Kits\10\bin\<ver>\x64\signtool.exe"
+& $sign sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a "src/dist/Stretheus/Stretheus.exe"
+& $sign verify /pa "src/dist/Stretheus/Stretheus.exe"
+```
+
+**③ インストーラをビルドする**（`/DSIGN` を付けると `.iss` の `SignTool` が効く）
+
+```powershell
+ISCC.exe /DSIGN installer\AutoEdit.iss
+```
+
+**④ 署名を確認する**
+
+```powershell
+Get-AuthenticodeSignature "installer/Output/StretheusSetup.exe" | Format-List Status, SignerCertificate
+# Status が Valid であること (NotSigned なら /DSIGN の渡し忘れ)
+```
+
+> 署名を導入したら、**自動更新にも署名検証を重ねる**こと（sec1 S1 の案 B）。
+> 現在の更新は SHA-256 で検証しているが（§8.1）、ハッシュも GitHub 経由で取るため
+> **配布元アカウントの侵害には無力**である。それを塞げるのは署名の検証だけである。
 
 ### 7.3 配布パッケージとチェックサム
 
@@ -430,6 +477,44 @@ Stretheus/                      ← これを zip 化して配布
 - セマンティックバージョニング（`vMAJOR.MINOR.PATCH`）を推奨。zip 名・exe バージョン情報・配布ページで一致させる。
 - リリースノートに記載する項目: 新機能/修正、動作要件（OS/FFmpeg/ネット要否）、既知の不具合、SHA-256。
 - 配布ファイル名例: `Stretheus-v1.0.0-win64.zip`。
+
+### 8.1 インストーラのハッシュを必ず添える（**必須**。sec2 S1）
+
+**自動更新はハッシュが無いリリースへは更新しない。** `src/utils/updater.py` は
+取得したインストーラの SHA-256 を照合し、一致しないものは実行しない。
+期待ハッシュは次の順で探す。
+
+| # | 出どころ | 備考 |
+| --- | --- | --- |
+| 1 | GitHub API が返すアセットの `digest`（`sha256:<hex>`） | GitHub が自動で付ける。**この場合は何もしなくてよい** |
+| 2 | `StretheusSetup.exe.sha256` アセット | 1 が無い場合に使う。**リリースへ一緒に上げる** |
+
+どちらも無いと、利用者のアプリは「更新あり」を**無視して何も言わずに見送る**
+（ログに `WARNING` が残る）。**利用者は更新に気づけない**ため、添え忘れは実害になる。
+
+```powershell
+# インストーラをビルドした後、リリースへ上げる前に作る
+$exe = "installer/Output/StretheusSetup.exe"
+(Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() + "  StretheusSetup.exe" |
+    Out-File -Encoding ascii "installer/Output/StretheusSetup.exe.sha256"
+
+# アセットを 2 つとも上げる
+gh release upload v1.8.3 $exe "installer/Output/StretheusSetup.exe.sha256"
+```
+
+上げ終えたら、**API から digest かアセットが見えることを確かめる**。
+
+```powershell
+gh api repos/evolutysystems/autoedit/releases/latest --jq '.assets[] | {name, digest}'
+```
+
+> このハッシュは GitHub 経由で取るため、**配布元アカウントの侵害には無力**である
+> （経路上の改ざん・取り違え・TOCTOU の検知が目的）。
+> 配布元の侵害まで塞ぐにはコード署名が要る（§7.2）。
+>
+> **移行について**: v1.8.2 以前のアプリは検証を持たない古い updater で動いているため、
+> 次のリリースまではハッシュの有無にかかわらず従来どおり更新される。
+> 検証が効くのは「この仕組みを載せた版から、さらに次の版へ」の更新からである。
 
 ---
 

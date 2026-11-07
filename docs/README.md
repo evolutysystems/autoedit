@@ -99,10 +99,13 @@
 | `quality/qua2.md` + `resolve2.md` / `resolve3.md` | 書き出し速度の調査と工程計測の導入 |
 | `quality/resolve1.html` / `resolve1.css` | 上記の視覚版 |
 | `security/sec1.md` | **v1.4.6 時点**のリリース成果物のセキュリティ点検 (指摘と対策案) |
+| `security/sec2.md` | **v1.8.2 時点**のリリース成果物のリバースエンジニアリング点検 (配布物から読み取れる情報の実測 + sec1 指摘の現況 + 同日の是正の記録) |
+| `security/sec3.md` | **是正後 (2026-11-07) の配布物**の再点検 (是正が効いているかの確認 + 新規 6 件 T1〜T6) |
+| `security/sec2.html` / `sec3.html` / `security.css` | 上記 2 件の視覚版 (CSS は共用) |
 | `reduce/Nouse.md` | **2026-08-19 時点**の未使用コード棚卸し (調査のみ・削除していない) |
 | `analyze/an.md` | Stretheus API 連携の検討依頼 (成果物は別リポジトリ `StretheusAPI` 側) |
 
-> `security/sec1.md` と `reduce/Nouse.md` は**版を固定したスナップショット**である。
+> `security/sec1.md` `security/sec2.md` `security/sec3.md` と `reduce/Nouse.md` は**版を固定したスナップショット**である。
 > 現行版の状態を知りたい場合は再調査が必要で、本文の件数や行数をそのまま引用してはならない。
 
 ---

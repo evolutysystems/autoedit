@@ -1373,8 +1373,12 @@ DEFAULT_SETTINGS = {
     #
     # 本番 (https://stretheusapi.azurewebsites.net) は未デプロイのため dev を指す。
     # 本番へデプロイする際にここを戻す (ver5 resolve §9-5 / docs/HowToRelease.md)。
+    # Stretheus API の接続先。既定は空で、src/services/config.py の
+    # _DEFAULT_BASE_URL (現運用の環境) へ倒れる。接続先の出どころをそこ 1 箇所へ
+    # 集めるため、ここにも配布 setting.json にも URL を書かない (sec2 N1)。
+    # 別の環境を指したいときは環境変数 STRETHEUS_API_BASE_URL を使う。
     "api": {
-        "base_url": "https://stretheusapi-dev.azurewebsites.net",
+        "base_url": "",
         "timeout_sec": 15,
     },
     # 透かしの見え方 (ver5 resolve §7)。
@@ -1391,8 +1395,10 @@ DEFAULT_SETTINGS = {
     },
     # ポイント制のクライアント側の挙動 (ver5 resolve §7)。設定画面には出さない。
     "points": {
-        # オフライン時にサブスク判定を信用する時間 (ver5 resolve §3.3)
-        "subscription_cache_hours": 72,
+        # オフライン時にサブスク判定を信用する時間 (ver5 resolve §3.3)。
+        # sec2 N2 で 72 → 24 へ短縮した (オフライン救済はローカルの値を信じる
+        # 仕組みのため、長いほど悪用の窓が広がる)。
+        "subscription_cache_hours": 24,
         # 残高インジケータの更新間隔 (秒)
         "balance_refresh_sec": 300,
         # サブスク導線 (設定画面のアカウントタブ) で開く URL。
@@ -1609,7 +1615,67 @@ def _normalize_legacy_values(merged):
         changed = True
     if _migrate_volume_metric(merged):
         changed = True
+    if _migrate_api_base_url(merged):
+        changed = True
+    if _migrate_subscription_cache_hours(merged):
+        changed = True
     return changed
+
+
+# オフライン救済の窓を旧既定 (72 時間) から現行既定へ詰める (sec2 N2)。
+#
+# 更新インストールでは旧 setting.json が復元され、_merge_with_defaults は既存値を
+# 温存するため、既定を縮めただけでは**既にインストールしている利用者に効かない**
+# (接続先と同じ構図 / _MANAGED_API_BASE_URLS)。
+# 旧既定そのものの値だけを現行既定へ寄せ、利用者が自分で変えた値は尊重する。
+_LEGACY_SUBSCRIPTION_CACHE_HOURS = 72
+
+
+def _migrate_subscription_cache_hours(merged):
+    points = merged.get("points")
+    if not isinstance(points, dict):
+        return False
+    value = points.get("subscription_cache_hours")
+    # bool は int の仲間なので弾く (True が 1 として通らないようにする)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if value != _LEGACY_SUBSCRIPTION_CACHE_HOURS:
+        return False
+    points["subscription_cache_hours"] = DEFAULT_SETTINGS["points"]["subscription_cache_hours"]
+    return True
+
+
+# 過去に既定として配った接続先を空へ寄せ、以後は既定へ追従させる (sec2 N1)。
+#
+# 背景: 接続先は長らく setting.json・DEFAULT_SETTINGS・ここの 3 か所で決まっており、
+#   1 か所だけ直しても向き先が変わらなかった
+#   (StretheusPlan/plan.md §7.8.4「最も見落としやすい」)。
+#   現在は services/config.py の _DEFAULT_BASE_URL 1 箇所へ集約したが、
+#   **利用者の端末に保存済みの値だけは残る**。更新インストールではインストーラが
+#   旧 setting.json を復元し、_merge_with_defaults は既存値を温存するためである。
+#
+#   そこで「アプリが既定として配ったことのある URL」が保存されていたら空へ戻し、
+#   config.py の既定に従わせる。これで**次に接続先を変えるときは config.py の
+#   1 行を直すだけ**で既存の利用者にも行き渡る。
+#
+#   接続先を切り替えるときは、切り替え前の URL をここへ足すこと。
+#   利用者が独自の接続先を入れている場合は尊重する (上書きしない)。
+_MANAGED_API_BASE_URLS = (
+    "https://stretheusapi-dev.azurewebsites.net",
+)
+
+
+def _migrate_api_base_url(merged):
+    api = merged.get("api")
+    if not isinstance(api, dict):
+        return False
+    value = api.get("base_url")
+    if not isinstance(value, str) or not value.strip():
+        return False
+    if value.strip().rstrip("/").lower() not in _MANAGED_API_BASE_URLS:
+        return False
+    api["base_url"] = ""
+    return True
 
 
 # コメント役割の先頭ラベル「コメント：」を撤去する (ver3 resolve11 C3 / §8-1)

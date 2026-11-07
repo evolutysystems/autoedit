@@ -657,7 +657,7 @@
         }
     },
     "api": {
-        "base_url": "https://stretheusapi-dev.azurewebsites.net",
+        "base_url": "",
         "timeout_sec": 15
     },
     "watermark": {
@@ -667,7 +667,7 @@
         "margin_ratio": 0.02
     },
     "points": {
-        "subscription_cache_hours": 72,
+        "subscription_cache_hours": 24,
         "balance_refresh_sec": 300,
         "subscribe_url": ""
     },

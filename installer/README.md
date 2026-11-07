@@ -105,6 +105,27 @@ GitHub Releases は **1ファイル 2GiB 上限**。CPU 版でも zip が 2GiB �
 # → installer\Output\StretheusSetup.exe が生成される
 ```
 
+コード署名の証明書がある場合は `/DSIGN` を付ける（手順は `docs/HowToRelease.md §7.2`）。
+**証明書が無い間は付けない**（付けると署名ツール未登録でコンパイルが失敗する）。
+
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DSIGN "installer\AutoEdit.iss"
+```
+
+### 3.1 インストーラーのハッシュを作る（**必須**。sec2 S1）
+
+自動更新は `StretheusSetup.exe` の SHA-256 を照合し、**一致しなければ実行しない**。
+GitHub API がアセットの `digest` を返さない場合に備え、ハッシュを併せて上げる。
+
+```powershell
+$exe = "installer\Output\StretheusSetup.exe"
+(Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() + "  StretheusSetup.exe" |
+    Out-File -Encoding ascii "installer\Output\StretheusSetup.exe.sha256"
+```
+
+> これを忘れると、利用者のアプリは新版を**見送って何も言わない**（ログに `WARNING`）。
+> 「更新されない」という報告が来たらまずここを疑うこと。
+
 ---
 
 ## 4. GitHub Releases への公開
@@ -113,9 +134,10 @@ GitHub Releases は **1ファイル 2GiB 上限**。CPU 版でも zip が 2GiB �
 （`D:/develop/homepage/doc/error/resolve.md §3` 準拠）。
 
 ```powershell
-# 単一 payload の場合
+# 単一 payload の場合 (.sha256 も必ず添える / §3.1)
 gh release create v1.0.0 `
   "installer\Output\StretheusSetup.exe" `
+  "installer\Output\StretheusSetup.exe.sha256" `
   "$env:TEMP\Stretheus-v1.0.0.zip" `
   --repo evolutysystems/homepage `
   --title "Stretheus v1.0.0" `
@@ -160,6 +182,9 @@ downloadUrl:
 - [ ] アプリで実行 → 指定した出力先に動画が出力される
 - [ ] アンインストールで `{app}` が削除され、**出力先フォルダ（動画）は残る**
 - [ ]（`PayloadSHA256` 設定時）破損ファイルで「ハッシュ不一致」になり中止される
+- [ ] **`StretheusSetup.exe.sha256` をリリースへ上げた**（§3.1。無いと利用者が更新できない）
+- [ ]（署名した場合）`Get-AuthenticodeSignature` が `Valid` を返す。
+      アンインストーラにも署名が付いている（`SignedUninstaller=yes`）
 
 ---
 

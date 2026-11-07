@@ -382,13 +382,20 @@ class PointsServiceTest(unittest.TestCase):
 
     # ---- ヘルパー ---------------------------------------------------------
 
+    # サブスク判定のキャッシュは DPAPI で保護されている (sec2 N2)。
+    # テストからも同じ経路で読み書きする (平文で触ると実装と形式がずれる)。
     def _read_state(self):
-        with open(os.path.join(self._dir, "points.json"), encoding="utf-8") as f:
-            return json.load(f)
+        from src.services.auth_store import unprotect
+        with open(os.path.join(self._dir, "points.json"), "rb") as f:
+            plain = unprotect(f.read())
+        self.assertIsNotNone(plain, "サブスク判定が DPAPI で保存されていない")
+        return json.loads(plain.decode("utf-8"))
 
     def _write_state(self, state):
-        with open(os.path.join(self._dir, "points.json"), "w", encoding="utf-8") as f:
-            json.dump(state, f)
+        from src.services.auth_store import protect
+        data = protect(json.dumps(state, ensure_ascii=False).encode("utf-8"))
+        with open(os.path.join(self._dir, "points.json"), "wb") as f:
+            f.write(data)
 
     def _read_queue(self):
         path = os.path.join(self._dir, "pending_commits.json")

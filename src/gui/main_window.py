@@ -563,23 +563,26 @@ class UpdateDownloadWorker(QThread):
     finished_ok = Signal(str)    # DL 済みインストーラのパス
     failed = Signal(str)
 
-    def __init__(self, url, parent=None):
+    # sha256 は check_latest が返す期待ハッシュ (sec2 S1)。
+    # これと一致しない取得物は download_installer が例外にする。
+    def __init__(self, url, sha256, parent=None):
         super().__init__(parent)
         self._url = url
+        self._sha256 = sha256
 
     def run(self):
         try:
-            path = updater.download_installer(self._url, on_progress=self._on_progress)
+            path = updater.download_installer(
+                self._url, self._sha256, on_progress=self._on_progress)
             self.finished_ok.emit(path)
         except Exception as e:  # noqa: BLE001 (DL 失敗は GUI へ通知)
             _logger.exception("更新のダウンロードに失敗")
             self.failed.emit(str(e))
 
-    # urlretrieve の reporthook: (block_num, block_size, total_size)
-    def _on_progress(self, block_num, block_size, total_size):
-        if total_size and total_size > 0:
-            downloaded = block_num * block_size
-            percent = int(min(downloaded * 100 // total_size, 100))
+    # download_installer の進捗: (取得済みバイト数, 総バイト数。不明なら 0)
+    def _on_progress(self, done_bytes, total_bytes):
+        if total_bytes and total_bytes > 0:
+            percent = int(min(done_bytes * 100 // total_bytes, 100))
             self.progress.emit(percent)
         else:
             self.progress.emit(-1)  # 総サイズ不明 → 不確定表示
@@ -1511,7 +1514,7 @@ class MainWindow(QWidget):
         self._update_progress.show()
 
         self._update_download_worker = UpdateDownloadWorker(
-            latest["installer_url"], parent=self
+            latest["installer_url"], latest.get("sha256"), parent=self
         )
         self._update_download_worker.progress.connect(self._on_update_progress)
         self._update_download_worker.finished_ok.connect(self._on_update_downloaded)

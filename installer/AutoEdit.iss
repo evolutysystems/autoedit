@@ -62,6 +62,18 @@ OutputBaseFilename=StretheusSetup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; コード署名 (sec2 S2)。
+;  証明書を持っていないビルドでも通るよう、既定では署名しない。
+;  署名するときは ISCC へ /DSIGN を渡す:
+;    ISCC.exe /DSIGN installer\AutoEdit.iss
+;  あらかじめ Inno Setup の [Tools]-[Configure Sign Tools] に名前 "stretheus" で
+;  signtool のコマンドラインを登録しておくこと (手順は HowToRelease §7.2)。
+;  SignedUninstaller はアンインストーラにも同じ署名を付ける
+;  (未署名のままだと削除時にだけ SmartScreen が出るため)。
+#ifdef SIGN
+SignTool=stretheus
+SignedUninstaller=yes
+#endif
 ; アンインストーラ
 Uninstallable=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}

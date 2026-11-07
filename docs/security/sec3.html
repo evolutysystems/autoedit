@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sec3 — 是正後のリリースビルド再点検</title>
+<link rel="stylesheet" href="security.css">
+</head>
+<body>
+<header class="site-header">
+    <h1>sec3 — 是正後のリリースビルド再点検</h1>
+    <p class="subtitle">対象 v1.8.2（2026-11-07 是正版）/ 配布物 837MB / 指摘と対策案（修正はレビュー後）</p>
+</header>
+
+<nav class="toc">
+    <h2>目次</h2>
+    <ol>
+        <li><a href="#about">本書の位置づけ</a></li>
+        <li><a href="#summary">総評と指摘一覧</a></li>
+        <li><a href="#verified">sec2 の是正が効いているかの確認</a></li>
+        <li><a href="#new">新規の指摘</a></li>
+        <li><a href="#carried">sec2 から持ち越した指摘</a></li>
+        <li><a href="#state">配布物の現況（実測）</a></li>
+        <li><a href="#good">守れている点</a></li>
+        <li><a href="#order">対応の順序（提案）</a></li>
+        <li><a href="#limit">本書の限界</a></li>
+    </ol>
+    <p class="note">本ページは <code>sec3.md</code> の視覚版である。文章の正は <code>sec3.md</code>。
+    本書は <strong>2026-11-07 時点のスナップショット</strong>であり、現行仕様の根拠として
+    単独で引用してはならない（<code>docs/README.md</code> 参照）。</p>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="about">
+    <h2>0. 本書の位置づけ</h2>
+
+    <div class="split">
+        <div class="panel">
+            <h3>sec2 との関係</h3>
+            <ul>
+                <li><strong>sec2</strong> … v1.8.2 の点検と、同日に入れた是正
+                    （N1 / S1 / S4 / N2 / S6）の記録</li>
+                <li><strong>本書</strong> … その是正が配布物に効いているかの確認と、改めての点検</li>
+                <li>sec2 で「未対応」として残した指摘は <a href="#carried">§4</a> に持ち越す</li>
+            </ul>
+        </div>
+        <div class="panel">
+            <h3>調査方法</h3>
+            <p>sec2 §2 と同じ（exe の CArchive 展開 → PYZ の marshal 復元 → 文字列と参照名の走査、
+               配布物全体の文字列検索、ローカル保存データの実測）。加えて本書では
+               <strong>DPAPI の保護強度を実際に復号して確かめた</strong>
+               （<a href="#new">§3 T2</a>）。</p>
+        </div>
+    </div>
+
+    <h3>対象</h3>
+    <div class="card-grid">
+        <div class="card"><h3>版</h3><p>v1.8.2 是正版</p></div>
+        <div class="card"><h3>ビルド日</h3><p>2026-11-07</p></div>
+        <div class="card"><h3>Stretheus.exe</h3><p>12.8 MB</p></div>
+        <div class="card"><h3>配布フォルダ</h3><p>837 MB</p></div>
+        <div class="card"><h3>licenses/</h3><p>76 件・不足 0</p></div>
+    </div>
+
+    <h3>未実施（<a href="#limit">§8</a> に再掲）</h3>
+    <ul>
+        <li>zip 化・Inno Setup によるインストーラ生成</li>
+        <li>動的解析・ペネトレーションテスト・マルウェアスキャン</li>
+        <li>依存パッケージの CVE 照合（§3 T3 で版の古さに触れるが、<strong>CVE の断定はしていない</strong>）</li>
+        <li>クリーン PC での挙動確認</li>
+        <li>サーバー側（StretheusAPI）の認可の検証</li>
+    </ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="summary">
+    <h2>1. 総評と指摘一覧</h2>
+
+    <p><strong>sec2 の是正はすべて配布物に効いている</strong>（<a href="#verified">§2</a>）。
+       配布サイズは 1.5GB → 837MB、exe 内のモジュール数は 8,259 → 1,802 まで落ち、
+       解析して得られる情報も減った。
+       <strong>開発機の痕跡・秘密情報が配布物に無い</strong>という状態も保たれている。</p>
+
+    <p>そのうえで、本書では新たに 6 件を挙げる。<strong>性質が 2 つに分かれる。</strong></p>
+
+    <div class="split">
+        <div class="panel leak">
+            <h3>1. アプリを消しても情報が残る</h3>
+            <p>アンインストールは <code>archive_work</code> しか消さないため、
+               <strong>Stretheus の JWT（<code>auth.dat</code>）と編集したファイルのパス一覧
+               （<code>project_ids.json</code>）が端末に残り続ける</strong>（T1）。
+               本書で最も実害に近い。</p>
+        </div>
+        <div class="panel leak">
+            <h3>2. 防御の「効く範囲」が狭い</h3>
+            <p>S4・N2 で入れた DPAPI は、<strong>同じ Windows ユーザーで動くプロセスなら
+               鍵を知らなくても復号できる</strong>（実際に復号して確かめた / T2）。
+               S1 の検証も、検証から起動までの隙間は塞げていない（T5）。
+               どちらも「平文よりはるかにまし」だが、<strong>万能ではない</strong>。</p>
+        </div>
+    </div>
+
+    <h3>指摘一覧</h3>
+    <table>
+        <thead>
+            <tr><th>#</th><th>指摘</th><th>深刻度</th><th>初出</th><th>現況</th></tr>
+        </thead>
+        <tbody>
+            <tr class="row-high">
+                <td><span class="badge id">T1</span></td>
+                <td>アンインストールで <strong>JWT と利用者データが残る</strong></td>
+                <td><span class="badge high">中</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">T2</span></td>
+                <td>DPAPI に<strong>エントロピーを与えていない</strong>（S4 / N2 の限界）</td>
+                <td><span class="badge mid">中</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">T3</span></td>
+                <td>同梱 FFmpeg が <strong>full build</strong>（446MB・不要機能多数・8 か月前）</td>
+                <td><span class="badge mid">中</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">T4</span></td>
+                <td>音声認識モデルを<strong>実行時に外部から取得</strong>する</td>
+                <td><span class="badge low">低</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">T5</span></td>
+                <td>更新の<strong>検証後から起動までの差し替え余地</strong>（S1 の残存）</td>
+                <td><span class="badge low">低</span></td><td>本書</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">T6</span></td>
+                <td>利用者データ（チャット・タイムライン・パス一覧）が平文</td>
+                <td><span class="badge info">情報</span></td><td>本書</td>
+                <td>設計上は妥当</td>
+            </tr>
+            <tr class="row-high">
+                <td><span class="badge id">S2</span></td>
+                <td>インストール先がユーザー書込可能／<strong>実行ファイルが未署名</strong></td>
+                <td><span class="badge high">高</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span>証明書待ち</td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S3</span></td>
+                <td><code>setting.json</code> の値がそのまま外部プロセスとして実行される</td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S5</span></td>
+                <td>OAuth トークンがブラウザ履歴に残る</td>
+                <td><span class="badge mid">中</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S8</span></td>
+                <td>ログ出力先がカレント相対</td>
+                <td><span class="badge low">低</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">S9</span></td>
+                <td>起動時に無同意で GitHub へ通信する</td>
+                <td><span class="badge low">低</span></td><td>sec1</td>
+                <td><span class="badge open">未対応</span></td>
+            </tr>
+            <tr>
+                <td><span class="badge id">N3</span> <span class="badge id">N4</span></td>
+                <td>端末 ID の導出が決定論的／API 一覧が読める</td>
+                <td><span class="badge info">低・情報</span></td><td>sec2</td>
+                <td>記録のみ</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="verified">
+    <h2>2. sec2 の是正が効いているかの確認</h2>
+
+    <p>すべて<strong>配布物を実測して</strong>確かめた。</p>
+
+    <table>
+        <thead><tr><th>指摘</th><th>確認したこと</th><th>結果</th></tr></thead>
+        <tbody>
+            <tr><td><span class="badge id">N1</span> 接続先が 3 か所</td>
+                <td>同梱 <code>setting.json</code> の <code>api.base_url</code></td>
+                <td><span class="badge fixed">OK</span> <code>""</code>（空）。
+                    <code>config._DEFAULT_BASE_URL</code> 1 箇所へ倒れる</td></tr>
+            <tr><td><span class="badge id">S1</span> 更新が無検証</td>
+                <td>exe 内の <code>updater</code> が参照する名前</td>
+                <td><span class="badge fixed">OK</span> <code>sha256</code> / <code>mkdtemp</code> /
+                    <code>_is_allowed_url</code> / <code>hexdigest</code> をすべて確認</td></tr>
+            <tr><td><span class="badge id">S4</span> Twitch トークンが平文</td>
+                <td><code>archive_work\twitch_token.json</code></td>
+                <td><span class="badge fixed">OK</span> <strong>DPAPI blob</strong>
+                    （<code>01 00 00 00 D0 8C 9D DF…</code> / 376 bytes）</td></tr>
+            <tr><td><span class="badge id">N2</span> サブスク判定が平文</td>
+                <td><code>points.json</code> と同梱設定</td>
+                <td><span class="badge fixed">OK</span> <strong>DPAPI blob</strong>（344 bytes）。
+                    <code>subscription_cache_hours</code> は <code>24</code></td></tr>
+            <tr><td><span class="badge id">S6</span> 重量依存の同梱</td>
+                <td><code>_internal/</code> の中身</td>
+                <td><span class="badge fixed">OK</span> <code>torch</code> / <code>torchaudio</code> /
+                    <code>transformers</code> / <code>sklearn</code> / <code>scipy</code> /
+                    <code>llvmlite</code> が消えた</td></tr>
+        </tbody>
+    </table>
+
+    <p class="note ok"><strong>S4 / N2 の移行は実データで動いた。</strong>
+    sec2 執筆時点では「ダミーでしか確認していない」と断ってあったが、本書のために配布 exe を
+    起動したところ、端末に残っていた<strong>平文の <code>twitch_token.json</code> と
+    <code>points.json</code> が DPAPI blob へ置き換わった</strong>。移行経路が実際に機能することを確認できた。</p>
+
+    <h3>2.1 解析して得られる情報の減り方</h3>
+    <table>
+        <thead><tr><th>項目</th><th>sec2 時点</th><th>本書</th></tr></thead>
+        <tbody>
+            <tr><td>配布フォルダ</td><td>1.5 GB</td><td><strong>837 MB</strong></td></tr>
+            <tr><td><code>Stretheus.exe</code></td><td>66,907,990 bytes</td><td><strong>12,819,794 bytes</strong></td></tr>
+            <tr><td>PYZ の総モジュール数</td><td>8,259</td><td><strong>1,802</strong></td></tr>
+            <tr><td>うち自前モジュール</td><td>136</td><td>136（変わらず）</td></tr>
+            <tr><td>開発機の絶対パス</td><td>0 件</td><td><strong>0 件</strong>（維持）</td></tr>
+            <tr><td>平文で読める接続先</td><td><code>setting.json</code> に dev URL</td>
+                <td><strong>0 件</strong>（<code>config.py</code> の 1 箇所のみ・要 PYZ 展開）</td></tr>
+        </tbody>
+    </table>
+    <p class="note">自前モジュール 136 本が名前ごと読め、<code>dis</code> で処理を追えること自体は変わらない。
+    <strong>Python で配布する限りこれは避けられず、「クライアントに秘密を置かない」設計で対処する</strong>
+    という方針も変わらない。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="new">
+    <h2>3. 新規の指摘</h2>
+
+    <div class="finding">
+        <h3><span class="badge id">T1</span> <span class="badge high">中</span> <span class="badge open">新規</span>
+            アンインストールで JWT と利用者データが残る</h3>
+
+        <h4>該当</h4>
+<pre class="bad">; installer/AutoEdit.iss の [UninstallDelete]
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\{#MyAppName}\archive_work"
+Type: dirifempty;     Name: "{localappdata}\{#MyAppName}"</pre>
+        <p>消えるのは <code>{app}</code> と <code>archive_work</code> だけである。
+           <code>%LOCALAPPDATA%\Stretheus\</code> の直下に残るものを実測した。</p>
+        <table>
+            <thead><tr><th>残るファイル</th><th>中身</th><th>消えるべきか</th></tr></thead>
+            <tbody>
+                <tr><td><code>auth.dat</code>（984 bytes）</td>
+                    <td><strong>Stretheus の JWT</strong>（access_token / セッション期限 / ユーザー情報）</td>
+                    <td><strong>消すべき</strong></td></tr>
+                <tr><td><code>points.json</code>（344 bytes）</td><td>サブスク判定のキャッシュ</td><td>消すべき</td></tr>
+                <tr><td><code>pending_commits.json</code></td><td>ポイントの送信待ちキュー</td><td>消すべき</td></tr>
+                <tr><td><code>project_ids.json</code>（3,613 bytes）</td>
+                    <td><strong>編集したファイルの絶対パスと projectId の対応表</strong></td><td>消すべき</td></tr>
+                <tr><td><code>device.dat</code>（環境により）</td><td>端末 ID の控え</td><td>消すべき</td></tr>
+            </tbody>
+        </table>
+        <p><code>dirifempty</code> は「空なら消す」ため、これらが残る限り
+           <code>%LOCALAPPDATA%\Stretheus</code> ごと残る。</p>
+
+        <h4>何が問題か</h4>
+        <ul>
+            <li><strong>アンインストールしたのに認証情報が端末に残る。</strong>JWT はセッション期限まで有効で、
+                <code>auth.dat</code> を持ち出せば（T2 のとおり同一ユーザーなら復号できる）
+                そのアカウントとして API を叩ける</li>
+            <li><strong><code>project_ids.json</code> は「何を編集したか」の履歴</strong>である。
+                中身は絶対パスで、先頭を見ると <code>{"d:\\develop\\…</code> のように
+                <strong>利用者のファイル構成がそのまま入る</strong></li>
+            <li>中古 PC の譲渡・共用 PC・退職時の端末返却で、利用者は「消したつもり」になっている</li>
+        </ul>
+        <p class="note">sec1 は「アンインストールでトークン・設定ごと <code>{app}</code> を削除する」を
+        <strong>守れている点</strong>に挙げていた。これはデータが <code>{app}</code> にあった頃の話で、
+        <code>docs/error/fromUser/resolve.md §6-6-6</code> で <code>%LOCALAPPDATA%</code> へ移したときに
+        <strong>この前提が崩れた</strong>。<code>archive_work</code> だけは追従させたが、認証情報は取り残されている。</p>
+
+        <h4>対策</h4>
+        <p><code>[UninstallDelete]</code> へ明示する。<code>archive_work</code> を足したときと同じ形で済む。</p>
+<pre class="good">; 認証情報と利用者データもインストール先の外にあるため明示削除する (sec3 T1)。
+Type: files;          Name: "{localappdata}\{#MyAppName}\auth.dat"
+Type: files;          Name: "{localappdata}\{#MyAppName}\device.dat"
+Type: files;          Name: "{localappdata}\{#MyAppName}\points.json"
+Type: files;          Name: "{localappdata}\{#MyAppName}\pending_commits.json"
+Type: files;          Name: "{localappdata}\{#MyAppName}\project_ids.json"
+Type: filesandordirs; Name: "{localappdata}\{#MyAppName}\project_thumbs"
+Type: dirifempty;     Name: "{localappdata}\{#MyAppName}"</pre>
+        <p class="note"><strong>サーバー側のログアウトまでは行わない</strong>点に注意する。
+        ローカルの JWT を消すだけで、サーバーのセッションは期限まで残る。
+        そこまで求めるなら <code>POST /api/auth/logout</code> を叩く必要があるが、
+        オフラインのときに失敗するため「消せるものはローカルで消す」で十分と考える。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">T2</span> <span class="badge mid">中</span> <span class="badge open">新規</span>
+            DPAPI にエントロピーを与えていない（S4・N2 の限界）</h3>
+
+        <h4>該当</h4>
+<pre class="bad"># src/services/auth_store.py
+ok = ctypes.windll.crypt32.CryptProtectData(
+    ctypes.byref(source), _DESCRIPTION, None, None, None,
+    #                                   ^^^^ pOptionalEntropy = None
+    _CRYPTPROTECT_UI_FORBIDDEN, ctypes.byref(result))</pre>
+
+        <h4>実証</h4>
+        <p>アプリのコードを一切使わず、素の <code>ctypes</code> で <code>CryptUnprotectData</code> を
+           呼ぶだけの「第三者のツール」を書いて試した（対象は本点検で作ったダミーのみ）。</p>
+<pre class="bad">アプリと同じ方法で保護して保存した: 344 bytes
+  平文が残っていないか: True
+エントロピー無しで復号を試みた結果:
+  **復号できた** -&gt; {"access_token": "DUMMY-NOT-A-REAL-TOKEN", "scope": "user:read:broadcast"}</pre>
+
+        <h4>何が問題か</h4>
+        <p><code>CRYPTPROTECT_LOCAL_MACHINE</code> を使っていない（＝ CurrentUser スコープ）ので
+           <strong>他ユーザー・他端末では読めない</strong>。ここは正しい。
+           しかし <code>pOptionalEntropy</code> が無いため、<strong>同じ Windows ユーザーで動くプロセスなら、
+           アプリの鍵も知識も持たずに復号できる</strong>。</p>
+        <table>
+            <thead><tr><th></th><th>是正前</th><th>是正後</th></tr></thead>
+            <tbody>
+                <tr><td>ファイルを開いて読む</td><td><strong>トークンが読める</strong></td><td>暗号文で読めない</td></tr>
+                <tr class="row-high"><td>DPAPI を呼ぶツールで読む</td><td>（不要）</td><td><strong>読める</strong></td></tr>
+                <tr><td>別ユーザー・別端末へコピー</td><td>読める</td><td>読めない</td></tr>
+            </tbody>
+        </table>
+        <p>ブラウザの Cookie 窃取ツールが DPAPI blob を無差別に復号して回るのと同じ手口が通る。
+           <strong>「平文よりはるかにまし」だが、同一ユーザーのマルウェアは防げない。</strong></p>
+
+        <h4>対策</h4>
+<pre class="good"># アプリ固有のエントロピー (sec3 T2)。
+# DPAPI blob を無差別に復号して回る汎用のツールは、このバイト列を知らないため通らない。
+# **このアプリを狙った攻撃には効かない** (配布物から読めるため / sec2 §2)。
+# 用途ごとに変えると、auth.dat の暗号文を points.json へ置いても復号できなくなる。
+_ENTROPY_AUTH = b"Stretheus/auth/v1"</pre>
+        <p class="note"><strong>既存ファイルの移行が要る。</strong>エントロピーを変えると今の暗号文は
+        復号できなくなるため、「エントロピー付きで試す → 失敗したら無しで試す → 読めたら付きで書き直す」
+        の順にすること。S4 で平文から移行したときと同じ形である。<br>
+        効果は限定的で、<strong>T1（そもそも消えない）のほうが先に手を付ける価値がある</strong>。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">T3</span> <span class="badge mid">中</span> <span class="badge open">新規</span>
+            同梱 FFmpeg が full build で攻撃面が広い</h3>
+
+        <h4>該当（実測）</h4>
+<pre class="bad">_internal/ffmpeg/ffmpeg.exe    223,322,624 bytes
+_internal/ffmpeg/ffprobe.exe   223,116,800 bytes   → 合計 426MB (配布物の 51%)
+ffmpeg version 2026-03-12-git-9dc44b43b2-full_build-www.gyan.dev</pre>
+        <div class="bar-row"><span class="label">ffmpeg</span>
+            <span class="track"><span class="fill unused" style="width:100%"></span></span><span class="size">426M</span></div>
+        <div class="bar-row"><span class="label">PySide6</span>
+            <span class="track"><span class="fill" style="width:29.3%"></span></span><span class="size">125M</span></div>
+        <div class="bar-row"><span class="label">av.libs</span>
+            <span class="track"><span class="fill" style="width:15.3%"></span></span><span class="size">65M</span></div>
+        <div class="bar-row"><span class="label">ctranslate2</span>
+            <span class="track"><span class="fill" style="width:14.1%"></span></span><span class="size">60M</span></div>
+        <p class="note"><strong>配布物の過半を FFmpeg が占める</strong>
+        （S6 で torch を外した結果、相対的に最大になった）。</p>
+
+        <table>
+            <thead><tr><th>分類</th><th>有効になっている機能</th><th>アプリでの用途</th></tr></thead>
+            <tbody>
+                <tr class="row-high"><td><strong>外部コードの読み込み</strong></td>
+                    <td><code>--enable-avisynth</code>（スクリプト実行）/
+                        <code>--enable-frei0r</code>・<code>--enable-ladspa</code>（プラグイン DLL）</td>
+                    <td><strong>無し</strong></td></tr>
+                <tr class="row-high"><td><strong>ネットワーク</strong></td>
+                    <td><code>--enable-libssh</code>（SFTP）/ <code>--enable-librist</code> /
+                        <code>--enable-libsrt</code> / <code>--enable-libzmq</code></td>
+                    <td><strong>無し</strong>（入力はローカルファイルのみ）</td></tr>
+                <tr><td>光学メディア</td>
+                    <td><code>--enable-libbluray</code> / <code>--enable-libdvdnav</code> /
+                        <code>--enable-libdvdread</code> / <code>--enable-libcdio</code></td><td>無し</td></tr>
+                <tr><td>その他</td>
+                    <td><code>--enable-openal</code> / <code>--enable-libcaca</code> /
+                        <code>--enable-libgme</code> / <code>--enable-libmodplug</code> /
+                        <code>--enable-libopenmpt</code> / <code>--enable-chromaprint</code></td><td>無し</td></tr>
+            </tbody>
+        </table>
+        <p>アプリが実際に使うのは、無音検出（<code>silencedetect</code>）・音量（<code>loudnorm</code>）・
+           字幕焼き込み（<code>libass</code> / <code>freetype</code> / <code>fribidi</code> /
+           <code>harfbuzz</code>）・エンコード（<code>libx264</code> / <code>aac</code>）・
+           スケール（<code>libzimg</code>）程度である。</p>
+
+        <h4>何が問題か</h4>
+        <ul>
+            <li><strong>使わないデコーダ・プロトコル・プラグイン読み込み経路の分だけ攻撃面が広い。</strong>
+                FFmpeg の脆弱性は「細工した入力ファイルを解析させる」形で成立するものが多く、
+                本アプリは<strong>利用者が持ち込んだ動画や Twitch から取得した VOD を解析する</strong>ため、
+                入力が常に信頼できるとは限らない</li>
+            <li><strong>ビルドが 2026-03-12 で、本書の時点から約 8 か月前。</strong>その間の修正が入っていない
+                （<strong>本書では CVE の照合をしていない</strong>。版が古い事実のみを挙げる）</li>
+            <li>容量面でも、<code>essentials_build</code> に替えれば 426MB の大半を削減できる見込みがある</li>
+        </ul>
+
+        <h4>対策</h4>
+        <table>
+            <thead><tr><th>優先</th><th>対策</th><th>補足</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td><strong>新しいビルドへ更新する</strong></td>
+                    <td>まずこれ。<code>full_build</code> のままでも版を上げる価値がある</td></tr>
+                <tr><td>2</td><td><strong><code>essentials_build</code> への差し替えを検討する</strong></td>
+                    <td><code>libass</code> を含むことの確認が要る（字幕焼き込みに必須）。差し替え後は
+                        <strong>無音カット・字幕焼き込み・結合・縦動画・ぼかしの実走行</strong>で確認する</td></tr>
+                <tr><td>3</td><td>更新手順を決める</td>
+                    <td><code>HowToRelease.md §2.2</code> へ「同梱 FFmpeg の版と入手元・更新時期」を書き、
+                        版を固定して記録する</td></tr>
+            </tbody>
+        </table>
+        <p class="note"><strong>ライセンスに注意。</strong>現在は GPL ビルド
+        （<code>--enable-gpl --enable-version3</code>）で、<code>licenses/FFmpeg/</code> に全文と
+        ソース入手先を置いている。LGPL ビルドへ替えるなら <code>tools/license_manifest.json</code> も直すこと。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">T4</span> <span class="badge low">低</span> <span class="badge open">新規</span>
+            音声認識モデルを実行時に外部から取得する</h3>
+<pre class="bad"># src/modules/subtitle_generator.py:594,599
+whisper_model_cls(model_name, device=device, compute_type=compute_type)</pre>
+        <p><code>download_root</code> も <code>local_files_only</code> も指定していないため、
+           <code>faster-whisper</code> はモデル名（配布既定は <code>large-v3</code>）を
+           <strong>HuggingFace Hub から取得</strong>し、
+           <code>%USERPROFILE%\.cache\huggingface\hub</code> へ置く。
+           配布物に入っているのは VAD の <code>silero_vad_v6.onnx</code> だけで、認識モデル本体は入っていない
+           （転送用の <code>hf_xet</code> 8MB が同梱されているのはこのため）。</p>
+        <ul>
+            <li><strong>配布物に無いデータを、初回利用時に外部から取り込む経路がある。</strong>
+                完全性は <code>huggingface_hub</code> の検証任せで、アプリ側では確かめていない
+                （S1 でインストーラのハッシュを検証するようにしたのと対照的である）</li>
+            <li>取得先・取得量を利用者へ事前に説明していない（数 GB になる）</li>
+            <li>オフライン環境では音声認識が使えない</li>
+        </ul>
+        <p>モデルは実行コードではなく ctranslate2 のデータであるため、差し替えられても
+           コード実行に直結するわけではない。深刻度は<strong>低</strong>とする。</p>
+        <h4>対策</h4>
+        <ol class="steps">
+            <li><code>HowToRelease.md</code> と README に「<strong>初回に HuggingFace からモデルを取得する</strong>
+                （モデル名と概算サイズ）」を明記する</li>
+            <li>取得先を固定したいなら、モデルを配布物へ同梱して <code>local_files_only=True</code> で読む
+                （<code>large-v3</code> は数 GB のため<strong>配布サイズとの引き換え</strong>になる）</li>
+        </ol>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">T5</span> <span class="badge low">低</span> <span class="badge open">新規</span>
+            更新の検証後から起動までの差し替え余地（S1 の残存）</h3>
+        <p>S1 の是正で、インストーラは専用の一時フォルダへ置き、SHA-256 が一致しなければ
+           実行経路へ残さないようにした。ただし<strong>検証を終えてから
+           <code>launch_installer</code> が起動するまでの間</strong>は、
+           同一ユーザー権限のプロセスがファイルを差し替えられる。</p>
+<pre class="bad">path = updater.download_installer(url, sha256)   # ここで検証が通る
+...                                              # ← この隙間
+updater.launch_installer(path)                   # ここで起動する</pre>
+        <p>是正前（<code>%TEMP%\StretheusSetup.exe</code> 固定）より狙いにくくなった（毎回名前が変わる）が、
+           <code>%TEMP%</code> を列挙すれば見つかるため、<strong>原理的には残っている</strong>。
+           実際には「更新ダイアログで利用者が OK を押してから数秒」という短い窓である。</p>
+        <h4>対策</h4>
+<pre class="good"># 起動の直前にもう一度確かめる (sec3 T5)。
+def launch_installer(installer_path, expected_sha256):
+    if _file_sha256(installer_path) != _clean_sha256(expected_sha256):
+        raise ValueError("更新プログラムが置き換わっています。更新を中止しました。")
+    subprocess.Popen([installer_path], close_fds=True)</pre>
+        <p>根本的には S2 のコード署名が入れば、OS 側が起動時に検証してくれる。</p>
+    </div>
+
+    <div class="finding">
+        <h3><span class="badge id">T6</span> <span class="badge info">情報</span>
+            利用者データが平文で残る</h3>
+        <table>
+            <thead><tr><th>ファイル</th><th>保護</th></tr></thead>
+            <tbody>
+                <tr><td><code>auth.dat</code> / <code>twitch_token.json</code> / <code>points.json</code></td>
+                    <td><span class="badge fixed">DPAPI</span>（S4 / N2 の是正済み）</td></tr>
+                <tr><td><code>chat_*.json</code>（Twitch のチャットログ・452KB）</td><td>平文</td></tr>
+                <tr><td><code>vod_*.timeline.json</code>（編集内容・最大 701KB）</td><td>平文</td></tr>
+                <tr><td><code>project_ids.json</code>（編集したファイルの絶対パス）</td><td>平文</td></tr>
+            </tbody>
+        </table>
+        <p>認証情報ではないため<strong>暗号化までは要らない</strong>と考える（サイズが大きく、
+           毎回の復号は編集操作の体感に響く）。本書は記録として残すにとどめる。
+           ただし <code>project_ids.json</code> は<strong>消え残る</strong>という別の問題があり、
+           そちらは T1 で扱う。</p>
+    </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="carried">
+    <h2>4. sec2 から持ち越した指摘</h2>
+    <p>内容は sec2 の各項を参照のこと。<strong>いずれも本書の時点で未対応である。</strong></p>
+    <table>
+        <thead><tr><th>#</th><th>指摘</th><th>深刻度</th><th>補足</th></tr></thead>
+        <tbody>
+            <tr class="row-high"><td><span class="badge id">S2</span></td>
+                <td>インストール先がユーザー書込可能／未署名</td>
+                <td><span class="badge high">高</span></td>
+                <td>署名の土台（<code>.iss</code> の <code>/DSIGN</code>・手順書）は整備済み。
+                    <strong>証明書の調達だけが残っている</strong>。実測でも <code>NotSigned</code></td></tr>
+            <tr><td><span class="badge id">S3</span></td>
+                <td><code>setting.json</code> の値がそのまま外部プロセスとして実行される</td>
+                <td><span class="badge mid">中</span></td>
+                <td><code>_resolve_exe</code> が絶対パスを無検査で採用する点は変わらず</td></tr>
+            <tr><td><span class="badge id">S5</span></td>
+                <td>OAuth トークンがブラウザ履歴に残る</td>
+                <td><span class="badge mid">中</span></td>
+                <td><code>_RELAY_HTML</code> は現状のまま</td></tr>
+            <tr><td><span class="badge id">S8</span></td>
+                <td>ログ出力先がカレント相対</td>
+                <td><span class="badge low">低</span></td>
+                <td><strong>本点検で実際に踏んだ。</strong>配布 exe を起動した後、ログの出力先を特定できなかった</td></tr>
+            <tr><td><span class="badge id">S9</span></td>
+                <td>起動時に無同意で GitHub へ通信する</td>
+                <td><span class="badge low">低</span></td>
+                <td><code>auto_update_check</code> の既定は <code>true</code> のまま</td></tr>
+            <tr><td><span class="badge id">N3</span></td>
+                <td>端末 ID の導出が決定論的でソルトが読める</td>
+                <td><span class="badge low">低</span></td><td>サーバー側で担保する話</td></tr>
+            <tr><td><span class="badge id">N4</span></td>
+                <td>内部 API のエンドポイント一覧が読める</td>
+                <td><span class="badge info">情報</span></td>
+                <td>設計上は正常。サーバー側の認可が前提</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="state">
+    <h2>5. 配布物の現況（実測）</h2>
+<pre>Stretheus/                          837 MB
+├─ Stretheus.exe                    12.8 MB   (未署名 / sec1 S2)
+├─ _internal/
+│   ├─ ffmpeg/                     426 MB    ← 配布物の 51% (sec3 T3)
+│   ├─ PySide6/                    125 MB
+│   ├─ av.libs/                     65 MB
+│   ├─ ctranslate2/                 60 MB
+│   ├─ onnxruntime/                 32 MB
+│   ├─ src/                         21 MB    (同梱素材・yolox_tiny.onnx・setting.json)
+│   ├─ numpy.libs/                  21 MB
+│   ├─ PIL/                         13 MB
+│   ├─ cryptography/                9.5 MB
+│   └─ hf_xet/                      8.0 MB   ← モデル取得用 (sec3 T4)
+└─ licenses/                        76 件・不足 0</pre>
+    <table>
+        <thead><tr><th>項目</th><th>値</th></tr></thead>
+        <tbody>
+            <tr><td>PYZ の総モジュール数</td><td>1,802（うち自前 136）</td></tr>
+            <tr><td>開発機の絶対パス</td><td>0 件</td></tr>
+            <tr><td>平文で読める秘密情報</td><td>0 件</td></tr>
+            <tr><td>同梱 <code>setting.json</code> の <code>api.base_url</code></td><td><code>""</code>（空）</td></tr>
+            <tr class="row-high"><td>コード署名</td><td><strong>なし</strong>（<code>NotSigned</code>）</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="good">
+    <h2>6. 守れている点（維持すべき設計）</h2>
+    <table>
+        <thead><tr><th>#</th><th>点</th><th>根拠（実測）</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td><strong>配布物に秘密を置かない</strong>（OAuth の <code>clientId</code> はサーバーから受け取る）</td>
+                <td>配布物から秘密情報 0 件</td></tr>
+            <tr><td>2</td><td><strong>開発機の痕跡を残さない</strong></td>
+                <td><code>spec</code> のサニタイズ + <code>co_filename</code> の相対化で 0 件</td></tr>
+            <tr><td>3</td><td><strong>接続先の出どころが 1 箇所</strong>（N1 の是正）</td>
+                <td><code>config._DEFAULT_BASE_URL</code> のみ。切り替えは 2 か所で済む</td></tr>
+            <tr><td>4</td><td><strong>認証情報を平文で置かない</strong>（S4 / N2 の是正）</td>
+                <td><code>auth.dat</code> / <code>twitch_token.json</code> / <code>points.json</code> が DPAPI blob</td></tr>
+            <tr><td>5</td><td><strong>更新の取得物を検証する</strong>（S1 の是正）</td>
+                <td>URL 許可・SHA-256・専用一時フォルダ・タイムアウト</td></tr>
+            <tr><td>6</td><td><strong>検証できない更新は見送る</strong>（fail closed）</td>
+                <td>期待ハッシュを得られないリリースへは更新しない</td></tr>
+            <tr><td>7</td><td><strong>使っていないコードを配らない</strong>（S6 の是正）</td>
+                <td><code>torch</code> / <code>transformers</code> ほかを除外し 663MB 削減</td></tr>
+            <tr><td>8</td><td>テレメトリ送信前にパス・ユーザー名・メール・トークン風文字列をマスク</td>
+                <td><code>log_payloads._MASK_RULES</code></td></tr>
+            <tr><td>9</td><td>ログにトークンを出さない</td><td>実ログの検索で 0 件</td></tr>
+            <tr><td>10</td><td>ビルド時の機械的な安全柵（開発機パス・<code>client_secret</code>・接続先）</td>
+                <td><code>main_window.spec</code> がビルドを止める／空へ落とす</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="order">
+    <h2>7. 対応の順序（提案）</h2>
+    <table>
+        <thead><tr><th>段</th><th>対象</th><th>内容</th><th>目安</th></tr></thead>
+        <tbody>
+            <tr class="row-high"><td><strong>1</strong></td><td><span class="badge id">T1</span></td>
+                <td><code>[UninstallDelete]</code> へ認証情報と利用者データを足す。
+                    <strong><code>.iss</code> に数行</strong>で済む</td><td>小</td></tr>
+            <tr class="row-high"><td><strong>1</strong></td><td><span class="badge id">S3</span></td>
+                <td>実行ファイルパスの解決を「同梱 or 実在する絶対パス」に限定</td><td>小</td></tr>
+            <tr><td><strong>2</strong></td><td><span class="badge id">S5</span></td>
+                <td>relay を POST 化し、<code>Host</code> 検証と <code>no-store</code> を追加</td><td>小</td></tr>
+            <tr><td><strong>2</strong></td><td><span class="badge id">T5</span></td>
+                <td><code>launch_installer</code> の直前にハッシュを再確認する</td><td>小</td></tr>
+            <tr><td><strong>2</strong></td><td><span class="badge id">T3-1</span></td>
+                <td>同梱 FFmpeg を<strong>新しいビルドへ更新</strong>する</td><td>小</td></tr>
+            <tr><td><strong>3</strong></td><td><span class="badge id">T2</span></td>
+                <td>DPAPI へアプリ固有のエントロピーを与える（<strong>既存ファイルの移行つき</strong>）</td><td>小〜中</td></tr>
+            <tr><td><strong>3</strong></td><td><span class="badge id">T3-2</span></td>
+                <td><code>essentials_build</code> への差し替えを検討（<strong>実走行での確認が要る</strong>）</td><td>中</td></tr>
+            <tr><td><strong>3</strong></td><td><span class="badge id">T4</span></td>
+                <td>モデルの取得先と概算サイズを文書へ明記する</td><td>小</td></tr>
+            <tr class="row-high"><td><strong>4</strong></td><td><span class="badge id">S2</span></td>
+                <td><strong>コード署名</strong>（証明書の調達）。実現後に更新へ署名検証を重ねる</td><td>大</td></tr>
+            <tr><td>—</td>
+                <td><span class="badge id">S8</span> <span class="badge id">S9</span>
+                    <span class="badge id">T6</span> <span class="badge id">N3</span>
+                    <span class="badge id">N4</span></td>
+                <td>記録のみ、またはサーバー側で担保</td><td>—</td></tr>
+        </tbody>
+    </table>
+    <p class="note ok"><strong>段 1 の 2 件はどちらも小さく、次のリリースに入れられる。</strong>
+    特に T1 は <code>.iss</code> へ数行足すだけで、「アンインストールしたのに認証情報が残る」という
+    利用者にとって分かりやすい問題が消える。</p>
+    <p class="note danger">S2 は相変わらず<strong>証明書を買うかどうかの判断だけが残っている</strong>状態で、
+    これが片付かない限り「インストール済みのファイルを後から差し替える」経路は開いたままである。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="limit">
+    <h2>8. 本書の限界</h2>
+    <ul>
+        <li><strong>サーバー側（<code>StretheusAPI</code>）を点検していない。</strong>
+            本書は「クライアントから何が見えるか」までである</li>
+        <li><strong>動的解析・侵入テスト・マルウェアスキャンは行っていない。</strong>
+            静的な読み取りと、ローカル保存データ・配布 exe の起動の実測のみである</li>
+        <li><strong>依存パッケージの CVE 照合をしていない。</strong>
+            T3 は同梱 FFmpeg の<strong>版が古い事実</strong>を挙げたもので、
+            特定の脆弱性の有無を示すものではない</li>
+        <li><strong>zip 化・インストーラ生成・クリーン PC での挙動確認をしていない。</strong>
+            対象は <code>src/dist/Stretheus/</code> である</li>
+        <li><strong>T1 のアンインストール挙動は <code>.iss</code> の記述から判断した。</strong>
+            実際にインストール → アンインストールして残存を確かめたわけではない</li>
+        <li><strong>本書は 2026-11-07 時点のスナップショットである。</strong>
+            件数・サイズ・パスをそのまま後の版へ引用してはならない</li>
+        <li>各対策のコード片は<strong>方針を示すためのもの</strong>で、そのままの動作確認はしていない</li>
+    </ul>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    sec3 — 是正後のリリースビルド再点検 / 対象 v1.8.2（2026-11-07 是正版）<br>
+    文章の正は <code>docs/security/sec3.md</code>。本書は版を固定したスナップショットである。
+</footer>
+
+</body>
+</html>

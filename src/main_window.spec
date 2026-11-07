@@ -87,6 +87,17 @@ def _build_shipped_settings(source='settings/setting.json'):
             '該当する設定を空にしてからビルドしてください (security.md F5):\n  '
             + '\n  '.join(leaked))
 
+    # API 接続先を空へ戻す (sec2 N1)。
+    #
+    # 空なら src/services/config.py の _DEFAULT_BASE_URL (現運用の環境) へ倒れる。
+    # setting.json は開発端末で日常的に書き換わるファイルのため、そのまま同梱すると
+    # **そのときの接続先が配布物へ焼き付く**。接続先は config.py の 1 行で決めたいので、
+    # ここでは必ず空へ落とす。開発端末は環境変数 STRETHEUS_API_BASE_URL で
+    # 別環境を指すため、空にしても開発時のテストには影響しない。
+    api = data.get('api')
+    if isinstance(api, dict) and api.get('base_url'):
+        api['base_url'] = ''
+
     # 認証情報は配布物へ入れない (client_id は公開前提なので対象外)
     secret = data.get('archive', {}).get('auth', {}).get('client_secret')
     if secret:
@@ -180,6 +191,25 @@ a = Analysis(
         # ことを確認済み。
         'setuptools',
         'pkg_resources',
+
+        # 使っていない重量依存 (sec2 S6)。約 361MB を占めていた。
+        #
+        # torch を引いているのは modules/speaker_filter.py (話者照合によるテロップの
+        # 絞り込み) だけで、この機能は **実測で成立せず不採用が確定している**
+        # (docs/quality/resolve1.md §12.6・§12.7 / 既定 "off"・設定画面にも出さない)。
+        # speaker_filter は torch を遅延 import し、**読めなければ警告を出して素通りする**
+        # (_import_torch) ため、外してもアプリは通常どおり動く。
+        # 絞り込みを試したくなったら、ここから torch/torchaudio を外して再ビルドすれば戻る。
+        #
+        # transformers はソースから一切参照していない (faster-whisper の conversion extra や
+        # sentence-transformers などが推移的に引いていただけ)。
+        # 音声認識は faster-whisper + ctranslate2 (CPU) で、torch も transformers も要らない。
+        #
+        # 容量だけでなく、**使っていないコードを配らない**ことが目的でもある
+        # (transformers はモデルの自動ダウンロード経路を持つ)。
+        'torch',
+        'torchaudio',
+        'transformers',
     ],
     noarchive=False,
     optimize=0,

@@ -1,0 +1,332 @@
+/* ===== sec2 セキュリティ点検スタイル (ダークテーマ / design.css を踏襲) ===== */
+
+:root {
+    --bg: #0e1116;
+    --bg-elevated: #161b22;
+    --bg-elevated-2: #1f242c;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #7ee787;
+    --new: #f0883e;
+    --warn: #d29922;
+    --danger: #f85149;
+    --ok: #3fb950;
+    --code-bg: #0a0d12;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Yu Gothic UI", "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    line-height: 1.65;
+    font-size: 15px;
+}
+
+/* ----- ヘッダ ----- */
+.site-header {
+    background: linear-gradient(135deg, #161b22 0%, #1f242c 100%);
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--border);
+}
+.site-header h1 {
+    margin: 0;
+    font-size: 28px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+}
+.site-header .subtitle {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* ----- ナビ ----- */
+nav.toc {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 24px 48px;
+}
+nav.toc h2 {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+nav.toc ol {
+    columns: 2;
+    margin: 0;
+    padding-left: 20px;
+}
+nav.toc a { color: var(--accent); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+
+/* ----- メイン ----- */
+main { padding: 0 48px 48px; max-width: 1200px; }
+
+section {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 32px;
+    margin: 24px 0;
+    box-shadow: var(--shadow);
+}
+section h2 {
+    margin-top: 0;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    font-size: 20px;
+}
+section h3 { color: var(--accent-2); margin: 20px 0 8px; font-size: 16px; }
+section h4 {
+    color: var(--text-muted);
+    margin: 14px 0 6px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ----- カード ----- */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+.card {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+}
+.card h3 {
+    margin: 0 0 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.card p { margin: 0; font-weight: bold; font-size: 15px; }
+.card.good { border-color: var(--ok); }
+.card.good p { color: var(--ok); }
+
+/* ----- 深刻度・状態バッジ ----- */
+.badge {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 8px;
+    margin-right: 4px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.badge.high { border-color: var(--danger); color: var(--danger); }
+.badge.mid { border-color: var(--warn); color: var(--warn); }
+.badge.low { border-color: var(--accent); color: var(--accent); }
+.badge.info { border-color: var(--text-muted); color: var(--text-muted); }
+.badge.open { border-color: var(--new); color: var(--new); }
+.badge.fixed { border-color: var(--ok); color: var(--ok); }
+.badge.id {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: bold;
+}
+
+/* ----- 指摘の見出し ----- */
+.finding {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    margin-top: 20px;
+}
+.finding:first-of-type { border-top: none; padding-top: 0; }
+.finding > h3 { margin-top: 0; }
+
+/* ----- 解析フロー ----- */
+.flowchart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 16px 0;
+    gap: 4px;
+}
+.flowchart .node {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 20px;
+    min-width: 320px;
+    text-align: center;
+    box-shadow: var(--shadow);
+}
+.flowchart .node.start {
+    background: linear-gradient(135deg, #1f3b5c, #18324d);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: bold;
+    border-radius: 24px;
+    min-width: 160px;
+}
+.flowchart .node.end {
+    background: linear-gradient(135deg, #5c1f1f, #4d1818);
+    border-color: var(--danger);
+    color: var(--danger);
+    font-weight: bold;
+    border-radius: 24px;
+    min-width: 200px;
+}
+.flowchart .node.process { border-left: 4px solid var(--accent-2); }
+.flowchart .node small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+}
+.flowchart .arrow { color: var(--accent); font-size: 16px; }
+
+/* ----- 2 列比較 ----- */
+.split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+}
+.panel {
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+}
+.panel.leak { border-left: 4px solid var(--danger); }
+.panel.safe { border-left: 4px solid var(--ok); }
+.panel h3 { margin-top: 0; }
+.panel.leak h3 { color: var(--danger); }
+.panel.safe h3 { color: var(--ok); }
+.panel ul { margin-bottom: 0; }
+
+/* ----- コードブロック ----- */
+pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+}
+pre.bad { border-left: 4px solid var(--danger); }
+pre.good { border-left: 4px solid var(--ok); }
+code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    color: var(--accent-2);
+}
+pre code { border: none; padding: 0; background: none; color: inherit; }
+
+/* ----- テーブル ----- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 14px;
+}
+thead th {
+    background: var(--bg-elevated-2);
+    color: var(--text-muted);
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--accent);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
+tbody tr.row-high td { background: rgba(248, 81, 73, 0.07); }
+
+/* ----- 容量バー ----- */
+.bar-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+.bar-row .label {
+    width: 130px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+.bar-row .track {
+    flex: 1;
+    background: var(--bg-elevated-2);
+    border-radius: 3px;
+    height: 16px;
+    overflow: hidden;
+}
+.bar-row .fill { height: 100%; background: var(--accent); }
+.bar-row .fill.unused { background: var(--danger); }
+.bar-row .size {
+    width: 64px;
+    text-align: right;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ----- 補足注釈 ----- */
+.note {
+    color: var(--text-muted);
+    font-size: 13px;
+    border-left: 3px solid var(--warn);
+    padding-left: 10px;
+    margin-top: 12px;
+}
+.note.danger { border-left-color: var(--danger); }
+.note.ok { border-left-color: var(--ok); }
+
+/* ----- リスト ----- */
+ul { padding-left: 22px; }
+ul li { margin: 4px 0; }
+ol.steps { padding-left: 22px; }
+ol.steps li { margin: 8px 0; }
+
+/* ----- フッタ ----- */
+.site-footer {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 24px;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+    font-size: 13px;
+}
+
+/* ----- レスポンシブ ----- */
+@media (max-width: 768px) {
+    .site-header, main, nav.toc {
+        padding-left: 16px;
+        padding-right: 16px;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    nav.toc ol { columns: 1; }
+    .flowchart .node { min-width: 200px; }
+    .split { grid-template-columns: 1fr; }
+    .bar-row .label { width: 90px; font-size: 12px; }
+}
