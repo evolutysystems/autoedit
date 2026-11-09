@@ -1,0 +1,81 @@
+{
+  "_note": [
+    "Split Sound 実験の素材定義 (docs/request/ver10/resolve_ss1.md §3.2)。",
+    "source は output/*.archive.media/m*_audio.m4a = アーカイブ切り抜きが素材復旧用に残した",
+    "media_role=\"normalized\" の音声 (正規化済み・無音カット前)。映像は残っていないが、",
+    "本実験が測る指標 (無音検出・音量解析・文字起こし) は音声だけで決まるため成立する。",
+    "prepare.py --cut で source_cut.m4a (切り出し) → normalized.m4a (共通入力) を作る。",
+    "選定根拠は prepare.py --survey の実測 (output/_splitsound/survey.json / 2026-11-09)。",
+    "S1 / S4 は配信者 3 人の IRL 配信 (2026-11-09 に利用者の指摘で判明)。ゲーム配信の素材は未選定。"
+  ],
+  "survey_2026_11_09": {
+    "_note": "silence_ratio は setting.json の last_cut_db=-20dB / d=0.6s で無音と判定された割合",
+    "rows": [
+      {
+        "id": "vod_2877176496_m1",
+        "duration_sec": 1261.1,
+        "lufs": -14.3,
+        "silence_ratio": 0.0,
+        "low_mid_db": -12.6
+      },
+      {
+        "id": "vod_2881981221_m7",
+        "duration_sec": 996.9,
+        "lufs": -14.8,
+        "silence_ratio": 0.014,
+        "low_mid_db": -9.1
+      },
+      {
+        "id": "vod_2884417212_m9",
+        "duration_sec": 361.0,
+        "lufs": -14.3,
+        "silence_ratio": 0.675,
+        "low_mid_db": -4.2
+      },
+      {
+        "id": "vod_2866841954_m2",
+        "duration_sec": 361.8,
+        "lufs": -14.1,
+        "silence_ratio": 0.665,
+        "low_mid_db": -13.9
+      }
+    ]
+  },
+  "materials": [
+    {
+      "id": "S1",
+      "label": "配信者 3 人の IRL 配信 (展示会会場 / 無音率 0.0%)",
+      "source": "output/vod_2877176496.archive.media/m1_audio.m4a",
+      "start_sec": 300.0,
+      "duration_sec": 600.0,
+      "why": "現行のカット閾値では無音が 1 件も出ない。ただし鳴り続けているのはゲーム音ではなく会場のざわめきで、周囲の人の声も混ざる。仮説 (BGM/SE を分離で落とす) の検証には向かず、「悪化しないことの確認」に使う (result_ss1.md §2.0)",
+      "kind": "irl"
+    },
+    {
+      "id": "S2",
+      "label": "別 VOD の常時鳴り回 (低域が強い / 別ゲーム)",
+      "source": "output/vod_2881981221.archive.media/m7_audio.m4a",
+      "start_sec": 200.0,
+      "duration_sec": 600.0,
+      "why": "S1 と帯域の性格が違う (低-中 -9.1dB)。**何の配信かは未確認** — ゲーム配信なら仮説の本命になる (result_ss1.md §2.0)"
+    },
+    {
+      "id": "S3",
+      "label": "静かな回 (無音率 66.5%)",
+      "source": "output/vod_2866841954.archive.media/m2_audio.m4a",
+      "start_sec": 0.0,
+      "duration_sec": 360.0,
+      "why": "分離が無駄で済むか、それとも声を削るかの確認。素材が 361.8s しか無いため 6 分窓"
+    },
+    {
+      "id": "S4",
+      "label": "処理時間の計測用 (長めの 1 本)",
+      "source": "output/vod_2877176496.archive.media/m1_audio.m4a",
+      "start_sec": 0.0,
+      "duration_sec": 1261.0,
+      "metrics": "time_only",
+      "why": "RTF の実測とチャンク分割 (W=300s で 5 窓) の検証。精度の指標は取らない。S1 と同じ IRL 素材である",
+      "kind": "irl"
+    }
+  ]
+}

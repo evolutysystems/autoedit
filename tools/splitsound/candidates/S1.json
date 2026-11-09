@@ -1,0 +1,790 @@
+{
+ "material": "S1",
+ "generated": "2026-11-09",
+ "generated_by": "Claude (認識結果の本文を読んだだけの推測。音は聞いていない)",
+ "note": [
+  "S1 は配信者 3 人の IRL 配信 (展示会会場) である。",
+  "host = 配信者 3 人と、会話相手 (出展者・スタッフ) = 動画に残したい人の声。",
+  "other = 場内アナウンス・通行人・他ブースの音声 = 残したくない人の声。",
+  "game = 人の声が無い環境音のみの区間 (IRL なので「環境音」と読む)。",
+  "conf=low の行は判断がつかなかったもの。ここだけでも耳で確認してほしい。"
+ ],
+ "items": {
+  "0": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "1": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "2": {
+   "cand": "other",
+   "conf": "low"
+  },
+  "3": {
+   "cand": "other",
+   "conf": "low"
+  },
+  "4": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "5": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "6": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "7": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "8": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "9": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "10": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "11": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "12": {
+   "cand": "other",
+   "conf": "low"
+  },
+  "13": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "14": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "15": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "16": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "17": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "18": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "19": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "20": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "21": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "22": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "23": {
+   "cand": "game",
+   "conf": "low"
+  },
+  "24": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "25": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "26": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "27": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "28": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "29": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "30": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "31": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "32": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "33": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "34": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "35": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "36": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "37": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "38": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "39": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "40": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "41": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "42": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "43": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "44": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "45": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "46": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "47": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "48": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "49": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "50": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "51": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "52": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "53": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "54": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "55": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "56": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "57": {
+   "cand": "game",
+   "conf": "low"
+  },
+  "58": {
+   "cand": "game",
+   "conf": "low"
+  },
+  "59": {
+   "cand": "game",
+   "conf": "low"
+  },
+  "60": {
+   "cand": "game",
+   "conf": "low"
+  },
+  "61": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "62": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "63": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "64": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "65": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "66": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "67": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "68": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "69": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "70": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "71": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "72": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "73": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "74": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "75": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "76": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "77": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "78": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "79": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "80": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "81": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "82": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "83": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "84": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "85": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "86": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "87": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "88": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "89": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "90": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "91": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "92": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "93": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "94": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "95": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "96": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "97": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "98": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "99": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "100": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "101": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "102": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "103": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "104": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "105": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "106": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "107": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "108": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "109": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "110": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "111": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "112": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "113": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "114": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "115": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "116": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "117": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "118": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "119": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "120": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "121": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "122": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "123": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "124": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "125": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "126": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "127": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "128": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "129": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "130": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "131": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "132": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "133": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "134": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "135": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "136": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "137": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "138": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "139": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "140": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "141": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "142": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "143": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "144": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "145": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "146": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "147": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "148": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "149": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "150": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "151": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "152": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "153": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "154": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "155": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "156": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "157": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "158": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "159": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "160": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "161": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "162": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "163": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "164": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "165": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "166": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "167": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "168": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "169": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "170": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "171": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "172": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "173": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "174": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "175": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "176": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "177": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "178": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "179": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "180": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "181": {
+   "cand": "host",
+   "conf": "low"
+  },
+  "182": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "183": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "184": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "185": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "186": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "187": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "188": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "189": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "190": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "191": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "192": {
+   "cand": "host",
+   "conf": "high"
+  },
+  "193": {
+   "cand": "host",
+   "conf": "high"
+  }
+ }
+}

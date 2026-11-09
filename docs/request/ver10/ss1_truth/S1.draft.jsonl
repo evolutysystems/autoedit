@@ -1,0 +1,198 @@
+// 下書き。speaker は**候補** (内容から読んだ推測) であり、耳で確認して直してください
+// conf="low" の行は判断がつかなかったもの。確認の優先度が高いです
+// 本文 (text) を直すと CER の正解になります。**聞こえたとおりに**書いてください (直し過ぎない)
+{"_meta": {"game_everywhere": true}}
+{"start": 0.28, "end": 1.52, "speaker": "host", "text": "かっこいいね、まさに", "conf": "high"}
+{"start": 2.08, "end": 3.02, "speaker": "host", "text": "この瞬間", "conf": "high"}
+{"start": 4.26, "end": 6.04, "speaker": "other", "text": "真の勝負を", "conf": "low"}
+{"start": 6.04, "end": 7.54, "speaker": "other", "text": "手に入れてしまった", "conf": "low"}
+{"start": 8.38, "end": 9.36, "speaker": "host", "text": "なるほどね", "conf": "high"}
+{"start": 12.1, "end": 13.84, "speaker": "host", "text": "うわー、でけぇな", "conf": "high"}
+{"start": 13.84, "end": 15.18, "speaker": "host", "text": "ちょっと感動するね", "conf": "high"}
+{"start": 16.26, "end": 18.3, "speaker": "host", "text": "漫画で見た", "conf": "high"}
+{"start": 18.96, "end": 19.62, "speaker": "host", "text": "そのまんまの", "conf": "high"}
+{"start": 19.62, "end": 21.46, "speaker": "host", "text": "このサイズ感なんだね", "conf": "high"}
+{"start": 21.46, "end": 25.46, "speaker": "host", "text": "これは、熱っ", "conf": "high"}
+{"start": 27.18, "end": 28.86, "speaker": "host", "text": "これ熱っ", "conf": "high"}
+{"start": 29.78, "end": 35.4, "speaker": "other", "text": "いらっしゃいまーす", "conf": "low"}
+{"start": 35.4, "end": 36.5, "speaker": "host", "text": "マガジンさんありがとう", "conf": "high"}
+{"start": 36.5, "end": 36.92, "speaker": "host", "text": "ありがとう", "conf": "high"}
+{"start": 38.58, "end": 39.74, "speaker": "host", "text": "あれバルーンだっけ?", "conf": "high"}
+{"start": 40.08, "end": 42.02, "speaker": "host", "text": "バルーンなの?", "conf": "high"}
+{"start": 42.28, "end": 46.31, "speaker": "host", "text": "バルーンを膨らまして毛皮をつけてる", "conf": "high"}
+{"start": 46.31, "end": 47.27, "speaker": "host", "text": "なるほどね", "conf": "high"}
+{"start": 47.97, "end": 50.09, "speaker": "host", "text": "プロのことが分かるけどバルーン", "conf": "high"}
+{"start": 50.09, "end": 57.23, "speaker": "host", "text": "お姉さま方もいいスプレーをされて", "conf": "low"}
+{"start": 62.7, "end": 67.92, "speaker": "host", "text": "ブーバーし 結構際ドッグで写すかどうか 悩む", "conf": "low"}
+{"start": 67.92, "end": 73.6, "speaker": "host", "text": "やっぱりやっぱり危ないからなぁ言って ないレイヤーさんチョコレイヤー", "conf": "low"}
+{"start": 73.6, "end": 74.76, "speaker": "game", "text": "にゃんっ ああああああ", "conf": "low"}
+{"start": 77.06, "end": 81.4, "speaker": "host", "text": "ベビーですよね そのレギュレーションに ハズレないように", "conf": "high"}
+{"start": 81.4, "end": 85.84, "speaker": "host", "text": "リスナーの ai 判定で殺される可能性は ああああああ", "conf": "low"}
+{"start": 85.84, "end": 91.3, "speaker": "host", "text": "それだけ怖い ai くんこれ これだですこれダメで ねー", "conf": "low"}
+{"start": 92.54, "end": 94.08, "speaker": "host", "text": "なんか可能性はまあ確かにある", "conf": "high"}
+{"start": 96.86, "end": 101.06, "speaker": "host", "text": "エルガブさんが近づいて まいりましたね エルガブさん 行きましょうがつ最高", "conf": "high"}
+{"start": 105.1, "end": 108.32, "speaker": "host", "text": "昨年は撮影していいよってすぐ 言われたんだけど", "conf": "high"}
+{"start": 108.32, "end": 109.76, "speaker": "host", "text": "一応聞きましょう", "conf": "high"}
+{"start": 111.86, "end": 113.26, "speaker": "host", "text": "ではアイちゃんありがとうございます", "conf": "high"}
+{"start": 114.02, "end": 117.48, "speaker": "host", "text": "では続いては同じかそういう姫の アイセンスから", "conf": "high"}
+{"start": 117.48, "end": 119.58, "speaker": "host", "text": "コーティングを話していただきましょう", "conf": "high"}
+{"start": 119.58, "end": 120.74, "speaker": "host", "text": "どうぞお願いします", "conf": "high"}
+{"start": 122.46, "end": 123.82, "speaker": "host", "text": "ダノン姉さんもいるよ", "conf": "high"}
+{"start": 124.72, "end": 125.82, "speaker": "host", "text": "もう一人いる", "conf": "high"}
+{"start": 125.82, "end": 126.78, "speaker": "host", "text": "配信中", "conf": "high"}
+{"start": 126.78, "end": 127.86, "speaker": "host", "text": "お、ミクさん配信中", "conf": "high"}
+{"start": 128.48, "end": 129.36, "speaker": "host", "text": "びっくりした", "conf": "high"}
+{"start": 129.36, "end": 130.7, "speaker": "host", "text": "内カメだね", "conf": "high"}
+{"start": 131.6, "end": 132.74, "speaker": "host", "text": "内カメです", "conf": "high"}
+{"start": 132.74, "end": 133.42, "speaker": "host", "text": "恥ずかしい", "conf": "high"}
+{"start": 134.88, "end": 136.32, "speaker": "host", "text": "危なかった危なかった", "conf": "high"}
+{"start": 136.96, "end": 138.02, "speaker": "host", "text": "頼むお姉さんや", "conf": "high"}
+{"start": 139.9, "end": 140.76, "speaker": "host", "text": "忙しそう", "conf": "high"}
+{"start": 140.76, "end": 141.82, "speaker": "host", "text": "バイバーイ", "conf": "high"}
+{"start": 141.82, "end": 144.56, "speaker": "host", "text": "実行してくれた企業さん全部回るんですか?", "conf": "high"}
+{"start": 145.86, "end": 147.58, "speaker": "host", "text": "そういうことで現在実行中です", "conf": "high"}
+{"start": 147.58, "end": 150.06, "speaker": "host", "text": "そう、現在実行中です", "conf": "high"}
+{"start": 155.34, "end": 156.34, "speaker": "host", "text": "その通り", "conf": "high"}
+{"start": 156.34, "end": 157.58, "speaker": "host", "text": "役割に洗礼してもらえちゃった", "conf": "low"}
+{"start": 159.1, "end": 159.94, "speaker": "host", "text": "ありがてぇ", "conf": "high"}
+{"start": 162.88, "end": 163.88, "speaker": "host", "text": "お世話になりました", "conf": "high"}
+{"start": 165.18, "end": 165.92, "speaker": "host", "text": "初めまして", "conf": "high"}
+{"start": 167.66, "end": 168.64, "speaker": "host", "text": "挨拶回りになって", "conf": "high"}
+{"start": 168.64, "end": 169.98, "speaker": "host", "text": "配信してないの?", "conf": "high"}
+{"start": 186.82, "end": 206.56, "speaker": "game", "text": "ブロックダウンを見ると、セリフを覚えずに 読み上げても、ちゃんと目が合うように 読んでいる。", "conf": "low"}
+{"start": 206.56, "end": 208.88, "speaker": "game", "text": "じゃあ、セリフを読み上げて?読んで 読んで。", "conf": "low"}
+{"start": 208.88, "end": 213.32, "speaker": "game", "text": "どんな男のものの自分に立った他人の意味で", "conf": "low"}
+{"start": 218.43, "end": 222.17, "speaker": "game", "text": "風潮多い通りすがるときめきで対象の付着", "conf": "low"}
+{"start": 222.17, "end": 222.87, "speaker": "host", "text": "無理だな", "conf": "high"}
+{"start": 223.51, "end": 225.15, "speaker": "host", "text": "2人ともこれ", "conf": "high"}
+{"start": 226.79, "end": 229.63, "speaker": "host", "text": "デカストリームデッグを浮かしてるの", "conf": "high"}
+{"start": 229.63, "end": 230.77, "speaker": "host", "text": "キャビネットで", "conf": "high"}
+{"start": 232.83, "end": 234.99, "speaker": "host", "text": "裏から見るとすごいんだけど", "conf": "high"}
+{"start": 234.99, "end": 238.95, "speaker": "host", "text": "挟み込んでクランプで浮かせてるの", "conf": "high"}
+{"start": 238.95, "end": 245.33, "speaker": "host", "text": "やばくねこれさあ プレアーブラブレーキさん あああああそうそうそうそう", "conf": "low"}
+{"start": 245.85, "end": 252.65, "speaker": "host", "text": "それねー 映せないら難しそう シーンですよ僕は超良かった これ展示会俺この前お邪魔したんだけど", "conf": "low"}
+{"start": 252.65, "end": 260.53, "speaker": "host", "text": "ああああああ言ってたねーこれ浮いてるの マジ そうこれすごいだったのされると ダウンサイザーなどさえオフラインになって", "conf": "low"}
+{"start": 262.47, "end": 267.13, "speaker": "host", "text": "画面には日なすさんが会場で配信中だね", "conf": "high"}
+{"start": 267.13, "end": 268.31, "speaker": "host", "text": "今やってんだね", "conf": "high"}
+{"start": 270.9, "end": 274.24, "speaker": "host", "text": "やっぱりエルガトさんのブースに新しい ライトもそうだしね", "conf": "high"}
+{"start": 274.76, "end": 275.92, "speaker": "host", "text": "なんか色合い違う", "conf": "high"}
+{"start": 277.0, "end": 278.04, "speaker": "host", "text": "新しいライト", "conf": "high"}
+{"start": 278.46, "end": 279.72, "speaker": "host", "text": "新作のライトだね", "conf": "high"}
+{"start": 280.54, "end": 282.1, "speaker": "host", "text": "このライトいいな", "conf": "high"}
+{"start": 283.62, "end": 285.04, "speaker": "host", "text": "これもう売ってるのかな", "conf": "high"}
+{"start": 285.9, "end": 287.22, "speaker": "host", "text": "もうこれが売ってるはず", "conf": "high"}
+{"start": 288.22, "end": 290.1, "speaker": "host", "text": "最近出た新作のライトだね", "conf": "high"}
+{"start": 290.68, "end": 291.26, "speaker": "host", "text": "熱い", "conf": "high"}
+{"start": 291.92, "end": 292.78, "speaker": "host", "text": "これいいなぁ", "conf": "high"}
+{"start": 292.78, "end": 294.86, "speaker": "host", "text": "そう、エレナドさんの ライト眩しくなくていいよ", "conf": "high"}
+{"start": 295.74, "end": 296.38, "speaker": "host", "text": "確かに", "conf": "high"}
+{"start": 297.3, "end": 298.2, "speaker": "host", "text": "あ、そろそろです", "conf": "high"}
+{"start": 298.62, "end": 299.84, "speaker": "host", "text": "そろそろです", "conf": "high"}
+{"start": 301.06, "end": 301.38, "speaker": "host", "text": "ありがとうございます", "conf": "high"}
+{"start": 302.76, "end": 303.54, "speaker": "host", "text": "写しても?", "conf": "high"}
+{"start": 305.7, "end": 306.44, "speaker": "host", "text": "やったー!", "conf": "high"}
+{"start": 306.86, "end": 307.64, "speaker": "host", "text": "嬢さんも写った", "conf": "high"}
+{"start": 308.36, "end": 309.16, "speaker": "host", "text": "嬢さんです", "conf": "high"}
+{"start": 309.62, "end": 310.94, "speaker": "host", "text": "エレナドも嬢さんです", "conf": "high"}
+{"start": 310.94, "end": 314.72, "speaker": "host", "text": "めちゃくちゃありがとうございます", "conf": "high"}
+{"start": 315.2, "end": 315.52, "speaker": "host", "text": "ありがとうございます", "conf": "high"}
+{"start": 316.06, "end": 316.38, "speaker": "host", "text": "ありがとうございます", "conf": "high"}
+{"start": 316.38, "end": 316.7, "speaker": "host", "text": "ありがとうございます", "conf": "high"}
+{"start": 318.22, "end": 319.22, "speaker": "host", "text": "お世話になっております", "conf": "high"}
+{"start": 321.02, "end": 324.74, "speaker": "host", "text": "新鮮屋さんと一般で3日あるんでぜひ遊びに 来てください", "conf": "low"}
+{"start": 325.08, "end": 326.28, "speaker": "host", "text": "あと3日あるぞー", "conf": "high"}
+{"start": 326.7, "end": 328.68, "speaker": "host", "text": "まだまだ始まりではないぞ", "conf": "high"}
+{"start": 329.42, "end": 329.76, "speaker": "host", "text": "これ", "conf": "high"}
+{"start": 332.11, "end": 333.71, "speaker": "host", "text": "あと、この道はもうね、もらえる", "conf": "low"}
+{"start": 336.29, "end": 339.29, "speaker": "host", "text": "ちょっとこっちの様子を紹介していいですか ?", "conf": "high"}
+{"start": 339.45, "end": 340.73, "speaker": "host", "text": "はい、ぜひぜひお願いします", "conf": "high"}
+{"start": 341.31, "end": 343.41, "speaker": "host", "text": "え、ジョーさんに紹介してもらえるの?", "conf": "high"}
+{"start": 343.99, "end": 349.95, "speaker": "host", "text": "まず、このブースですが、新型の 最新製品などを置いている クリエイターです。", "conf": "high"}
+{"start": 350.25, "end": 351.37, "speaker": "host", "text": "クリエイターですか?", "conf": "high"}
+{"start": 351.43, "end": 351.67, "speaker": "host", "text": "はい。", "conf": "high"}
+{"start": 351.83, "end": 356.79, "speaker": "host", "text": "これ配信者とか、配信活用の人がちょっと 見に行くのが面白いと思います。", "conf": "high"}
+{"start": 358.09, "end": 360.59, "speaker": "host", "text": "ここが、上から行きますか?", "conf": "high"}
+{"start": 360.69, "end": 361.09, "speaker": "host", "text": "はい。", "conf": "high"}
+{"start": 363.27, "end": 369.37, "speaker": "host", "text": "はい、これ今、後ろにカメラが仕事を していて、", "conf": "high"}
+{"start": 369.79, "end": 372.57, "speaker": "host", "text": "カメラメーションみたいのもあるそうです", "conf": "high"}
+{"start": 373.19, "end": 377.09, "speaker": "host", "text": "あとは新しい最新の証明のキーライトウェア", "conf": "high"}
+{"start": 377.09, "end": 377.69, "speaker": "host", "text": "マーク2", "conf": "high"}
+{"start": 379.23, "end": 380.51, "speaker": "host", "text": "小さくのライト", "conf": "high"}
+{"start": 381.05, "end": 383.09, "speaker": "host", "text": "ストリームレッグトラスで着せると", "conf": "high"}
+{"start": 383.09, "end": 384.41, "speaker": "host", "text": "デカすぎる", "conf": "high"}
+{"start": 384.41, "end": 388.41, "speaker": "host", "text": "ちなみにこいつ泥物で1.1キロくらい あります", "conf": "high"}
+{"start": 389.55, "end": 390.87, "speaker": "host", "text": "1.1キロ!?", "conf": "high"}
+{"start": 391.27, "end": 392.57, "speaker": "host", "text": "ヤバすぎるべきですけど", "conf": "high"}
+{"start": 392.57, "end": 394.67, "speaker": "host", "text": "浮かしてます", "conf": "high"}
+{"start": 398.26, "end": 406.11, "speaker": "host", "text": "フレダクスさんがめちゃくちゃかっこい いんで、チェックしてみてください", "conf": "high"}
+{"start": 406.11, "end": 410.67, "speaker": "host", "text": "フレダクスさんマジで チェックしています マジで チェックしている", "conf": "high"}
+{"start": 411.17, "end": 418.29, "speaker": "host", "text": "めっちゃかっこよくて この台座から下の ネジからクランプで出すっていう方法も ありなんだけど", "conf": "high"}
+{"start": 418.75, "end": 426.37, "speaker": "host", "text": "俺がやりたいのはモニターの裏から バックパックっていうやつがあるの", "conf": "high"}
+{"start": 426.37, "end": 430.67, "speaker": "host", "text": "バックパックっていうところからそこから アームを生やしてクランプできるの", "conf": "high"}
+{"start": 430.67, "end": 432.35, "speaker": "host", "text": "これがそう?", "conf": "high"}
+{"start": 432.73, "end": 434.07, "speaker": "host", "text": "そうそうそうそうこれがそう", "conf": "high"}
+{"start": 434.07, "end": 436.21, "speaker": "host", "text": "ゼニオンHがこれ下からぶら下がってる", "conf": "high"}
+{"start": 436.21, "end": 436.87, "speaker": "host", "text": "そうそうそうそう", "conf": "high"}
+{"start": 437.79, "end": 442.0, "speaker": "host", "text": "これが欲しいの俺は", "conf": "high"}
+{"start": 443.26, "end": 446.52, "speaker": "host", "text": "ここからさらに挟み込むクランプがあるから", "conf": "high"}
+{"start": 446.52, "end": 448.78, "speaker": "host", "text": "それでこいつを挟み込めるの", "conf": "high"}
+{"start": 448.78, "end": 449.9, "speaker": "host", "text": "なるほどね", "conf": "high"}
+{"start": 449.9, "end": 457.18, "speaker": "host", "text": "さらにそっからストリームデックプラスの XLRのやつをやると", "conf": "high"}
+{"start": 457.18, "end": 458.4, "speaker": "host", "text": "もう一個に済むの", "conf": "high"}
+{"start": 458.4, "end": 460.12, "speaker": "host", "text": "まあ派生できるってことだよね", "conf": "high"}
+{"start": 460.12, "end": 463.1, "speaker": "host", "text": "そうだからもう配線が一個に済むんだよね", "conf": "high"}
+{"start": 463.58, "end": 463.9, "speaker": "host", "text": "ありがとうございます", "conf": "high"}
+{"start": 465.3, "end": 466.34, "speaker": "host", "text": "あれ持って帰っちゃった", "conf": "high"}
+{"start": 468.1, "end": 468.96, "speaker": "host", "text": "中分け", "conf": "low"}
+{"start": 468.96, "end": 470.64, "speaker": "host", "text": "中分けってちょっとすいません", "conf": "high"}
+{"start": 470.64, "end": 471.44, "speaker": "host", "text": "ちょっとすいません", "conf": "high"}
+{"start": 472.12, "end": 473.02, "speaker": "host", "text": "そう欲しくて", "conf": "high"}
+{"start": 473.02, "end": 475.56, "speaker": "host", "text": "俺も同じ理由で欲しい", "conf": "high"}
+{"start": 477.28, "end": 478.5, "speaker": "host", "text": "めっちゃ欲しいんだよな", "conf": "high"}
+{"start": 479.84, "end": 481.76, "speaker": "host", "text": "これはXLRブロックか", "conf": "high"}
+{"start": 482.26, "end": 485.0, "speaker": "host", "text": "もろもろいろいろいろいろの製品があるので", "conf": "high"}
+{"start": 485.0, "end": 487.52, "speaker": "host", "text": "興味あったらぜひ遊びに行ってみてください", "conf": "high"}
+{"start": 488.42, "end": 489.06, "speaker": "host", "text": "はい、ありがとうございます", "conf": "high"}
+{"start": 489.06, "end": 490.4, "speaker": "host", "text": "次はVT1です", "conf": "high"}
+{"start": 491.22, "end": 493.04, "speaker": "host", "text": "めちゃくちゃサラッと見えます", "conf": "high"}
+{"start": 493.48, "end": 494.94, "speaker": "host", "text": "VT1タイプですね", "conf": "high"}
+{"start": 497.54, "end": 498.78, "speaker": "host", "text": "ゲームタイプの", "conf": "high"}
+{"start": 498.78, "end": 499.24, "speaker": "host", "text": "ゲームタイプの", "conf": "high"}
+{"start": 499.24, "end": 501.2, "speaker": "host", "text": "ゲームタイプが", "conf": "high"}
+{"start": 501.2, "end": 502.14, "speaker": "host", "text": "出てるので", "conf": "high"}
+{"start": 503.74, "end": 504.76, "speaker": "host", "text": "本当に結構", "conf": "high"}
+{"start": 505.44, "end": 508.2, "speaker": "host", "text": "気になるけど、どう使ったらいいのか 分かんない", "conf": "high"}
+{"start": 509.06, "end": 511.48, "speaker": "host", "text": "そういう人は、あっちのブロスに行くと", "conf": "high"}
+{"start": 511.94, "end": 515.56, "speaker": "host", "text": "それぞれゲームタイトルに カスタムされてストリーニングが 置いてあるので", "conf": "high"}
+{"start": 516.02, "end": 517.56, "speaker": "host", "text": "ちょっとぜひぜひ見てみてください", "conf": "high"}
+{"start": 517.86, "end": 518.86, "speaker": "host", "text": "ああ、見に行こう", "conf": "high"}
+{"start": 518.86, "end": 520.98, "speaker": "host", "text": "設定とか僕持ってきました", "conf": "high"}
+{"start": 521.52, "end": 523.46, "speaker": "host", "text": "何をどうすればいいのか分かんない", "conf": "high"}
+{"start": 524.38, "end": 526.86, "speaker": "host", "text": "何をどうすればいいか分かんないから ダノンさんに聞くのよ", "conf": "high"}
+{"start": 527.32, "end": 529.18, "speaker": "host", "text": "ストリーニングからストリーニングから ストリーニングから", "conf": "low"}
+{"start": 529.18, "end": 531.84, "speaker": "host", "text": "全部本当にダノンさんのお世話になりたい ダノンさんで", "conf": "high"}
+{"start": 532.68, "end": 533.64, "speaker": "host", "text": "あははは", "conf": "high"}
+{"start": 533.64, "end": 535.62, "speaker": "host", "text": "これがトレーナーさんの", "conf": "high"}
+{"start": 535.62, "end": 537.76, "speaker": "host", "text": "あのツイートを待ってますから", "conf": "high"}
+{"start": 537.76, "end": 538.14, "speaker": "host", "text": "そう", "conf": "high"}
+{"start": 538.14, "end": 539.46, "speaker": "host", "text": "俺らのツイート", "conf": "high"}
+{"start": 539.46, "end": 543.08, "speaker": "host", "text": "あ、これやればいいんだ", "conf": "high"}
+{"start": 545.0, "end": 545.98, "speaker": "host", "text": "あははは", "conf": "high"}
+{"start": 545.98, "end": 547.56, "speaker": "host", "text": "それだけだ", "conf": "high"}
+{"start": 547.56, "end": 548.58, "speaker": "host", "text": "最近は", "conf": "high"}
+{"start": 548.58, "end": 550.38, "speaker": "host", "text": "普通に", "conf": "high"}
+{"start": 552.08, "end": 553.72, "speaker": "host", "text": "車開けと一緒に出て", "conf": "low"}
+{"start": 553.72, "end": 555.98, "speaker": "host", "text": "車内の人たちがちょっと出てくる", "conf": "low"}
+{"start": 555.98, "end": 558.7, "speaker": "host", "text": "今からになったら", "conf": "low"}
+{"start": 558.7, "end": 559.94, "speaker": "host", "text": "最後にプレゼントしてね", "conf": "high"}
+{"start": 559.94, "end": 560.84, "speaker": "host", "text": "あははは", "conf": "high"}
+{"start": 561.84, "end": 563.06, "speaker": "host", "text": "そんなのあるんだ", "conf": "high"}
+{"start": 568.22, "end": 569.84, "speaker": "host", "text": "はいはいはい", "conf": "high"}
+{"start": 569.84, "end": 574.2, "speaker": "host", "text": "めっちゃいる", "conf": "high"}
+{"start": 584.72, "end": 586.48, "speaker": "host", "text": "あれもいたよ", "conf": "high"}
+{"start": 587.02, "end": 588.44, "speaker": "host", "text": "左端にオフラインになってる", "conf": "high"}
+{"start": 588.44, "end": 589.58, "speaker": "host", "text": "オフライン", "conf": "high"}
+{"start": 590.92, "end": 592.72, "speaker": "host", "text": "AI使いこなし人間たちは", "conf": "high"}
+{"start": 593.2, "end": 594.36, "speaker": "host", "text": "これもAIで", "conf": "high"}
+{"start": 595.2, "end": 596.14, "speaker": "host", "text": "ストリームレストの", "conf": "high"}
+{"start": 596.14, "end": 597.28, "speaker": "host", "text": "プライベートに使ってできる", "conf": "high"}

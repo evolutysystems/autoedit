@@ -68,8 +68,10 @@
 | `ver7` | 未ログイン利用者をポイント制の対象にする (端末 ID) | `resolve` |
 | `ver8` | **表示言語の切替 (ja/en)**、採点グラフの出し直し、ウィンドウ位置・分割位置の記憶、テロップのカット頭ずれ、プレビューと出力の一致 | `resolve` (i18n) / `resolve6` (カット頭) / `resolve8` (プレビュー一致) |
 | `ver9` | テロップトラックの追加・文字寄せ・色の出どころ変更、縦プロジェクトの機能拡張、イントロカード修正、Stripe の即時反映、**Timeline の軽量化**、取説 (「？」ボタン) | `resolve13` (色) / `resolve7`・`resolve9` (軽量化) / `resolve19` (取説) |
+| `ver10` | **Split Sound** — 話者の声とゲーム音を AI (htdemucs / DeepFilterNet DF3) で分け、分離音を無音カットと文字起こしの入力にする実験 (branch `SplitSound`)。**まだ実験段階で本体には入っていない** | `resolve_ss1` (実験の設計書) / `result_ss1` (計測結果) |
 
 > 注: `ver2/answer17.md` と `ver2/flow17.md` は `request17` の検討メモ (質疑と全体フロー)。
+> 注: `ver10` の番号付けは `ss1.md` / `resolve_ss1.md` (要望での指定) で、`requestN`/`resolveN` 形式ではない。
 
 ### 3.2 `error/` — 障害報告と修正設計 (日付フォルダ)
 

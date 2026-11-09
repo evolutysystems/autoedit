@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ver9 resolve4 — タスク汎用音源分離技術の調査報告</title>
+<style>
+/* ===== ver9 resolve4 調査報告スタイル (ダークテーマ / security.css を踏襲) ===== */
+:root {
+    --bg: #0e1116;
+    --bg-elevated: #161b22;
+    --bg-elevated-2: #1f242c;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #7ee787;
+    --new: #f0883e;
+    --warn: #d29922;
+    --danger: #f85149;
+    --ok: #3fb950;
+    --code-bg: #0a0d12;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+* { box-sizing: border-box; }
+html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: "Yu Gothic UI", "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    line-height: 1.65; font-size: 15px;
+}
+
+/* ----- ヘッダ ----- */
+.site-header {
+    background: linear-gradient(135deg, #161b22 0%, #1f242c 100%);
+    padding: 32px 48px; border-bottom: 1px solid var(--border);
+}
+.site-header h1 { margin: 0; font-size: 27px; color: var(--accent); letter-spacing: 0.5px; }
+.site-header .subtitle { margin: 8px 0 0; color: var(--text-muted); font-size: 14px; }
+.site-header .meta { margin: 14px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
+.site-header .meta a { color: var(--accent); }
+.kind {
+    display: inline-block; margin-top: 14px; padding: 2px 10px;
+    border: 1px solid var(--new); border-radius: 4px;
+    color: var(--new); font-size: 12px; font-family: "Consolas", "Courier New", monospace;
+}
+
+/* ----- ナビ ----- */
+nav.toc {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 24px; margin: 24px 48px;
+}
+nav.toc h2 {
+    font-size: 14px; color: var(--text-muted); margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: 1px;
+}
+nav.toc ol { columns: 2; margin: 0; padding-left: 20px; }
+nav.toc a { color: var(--accent); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+nav.toc .note { columns: 1; }
+
+/* ----- メイン ----- */
+main { padding: 0 48px 48px; max-width: 1200px; }
+section {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 10px; padding: 24px 32px; margin: 24px 0; box-shadow: var(--shadow);
+}
+section h2 {
+    margin-top: 0; color: var(--accent);
+    border-bottom: 1px solid var(--border); padding-bottom: 8px; font-size: 20px;
+}
+section h3 { color: var(--accent-2); margin: 24px 0 8px; font-size: 16px; }
+section h4 {
+    color: var(--text-muted); margin: 14px 0 6px; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+/* ----- 結論の 3 行 ----- */
+ol.lead { padding-left: 0; list-style: none; counter-reset: lead; margin: 12px 0 0; }
+ol.lead > li {
+    counter-increment: lead; position: relative;
+    background: var(--bg-elevated-2); border: 1px solid var(--border);
+    border-left: 4px solid var(--accent); border-radius: 6px;
+    padding: 14px 18px 14px 56px; margin: 10px 0;
+}
+ol.lead > li::before {
+    content: counter(lead);
+    position: absolute; left: 16px; top: 13px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #0e1116;
+    font-weight: bold; font-size: 14px; text-align: center; line-height: 26px;
+}
+ol.lead > li.warn { border-left-color: var(--warn); }
+ol.lead > li.warn::before { background: var(--warn); }
+
+/* ----- カード ----- */
+.card-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-top: 12px;
+}
+.card {
+    background: var(--bg-elevated-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px;
+}
+.card h3 {
+    margin: 0 0 4px; font-size: 12px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.card p { margin: 0; font-weight: bold; font-size: 15px; }
+.card.good { border-color: var(--ok); } .card.good p { color: var(--ok); }
+.card.bad { border-color: var(--danger); } .card.bad p { color: var(--danger); }
+.card.mid { border-color: var(--warn); } .card.mid p { color: var(--warn); }
+
+/* ----- バッジ ----- */
+.badge {
+    display: inline-block; border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 8px; margin-right: 4px;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12px; white-space: nowrap;
+}
+.badge.ng { border-color: var(--danger); color: var(--danger); }
+.badge.gray { border-color: var(--warn); color: var(--warn); }
+.badge.ok { border-color: var(--ok); color: var(--ok); }
+.badge.info { border-color: var(--text-muted); color: var(--text-muted); }
+.badge.id { border-color: var(--accent); color: var(--accent); font-weight: bold; }
+
+/* ----- 2 列比較 / パネル ----- */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.split3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+.panel {
+    background: var(--bg-elevated-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 18px;
+}
+.panel h3 { margin-top: 0; font-size: 14px; }
+.panel.safe { border-left: 4px solid var(--ok); } .panel.safe h3 { color: var(--ok); }
+.panel.leak { border-left: 4px solid var(--danger); } .panel.leak h3 { color: var(--danger); }
+.panel.unsure { border-left: 4px solid var(--warn); } .panel.unsure h3 { color: var(--warn); }
+.panel p:last-child, .panel ul:last-child { margin-bottom: 0; }
+
+/* ----- 推奨ボックス ----- */
+.recommend {
+    background: linear-gradient(135deg, #15301f 0%, #192a1f 100%);
+    border: 1px solid var(--ok); border-left: 4px solid var(--ok);
+    border-radius: 8px; padding: 16px 20px; margin-top: 12px;
+}
+.recommend h3 { margin-top: 0; color: var(--ok); }
+.recommend ul:last-child, .recommend p:last-child { margin-bottom: 0; }
+
+/* ----- コードブロック ----- */
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px 16px; overflow-x: auto;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px; line-height: 1.6; color: var(--text);
+}
+pre.flow { border-left: 4px solid var(--accent-2); }
+code {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px;
+    padding: 1px 6px; font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px; color: var(--accent-2);
+}
+pre code { border: none; padding: 0; background: none; color: inherit; }
+a { color: var(--accent); }
+
+/* ----- テーブル ----- */
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+thead th {
+    background: var(--bg-elevated-2); color: var(--text-muted); text-align: left;
+    padding: 10px 12px; border-bottom: 2px solid var(--accent);
+    text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;
+}
+tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tbody th {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    vertical-align: top; text-align: left; color: var(--text-muted);
+    font-weight: 600;
+}
+tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
+tbody tr.row-high td, tbody tr.row-high th { background: rgba(248, 81, 73, 0.07); }
+tbody tr.row-ok td, tbody tr.row-ok th { background: rgba(63, 185, 80, 0.07); }
+td.num, th.num { text-align: center; font-family: "Consolas", "Courier New", monospace; }
+td.ng { color: var(--danger); font-weight: bold; }
+td.ok { color: var(--ok); font-weight: bold; }
+td.mid { color: var(--warn); font-weight: bold; }
+table.compact { font-size: 13.5px; }
+
+/* ----- 補足注釈 ----- */
+.note {
+    color: var(--text-muted); font-size: 13px;
+    border-left: 3px solid var(--warn); padding-left: 10px; margin-top: 12px;
+}
+.note.danger { border-left-color: var(--danger); }
+.note.ok { border-left-color: var(--ok); }
+.note.info { border-left-color: var(--accent); }
+.note strong { color: var(--text); }
+
+/* ----- リスト ----- */
+ul { padding-left: 22px; } ul li { margin: 4px 0; }
+ol.steps { padding-left: 22px; } ol.steps li { margin: 10px 0; }
+
+/* ----- フッタ ----- */
+.site-footer {
+    text-align: center; color: var(--text-muted); padding: 24px;
+    border-top: 1px solid var(--border); margin-top: 48px; font-size: 13px;
+}
+
+/* ----- レスポンシブ ----- */
+@media (max-width: 768px) {
+    .site-header, main, nav.toc {
+        padding-left: 16px; padding-right: 16px; margin-left: 0; margin-right: 0;
+    }
+    section { padding: 18px 16px; }
+    nav.toc ol { columns: 1; }
+    .split, .split3 { grid-template-columns: 1fr; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-header" id="top">
+    <h1>三菱電機「タスク汎用音源分離技術」の調査報告と、我々での実現可能性</h1>
+    <p class="subtitle">ver9 resolve4 — 文字起こし精度向上を狙った音源分離の検討</p>
+    <p class="meta">
+        要望: <code>docs/request/ver9/request4.md</code><br>
+        対象 PDF:
+        <a href="https://www.mitsubishielectric.co.jp/ja/pr/2026/pdf/0831_di.pdf">0831_di.pdf</a>
+        (2026 年 8 月 31 日 / DI No.2607 / 全 3 ページ)<br>
+        併せて読んだ参考論文 (PDF 内のリンク ※1〜※4 / MERL テクニカルレポート 全 4 本):
+        <code>TR2025-032</code> Task-Aware Unified Source Separation (ICASSP 2025 / 全 7 ページ) ／
+        <code>TR2025-143</code> FasTUSS (WASPAA 2025 / 全 8 ページ) ／
+        <code>TR2026-034</code> (ICASSP 2026 / 全 7 ページ) ／
+        <code>TR2026-032</code> (ICASSP 2026 / 全 7 ページ)<br>
+        調査日: 2026-10-26 (main <code>115e257</code> / v1.6.1)
+    </p>
+    <span class="kind">種別: 調査報告 — 実装の設計書ではない (実装するかどうかの判断材料)</span>
+</header>
+
+<nav class="toc">
+    <h2>目次</h2>
+    <ol>
+        <li><a href="#conclusion">先に結論</a> — <a href="#answer"><strong>ご質問への回答</strong></a> / <a href="#recommend"><strong>我々としての推奨</strong></a></li>
+        <li><a href="#pdf">PDF の内容まとめ (プレスリリース本体)</a></li>
+        <li><a href="#papers">参考論文 4 本の要点</a></li>
+        <li><a href="#premise">我々の前提条件 (制約の棚卸し)</a></li>
+        <li><a href="#feasibility">実現可能性の評価</a> — <a href="#license">ライセンス</a> / <a href="#compute">計算量</a></li>
+        <li><a href="#plans">それでも実装するなら: 4 案の比較</a></li>
+        <li><a href="#integration">案 B を入れる場合の組み込み位置</a></li>
+        <li><a href="#measure"><strong>先にやるべき計測 (実装前の 1〜2 日)</strong></a></li>
+        <li><a href="#cheap">分離より先に試せる軽い手</a></li>
+        <li><a href="#summary">まとめ</a> — <a href="#next">次アクションの提案</a></li>
+    </ol>
+    <p class="note">本ページは <code>resolve4.md</code> の視覚版である。文章の正は <code>resolve4.md</code>。
+    本書は <strong>2026-10-26 時点の調査スナップショット</strong>であり、実装の設計書ではない。</p>
+</nav>
+
+<main>
+
+<!-- ============================================================ 0 -->
+<section id="conclusion">
+    <h2>0. 先に結論</h2>
+
+    <h3>0.1 3 行で</h3>
+    <ol class="lead">
+        <li>
+            <strong>PDF の技術の正体は「TUSS」で、ソースコードと学習済みモデルが GitHub で公開済み</strong>
+            (<code>merlresearch/unified-source-separation</code>)。プロンプトに <code>speech</code> /
+            <code>musicbg</code> / <code>sfxbg</code> を指定して混合音から声だけを取り出す使い方は、
+            <strong>ゲーム実況アーカイブの音とまさに同じ問題設定</strong>。
+        </li>
+        <li>
+            <strong>技術的には動かせる。</strong> torch 2.11.0+cpu と torchaudio は既に配布物へ同梱済みで、
+            新しい依存は要らない。重みも medium 44.9MB / large 153.2MB と現実的なサイズ。
+        </li>
+        <li class="warn">
+            <strong>ただし「そのまま我々の配布物へ同梱」は 2 つの理由で不可。</strong><br>
+            ① ライセンスが <strong>AGPL-3.0-or-later</strong> (配布物へ入れると当方のソース開示義務が及ぶ)<br>
+            ② 計算量が <strong>音声 1 秒あたり 43.1 GMAC</strong> で、<strong>CUDA 不使用＝CPU 実行</strong>の
+            我々の配布方針では 3 時間アーカイブに数時間かかる水準。
+        </li>
+    </ol>
+
+    <div class="card-grid">
+        <div class="card"><h3>技術名</h3><p>TUSS</p></div>
+        <div class="card good"><h3>コード / 重み</h3><p>公開済み</p></div>
+        <div class="card bad"><h3>ライセンス</h3><p>AGPL-3.0</p></div>
+        <div class="card bad"><h3>演算量</h3><p>43.1 GMAC/秒</p></div>
+        <div class="card mid"><h3>CER の評価</h3><p>論文に無し</p></div>
+    </div>
+
+    <h3 id="answer">0.2 ご質問「文字起こしの精度が上がるとふんでいます」への回答</h3>
+    <p>
+        <strong>仮説の方向は妥当です。</strong> ただし「音源分離を入れれば精度が上がる」とまでは、
+        今回読んだ資料では<strong>言い切れません</strong>。理由は 3 つ:
+    </p>
+    <table>
+        <thead><tr><th style="width: 160px;">区分</th><th>内容</th></tr></thead>
+        <tbody>
+            <tr class="row-ok">
+                <th>根拠あり</th>
+                <td>ゲーム音 (BGM・SE) と声が 1 本にミックスされた音は、分離すれば声の SNR が上がる。
+                    論文の DnR (映画音響＝声/音楽/効果音の混合) では声の SI-SNR が
+                    <strong>15.1dB</strong> 改善と報告 (<a href="#p-tuss">§2.1</a>)</td>
+            </tr>
+            <tr>
+                <th>根拠なし</th>
+                <td><strong>論文はどれも音質指標 (SI-SNR / SNR) のみで、文字起こし精度 (CER/WER) は
+                    1 つも測っていない</strong></td>
+            </tr>
+            <tr class="row-high">
+                <th>既知の逆効果</th>
+                <td>分離の副作用 (子音の欠け・ミュージカルノイズ) で音声認識が<strong>悪化する</strong>ことは
+                    一般に知られている。Whisper は雑音混じりの音でも学習済みのため、
+                    綺麗だが不自然な音より生音のほうが当たることがある</td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="note info">
+        → <strong>やるなら「まず測る」。</strong> <a href="#measure">§7</a> に 1〜2 日で回せる
+        A/B 計測の手順を書きました。効果が出た場合に初めて実装へ進むのが、投資として安全です。
+    </p>
+
+    <h3 id="recommend">0.3 我々としての推奨</h3>
+    <div class="recommend">
+        <h3>TUSS 本体ではなく、MIT / Apache-2.0 の軽い分離モデルを「認識専用の前処理」として入れる案
+            (<a href="#plans">§5 案B</a>)</h3>
+        <ul>
+            <li>分離した音は <strong>Whisper へ渡すためだけ</strong>に使い、
+                <strong>出力動画の音声には一切使わない</strong>
+                → 視聴者に届く音は今と 1 バイトも変わらないので、音質面のリスクがゼロになる。</li>
+            <li>入口は 1 か所。<code>text_source.extract(input_path, …)</code> に渡すパスを
+                「分離済み 16kHz モノラル WAV」へ差し替えるだけで済む (<a href="#integration">§6</a>)。</li>
+            <li>失敗・未導入・時間切れのときは元の動画パスへ落とせば、現行とまったく同じ動作に戻る。</li>
+        </ul>
+    </div>
+</section>
+
+<!-- ============================================================ 1 -->
+<section id="pdf">
+    <h2>1. PDF の内容まとめ (プレスリリース本体)</h2>
+
+    <h3>1.1 発表の骨子</h3>
+    <table>
+        <thead><tr><th style="width: 180px;">項目</th><th>内容</th></tr></thead>
+        <tbody>
+            <tr><th>発表日 / 番号</th><td>2026 年 8 月 31 日 / DI No.2607</td></tr>
+            <tr><th>発表者</th><td>三菱電機株式会社 (開発は米国現地法人 Mitsubishi Electric Research Laboratories = MERL と共同)</td></tr>
+            <tr><th>技術名</th><td><strong>タスク汎用音源分離技術</strong></td></tr>
+            <tr><th>何ができるか</th><td>マイクで収音した混合音から、<strong>音源の種類をプロンプトで指定</strong>して
+                目的の音だけを分離・抽出。これを<strong>単一の AI モデル</strong>で実現</td></tr>
+            <tr><th>狙い</th><td>製造現場・公共空間で「機械音や人の声が周囲のノイズに埋もれる」問題を解消し、
+                AI による異常検知・音声操作・現場状況把握を成立させる = フィジカル AI の信頼性向上</td></tr>
+            <tr><th>従来の課題</th><td>分離対象や用途ごとに<strong>個別の分離モデルを開発</strong>する必要があり、
+                現場ごとに異なる音環境・利用目的へ柔軟に対応できなかった</td></tr>
+            <tr><th>展示</th><td>CEATEC 2026 (2026 年 10 月 13〜16 日 / 幕張メッセ) に出展。
+                工場の機械音・楽器の音・複数人の声を同時収音して分離するデモ
+                ※<strong>会期は既に終了</strong></td></tr>
+        </tbody>
+    </table>
+
+    <h3>1.2 「開発の特長」(PDF 2 ページ目)</h3>
+    <div class="split3">
+        <div class="panel safe">
+            <h3>1. 混合音からプロンプトで指定された音のみを分離・抽出</h3>
+            <ul>
+                <li>複数話者を分ける「音声分離」、音声とノイズを分ける「音声強調」、
+                    異なる機械音を分ける「機械音分離」などを<strong>単一モデル</strong>で実現 (※1)</li>
+                <li><strong>分離したい音の種類と数をプロンプトで指定</strong>する手法を新採用。
+                    会話・機械の稼働音・環境音・音楽が混在する中から、
+                    必要な音声／異常音／アラーム音を抽出できる</li>
+            </ul>
+        </div>
+        <div class="panel safe">
+            <h3>2. 高速化とマイク本数非依存により、エッジデバイスへ実装可能</h3>
+            <ul>
+                <li>演算量を削減する高速化技術 (※2) により、計算リソースに制約のある機器へ実装</li>
+                <li><strong>マイク本数を問わず</strong>単一モデルで分離する技術 (※3)</li>
+            </ul>
+        </div>
+        <div class="panel safe">
+            <h3>3. 分離・抽出した音の活用で、フィジカル AI システムの信頼性向上に貢献</h3>
+            <ul>
+                <li>分離音を異常検知・<strong>音声認識</strong>・現場記録などの推論に活用</li>
+                <li><strong>音源の種類に応じたコーデック技術</strong> (※4) を開発。
+                    音をトークン化して<strong>大規模言語モデルへ直接入力</strong>できるようにし、
+                    AI エージェントに聴覚機能を付与</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>1.3 今後の予定 (PDF 3 ページ目)</h3>
+    <ul>
+        <li><strong>2027 年度中</strong>のフィジカル AI への実装・他製品への適用を目指し、さらなる高速化と高精度化</li>
+        <li>工場・オフィスビル・公共施設での実証</li>
+        <li>自社デジタル基盤 <strong>「Serendie®」</strong>を活用し、異常検知・音声認識・音声操作・現場記録の
+            AI システムと連携</li>
+        <li>問い合わせ窓口: デジタルイノベーション事業本部 AX イノベーションセンター
+            (<code>axc-contact@rb.MitsubishiElectric.co.jp</code>)</li>
+    </ul>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="papers">
+    <h2>2. 参考論文 4 本の要点 (ここが実現可能性の判断材料)</h2>
+
+    <h3 id="p-tuss">2.1 ※1 TR2025-032 — TUSS 本体 (ICASSP 2025)</h3>
+    <ul>
+        <li>正式名 <strong>TUSS (Task-aware Unified Source Separation)</strong>。
+            著者は Kohei Saijo (早稲田大学からの MERL インターン)、Janek Ebbers、
+            François G. Germain、Gordon Wichern、Jonathan Le Roux。</li>
+        <li><strong>問題意識</strong>: 音源分離は「何を分離したいか」がタスク依存で、しかも
+            <strong>矛盾するタスクがある</strong> (音楽分離では楽器を分けたいが、映画音響では楽器をまとめたい)。
+            だから 1 つのタスク非依存モデルでは全部こなせない。</li>
+        <li><strong>解法</strong>: <strong>可変個の学習可能なプロンプト</strong>で
+            「どの音を何個取り出すか」を指定する。プロンプトに応じてモデルの振る舞いが変わるので、
+            矛盾するタスクも 1 モデルで扱える。</li>
+        <li><strong>構成</strong>: エンコーダ (STFT + バンド分割) → 学習可能プロンプト →
+            cross-prompt モジュール → 条件付き TSE (目的音抽出) モジュール → デコーダ。
+            土台は <strong>TF-Locoformer</strong>
+            (畳み込みと注意機構を組み合わせた時間-周波数デュアルパスモデル)。</li>
+        <li><strong>規模</strong>: medium <strong>11.1M</strong> / large <strong>38.2M</strong> パラメータ。
+            <strong>48kHz</strong>、<strong>モノラル前提</strong>。</li>
+        <li><strong>対応プロンプト (実装の既定 8 種)</strong>: <code>speech</code> / <code>sfx</code> /
+            <code>sfxbg</code> (効果音の混合) / <code>drums</code> / <code>bass</code> /
+            <code>vocals</code> / <code>other</code> / <code>musicbg</code> (楽器音の混合)。追加拡張も可能。</li>
+    </ul>
+
+    <h4>性能 (Table III / 統合モデル L5)</h4>
+    <table>
+        <thead><tr><th>ベンチマーク</th><th>タスク</th><th>指標</th></tr></thead>
+        <tbody>
+            <tr><td>VCTK-DEMAND</td><td>音声強調 (SE)</td><td>Speech <strong>19.8</strong> dB</td></tr>
+            <tr><td>WHAM!</td><td>話者分離 (SS)</td><td><strong>8.7 / 11.9</strong> dB</td></tr>
+            <tr><td>FUSS</td><td>汎用音分離 (USS)</td><td><strong>12.2</strong> dB</td></tr>
+            <tr><td>MUSDB-HQ</td><td>音楽分離 (MSS)</td><td>Vocals 8.6 / Bass 6.3 / Drums 9.1 / Other 5.4 dB</td></tr>
+            <tr class="row-ok"><td><strong>DnR</strong></td><td><strong>映画音響分離 (CASS)</strong></td>
+                <td><strong>Speech 15.1</strong> / Music-mix 7.0 / SFX-mix 8.2 dB</td></tr>
+        </tbody>
+    </table>
+    <p class="note ok">
+        → <strong>我々の用途に一番近いのは DnR (CASS)</strong>。「声 + 音楽 + 効果音」の混合から
+        声を取り出す設定で、<strong>Speech 15.1dB</strong>。
+        ゲーム実況 (声 + BGM + SE) とほぼ同じ構図です。
+    </p>
+    <p class="note info">
+        <strong>重要</strong>: 論文中に <em>“code and trained models are available online”</em> と明記、
+        リンク先は <a href="https://github.com/merlresearch/unified-source-separation">https://github.com/merlresearch/unified-source-separation</a>。
+    </p>
+
+    <h3>2.2 ※2 TR2025-143 — FasTUSS (WASPAA 2025) = 計算量の実数が分かる論文</h3>
+    <ul>
+        <li>TUSS は「パラメータは少ないが演算が多い」モデル。その設計を見直して軽量版を作った研究。</li>
+        <li><strong>TUSS オリジナルの演算量 = 音声 1 秒あたり 43.1 GMAC</strong>
+            (6 秒チャンク / シフト 6 秒)。</li>
+        <li>長尺を扱う CSS (チャンク分割処理) の実測値:
+            <ul>
+                <li>60 秒を 6 秒チャンク・シフト 6 秒 → <strong>2,800 GMAC</strong> (≒ 46.7 GMAC/秒)</li>
+                <li>60 秒を 6 秒チャンク・<strong>シフト 3 秒 (50% 重ね)</strong> →
+                    <strong>5,400 GMAC</strong> (≒ 90 GMAC/秒)
+                    ※ 重ねたほうが品質は上がる (DnR Speech 14.4 → 14.6dB)</li>
+            </ul>
+        </li>
+        <li><strong>FasTUSS-11.7G / FasTUSS-8.3G</strong> で演算を <strong>73% / 81% 削減</strong>、
+            性能低下は全ベンチマーク平均 <strong>−0.4dB / −1.2dB</strong>。
+            因果 (ストリーミング) 版も検討。</li>
+        <li><strong>ただし FasTUSS の学習済み重みは公開されていない</strong>
+            (公開されているのは TUSS の medium / large)。</li>
+    </ul>
+
+    <h3>2.3 ※3 TR2026-034 (ICASSP 2026) / ※4 TR2026-032 (ICASSP 2026)</h3>
+    <ul>
+        <li>※3 は<strong>マイク本数に依存しない</strong>単一モデル化 (1 本でも複数本でも同じモデルで分離)。
+            我々の入力は VOD の 1 本 (モノ/ステレオミックス) なので<strong>直接の恩恵は無い</strong>。</li>
+        <li>※4 は<strong>プロンプトで指定した音源ごとに分離された圧縮表現 (コーデック) を推定</strong>する技術。
+            音をトークン化して LLM へ直接入れる布石。<strong>我々の文字起こしとは別方向</strong>
+            (将来 LLM で場面理解をやるなら関係してくる)。</li>
+    </ul>
+
+    <h3>2.4 公開リポジトリの実態 (こちらで確認)</h3>
+    <table>
+        <thead><tr><th style="width: 170px;">確認項目</th><th>結果</th></tr></thead>
+        <tbody>
+            <tr><th>リポジトリ</th><td><code>merlresearch/unified-source-separation</code></td></tr>
+            <tr class="row-high"><th>ライセンス</th><td><strong>AGPL-3.0-or-later</strong>
+                (<code>LICENSE.md</code> の実物を取得して確認。README にも SPDX 表記)</td></tr>
+            <tr><th>学習済み重み</th><td><code>pretrained_models/</code> に git-LFS で同梱。
+                <strong>medium = 44.9MB</strong> / <strong>large = 153.2MB</strong></td></tr>
+            <tr><th>推論 CLI</th><td><code>separate.py --audio_path … --prompts speech sfxbg musicbg --css_segment_size 8 --css_shift_size 4</code></td></tr>
+            <tr><th>長尺対応</th><td><strong>学習は 6 秒チャンク</strong>。「入力が 6 秒より大幅に長いと性能が落ちる」と
+                README に明記。長尺は CSS (チャンク分割) で処理するが、
+                <strong>チャンク間の音源の並び (permutation) は未解決</strong>と注記</td></tr>
+            <tr><th>実行環境</th><td>conda + PyTorch + Lightning</td></tr>
+            <tr><th>多チャンネル</th><td>現実装はモノラル前提 (ステレオは各チャンネル独立処理)</td></tr>
+            <tr><th>一部ファイル</th><td>ESPnet / urgent challenge 由来の部分は Apache-2.0 併記</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="premise">
+    <h2>3. 我々の前提条件 (実現可能性に直結する制約の棚卸し)</h2>
+    <table class="compact">
+        <thead><tr><th style="width: 140px;">条件</th><th>現状</th><th style="width: 260px;">出典</th></tr></thead>
+        <tbody>
+            <tr class="row-high">
+                <th>実行デバイス</th>
+                <td><strong>CUDA 不使用方針。音声認識は常に CPU</strong>
+                    (<code>_resolve_device()</code> は無条件で <code>"cpu"</code> を返す)</td>
+                <td><code>src/modules/subtitle_generator.py</code> /
+                    <code>docs/request/ver1/resolve8.md</code> §4.2.1</td>
+            </tr>
+            <tr>
+                <th>配布サイズ</th>
+                <td>GitHub Releases の <strong>1 ファイル 2GiB 上限</strong>。
+                    CUDA ランタイム約 1.93GB を切って収めた経緯あり</td>
+                <td><code>docs/HowToRelease.md</code> 冒頭 / <code>ver1/resolve8.md</code> §4.2</td>
+            </tr>
+            <tr class="row-ok">
+                <th>PyTorch</th>
+                <td><strong>torch 2.11.0+cpu / torchaudio 2.11.0 を既に同梱</strong>。
+                    numpy・onnxruntime・ctranslate2・faster_whisper も同梱</td>
+                <td><code>src/dist/Stretheus/_internal/</code></td>
+            </tr>
+            <tr>
+                <th>音声認識の入口</th>
+                <td><code>text_source.extract(input_path, language)</code> の <strong>2 か所</strong>。
+                    <code>input_path</code> は<strong>動画ファイルのパス</strong>で、
+                    faster-whisper が内部でデコードする</td>
+                <td><code>subtitle_generator.py</code> L1677 (通常) / L2400 (アーカイブ)</td>
+            </tr>
+            <tr>
+                <th>既存の雑音対策</th>
+                <td>Silero VAD (<code>whisper_vad_filter</code>)、<code>no_speech_threshold</code>、
+                    <code>condition_on_previous_text=False</code>、
+                    発話区間ゲート (<code>speech_gate_*</code>、現在は無効化して温存)、
+                    話者照合 (<code>speaker_filter</code>)、
+                    ドメイン知識注入 (<code>initial_prompt</code> / <code>hotwords</code>)</td>
+                <td><code>setting.json</code> / <code>subtitle_generator.py</code></td>
+            </tr>
+            <tr>
+                <th>入力素材</th>
+                <td>twitch-dl で取得した VOD。<strong>声とゲーム音は 1 本にミックス済み</strong>で、
+                    素材段階で分けられない</td>
+                <td><code>memory/archive-clip-workflow.md</code></td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="note info">
+        <strong>この最後の 1 行が、音源分離を検討する価値そのものです。</strong>
+        配信者側で OBS のマルチトラック収録 (マイクとゲーム音を別トラック) があれば分離は不要で、
+        そのほうが確実ですが、<strong>既存アーカイブにはそれが無い</strong>ので、
+        後から分離するしか手がありません。
+    </p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="feasibility">
+    <h2>4. 実現可能性の評価</h2>
+
+    <h3 id="license">4.1 ライセンス (最大の壁)</h3>
+    <p>TUSS は <strong>AGPL-3.0-or-later</strong>。影響は配布形態で変わります。</p>
+    <table>
+        <thead><tr><th style="width: 290px;">使い方</th><th>評価</th></tr></thead>
+        <tbody>
+            <tr class="row-high">
+                <th>配布物 (<code>Stretheus.exe</code> / <code>_internal</code>) へ同梱</th>
+                <td><span class="badge ng">不可</span> AGPL のコードを頒布すると、結合した作品に同じ条件
+                    (ソース開示) が及ぶ。当方は課金・ポイント機構を持つクローズドな配布物なので、
+                    事業判断として採れない</td>
+            </tr>
+            <tr>
+                <th>利用者が自分で導入した TUSS を<strong>別プロセスとして呼ぶ</strong> (あれば使う)</th>
+                <td><span class="badge gray">グレー寄りだが現実的</span>
+                    当方は AGPL 物を頒布せず、CLI 越しの疎結合に留める形。
+                    ただし「同梱していないのに実質セット」と見なされる余地は残るため、法務確認が必要</td>
+            </tr>
+            <tr>
+                <th>サーバ側で動かして結果を返す</th>
+                <td><span class="badge gray">AGPL §13 発動</span>
+                    ネットワーク利用のため利用者へソース提供の申し出が必要。
+                    改変しなければ上流リポジトリの提示で足りるという解釈はあるが、やはり法務確認が必要。
+                    加えて音声アップロードの転送量・保管の問題が乗る</td>
+            </tr>
+            <tr>
+                <th>三菱電機から<strong>商用ライセンスを受ける</strong></th>
+                <td><span class="badge info">選択肢として実在</span>
+                    PDF に問い合わせ窓口 (<code>axc-contact@rb.MitsubishiElectric.co.jp</code>) があり、
+                    2027 年度中の製品実装を目指す段階なので、商用提供の話は時期的に早い可能性が高い</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="compute">4.2 計算量 (第 2 の壁)</h3>
+    <p>論文の実数から、我々の CPU 専用配布でどうなるかを試算しました。</p>
+<pre>TUSS (medium / 11.1M) = 43.1 GMAC / 音声 1 秒   (1 MAC ≒ 2 FLOP → 86.2 GFLOP/秒)
+50% オーバーラップで処理する場合は約 2 倍 (90 GMAC/秒 ≒ 180 GFLOP/秒)</pre>
+    <p>
+        本開発機 (12 スレッド) で torch の行列積スループットを実測すると
+        <strong>361.7 GFLOPS (fp32)</strong>。素直に割ると理論 RTF は
+        <strong>0.24 倍速</strong> (音声より速い) ですが、注意機構・正規化・メモリ帯域の制約で
+        <strong>実効効率は行列積ピークの 10〜30% 程度</strong>に落ちるのが通例なので、
+    </p>
+    <table>
+        <thead><tr><th>条件</th><th>本開発機での粗い見積り</th><th>3 時間アーカイブ</th></tr></thead>
+        <tbody>
+            <tr><th>オーバーラップなし</th><td>RTF 0.8〜2.4 倍</td><td class="ng">2.5〜7 時間</td></tr>
+            <tr><th>50% オーバーラップ</th><td>RTF 1.6〜4.8 倍</td><td class="ng">5〜14 時間</td></tr>
+        </tbody>
+    </table>
+    <p class="note danger">
+        → <strong>現実的でない。</strong> しかも本開発機は 12 スレッドと強めで、
+        利用者の PC はより遅い想定が必要。これは<strong>試算 (実測ではない)</strong> ですが、
+        桁を外していないはずです。
+    </p>
+
+    <h4>緩和できる要素</h4>
+    <table>
+        <thead><tr><th style="width: 300px;">手</th><th>効果</th></tr></thead>
+        <tbody>
+            <tr><th>無音カット後の音声に対して実行</th><td>入力長が実測で 3〜7 割に減る (素材次第)</td></tr>
+            <tr><th>VAD で発話区間だけ分離</th><td>さらに短縮。既に Silero VAD の仕組みがある</td></tr>
+            <tr><th>16kHz モノラルで足りる</th>
+                <td><strong>TUSS では使えない</strong> (48kHz バンド分割前提のため、16kHz 入力は学習と不一致)。
+                    軽量な代替モデルなら効く</td></tr>
+            <tr><th>FasTUSS (−81% 演算)</th>
+                <td><strong>重みが非公開</strong>のため我々では使えない
+                    (自前学習は非現実的 / <a href="#retrain">§4.3</a>)</td></tr>
+            <tr><th>GPU を使う</th><td>CUDA 不使用方針 (配布サイズ 1.93GB) の覆しが必要</td></tr>
+        </tbody>
+    </table>
+
+    <h3 id="retrain">4.3 自前で学習し直す案は非現実的</h3>
+    <ul>
+        <li>学習データに <strong>WSJ0 (LDC の有償ライセンス)</strong>、MOISESDB (要手動取得)、
+            WHAMR! (要シミュレーション)、FSD50K / FMA / MUSDB-HQ / DnR / VCTK-DEMAND /
+            LibriVox (URGENT 2024) を使用。</li>
+        <li>学習は <strong>150 エポック × 2.5k ステップ</strong>、バッチ 8。GPU クラスタ前提の規模。</li>
+    </ul>
+    <p class="note danger">
+        → <strong>学習は選択肢に入りません。</strong> 使うなら公開重みをそのまま使う以外にない。
+    </p>
+
+    <h3>4.4 効果の不確実性 (第 3 の壁)</h3>
+    <ul>
+        <li>4 本の論文はすべて <strong>SI-SNR / SNR のみ</strong>で評価。
+            <strong>文字起こし精度の評価が無い</strong>。</li>
+        <li>一方で我々が本当に知りたいのは「ゲーム実況の日本語 CER がどれだけ下がるか」。</li>
+        <li>分離音は「人が聞いて綺麗」でも、認識器にとっては<strong>学習時の分布から外れた音</strong>になり得る。</li>
+    </ul>
+    <p class="note danger">
+        → <strong>測らずに実装してはいけない部分</strong>です (<a href="#measure">§7</a>)。
+    </p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="plans">
+    <h2>5. それでも実装するなら: 4 案の比較</h2>
+    <table class="compact">
+        <thead>
+            <tr>
+                <th class="num" style="width: 36px;">#</th><th>案</th><th>ライセンス</th>
+                <th>処理時間</th><th>保守</th><th>評価</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="num"><span class="badge id">A</span></td>
+                <td>TUSS を<strong>利用者任意の外部ツール</strong>として呼ぶ (あれば使う)</td>
+                <td>AGPL を頒布しない形に限る / 法務確認要</td>
+                <td>重い (<a href="#compute">§4.2</a>)</td>
+                <td>大 (conda 環境・別 PyTorch)</td>
+                <td class="mid">条件付きで可。ただし「使える人がほぼ居ない」</td>
+            </tr>
+            <tr class="row-ok">
+                <td class="num"><span class="badge id">B</span></td>
+                <td><strong>MIT / Apache-2.0 の軽量分離を認識専用の前処理として同梱</strong></td>
+                <td>問題なし</td><td>選択可</td><td>中</td>
+                <td class="ok">推奨</td>
+            </tr>
+            <tr>
+                <td class="num"><span class="badge id">C</span></td>
+                <td>サーバ側で分離して結果を返す</td>
+                <td>AGPL §13 / 転送量</td><td>サーバ負荷</td><td>大</td>
+                <td class="ng">現時点では見送り</td>
+            </tr>
+            <tr>
+                <td class="num"><span class="badge id">D</span></td>
+                <td>三菱電機へ商用ライセンス打診</td>
+                <td>交渉次第</td><td>同上</td><td>—</td>
+                <td class="mid">並行して可 (時期的に早い見込み)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>5.1 推奨案 B で使える候補 (ライセンスは実物を取得して確認済み)</h3>
+    <table class="compact">
+        <thead><tr><th>候補</th><th>ライセンス</th><th>性質</th><th>我々への向き</th></tr></thead>
+        <tbody>
+            <tr class="row-ok">
+                <th><strong>Demucs (htdemucs)</strong><br><code>facebookresearch/demucs</code></th>
+                <td><span class="badge ok">MIT</span></td>
+                <td>音楽分離 4 stem (vocals/drums/bass/other)。<code>vocals</code> が声に相当</td>
+                <td><strong>第 1 候補。</strong> BGM が主因のゲーム配信に合う。重み 1 本 80MB 前後。
+                    ただし推論は軽くない (CPU で RTF 0.3〜1 程度)</td>
+            </tr>
+            <tr>
+                <th><strong>DeepFilterNet (DF3)</strong><br><code>Rikorose/DeepFilterNet</code></th>
+                <td><span class="badge ok">MIT / Apache-2.0</span> (デュアル)</td>
+                <td>48kHz 音声強調。<strong>極めて軽い</strong> (単コアで動く設計)</td>
+                <td><strong>第 2 候補。</strong> 速度が圧倒的。
+                    ただし「雑音抑圧」であって音楽の除去は得意ではない</td>
+            </tr>
+            <tr>
+                <th><strong>ClearerVoice-Studio (MossFormer2 等)</strong><br><code>modelscope/ClearerVoice-Studio</code></th>
+                <td><span class="badge gray">Apache-2.0</span> (※個別モデルの重みの条項は別途確認が必要)</td>
+                <td>音声強調・分離の詰め合わせ</td>
+                <td>候補。重みの条項確認が前提</td>
+            </tr>
+            <tr>
+                <th>Silero VAD</th>
+                <td><span class="badge ok">MIT</span></td>
+                <td>発話区間検出</td>
+                <td><strong>既に faster-whisper 経由で使用中</strong></td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="note info">
+        いずれも「声を取り出す」目的は同じで、<strong>TUSS の <code>speech</code> プロンプトの代わり</strong>になります。
+        TUSS の強みは「1 モデルで何でも / プロンプトで柔軟に」であって、
+        <strong>我々は “声だけ欲しい” 1 用途しか要らない</strong>ため、
+        汎用性のための重さを払う必要がありません。
+    </p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="integration">
+    <h2>6. 案 B を入れる場合の組み込み位置 (概略。実装設計は別途)</h2>
+<pre class="flow">現状:
+  動画 (無音カット後) ──────────────────────────→ text_source.extract(動画パス)
+                                                    └ faster-whisper が内部でデコード
+
+案B:
+  動画 (無音カット後) ─┬────────────────────────→ 出力動画の音声 (いっさい触らない)
+                        └ ffmpeg で 16k/mono 抽出
+                             → 分離モデルで声を抽出 (失敗・時間切れなら破棄)
+                             → voice.wav ──────→ text_source.extract(voice.wav)</pre>
+    <table class="compact">
+        <thead><tr><th style="width: 150px;">項目</th><th>内容</th></tr></thead>
+        <tbody>
+            <tr><th>新規モジュール</th><td><code>src/modules/voice_isolation.py</code>
+                (分離の実行とフォールバック判断だけを持つ)</td></tr>
+            <tr><th>触る場所</th><td><code>subtitle_generator</code> の <code>extract()</code> 呼び出し
+                <strong>2 か所</strong> (L1677 / L2400) で渡すパスを差し替える</td></tr>
+            <tr><th>時間軸</th><td>分離 WAV は元と同じ長さ・同じ開始時刻にする →
+                <strong>既存のタイムスタンプ処理は無改修</strong></td></tr>
+            <tr class="row-ok"><th>出力動画</th><td><strong>変更なし</strong>
+                (分離音は認識専用。視聴者に届く音は現状と同一)</td></tr>
+            <tr><th>設定</th><td><code>subtitle.voice_isolation</code>: <code>enabled</code> /
+                <code>engine</code> / <code>model_path</code> / <code>device</code> /
+                <code>max_rtf</code> (時間切れ判定) / <code>sample_rate</code> など。
+                既定 <code>enabled: false</code> で<strong>既存挙動を一切変えない</strong></td></tr>
+            <tr><th>失敗時</th><td>未導入・例外・時間超過なら元の動画パスで認識 = 現行とまったく同じ結果</td></tr>
+            <tr><th>配布サイズ</th><td>重み 1 本 (50〜150MB) の増加。2GiB 上限に対しては
+                <strong>実測して判断</strong>が必要
+                (現状の payload が約 2.29GB という記録がある / <a href="#premise">§3</a>)</td></tr>
+            <tr><th>進捗表示</th><td>既存の <code>run_ffmpeg_progress</code> と同じ流儀で工程を 1 本増やす</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="measure">
+    <h2>7. 先にやるべき計測 (実装前の 1〜2 日)</h2>
+    <p><strong>目的</strong>: 「ゲーム実況の日本語 CER が、分離前処理でどれだけ下がるか」を数字にする。</p>
+    <ol class="steps">
+        <li><strong>素材を 3 本選ぶ</strong> — BGM が大きい回 / 効果音が多い回 / 静かな雑談回。各 10 分。</li>
+        <li><strong>正解を作る</strong> — 各素材 10 分を手で書き起こす
+            (または既存テロップを手で直したものを正解とする)。</li>
+        <li><strong>4 条件で認識する</strong>
+            <table class="compact">
+                <thead><tr><th class="num" style="width: 44px;">#</th><th>条件</th></tr></thead>
+                <tbody>
+                    <tr><td class="num">①</td><td>現状のまま (ベースライン)</td></tr>
+                    <tr><td class="num">②</td><td>Demucs の <code>vocals</code> を認識へ入力</td></tr>
+                    <tr><td class="num">③</td><td>DeepFilterNet の強調音を認識へ入力</td></tr>
+                    <tr><td class="num">④</td><td>(参考) TUSS medium の <code>speech</code> を認識へ入力
+                        ※検証用にローカルで試すだけ。配布はしない</td></tr>
+                </tbody>
+            </table>
+        </li>
+        <li><strong>測る指標</strong> — CER (文字誤り率) / 取りこぼし (未検出発話) /
+            <strong>ハルシネーション件数</strong> / 処理時間 (RTF)。</li>
+        <li><strong>判定</strong> — CER が <strong>相対 10% 以上</strong>下がり、
+            処理時間が許容内 (例: 元動画の 0.3 倍以内) の条件があれば実装へ。
+            無ければ <strong>実装しない</strong> (<a href="#cheap">§8</a> の軽い手を先に試す)。</li>
+    </ol>
+    <p class="note info">
+        ④ の TUSS を手元で試すこと自体は AGPL 上問題ありません (頒布しないため)。
+        <strong>「我々の技術の上限はどこか」を知る基準値</strong>として測る価値があります。
+    </p>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="cheap">
+    <h2>8. 分離より先に試せる軽い手 (ほぼコストゼロ)</h2>
+    <p>計測の前後でこちらも押さえておくと、分離が不要になる可能性があります。</p>
+    <table class="compact">
+        <thead><tr><th style="width: 290px;">手</th><th style="width: 290px;">現状</th><th>期待</th></tr></thead>
+        <tbody>
+            <tr class="row-ok">
+                <th><code>initial_prompt</code> / <code>hotwords</code> の充実</th>
+                <td>実装済み (<code>initial_prompt_from_vod</code> で VOD タイトル・ゲーム名を注入)</td>
+                <td>ゲーム固有名詞の取りこぼしに直接効く。
+                    <strong>分離より費用対効果が高い可能性</strong></td>
+            </tr>
+            <tr>
+                <th><code>replacements</code> (置換辞書)</th>
+                <td>実装済み</td><td>定型の誤変換を確実に潰せる</td>
+            </tr>
+            <tr>
+                <th><code>whisper_beam_size</code> (現 8) を上げる</th>
+                <td>設定可</td><td>精度は上がるが CPU 時間と引き換え</td>
+            </tr>
+            <tr>
+                <th><code>whisper_vad_min_silence_ms</code> / <code>no_speech_threshold</code> の調整</th>
+                <td>設定可</td><td>ハルシネーションと取りこぼしのバランス調整</td>
+            </tr>
+            <tr>
+                <th>音量正規化の前段強化</th>
+                <td><code>loudness</code> セクションあり</td><td>小さい声の取りこぼしに効く</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="summary">
+    <h2>9. まとめ</h2>
+    <ul>
+        <li>PDF の技術は <strong>TUSS</strong>。プロンプトで「声・音楽・効果音」を指定して分ける単一モデルで、
+            <strong>ゲーム実況アーカイブの音と問題設定が一致</strong>しており、着眼点は正しいと考えます。</li>
+        <li><strong>コードと学習済み重みは公開済み</strong>で、我々の配布物には torch / torchaudio が
+            既に入っているため、「技術的に動かせるか」という問いには <strong>動かせる</strong> が答えです。</li>
+        <li>ただし <strong>AGPL-3.0</strong> と <strong>音声 1 秒あたり 43.1 GMAC (CPU 専用配布)</strong> の
+            2 点で、<strong>TUSS そのものを製品へ入れるのは現実的でない</strong>。</li>
+        <li>目的 (文字起こし精度) は、<strong>MIT / Apache-2.0 の軽量な分離を「認識専用の前処理」として入れる</strong>
+            形で狙うのが現実的 (<a href="#plans">§5 案B</a> / <a href="#integration">§6</a>)。
+            出力動画の音は触らないため音質リスクは発生しません。</li>
+        <li><strong>ただし効果は未検証</strong>です。論文は音質指標しか測っておらず、
+            分離が認識を悪化させる例も知られています。
+            <strong><a href="#measure">§7</a> の A/B 計測を先に回し、CER が実際に下がった方式だけを実装する</strong>
+            ことを提案します。</li>
+    </ul>
+
+    <h3 id="next">次アクションの提案 (優先順)</h3>
+    <ol class="steps">
+        <li><a href="#measure">§7</a> の計測素材 3 本と正解テキストを用意する (ここだけは人手が必要)</li>
+        <li>手元で ①②③④ を回して CER / 処理時間を出す (計測用スクリプトはスクラッチで可)</li>
+        <li>結果を見て「実装する / しない / 別案」を判断。実装するなら <a href="#integration">§6</a> を設計書へ起こす</li>
+        <li>並行して、軽い手 (<a href="#cheap">§8</a>) の <code>hotwords</code> /
+            <code>replacements</code> を今の素材で詰める</li>
+    </ol>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    ver9 resolve4 — 調査日 2026-10-26 (main <code>115e257</code> / v1.6.1) ／
+    文章の正は <code>docs/request/ver9/resolve4.md</code> ／
+    <a href="#top">ページ先頭へ</a>
+</footer>
+
+</body>
+</html>
