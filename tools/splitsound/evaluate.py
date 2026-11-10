@@ -24,6 +24,13 @@ import unicodedata
 
 import numpy as np
 
+# Windows のコンソール (cp932) で出せない文字があっても落ちないようにする。
+# 表は metrics.csv にも書くため、画面が化けても結果は失われない。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:      # noqa: BLE001 (古い環境では reconfigure が無い)
+    pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import common  # noqa: E402
@@ -398,7 +405,123 @@ def main():
     for row in rows:
         print("| " + " | ".join(str(row.get(key, "")) for key in show) + " |")
     print(f"\n生表を書きました: {out_csv}")
+    print_comparison(rows)
     return 0
+
+
+# ------------------------------------------------------------------
+# C0 との比較と判定 (設計書 §3.6)
+# ------------------------------------------------------------------
+
+# §3.6 の基準。満たすべき向きと閾値をここに 1 か所でまとめる。
+_CRITERIA = {
+    # 無音カット: M1 が +0.05 以上 / M2 が相対 30% 以上減 / M5 が +2 ポイント以内
+    "M1_f1": {"kind": "diff", "min": 0.05, "label": "M1 +0.05 以上"},
+    "M2_game_only_kept": {"kind": "rel_down", "min": 0.30, "label": "M2 相対 30% 減"},
+    "M5_missed_ratio": {"kind": "diff_max", "max": 0.02, "label": "M5 悪化 2pt 以内"},
+    # 文字起こし: CER が相対 10% 以上改善
+    "M3_cer": {"kind": "rel_down", "min": 0.10, "label": "CER 相対 10% 改善"},
+}
+
+
+# 条件ごとに C0 との差を出し、基準を満たしたかを表で示す
+#
+# 精度の指標は正解データが無いと空になるため、その列は「—」で飛ばす。
+# 判定は**素材ごと**に出す (設計書 §3.6 は「3 本すべてで満たすこと」を求めるため)。
+def print_comparison(rows):
+    # T1 (その音声で測り直した閾値) の行だけを使う
+    index = {}
+    for row in rows:
+        if row.get("threshold") != "T1":
+            continue
+        index[(row["material"], row["condition"])] = row
+    materials = sorted({m for m, _c in index})
+    conditions = [c for c in
+                  ("c1_htdemucs", "c2_df3", "c3_gate", "c4_df3_demucs")
+                  if any((m, c) in index for m in materials)]
+    if not conditions:
+        return
+
+    print("\n\n## C0 との比較 (設計書 §3.6)\n")
+    header = ["素材", "条件", "ΔM1", "M2 相対変化", "CER 相対変化", "ΔM5",
+              "分離 RTF", "判定"]
+    print("| " + " | ".join(header) + " |")
+    print("|" + "---|" * len(header))
+    for material in materials:
+        base = index.get((material, "c0_baseline"))
+        for condition in conditions:
+            row = index.get((material, condition))
+            if row is None or base is None:
+                continue
+            cells, verdict = _compare_row(base, row)
+            rtf = row.get("rtf_total")
+            sep = row.get("t_separation") or 0.0
+            rtf_sep = (round(float(sep) / float(row.get("t_total") or 1) * float(rtf or 0), 3)
+                       if rtf else "")
+            print("| " + " | ".join([material, condition] + cells
+                                    + [str(_sep_rtf(row)), verdict]) + " |")
+    print("\n> ΔM1 = M1 の差 / M2・CER は C0 比の相対変化 (マイナスが改善) / "
+          "ΔM5 は取りこぼしの差 (プラスが悪化)。\n"
+          "> 「-」は正解データが無くて測れない列。判定は測れた基準だけで出している。")
+
+
+# 分離工程だけの RTF を返す (工程別の所要から求める)
+def _sep_rtf(row):
+    duration = None
+    total = row.get("t_total")
+    rtf = row.get("rtf_total")
+    if total and rtf:
+        duration = float(total) / float(rtf) if float(rtf) else None
+    sep = float(row.get("t_separation") or 0.0)
+    if not duration or duration <= 0:
+        return ""
+    return round(sep / duration, 3)
+
+
+# 1 条件の比較セルと判定文を作る
+def _compare_row(base, row):
+    cells = []
+    results = []
+
+    def fmt_diff(key):
+        a, b = base.get(key), row.get(key)
+        if a is None or b is None:
+            return "-", None
+        return f"{b - a:+.3f}", b - a
+
+    def fmt_rel(key):
+        a, b = base.get(key), row.get(key)
+        if a in (None, 0) or b is None:
+            return "-", None
+        return f"{(b - a) / a * 100:+.1f}%", (b - a) / a
+
+    text, value = fmt_diff("M1_f1")
+    cells.append(text)
+    if value is not None:
+        results.append((_CRITERIA["M1_f1"]["label"], value >= 0.05))
+
+    text, value = fmt_rel("M2_game_only_kept")
+    cells.append(text)
+    if value is not None:
+        results.append((_CRITERIA["M2_game_only_kept"]["label"], value <= -0.30))
+
+    text, value = fmt_rel("M3_cer")
+    cells.append(text)
+    if value is not None:
+        results.append((_CRITERIA["M3_cer"]["label"], value <= -0.10))
+
+    text, value = fmt_diff("M5_missed_ratio")
+    cells.append(text)
+    if value is not None:
+        results.append((_CRITERIA["M5_missed_ratio"]["label"], value <= 0.02))
+
+    if not results:
+        return cells, "測れない (正解データ待ち)"
+    ok = [label for label, passed in results if passed]
+    ng = [label for label, passed in results if not passed]
+    if not ng:
+        return cells, "**満たす** (" + " / ".join(ok) + ")"
+    return cells, "未達: " + " / ".join(ng)
 
 
 if __name__ == "__main__":

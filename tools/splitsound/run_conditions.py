@@ -89,11 +89,27 @@ def transcribe(path, settings):
         return {"items": [], "error": "音声認識エンジンが無効です"}
     watch = common.Stopwatch()
     items = source.extract(path, subtitle_cfg.get("language", "ja"))
-    rows = [{
-        "start": round(float(item.get("start", 0.0)), 3),
-        "end": round(float(item.get("end", 0.0)), 3),
-        "text": str(item.get("text", "")),
-    } for item in items]
+    # 語単位の時刻も残す (subtitle.word_timestamps=True のとき faster-whisper が返す)。
+    #
+    # 【なぜ要るか / 2026-11-09】
+    # 認識の「区間」は VAD の都合で実際の発話より大幅に長くなることがある
+    # (実測: 10 文字の一言に 14〜25 秒の区間が付く)。区間をそのまま「発話時間」と
+    # みなすと、無音カットの評価が実態と合わない。語の時刻があれば
+    # 「本当に声が出ている時間」を union で作れる。
+    rows = []
+    for item in items:
+        row = {
+            "start": round(float(item.get("start", 0.0)), 3),
+            "end": round(float(item.get("end", 0.0)), 3),
+            "text": str(item.get("text", "")),
+        }
+        words = item.get("words") or []
+        spans = [[round(float(w["start"]), 3), round(float(w["end"]), 3)]
+                 for w in words
+                 if w.get("start") is not None and w.get("end") is not None]
+        if spans:
+            row["word_spans"] = spans
+        rows.append(row)
     return {
         "items": rows,
         "count": len(rows),

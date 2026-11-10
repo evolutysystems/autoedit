@@ -62,6 +62,16 @@ python tools/splitsound/run_conditions.py --materials S1,S2,S3 \
 python tools/splitsound/evaluate.py --materials S1,S2,S3
 ```
 
+`evaluate.py` は 2 つの表を出す。
+
+| 表 | 中身 |
+| --- | --- |
+| 指標の生表 | 素材 × 条件 × 閾値 (T1/T2) ごとの M1〜M7。`output/_splitsound/metrics.csv` にも書く |
+| **C0 との比較** | 条件ごとの ΔM1・M2 の相対変化・CER の相対変化・ΔM5・分離 RTF と、**設計書 §3.6 の判定** |
+
+正解データが無い列は `-` になり、判定は「測れない (正解データ待ち)」と出る。
+分離 RTF は正解データが無くても出るので、**速度の判定だけは先に確認できる**。
+
 正解データの作り方は `truth_schema.md`。
 置き場は `docs/request/ver10/ss1_truth/<素材ID>.jsonl`。
 
