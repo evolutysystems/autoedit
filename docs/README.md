@@ -11,7 +11,7 @@
 | 3 | `docs/howto/` / `docs/layout/` / `docs/HowToRelease.md` | 現行の利用者向け・画面・配布手順 |
 | 4 | `docs/request/` `docs/error/` `docs/quality/` `docs/security/` `docs/reduce/` `docs/analyze/` | **履歴**。過去の意思決定の記録。現行仕様の根拠として単独で引用しない |
 
-最終更新: 2026-11-06 (対象 v1.8.2)
+最終更新: 2026-11-15 (対象 v1.8.4)
 
 ---
 
