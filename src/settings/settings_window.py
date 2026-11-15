@@ -37,15 +37,19 @@ from PySide6.QtWidgets import (
 # パッケージ外から起動された場合はリポジトリルートを sys.path へ補ってから読み込む。
 # color_field は色文字列の変換と色見本の描画を Timeline のインスペクタと共有する
 # ための小部品 (resolve6 §5.4)。theme と同じ経路で読み込む。
+# output_profile は出力キャンバスの解決と、その実行時キーの定義を持つ唯一の場所
+# (ver11 resolve2 R2)。保存の出口でそれを剥がすため読み込む。PySide6 には依存しない。
 try:
     from src.gui import color_field, theme
     from src.i18n import tr
+    from src.modules import output_profile
     from src.utils import disk
 except ImportError:
     sys.path.insert(
         0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from src.gui import color_field, theme
     from src.i18n import tr
+    from src.modules import output_profile
     from src.utils import disk
 
 DEFAULT_UI_SETTINGS = theme.DEFAULT_UI_SETTINGS
@@ -492,6 +496,15 @@ DEFAULT_SETTINGS = {
         "metric": "percentile",
         # metric="percentile" のときの分位点 (%)
         "percentile": 10,
+        # 発話候補区間に残すピーク音量の下限 (dBFS / ver11 resolve1)
+        #
+        # base_noise_db の無音判定は**瞬間値**で行うため、「ピークは立たないが常に
+        # 鳴っている音」(低域ノイズなど) を無音と判定できない。その区間が発話候補に
+        # 入ると分位点を引き下げ、カット閾値がノイズフロアまで落ちる
+        # (実測: 候補の 27% がノイズで閾値 -37dB / ver10 result_ss1.md §12)。
+        # 人の声はピークが立つため、max の下限で切り分けられる。
+        # None で従来動作 (切り戻し)。全区間が下限未満なら自動で従来算出へ落ちる。
+        "min_region_peak_db": -20,
         # 旧既定 "mean" を "percentile" へ寄せる 1 回きりの移行済みフラグ
         # (error 20261102 R3)。詳細は _migrate_volume_metric を参照。
         "metric_migrated": False,
@@ -1619,7 +1632,21 @@ def _normalize_legacy_values(merged):
         changed = True
     if _migrate_subscription_cache_hours(merged):
         changed = True
+    if _migrate_runtime_canvas(merged):
+        changed = True
     return changed
+
+
+# 保存されてしまった出力キャンバスの解決値を保存値へ戻す (ver11 resolve2 R3)。
+#
+# v1.8.3 以前は、編集画面が解決済みの設定コピーをそのまま保存していたため、
+# 「その 1 本のために解決した寸法」が setting.json に残る
+# (実測: 縦素材 1 本で output_width=606 / output_height=1080 が焼き付き、
+#  1920x1080 の VOD が 606x340 で書き出されるようになった)。
+# 保存されないはずの output_reference_height が在ること自体がその印なので、
+# 起動時に 1 度だけ直して保存する。正常な設定には触れない。
+def _migrate_runtime_canvas(merged):
+    return output_profile.restore_runtime_canvas(merged.get("ffmpeg"))
 
 
 # オフライン救済の窓を旧既定 (72 時間) から現行既定へ詰める (sec2 N2)。
@@ -1911,8 +1938,18 @@ def _has_new_keys(data, merged):
 # 設定をsetting.jsonに保存する
 def save_settings(settings):
     os.makedirs(SETTINGS_DIR, exist_ok=True)
+    # 実行時だけの出力キャンバス解決値を保存しない (ver11 resolve2 R2)。
+    #
+    # パイプラインは apply_canvas_to_settings で解決値を**実行用コピー**へ書き戻し、
+    # そのコピーが Timeline 編集画面へ渡る。画面は閉じるときに最近使ったプロジェクトや
+    # 画面の大きさを覚えるため settings を丸ごと保存するので、ここで剥がさないと
+    # 「その 1 本のための寸法」が上限枠として焼き付き、以降の出力が極端に縮む
+    # (実測: 縦素材 1 本で 606x1080 が残り、1920x1080 の VOD が 606x340 になった)。
+    #
+    # 守りを保存の出口 1 か所へ寄せることで、save_settings を呼ぶ画面が増えても再発しない。
+    payload = output_profile.without_runtime_canvas(settings)
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
+        json.dump(payload, f, ensure_ascii=False, indent=4)
 
 
 # 同梱物のライセンス表記フォルダを解決する (ver5 resolve2 §5.10.3)

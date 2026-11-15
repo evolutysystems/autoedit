@@ -748,12 +748,12 @@ def set_analysis_audio_path(self, path):
 | 0 | 本書のレビュー / §10 の確認 | — | **済** (Q1〜Q3 は §10.1 で決定) |
 | 1 | 依存の導入 (開発機のみ) + `tools/splitsound/` 一式 | `common.py` / `prepare.py` / `separate.py` / `run_conditions.py` / `evaluate.py` / `README.md` / `truth_schema.md` | **済** (§12.1) |
 | 2 | 素材 S1〜S4 の選定・切り出し・正規化 | `materials.json` / `analysis_source.wav` | **済** (S1・S3) / S2・S4 は未 |
-| 3 | C0 を回し、テロップを叩き台に正解データを作る | `ss1_truth/*.jsonl` | **未 (人手が必要な唯一の作業)** |
+| 3 | C0 を回し、テロップを叩き台に正解データを作る | `ss1_truth/*.jsonl` | **S1 ・ S3 は済** (2026-11-12 / S1 = 段 A〜C の 222 行 / S3 = 段 A・B の 71 行)。S5 は未 |
 | 4 | C1/C2 の分離 + 自己検査 | `voice.wav` / `separate.json` | C1 は S1・S3 で**済**。C2 は `deep-filter` 待ち (§10.2 Q8) |
-| 5 | 閾値・無音検出・文字起こし → 指標 | `result.json` / `metrics.csv` | 無音カットの数字は取得中。CER 等は段 3 の後 |
-| 6 | S4 で処理時間を測る (M7) | 同上 | 未 (21 分素材で代替 / §10.2 Q9) |
-| 7 | 結果をまとめ §3.6 で判定 | `result_ss1.md` | **中間報告まで済** (2026-11-09 / 無音カットのみ。判定は保留) |
-| 8 | (判定 go のみ) §5 を実装設計として確定し、別 resolve として起票 | 新 resolve | 未 (**ここから本体へ**) |
+| 5 | 閾値・無音検出・文字起こし → 指標 | `result.json` / `metrics.csv` | **済** (S1 は M1〜M6 まで / `sweep_truth.csv` に閾値 × 最終テロップも) |
+| 6 | S4 で処理時間を測る (M7) | 同上 | **済** (21 分素材で代替 / `result_ss1.md` §6) |
+| 7 | 結果をまとめ §3.6 で判定 | `result_ss1.md` | **済 — 判定 no-go** (2026-11-12 / 4 観点すべて未達。`result_ss1.md` §8.0) |
+| 8 | (判定 go のみ) §5 を実装設計として確定し、別 resolve として起票 | 新 resolve | **行わない** (段 7 が no-go。`src/` は未変更のまま) |
 
 **段 7 までは `src/` を 1 行も触らない。** 既存のテストも回し続けられる。
 

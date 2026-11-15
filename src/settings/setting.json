@@ -136,6 +136,7 @@
         "max_regions": 100,
         "metric": "percentile",
         "percentile": 10,
+        "min_region_peak_db": -20,
         "metric_migrated": true,
         "cut_min_silence_sec": 0.6,
         "last_cut_db": -20
@@ -193,14 +194,12 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276_vertical.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae.timeline.json",
-                "C:\\Users\\evolu\\Downloads\\tokuniomae_vertical.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276_vertical.timeline.json"
+                "C:\\Users\\evolu\\Downloads\\tokuniomae_vertical.timeline.json"
             ],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2916963434.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json"
             ],
             "keep_audio": true,

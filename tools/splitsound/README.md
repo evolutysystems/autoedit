@@ -60,9 +60,28 @@ python tools/splitsound/run_conditions.py --materials S1,S2,S3 \
 
 # ⑤ 指標の計算 (正解データがあれば M1〜M6 が埋まる)
 python tools/splitsound/evaluate.py --materials S1,S2,S3
+
+# ⑥ 閾値 × 最終テロップ (正解データが要る / ASR の再実行は不要)
+python tools/splitsound/sweep_truth.py --materials S1 \
+    "--thresholds=-5,-8,-11,-14,-17,-20"
 ```
 
+正解データ作成用の作業ページは `make_label_page.py` で作る。
+**無音が多い素材では `--by-words` が必須** (認識区間は実発話より最大 2.5 倍長いため)。
+
+```bash
+python tools/splitsound/make_label_page.py --materials S3 --by-words --game-everywhere
+```
+
+詳しくは `truth_schema.md`。
+
 `evaluate.py` は 2 つの表を出す。
+
+`sweep_truth.py` は「**閾値を変えると最終動画に出るテロップがどう変わるか**」を測る。
+認識は素材そのままに対して行う (= 閾値に依存しない) ため、**ASR を回し直す必要が無い**。
+既にある `result.json` の認識結果を閾値ごとに絞り直すだけで済む。
+落ちる / 残るの判定は実機と同じ `TimeMap.split_interval` を import して使っている。
+結果は `output/_splitsound/sweep_truth.{json,md,csv}`。
 
 | 表 | 中身 |
 | --- | --- |

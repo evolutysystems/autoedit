@@ -19,6 +19,10 @@ _logger = get_logger(__name__)
 _RE_MEAN_VOLUME = re.compile(r"mean_volume:\s*(-?[0-9.]+)\s*dB")
 _RE_MAX_VOLUME = re.compile(r"max_volume:\s*(-?[0-9.]+)\s*dB")
 
+# 発話候補区間に残すピーク音量の下限 (dBFS / ver11 resolve1)
+# volume_analysis.min_region_peak_db が不正値だったときの既定。
+_DEFAULT_MIN_REGION_PEAK_DB = -20.0
+
 
 # 1区間を volumedetect で測定し (mean_db, max_db) を返す
 # 区間単体の失敗は致命としないため、失敗時は None を返す
@@ -115,9 +119,18 @@ def analyze_min_speech_db(input_path, settings, scan=None):
         _logger.info("測定区間を標本化: %d → %d 区間 (長い順)", len(regions), len(sampled))
         regions = sampled
 
+    # 発話候補に混ざった「ピークが立たない定常ノイズ」を外す下限 (ver11 resolve1)。
+    # None / 空 で従来動作 (切り戻し経路)。
+    configured_peak = va_cfg.get("min_region_peak_db")
+    peak_floor = (_to_float(configured_peak, _DEFAULT_MIN_REGION_PEAK_DB)
+                  if configured_peak not in (None, "") else None)
+
     # 各区間の代表音量を測定して集める
     # metric="mean"/"max" は従来どおり最小値を採り、"percentile" は下側分位点を採る。
     values = []
+    # ピーク下限で全区間が外れたときに使う退避先 (安全弁 / ver11 resolve1 §3)
+    fallback_values = []
+    dropped_quiet = 0
     for (s, e) in regions:
         if per_sec:
             # 1 秒値から求める (resolve3 R5)。mean は**エネルギー平均**にすること。
@@ -131,12 +144,35 @@ def analyze_min_speech_db(input_path, settings, scan=None):
         value = max_db if metric == "max" else mean_db
         if value is None:
             continue
+        fallback_values.append(value)
+        # ピークが立たない区間は発話ではないとみなし、母集団から外す (ver11 resolve1)。
+        #
+        # base_noise_db による無音判定は**瞬間値**で行われるため、
+        # 「ピークは立たないが常に鳴っている音」(低域ノイズなど) を無音と判定できない。
+        # その区間が発話候補に入ると代表音量の分位点を引き下げ、
+        # カット閾値がノイズフロアまで落ちて**カットがほぼ効かなくなる**。
+        # 実測 (ver10 result_ss1.md §12): 候補 70 区間のうち 19 区間 (27%) が
+        # mean -38〜-32dB / max -28.8〜-23.7dB のノイズで、閾値が -37dB になっていた。
+        # 同素材の発話区間は max -4.9〜-1.1dB で、max には 19dB の空白がある。
+        if peak_floor is not None and max_db is not None and max_db < peak_floor:
+            dropped_quiet += 1
+            continue
         values.append(value)
+
+    # 全区間が下限未満 = 素材全体が静か。従来どおり全区間で算出する (安全弁)。
+    # ここで諦めると min_db=None になり、呼び出し側が閾値を決められなくなる。
+    if not values and fallback_values:
+        _logger.warning(
+            "ピーク下限 %.1fdB を満たす発話候補が無いため、全 %d 区間で算出します",
+            peak_floor if peak_floor is not None else 0.0, len(fallback_values))
+        values = fallback_values
+        dropped_quiet = 0
 
     measured_count = len(values)
     if not values:
         _logger.warning("全区間の音量測定に失敗したため最低dBを算出できません")
-        return {"min_db": None, "region_count": region_count, "measured_count": 0}
+        return {"min_db": None, "region_count": region_count, "measured_count": 0,
+                "dropped_quiet_count": dropped_quiet}
 
     if metric == "percentile":
         percentile = _to_float(va_cfg.get("percentile"), 10.0)
@@ -147,14 +183,17 @@ def analyze_min_speech_db(input_path, settings, scan=None):
 
     rounded = int(round(representative))
     _logger.info(
-        "発話区間の代表dB=%d (%s, 測定 %d/%d 区間%s)",
+        "発話区間の代表dB=%d (%s, 測定 %d/%d 区間%s%s)",
         rounded, metric, measured_count, region_count,
         " / 1 パス解析から" if per_sec else "",
+        f" / ピーク下限で {dropped_quiet} 区間除外" if dropped_quiet else "",
     )
     return {
         "min_db": rounded,
         "region_count": region_count,
         "measured_count": measured_count,
+        # ピーク下限で外した区間数 (ver11 resolve1 / 記録用)
+        "dropped_quiet_count": dropped_quiet,
     }
 
 # 1 パス解析の 1 秒値から区間の (mean_db, max_db) を求める (resolve3 R5)

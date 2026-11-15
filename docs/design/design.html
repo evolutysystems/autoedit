@@ -279,6 +279,14 @@
     <p>既定値の唯一の出どころは <code>settings_window.DEFAULT_SETTINGS</code>。
        <code>setting.json</code> だけに書いた新キーは <code>load_settings → save_settings</code> で消えるため、
        設定を足すときは必ず両方を直す。</p>
+    <p><strong>実行時にだけ決まる値は保存しない。</strong>出力キャンバスの解決値
+       (<code>ffmpeg.output_width/height/output_fps</code> の上書きと <code>output_reference_height</code>) は
+       <code>apply_canvas_to_settings</code> が実行用コピーへ書くもので、<code>save_settings</code> が
+       <code>output_profile.without_runtime_canvas</code> で剥がしてから書き出す (ver11 resolve2)。
+       編集画面は解決済みコピーを丸ごと保存するため、<strong>保存の出口 1 か所で守る</strong>。
+       守りを外すと「その 1 本のための寸法」が上限枠として焼き付き、以降の出力が極端に縮む
+       (実測: 縦素材 1 本で 1920x1080 の VOD が 606x340 になった)。
+       焼き付いた設定は <code>_migrate_runtime_canvas</code> が起動時に 1 度だけ直す。</p>
 
     <h3>セクション一覧 (全 19)</h3>
     <table>

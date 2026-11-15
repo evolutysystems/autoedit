@@ -19,6 +19,8 @@ import os
 import re
 import sys
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import common  # noqa: E402
@@ -28,6 +30,10 @@ CANDIDATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candid
 
 # これより短い空きは出さない (息継ぎ程度の隙間を並べても確認の邪魔になる)
 _DEFAULT_GAP_SEC = 1.5
+
+# 空き区間の音量を測る粒度 (秒) と、「何か鳴っている」とみなす下限 (dBFS)
+_GAP_FRAME_SEC = 0.1
+_DEFAULT_GAP_LOUD_DB = -50.0
 
 
 # 認識結果の本文を人が読める形へ直す
@@ -61,6 +67,135 @@ def load_candidates(material_id):
     return doc.get("items") or {}, doc
 
 
+# 認識区間を「語の時刻」で切り直す (2026-11-12 追加 / --by-words)
+#
+# 【なぜ要るか】認識の区間は VAD の都合で実発話より大幅に長くなる。
+# S3 (F1 視聴) では区間ベースの発話率 87.2% に対し語ベースは 34.7% で、
+# **区間をそのまま下書きにすると「喋っていない時間」まで host として記録され、
+# M1 / M2 が 2.5 倍過大になる**。語の時刻で切れば実発話に近い行になる。
+#
+# 切る間隔は truth_schema.md の決め「0.3 秒未満の間は切らない」に合わせる。
+# 語の本文が無い item (word_timestamps 無しで認識したもの) は区間のまま残す。
+#
+# 戻り値: (行の一覧, 行ごとの「元の item の index」)
+def split_items_by_words(items, max_gap):
+    rows = []
+    origins = []
+
+    def flush(item, group, index):
+        rows.append({
+            "start": round(float(group[0]["start"]), 3),
+            "end": round(float(group[-1]["end"]), 3),
+            "text": "".join(str(w.get("text", "") or "") for w in group),
+        })
+        origins.append(index)
+
+    for index, item in enumerate(items):
+        words = [w for w in (item.get("words") or [])
+                 if w.get("start") is not None and w.get("end") is not None]
+        if not words:
+            rows.append(item)
+            origins.append(index)
+            continue
+        group = [words[0]]
+        for word in words[1:]:
+            if float(word["start"]) - float(group[-1]["end"]) >= max_gap:
+                flush(item, group, index)
+                group = [word]
+            else:
+                group.append(word)
+        flush(item, group, index)
+    return rows, origins
+
+
+# 語で切った行のうち、本文が極端に短いものを隣へ併合する (2026-11-12 追加)
+#
+# 【なぜ要るか】faster-whisper の語は日本語では 1 文字ずつ返ることがあり、しかも
+# 語の時刻が飛ぶため「ね」「ッ」だけの行ができる (S3 では 106 行中 28 行)。
+# CER にも M1 にも寄与せず、確認の邪魔になるだけなので、**間が近い隣へ寄せる**。
+#
+# 間が `max_gap` を超えるときは寄せない (離れた無音を抱き込むと時刻が過大になるため)。
+# 戻り値: (行の一覧, 行ごとの元 index)
+def merge_tiny_rows(rows, origins, min_chars, max_gap):
+    if not rows:
+        return rows, origins
+
+    def body(row):
+        return len(str(row.get("text", "")).strip()) > min_chars
+
+    merged = []
+    kept_origins = []
+    index = 0
+    while index < len(rows):
+        # 同じ認識区間から出た行をひとまとめに取る
+        source = origins[index]
+        group = []
+        while index < len(rows) and origins[index] == source:
+            group.append(dict(rows[index]))
+            index += 1
+
+        bodies = [row for row in group if body(row)]
+        if not bodies:
+            # 区間ぜんぶが断片 (「2」「1」のような短い発話) → 1 行にまとめる
+            head = dict(group[0])
+            head["end"] = round(max(float(r["end"]) for r in group), 3)
+            head["text"] = "".join(str(r.get("text", "")) for r in group)
+            merged.append(head)
+            kept_origins.append(source)
+            continue
+
+        # 断片は**時刻を捨てて**最も近い本体へ本文だけ吸収させる。
+        # faster-whisper は区間の最初の語を区間の開始時刻へ強制的に合わせるため、
+        # 実発話より早い時刻の断片ができる (「マ」10.18 / 次の語「ジ」16.76)。
+        # その時刻を残すと**喋っていない時間を host として記録してしまう**。
+        # 寄せ先は**元の語順**で決める (時刻の近さで本文を足すと語が入れ替わり、
+        # CER の正解がずれる: 「アウト側」→「ウアト側」)。
+        # いったん本体ごとに「前に付く断片 / 後に付く断片」を出現順で集め、最後に繋ぐ。
+        before_parts = {id(row): [] for row in bodies}
+        after_parts = {id(row): [] for row in bodies}
+        for position, row in enumerate(group):
+            if body(row):
+                continue
+            before = [b for b in group[:position] if body(b)]
+            after = [b for b in group[position + 1:] if body(b)]
+            to_after = float(after[0]["start"]) - float(row["end"]) if after else None
+            to_before = float(row["start"]) - float(before[-1]["end"]) if before else None
+            if after and (to_before is None or to_after <= to_before):
+                before_parts[id(after[0])].append(row)
+            else:
+                after_parts[id(before[-1])].append(row)
+
+        for row in bodies:
+            pre = before_parts[id(row)]
+            post = after_parts[id(row)]
+            row["text"] = ("".join(str(r.get("text", "")) for r in pre)
+                           + str(row.get("text", ""))
+                           + "".join(str(r.get("text", "")) for r in post))
+            # 時刻は**すぐ隣の断片だけ**取り込む。離れた断片の時刻は捨てる
+            # (喋っていない時間を host として記録しないため)。
+            if pre and float(row["start"]) - float(pre[-1]["end"]) <= max_gap:
+                row["start"] = round(min(float(row["start"]),
+                                         float(pre[-1]["start"])), 3)
+            if post and float(post[0]["start"]) - float(row["end"]) <= max_gap:
+                row["end"] = round(max(float(row["end"]), float(post[0]["end"])), 3)
+            merged.append(row)
+            kept_origins.append(source)
+    return merged, kept_origins
+
+
+# 区分の候補を「分割後の行」の index へ写す
+# 1 つの認識区間から分かれた行は、同じ発話なので同じ候補を引き継ぐ。
+def remap_candidates(candidates, origins):
+    if not candidates:
+        return {}
+    mapped = {}
+    for position, source in enumerate(origins):
+        hint = candidates.get(str(source))
+        if hint:
+            mapped[str(position)] = hint
+    return mapped
+
+
 # どの行にも入っていない時間 (空き区間) を求める
 # ここに発話が隠れていると「認識が落とした発話」が正解にも載らず、
 # M5 (取りこぼし率) が実態より良く出てしまう。
@@ -74,6 +209,44 @@ def find_gaps(items, duration, min_sec=_DEFAULT_GAP_SEC):
         cursor = max(cursor, float(item["end"]))
     if duration - cursor >= min_sec:
         gaps.append({"start": round(cursor, 2), "end": round(duration, 2)})
+    return gaps
+
+
+# 空き区間ごとに「音が鳴っているか」を測る (2026-11-12 追加)
+#
+# 【なぜ要るか】S3 では空き区間が 34 件 / 合計 220s あるが、実測では非発話区間のうち
+# 何か鳴っているのは 15% 程度 (36s) で、**残りは本当の無音**である (result_ss1.md §11)。
+# 34 件すべてを聞くのは無駄なので、「音がある空き区間」だけに絞れるようにする。
+#
+# この切り分けは指標に直接効く。
+#   ・音が鳴っている空き区間を取りこぼす → `game` 行が足りず **M2 の分母が欠ける**
+#   ・本当の無音を `game` にしてしまう   → **M6 (完全な無音に出たテロップ) が測れない**
+# どちらも「耳で全部確認する」以外に防ぎようが無いので、音量で当たりを付ける。
+def measure_gaps(material_id, gaps, settings, floor_db=_DEFAULT_GAP_LOUD_DB):
+    if not gaps:
+        return gaps
+    path = os.path.join(common.material_dir(material_id), "analysis_source.wav")
+    if not os.path.exists(path):
+        return gaps
+    samples = common.read_audio(path, settings, channels=1)
+    mono = samples[0] if samples.ndim > 1 else samples
+    frame = int(common.OUT_SAMPLE_RATE * _GAP_FRAME_SEC)
+    count = len(mono) // frame
+    if count <= 0:
+        return gaps
+    block = mono[:count * frame].reshape(count, frame)
+    rms = np.sqrt((block.astype(np.float64) ** 2).mean(axis=1))
+    db = 20.0 * np.log10(np.maximum(rms, 1e-12))
+    for gap in gaps:
+        begin = max(int(float(gap["start"]) / _GAP_FRAME_SEC), 0)
+        finish = min(int(float(gap["end"]) / _GAP_FRAME_SEC), len(db))
+        if finish <= begin:
+            continue
+        window = db[begin:finish]
+        loud = window >= floor_db
+        gap["median_db"] = round(float(np.median(window)), 1)
+        gap["loud_sec"] = round(float(loud.sum()) * _GAP_FRAME_SEC, 1)
+        gap["loud_ratio"] = round(float(loud.mean()), 3)
     return gaps
 
 
@@ -168,6 +341,8 @@ _HTML = """<!doctype html>
   .tag { font-size: 11px; padding: 1px 5px; border-radius: 4px;
          border: 1px solid var(--line); color: var(--muted); margin-left: 6px; }
   .tag.low { color: var(--warn); border-color: var(--warn); }
+  .tag.loud { color: var(--game); border-color: var(--game); }
+  .tag.quiet { opacity: .55; }
 </style>
 </head>
 <body>
@@ -186,6 +361,7 @@ _HTML = """<!doctype html>
     <button id="only-low">低確度だけ表示</button>
     <button id="only-unconf">未確認だけ表示</button>
     <button id="only-gap">空き区間だけ表示</button>
+    <button id="only-loud">音がある空きだけ</button>
     <button id="export">JSONL を書き出す</button>
     <button id="download">ファイルで保存</button>
     <button id="reset">候補に戻す</button>
@@ -320,7 +496,8 @@ ROWS.forEach((row, position) => {
     tr.innerHTML =
       '<td class="seg">–</td>' +
       '<td class="t">' + fmt(gap.start) + " – " + fmt(gap.end) +
-        ' <span class="tag">空き ' + (gap.end - gap.start).toFixed(1) + 's</span></td>' +
+        ' <span class="tag">空き ' + (gap.end - gap.start).toFixed(1) + 's</span>' +
+        gapLoudTag(gap) + '</td>' +
       '<td class="cell-pick"></td>' +
       '<td class="cell-txt"></td>';
     renderGapCells(tr, row.index);
@@ -330,6 +507,16 @@ ROWS.forEach((row, position) => {
   if (row.kind === "seg") renderOverlapRows(row.index, tr);
 });
 
+// 空き区間に音が鳴っているか (measure_gaps の実測) を印で出す。
+// 「音あり」の空きだけ聞けば足りるようにするための道具。
+function gapLoudTag(gap) {
+  if (gap.loud_sec === undefined || gap.loud_sec === null) return "";
+  if (gap.loud_sec < 0.3) {
+    return ' <span class="tag quiet">実測ほぼ無音</span>';
+  }
+  return ' <span class="tag loud">音あり ' + gap.loud_sec.toFixed(1) + 's</span>';
+}
+
 // 空き行の中身を組み直す (未使用 = ボタンだけ / 使用中 = 時刻+区分+本文)
 function renderGapCells(tr, gapIndex) {
   const gap = GAPS[gapIndex];
@@ -338,7 +525,14 @@ function renderGapCells(tr, gapIndex) {
   const txt = tr.querySelector(".cell-txt");
   if (!saved.used) {
     pick.innerHTML = '<button class="add">＋発話を足す</button>';
-    txt.textContent = "聞いて発話が無ければ、このままでよいです";
+    if (gap.loud_sec !== undefined && gap.loud_sec >= 0.3) {
+      txt.textContent = "音が鳴っています (" + gap.loud_sec.toFixed(1)
+        + "s / 中央 " + gap.median_db + "dB)。聞いて game / other / 発話を決めてください";
+    } else if (gap.loud_sec !== undefined) {
+      txt.textContent = "実測でほぼ無音です。そのままでよいです";
+    } else {
+      txt.textContent = "聞いて発話が無ければ、このままでよいです";
+    }
     pick.querySelector(".add").addEventListener("click", () => {
       state.gap[gapIndex] = {
         used: true, speaker: "host", text: "",
@@ -496,7 +690,8 @@ function render() {
       tr.classList.toggle("lowconf", ITEMS[index].conf === "low" && !confirmed);
       const hideLow = filter === "low" && !(ITEMS[index].conf === "low" && !confirmed);
       const hideUnconf = filter === "unconf" && confirmed;
-      tr.classList.toggle("hidden", hideLow || hideUnconf || filter === "gap");
+      tr.classList.toggle("hidden", hideLow || hideUnconf
+                                    || filter === "gap" || filter === "loud");
       if (confirmed) ok++;
       if (ITEMS[index].conf === "low" && !confirmed) low++;
       if (speaker) counts[speaker] = (counts[speaker] || 0) + 1;
@@ -506,8 +701,11 @@ function render() {
           || (segState(index).text || "").indexOf("[?]") >= 0) unclear++;
     } else {
       const saved = gapState(row.index);
+      const loudSec = GAPS[row.index].loud_sec;
+      const quiet = !(loudSec !== undefined && loudSec !== null && loudSec >= 0.3);
       tr.classList.toggle("filled", !!saved.used);
-      tr.classList.toggle("hidden", filter === "low" || filter === "unconf");
+      tr.classList.toggle("hidden", filter === "low" || filter === "unconf"
+                                    || (filter === "loud" && quiet));
       if (saved.used) {
         added++;
         if (saved.speaker) counts[saved.speaker] = (counts[saved.speaker] || 0) + 1;
@@ -651,7 +849,7 @@ document.getElementById("reset").addEventListener("click", () => {
 });
 function setFilter(name, button) {
   filter = filter === name ? "" : name;
-  ["only-low", "only-unconf", "only-gap"].forEach((id) => {
+  ["only-low", "only-unconf", "only-gap", "only-loud"].forEach((id) => {
     document.getElementById(id).dataset.active = "0";
   });
   button.dataset.active = filter === name ? "1" : "0";
@@ -663,6 +861,8 @@ document.getElementById("only-unconf").addEventListener("click",
   (e) => setFilter("unconf", e.target));
 document.getElementById("only-gap").addEventListener("click",
   (e) => setFilter("gap", e.target));
+document.getElementById("only-loud").addEventListener("click",
+  (e) => setFilter("loud", e.target));
 
 render();
 </script>
@@ -708,6 +908,20 @@ def main():
                         dest="game_everywhere",
                         help="全区間に環境音・ゲーム音が鳴っている素材として扱う "
                              "(省略時は C0 の無音率から自動判定)")
+    parser.add_argument("--by-words", action="store_true", dest="by_words",
+                        help="認識区間ではなく**語の時刻**で行を切る。"
+                             "無音が多い素材 (S3 など) では区間が実発話より大幅に長いため、"
+                             "これを付けないと時刻が過大になる")
+    parser.add_argument("--word-gap", type=float, default=0.3, dest="word_gap",
+                        help="--by-words のとき、語の間がこれ以上空いたら行を分ける (秒)")
+    parser.add_argument("--gap-loud-db", type=float, default=_DEFAULT_GAP_LOUD_DB,
+                        dest="gap_loud_db",
+                        help="空き区間で「何か鳴っている」とみなす下限 (dBFS)")
+    parser.add_argument("--min-chars", type=int, default=2, dest="min_chars",
+                        help="--by-words のとき、本文がこの文字数以下の行は隣へ併合する")
+    parser.add_argument("--merge-gap", type=float, default=1.0, dest="merge_gap",
+                        help="短い行を隣へ併合する上限の間隔 (秒)。"
+                             "これを超えて離れていれば併合しない")
     args = parser.parse_args()
 
     definition = common.load_json(common.materials_path())
@@ -719,7 +933,16 @@ def main():
         items, result = load_draft_items(material_id)
         candidates, doc = load_candidates(material_id)
         duration = float(result.get("duration_sec") or 0.0)
+        segments = len(items)
+        if args.by_words:
+            items, origins = split_items_by_words(items, args.word_gap)
+            items, origins = merge_tiny_rows(
+                items, origins, args.min_chars, args.merge_gap)
+            candidates = remap_candidates(candidates, origins)
         gaps = find_gaps(items, duration, args.gap_sec)
+        # 空き区間に音が鳴っているかを実測して添える (ページで絞り込めるようにする)
+        gaps = measure_gaps(material_id, gaps, common.load_app_settings(),
+                            args.gap_loud_db)
 
         # 自動判定: C0 で無音がほぼ出ない素材は「全区間に音が鳴っている」とみなす
         flag = args.game_everywhere
@@ -730,8 +953,18 @@ def main():
         page = write_label_page(material_id, items, candidates, gaps, flag)
         low = sum(1 for v in candidates.values() if v.get("conf") == "low")
         gap_total = sum(g["end"] - g["start"] for g in gaps)
-        print(f"{material_id}: 区間 {len(items)} 件 / 候補 {len(candidates)} 件 "
-              f"(うち低確度 {low} 件) / game_everywhere={flag}")
+        covered = sum(float(i["end"]) - float(i["start"]) for i in items)
+        if args.by_words:
+            print(f"{material_id}: 認識区間 {segments} 件 → **語で分割して "
+                  f"{len(items)} 行** (間 {args.word_gap}s 以上で切る) / "
+                  f"候補 {len(candidates)} 件 (うち低確度 {low} 件) / "
+                  f"game_everywhere={flag}")
+        else:
+            print(f"{material_id}: 区間 {len(items)} 件 / 候補 {len(candidates)} 件 "
+                  f"(うち低確度 {low} 件) / game_everywhere={flag}")
+        if duration:
+            print(f"  行が覆う時間: {covered:.1f}s / {duration:.1f}s "
+                  f"({covered / duration * 100:.1f}%)")
         print(f"  空き区間 ({args.gap_sec}s 以上): {len(gaps)} 件 / 合計 {gap_total:.1f}s")
         if doc.get("generated_by"):
             print(f"  候補の出どころ: {doc['generated_by']}")

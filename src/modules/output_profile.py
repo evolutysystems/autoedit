@@ -11,6 +11,21 @@ from . import ffmpeg_runner
 
 _logger = get_logger(__name__)
 
+# 実行用の設定コピーにだけ現れるキー (ver11 resolve2 R1)
+#
+# apply_canvas_to_settings が書き戻すのは「その実行だけの解決値」であり、
+# setting.json へ保存してはならない。保存してしまうと、別の素材向けに解決した
+# 寸法が上限枠として焼き付き、以降の出力がそこまで縮む
+# (実測: 縦素材 1 本で 606x1080 が焼き付き、1920x1080 の VOD が 606x340 になった)。
+#
+# 上書き前の保存値を OUTPUT_CANVAS_BACKUP_KEY へ控え、保存の出口
+# (settings_window.save_settings → without_runtime_canvas) が元の値へ戻して書き出す。
+OUTPUT_CANVAS_BACKUP_KEY = "output_canvas_saved"
+# 解決値で上書きするキー (控えと復元の対象)
+OUTPUT_CANVAS_KEYS = ("output_width", "output_height", "output_fps")
+# テロップの絶対 px が前提にしている基準の高さ (実行時にだけ足すキー)
+OUTPUT_REFERENCE_KEY = "output_reference_height"
+
 # 縦動作が無効/失敗時のフォールバック既定 (横=landscape の標準寸法)
 _DEFAULT_LANDSCAPE_WIDTH = 1920
 _DEFAULT_LANDSCAPE_HEIGHT = 1080
@@ -61,7 +76,7 @@ def _portrait_profile(vertical_cfg, ffmpeg_cfg=None, fps=None):
 def reference_height(ffmpeg_cfg):
     cfg = ffmpeg_cfg or {}
     try:
-        reference = int(cfg.get("output_reference_height") or 0)
+        reference = int(cfg.get(OUTPUT_REFERENCE_KEY) or 0)
     except (TypeError, ValueError):
         reference = 0
     if reference > 0:
@@ -178,10 +193,19 @@ def resolve_canvas(input_path, settings):
         return fixed
 
     src_fps = _probe_fps(input_path, ffmpeg_cfg)
+    # 上限枠は素材の向きに合わせる (ver11 resolve2 R4)。
+    # 縦素材を横の枠 (1920x1080) で収めると高さ側が支配して極端に縮む
+    # (実測: 1278x2272 → 606x1080)。縦の出力キャンバスは vertical.output_* なので
+    # 上限もそちらで見る。横・正方形は従来どおり ffmpeg.output_* を使う。
+    limit_w, limit_h = out_w, out_h
+    vertical_cfg = (settings or {}).get("vertical", {}) or {}
+    if src_h > src_w and vertical_cfg.get("enabled", True):
+        limit_w = int(vertical_cfg.get("output_width", _DEFAULT_PORTRAIT_WIDTH))
+        limit_h = int(vertical_cfg.get("output_height", _DEFAULT_PORTRAIT_HEIGHT))
     # 上限枠へ収める倍率 (1.0 を超えない = 拡大しない)
     ratio = min(1.0,
-                out_w / float(src_w) if src_w > 0 else 1.0,
-                out_h / float(src_h) if src_h > 0 else 1.0)
+                limit_w / float(src_w) if src_w > 0 else 1.0,
+                limit_h / float(src_h) if src_h > 0 else 1.0)
     width = _even(src_w * ratio)
     height = _even(src_h * ratio)
     if width < 2 or height < 2:
@@ -195,7 +219,7 @@ def resolve_canvas(input_path, settings):
     _logger.info(
         "出力キャンバス: 素材等倍 %dx%d@%dfps (素材 %dx%d@%sfps / 上限 %dx%d@%dfps)",
         width, height, fps, src_w, src_h,
-        f"{src_fps:.4g}" if src_fps else "不明", out_w, out_h, out_fps)
+        f"{src_fps:.4g}" if src_fps else "不明", limit_w, limit_h, out_fps)
     return {"width": width, "height": height, "fps": fps, "mode": "source",
             "source_width": src_w, "source_height": src_h, "source_fps": src_fps}
 
@@ -215,7 +239,13 @@ def apply_canvas_to_settings(settings, input_path=None, canvas=None):
     ffmpeg_cfg = resolved.setdefault("ffmpeg", {})
     # 上書き前の高さを基準として控える (テロップの絶対 px の拠り所 / R2 付帯対応)。
     # 2 回通しても基準がずれないよう、既に控えてあれば残す。
-    ffmpeg_cfg.setdefault("output_reference_height", reference_height(ffmpeg_cfg))
+    ffmpeg_cfg.setdefault(OUTPUT_REFERENCE_KEY, reference_height(ffmpeg_cfg))
+    # 上書き前の保存値を控える (ver11 resolve2 R1)。
+    # このコピーが画面から保存されても、保存の出口で元の値へ戻せるようにする。
+    # 2 回通しても最初の控えを残す (setdefault)。
+    ffmpeg_cfg.setdefault(
+        OUTPUT_CANVAS_BACKUP_KEY,
+        {key: ffmpeg_cfg[key] for key in OUTPUT_CANVAS_KEYS if key in ffmpeg_cfg})
     ffmpeg_cfg["output_width"] = int(canvas["width"])
     ffmpeg_cfg["output_height"] = int(canvas["height"])
     ffmpeg_cfg["output_fps"] = int(canvas["fps"])
@@ -223,6 +253,68 @@ def apply_canvas_to_settings(settings, input_path=None, canvas=None):
     # (timeline/builder.build と archive/timeline_builder.build_archive_timeline が
     #  どちらも ffmpeg.output_fps を読む)。別のキーを増やす必要はない。
     return resolved
+
+
+# ------------------------------------------------------------------
+# 実行時の解決値を保存値から外す (ver11 resolve2 R2 / R3)
+# ------------------------------------------------------------------
+
+# 保存してよい設定 (実行時の解決値を含まないもの) を返す (ver11 resolve2 R2)
+#
+# settings_window.save_settings だけがこれを使う。**保存の出口 1 か所で守る**のが要点で、
+# save_settings を呼ぶ画面が増えても (現在 7 か所)、解決済みコピーを渡された時点で
+# 保存値が壊れることはなくなる。
+#
+# 実行時キーが 1 つも無ければ元のオブジェクトをそのまま返す = 従来と完全に同一。
+# 含むときはコピーを直して返し、**渡された設定は書き換えない**
+# (実行中の工程が見ている解決値を壊さないため)。
+def without_runtime_canvas(settings):
+    if not isinstance(settings, dict):
+        return settings
+    ffmpeg_cfg = settings.get("ffmpeg")
+    if not isinstance(ffmpeg_cfg, dict):
+        return settings
+    if OUTPUT_CANVAS_BACKUP_KEY not in ffmpeg_cfg and OUTPUT_REFERENCE_KEY not in ffmpeg_cfg:
+        return settings
+    cleaned = copy.deepcopy(settings)
+    restore_runtime_canvas(cleaned.get("ffmpeg"))
+    return cleaned
+
+
+# ffmpeg 設定から実行時の解決値を取り除き、保存値へ戻す (ver11 resolve2 R2 / R3)
+# 受け取った辞書をその場で直す。直したら True を返す (移行処理が保存要否の判断に使う)。
+#
+# 控えが無いのに基準の高さだけがある設定は、**控えを持たない版が焼き付けた保存値**である
+# (ver11 resolve2 §3 R3)。元の幅は残っていないため、基準の高さと既定の縦横比から戻す。
+def restore_runtime_canvas(ffmpeg_cfg):
+    if not isinstance(ffmpeg_cfg, dict):
+        return False
+    has_backup = OUTPUT_CANVAS_BACKUP_KEY in ffmpeg_cfg
+    has_reference = OUTPUT_REFERENCE_KEY in ffmpeg_cfg
+    if not has_backup and not has_reference:
+        return False
+
+    backup = ffmpeg_cfg.pop(OUTPUT_CANVAS_BACKUP_KEY, None)
+    reference = ffmpeg_cfg.pop(OUTPUT_REFERENCE_KEY, None)
+    if isinstance(backup, dict) and backup:
+        for key in OUTPUT_CANVAS_KEYS:
+            if backup.get(key) is not None:
+                ffmpeg_cfg[key] = backup[key]
+        return True
+
+    # 控えを持たない版が焼き付けた寸法を、基準の高さから復元する
+    try:
+        height = int(reference or 0)
+    except (TypeError, ValueError):
+        height = 0
+    if height > 0:
+        ffmpeg_cfg["output_height"] = height
+        ffmpeg_cfg["output_width"] = _even(
+            height * _DEFAULT_LANDSCAPE_WIDTH / float(_DEFAULT_LANDSCAPE_HEIGHT))
+        _logger.info(
+            "保存されていた出力キャンバスの解決値を復元しました: %dx%d",
+            ffmpeg_cfg["output_width"], ffmpeg_cfg["output_height"])
+    return True
 
 
 # 素材の fps を ffprobe で取る (取れなければ 0.0 / resolve3 R2)

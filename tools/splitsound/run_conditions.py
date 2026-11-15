@@ -104,11 +104,27 @@ def transcribe(path, settings):
             "text": str(item.get("text", "")),
         }
         words = item.get("words") or []
+        usable = [w for w in words
+                  if w.get("start") is not None and w.get("end") is not None]
         spans = [[round(float(w["start"]), 3), round(float(w["end"]), 3)]
-                 for w in words
-                 if w.get("start") is not None and w.get("end") is not None]
+                 for w in usable]
         if spans:
             row["word_spans"] = spans
+        # 語の**本文**も残す (2026-11-12 追加)。
+        #
+        # 【なぜ要るか】認識の区間は VAD の都合で実発話より大幅に長い。
+        # S3 (F1 視聴) では区間ベースの発話率 87.2% に対し語ベースは 34.7% で、
+        # **区間をそのまま正解データの下書きにすると時刻が 2.5 倍過大**になる。
+        # 語の時刻で行を切り直すには本文も語ごとに要る (make_label_page.py --by-words)。
+        #
+        # word_spans (時刻だけ) は sweep.py が 2 要素前提で読むため**壊さず**、
+        # 別フィールドとして足している。
+        detail = [{"start": round(float(w["start"]), 3),
+                   "end": round(float(w["end"]), 3),
+                   "text": str(w.get("text", "") or "")}
+                  for w in usable]
+        if detail:
+            row["words"] = detail
         rows.append(row)
     return {
         "items": rows,

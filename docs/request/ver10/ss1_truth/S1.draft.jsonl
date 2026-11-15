@@ -171,28 +171,23 @@
 {"start": 524.38, "end": 526.86, "speaker": "host", "text": "何をどうすればいいか分かんないから ダノンさんに聞くのよ", "conf": "high"}
 {"start": 527.32, "end": 529.18, "speaker": "host", "text": "ストリーニングからストリーニングから ストリーニングから", "conf": "low"}
 {"start": 529.18, "end": 531.84, "speaker": "host", "text": "全部本当にダノンさんのお世話になりたい ダノンさんで", "conf": "high"}
-{"start": 532.68, "end": 533.64, "speaker": "host", "text": "あははは", "conf": "high"}
-{"start": 533.64, "end": 535.62, "speaker": "host", "text": "これがトレーナーさんの", "conf": "high"}
-{"start": 535.62, "end": 537.76, "speaker": "host", "text": "あのツイートを待ってますから", "conf": "high"}
+{"start": 532.62, "end": 533.9, "speaker": "host", "text": "あははははは", "conf": "high"}
+{"start": 533.9, "end": 535.58, "speaker": "host", "text": "これがトレーナーさんの", "conf": "high"}
+{"start": 535.58, "end": 537.76, "speaker": "host", "text": "あのツイートを待ってますから", "conf": "high"}
 {"start": 537.76, "end": 538.14, "speaker": "host", "text": "そう", "conf": "high"}
 {"start": 538.14, "end": 539.46, "speaker": "host", "text": "俺らのツイート", "conf": "high"}
 {"start": 539.46, "end": 543.08, "speaker": "host", "text": "あ、これやればいいんだ", "conf": "high"}
-{"start": 545.0, "end": 545.98, "speaker": "host", "text": "あははは", "conf": "high"}
-{"start": 545.98, "end": 547.56, "speaker": "host", "text": "それだけだ", "conf": "high"}
-{"start": 547.56, "end": 548.58, "speaker": "host", "text": "最近は", "conf": "high"}
-{"start": 548.58, "end": 550.38, "speaker": "host", "text": "普通に", "conf": "high"}
-{"start": 552.08, "end": 553.72, "speaker": "host", "text": "車開けと一緒に出て", "conf": "low"}
-{"start": 553.72, "end": 555.98, "speaker": "host", "text": "車内の人たちがちょっと出てくる", "conf": "low"}
-{"start": 555.98, "end": 558.7, "speaker": "host", "text": "今からになったら", "conf": "low"}
-{"start": 558.7, "end": 559.94, "speaker": "host", "text": "最後にプレゼントしてね", "conf": "high"}
-{"start": 559.94, "end": 560.84, "speaker": "host", "text": "あははは", "conf": "high"}
-{"start": 561.84, "end": 563.06, "speaker": "host", "text": "そんなのあるんだ", "conf": "high"}
-{"start": 568.22, "end": 569.84, "speaker": "host", "text": "はいはいはい", "conf": "high"}
-{"start": 569.84, "end": 574.2, "speaker": "host", "text": "めっちゃいる", "conf": "high"}
-{"start": 584.72, "end": 586.48, "speaker": "host", "text": "あれもいたよ", "conf": "high"}
-{"start": 587.02, "end": 588.44, "speaker": "host", "text": "左端にオフラインになってる", "conf": "high"}
-{"start": 588.44, "end": 589.58, "speaker": "host", "text": "オフライン", "conf": "high"}
-{"start": 590.92, "end": 592.72, "speaker": "host", "text": "AI使いこなし人間たちは", "conf": "high"}
-{"start": 593.2, "end": 594.36, "speaker": "host", "text": "これもAIで", "conf": "high"}
-{"start": 595.2, "end": 596.14, "speaker": "host", "text": "ストリームレストの", "conf": "high"}
-{"start": 596.14, "end": 597.28, "speaker": "host", "text": "プライベートに使ってできる", "conf": "high"}
+{"start": 544.09, "end": 546.0, "speaker": "host", "text": "あははは", "conf": "high"}
+{"start": 546.76, "end": 547.5, "speaker": "host", "text": "あはははは", "conf": "high"}
+{"start": 547.5, "end": 552.96, "speaker": "host", "text": "あはははは", "conf": "high"}
+{"start": 552.96, "end": 553.5, "speaker": "host", "text": "あはははは", "conf": "high"}
+{"start": 553.5, "end": 554.28, "speaker": "host", "text": "あはははは", "conf": "low"}
+{"start": 554.28, "end": 556.58, "speaker": "host", "text": "あはははは", "conf": "low"}
+{"start": 556.58, "end": 559.46, "speaker": "host", "text": "あはははは", "conf": "low"}
+{"start": 559.46, "end": 560.94, "speaker": "host", "text": "あはははは", "conf": "high"}
+{"start": 561.92, "end": 563.04, "speaker": "host", "text": "そんなのあるんだ", "conf": "high"}
+{"start": 573.26, "end": 574.2, "speaker": "host", "text": "めっちゃいる", "conf": "high"}
+{"start": 585.28, "end": 586.48, "speaker": "host", "text": "あれもいたよ", "conf": "high"}
+{"start": 586.48, "end": 586.9, "speaker": "host", "text": "AI", "conf": "high"}
+{"start": 586.9, "end": 588.44, "speaker": "host", "text": "左端にオフラインになってる", "conf": "high"}
+{"start": 590.92, "end": 597.24, "speaker": "host", "text": "AI使いこなし人間たちはこれもAIで ストリングレッドのクラウドに使われている", "conf": "high"}
