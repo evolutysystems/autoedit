@@ -203,6 +203,8 @@ src/
 [実行]
   │  入力の事前確認: ffprobe で読めるか / 作業先と出力先の空き容量 (general.min_free_space_gb)
   │  出力キャンバスの解決 (output_profile) → 以降の全工程が同じ寸法を見る
+  │    素材等倍 (output_scale_mode="source")。上限枠は素材の向きで選ぶ
+  │    (横は ffmpeg.output_*、縦は vertical.output_* / ver11 resolve2)。解決値は保存しない
   │  ログ送信の projectId 採番 (telemetry) → ポイント予約 (points.reserve)
   │  └ 透かしが入る場合は開始前に確認。やめれば消費せず中断
   ▼
@@ -337,7 +339,7 @@ Timeline 編集画面 / 字幕一覧 / アーカイブ結果画面の「DaVinci 
 |---|---|
 | `pipeline_runner` | 経路 A/C の工程順、ポイント予約・確定、ログ送信、例外の集約 |
 | `pipeline_context` | 入力/中間/出力パス、設定、進捗コールバック、Timeline、透かし要否の保持と後始末 |
-| `output_profile` | 入力の表示寸法から縦横を判定し、出力キャンバスを 1 回だけ解決 |
+| `output_profile` | 入力の表示寸法から縦横を判定し、出力キャンバスを 1 回だけ解決。解決値は**実行用コピーにだけ**書き戻し、保存の出口で剥がす (ver11 resolve2) |
 | `output_writer` | 最終ファイル名の解決 (`_edited`、衝突時連番) と配置、ラウドネス検証 |
 
 ### 4.2 音声・映像処理
@@ -457,6 +459,14 @@ Timeline
   `settings_window.DEFAULT_SETTINGS`** であり、`setting.json` だけに書いた新キーは
   `load_settings → save_settings` で消える。新しい設定を足すときは必ず両方を直す。
 * `load_settings(persist_new_keys=True)` が起動時に欠落キーを既定で補完し、一度だけ書き戻す。
+* **実行時にだけ決まる値は保存しない。** 出力キャンバスの解決値
+  (`ffmpeg.output_width/height/output_fps` の上書きと `output_reference_height`) は
+  `apply_canvas_to_settings` が実行用コピーへ書くもので、`save_settings` が
+  `output_profile.without_runtime_canvas` で剥がしてから書き出す (ver11 resolve2)。
+  パイプラインは解決済みコピーを編集画面へ渡し、画面は閉じるときに設定を丸ごと保存するため、
+  **保存の出口 1 か所で守る**。守りを外すと「その 1 本のための寸法」が上限枠として焼き付き、
+  以降の出力が極端に縮む (実測: 縦素材 1 本で 1920x1080 の VOD が 606x340 になった)。
+  過去に焼き付いた設定は `_migrate_runtime_canvas` が起動時に 1 度だけ直す。
 * 設定画面に出さない項目がある (モデルのパス・しきい値・互換フラグなど)。
   それらは `setting.json` を直接編集して調整する。
 
