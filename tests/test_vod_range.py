@@ -10,6 +10,9 @@
 #   ・twitch-dl の切り詰めに頼らないこと (整数秒へ切り捨てられ末尾が最大 1 秒欠ける)。
 #     --start/--end へは余裕を付けた整数秒を渡し、正確な切り出しは自前で行う。
 #   ・取得が不完全なら**黙って進めない**こと (欠番・範囲不足は失敗させる)。
+#   ・**fMP4 (.mp4) の VOD でも成立すること** (error 20261118)。
+#     ハイライト等のセグメントは .ts ではなく .mp4 で、#EXT-X-MAP の
+#     init セグメントと組にしないと読めないため、連結経路を分ける。
 import os
 import tempfile
 import unittest
@@ -170,6 +173,18 @@ class SegmentNameTest(unittest.TestCase):
         self.assertIsNone(twitch_source.segment_index("playlist.m3u8"))
         self.assertIsNone(twitch_source.segment_index(""))
 
+    # fMP4 の VOD (ハイライト等) は .mp4 で落ちてくる (error 20261118)
+    def test_segment_index_accepts_fmp4(self):
+        self.assertEqual(twitch_source.segment_index("00307.mp4"), 307)
+        self.assertEqual(twitch_source.segment_index("00307.m4s"), 307)
+
+    # init セグメントをセグメント本体と取り違えないこと
+    # (拾ってしまうと番号の連続性検査が壊れる)
+    def test_segment_index_ignores_init_sections(self):
+        self.assertIsNone(twitch_source.segment_index("init-0.mp4"))
+        self.assertIsNone(twitch_source.segment_index("2930581402v0-init.mp4"))
+        self.assertIsNone(twitch_source.segment_index("00307.mp4.tmp"))
+
     # セグメントは番号順に並べる (文字列順ではない)
     def test_list_segments_is_sorted_by_number(self):
         with tempfile.TemporaryDirectory(prefix="vod_range_test_") as folder:
@@ -179,9 +194,29 @@ class SegmentNameTest(unittest.TestCase):
             self.assertEqual(twitch_source.list_segments(folder),
                              ["00008.ts", "00009.ts", "00010.ts"])
 
+    # fMP4 のキャッシュから本体だけを番号順に拾うこと (init・.tmp は混ぜない)
+    def test_list_segments_picks_fmp4_only(self):
+        with tempfile.TemporaryDirectory(prefix="vod_range_fmp4_") as folder:
+            for name in ("00307.mp4", "00306.mp4", "init-0.mp4",
+                         "2930581402v0-init.mp4", "00308.mp4.tmp",
+                         "playlist.m3u8", "playlist_downloaded.m3u8"):
+                with open(os.path.join(folder, name), "w", encoding="utf-8") as handle:
+                    handle.write("x")
+            self.assertEqual(twitch_source.list_segments(folder),
+                             ["00306.mp4", "00307.mp4"])
+
     # 無いディレクトリでも例外にしない (呼び側が理由を出す)
     def test_list_segments_of_missing_dir(self):
         self.assertEqual(twitch_source.list_segments("no_such_dir"), [])
+
+    # 連結方法を決める材料。混在は安全側の "fmp4" (HLS なら両方読める)
+    def test_segment_format(self):
+        self.assertEqual(twitch_source.segment_format(["00020.ts", "00021.ts"]), "ts")
+        self.assertEqual(twitch_source.segment_format(["00306.mp4"]), "fmp4")
+        self.assertEqual(twitch_source.segment_format(["00306.m4s"]), "fmp4")
+        self.assertEqual(twitch_source.segment_format(["00020.ts", "00306.mp4"]),
+                         "fmp4")
+        self.assertEqual(twitch_source.segment_format([]), "")
 
 
 class ConcatTest(unittest.TestCase):
@@ -207,6 +242,165 @@ class ConcatTest(unittest.TestCase):
             command = execute.call_args[0][0]
             self.assertIn("-c", command)
             self.assertIn("copy", command)
+
+
+# 連結経路の選択 (error 20261118 §9 R4)
+#
+# MPEG-TS は従来の concat デマルチプレクサ、fMP4 は取得分プレイリスト経由。
+# fMP4 を concat へ流すと "error reading header" で落ちるため、
+# ここを取り違えると fMP4 の VOD で区間取り直しが成立しない。
+class JoinRangeTest(unittest.TestCase):
+
+    def setUp(self):
+        self._folder = tempfile.TemporaryDirectory(prefix="vod_range_join_")
+        self.folder = self._folder.name
+        self.addCleanup(self._folder.cleanup)
+        self.dest = os.path.join(self.folder, "range.mp4")
+
+    # セグメントと取得分プレイリストを置いた偽キャッシュを作る
+    def _fetched(self, segments, with_playlist=True):
+        segment_dir = os.path.join(self.folder, "chunked")
+        os.makedirs(segment_dir, exist_ok=True)
+        playlist = os.path.join(segment_dir, twitch_source.DOWNLOADED_PLAYLIST_NAME)
+        if with_playlist:
+            with open(playlist, "w", encoding="utf-8") as handle:
+                handle.write("#EXTM3U\n")
+        return {"segment_dir": segment_dir, "segments": list(segments),
+                "downloaded_playlist": playlist if with_playlist else "",
+                "format": twitch_source.segment_format(segments)}
+
+    def _join(self, fetched, method="auto"):
+        with mock.patch.object(vod_range.ffmpeg_runner, "get_ffmpeg_exe",
+                               return_value="ffmpeg"), \
+                mock.patch.object(vod_range.ffmpeg_runner, "execute") as execute:
+            vod_range.join_range(fetched, self.dest, {}, method=method)
+        return execute.call_args[0][0]
+
+    # 本題: fMP4 は取得分プレイリストを HLS デマルチプレクサへ渡す
+    def test_fmp4_goes_through_the_playlist(self):
+        command = self._join(self._fetched(["00306.mp4", "00307.mp4"]))
+        self.assertIn("-i", command)
+        self.assertEqual(command[command.index("-i") + 1],
+                         os.path.join(self.folder, "chunked",
+                                      twitch_source.DOWNLOADED_PLAYLIST_NAME))
+        self.assertNotIn("concat", command)
+        self.assertFalse(os.path.exists(os.path.join(self.folder, "concat.txt")))
+        # 再エンコードせず、先頭を 0 秒へ揃える (concat 側と同じ作法)
+        self.assertIn("copy", command)
+        self.assertIn("make_zero", command)
+
+    # MPEG-TS は従来どおり concat デマルチプレクサ (退行がないこと)
+    def test_ts_keeps_the_concat_route(self):
+        command = self._join(self._fetched(["00020.ts", "00021.ts"]))
+        self.assertIn("concat", command)
+        self.assertTrue(os.path.exists(os.path.join(self.folder, "concat.txt")))
+
+    # 設定で経路を固定できる (Twitch 側が変わったときの退避用)
+    def test_setting_can_force_the_route(self):
+        fmp4 = self._fetched(["00306.mp4", "00307.mp4"])
+        self.assertIn("concat", self._join(fmp4, method="concat"))
+        ts = self._fetched(["00020.ts", "00021.ts"])
+        self.assertNotIn("concat", self._join(ts, method="playlist"))
+
+    # 取得分プレイリストが無ければ失敗させる (素のセグメントを concat へ流さない)
+    def test_missing_playlist_fails(self):
+        fetched = self._fetched(["00306.mp4"], with_playlist=False)
+        with mock.patch.object(vod_range.ffmpeg_runner, "get_ffmpeg_exe",
+                               return_value="ffmpeg"), \
+                mock.patch.object(vod_range.ffmpeg_runner, "execute"):
+            with self.assertRaises(TwitchError):
+                vod_range.join_range(fetched, self.dest, {})
+
+
+# 取得後の検証 (error 20261118 §9 R3・R5)
+#
+# 重点: 失敗したら**断片キャッシュを引き取る**こと。
+# 残すと次の試行で twitch-dl が init セグメントを置き直せず
+# FileExistsError (WinError 183) になり、再試行が永久に通らない。
+class DownloadRangeTest(unittest.TestCase):
+
+    def setUp(self):
+        self._folder = tempfile.TemporaryDirectory(prefix="vod_range_dl_")
+        self.cache_root = self._folder.name
+        self.addCleanup(self._folder.cleanup)
+        self.video_id = "2930581402"
+        self.segment_dir = os.path.join(self.cache_root, self.video_id, "chunked")
+
+    # twitch-dl の代わりにキャッシュを置く (ネットワークを使わない)
+    def _stub_run(self, files):
+        def _fake(*_args, **_kwargs):
+            os.makedirs(self.segment_dir, exist_ok=True)
+            for name, text in files.items():
+                with open(os.path.join(self.segment_dir, name), "w",
+                          encoding="utf-8") as handle:
+                    handle.write(text)
+            return []
+
+        return mock.patch.object(twitch_source, "_run", side_effect=_fake)
+
+    def _download(self, files):
+        with self._stub_run(files), \
+                mock.patch.object(twitch_source, "_resolve_twitchdl",
+                                  return_value=["twitch-dl"]):
+            return twitch_source.download_vod_range(
+                self.video_id, self.cache_root, "0:51:07", "1:44:23")
+
+    # 本題: fMP4 のキャッシュから連結材料まで揃えて返すこと
+    def test_fmp4_cache_is_accepted(self):
+        result = self._download({
+            "00306.mp4": "x", "00307.mp4": "x",
+            "init-0.mp4": "x",
+            twitch_source.PLAYLIST_NAME: _playlist(),
+            twitch_source.DOWNLOADED_PLAYLIST_NAME:
+                '#EXTM3U\n#EXT-X-MAP:URI="init-0.mp4"\n#EXTINF:10,\n00306.mp4\n',
+        })
+        self.assertEqual(result["segments"], ["00306.mp4", "00307.mp4"])
+        self.assertEqual(result["format"], "fmp4")
+        self.assertEqual(
+            result["downloaded_playlist"],
+            os.path.join(self.segment_dir, twitch_source.DOWNLOADED_PLAYLIST_NAME))
+
+    # MPEG-TS は従来どおり (戻り値のキーが増えただけ)
+    def test_ts_cache_is_accepted(self):
+        result = self._download({
+            "00020.ts": "x", "00021.ts": "x",
+            twitch_source.PLAYLIST_NAME: _playlist(),
+        })
+        self.assertEqual(result["format"], "ts")
+        self.assertEqual(result["segments"], ["00020.ts", "00021.ts"])
+
+    # init セグメントが無ければ連結できないので失敗させる
+    def test_missing_init_section_fails(self):
+        with self.assertRaises(TwitchError):
+            self._download({
+                "00306.mp4": "x",
+                twitch_source.PLAYLIST_NAME: _playlist(),
+                twitch_source.DOWNLOADED_PLAYLIST_NAME:
+                    '#EXTM3U\n#EXT-X-MAP:URI="init-0.mp4"\n#EXTINF:10,\n00306.mp4\n',
+            })
+        # 失敗したら残骸を引き取る (次の試行が FileExistsError で落ちないように)
+        self.assertFalse(os.path.isdir(os.path.join(self.cache_root, self.video_id)))
+
+    # セグメントとして読めないときは「何があったのか」を文言に含める
+    def test_unreadable_cache_reports_the_names(self):
+        with self.assertRaises(TwitchError) as caught:
+            self._download({"strange.bin": "x",
+                            twitch_source.PLAYLIST_NAME: _playlist()})
+        self.assertIn("strange.bin", str(caught.exception))
+        self.assertFalse(os.path.isdir(os.path.join(self.cache_root, self.video_id)))
+
+    # 再試行を壊す残骸 (init・.tmp) だけを消し、セグメント本体は残すこと。
+    # 本体を消すと区間ぶんを毎回落とし直すことになる (今回の報告では 3.4 GB)。
+    def test_leftovers_are_cleared_before_download(self):
+        os.makedirs(self.segment_dir, exist_ok=True)
+        for name in ("00306.mp4", "init-0.mp4", "00307.mp4.tmp",
+                     twitch_source.PLAYLIST_NAME):
+            with open(os.path.join(self.segment_dir, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write("x")
+        twitch_source._clear_broken_leftovers(
+            os.path.join(self.cache_root, self.video_id))
+        self.assertEqual(sorted(os.listdir(self.segment_dir)), ["00306.mp4"])
 
 
 class FetchRangeTest(unittest.TestCase):
@@ -240,16 +434,26 @@ class FetchRangeTest(unittest.TestCase):
             playlist = os.path.join(segment_dir, twitch_source.PLAYLIST_NAME)
             with open(playlist, "w", encoding="utf-8") as handle:
                 handle.write(_playlist() if playlist_text is None else playlist_text)
+            downloaded = os.path.join(segment_dir,
+                                      twitch_source.DOWNLOADED_PLAYLIST_NAME)
+            with open(downloaded, "w", encoding="utf-8") as handle:
+                handle.write("#EXTM3U\n")
             return {"segment_dir": segment_dir, "segments": list(segments),
-                    "playlist": playlist, "quality": "chunked"}
+                    "playlist": playlist, "downloaded_playlist": downloaded,
+                    "format": twitch_source.segment_format(segments),
+                    "quality": "chunked"}
 
         return mock.patch.object(twitch_source, "download_vod_range",
                                  side_effect=_fake)
 
+    # 連結は ffmpeg の呼び出し手前まで通す (経路の選択まで本物を使う)
     def _run(self, start=225.0, end=255.0, duration=47.988, **kwargs):
+        self.commands = []
         with self._stub_download(**kwargs), \
-                mock.patch.object(vod_range, "concat_segments",
-                                  side_effect=lambda _d, _s, dest, _c: dest), \
+                mock.patch.object(vod_range.ffmpeg_runner, "get_ffmpeg_exe",
+                                  return_value="ffmpeg"), \
+                mock.patch.object(vod_range.ffmpeg_runner, "execute",
+                                  side_effect=self.commands.append), \
                 mock.patch.object(vod_range.ffmpeg_runner, "probe_duration",
                                   return_value=duration), \
                 mock.patch.object(vod_range.disk, "ensure_free"):
@@ -311,6 +515,24 @@ class FetchRangeTest(unittest.TestCase):
     def test_too_short_range(self):
         with self.assertRaises(InputError):
             self._run(start=100.0, end=100.0)
+
+    # 本題 (error 20261118): fMP4 の VOD でも原点が EXTINF 累積どおりに決まり、
+    # 連結は取得分プレイリスト経由になること
+    def test_fmp4_segments_keep_the_origin(self):
+        result = self._run(segments=("00020.mp4", "00021.mp4",
+                                     "00022.mp4", "00023.mp4"))
+        self.assertAlmostEqual(result["origin_sec"], _ORIGIN_20, places=3)
+        self.assertEqual(result["segments"], 4)
+        command = self.commands[0]
+        self.assertEqual(command[command.index("-i") + 1],
+                         os.path.join(self.workdir, "vod_range_1", "2910070011",
+                                      "chunked",
+                                      twitch_source.DOWNLOADED_PLAYLIST_NAME))
+
+    # MPEG-TS は従来どおり concat デマルチプレクサを通ること
+    def test_ts_segments_use_concat(self):
+        self._run()
+        self.assertIn("concat", self.commands[0])
 
 
 if __name__ == "__main__":

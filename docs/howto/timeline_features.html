@@ -668,12 +668,14 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     <div class="track t-ov"><span class="tag">V2 ↑</span><span class="desc">オーバーレイ映像トラック<small>V2 以上／番号の大きい順</small></span></div>
     <div class="track t-base"><span class="tag">V1</span><span class="desc">ベース映像トラック<small>本編・オープニング・エンディング</small></span></div>
     <div class="track t-aud"><span class="tag">A1 …</span><span class="desc">音声トラック<small>V1 のクリップとリンク</small></span></div>
+    <div class="track t-aud"><span class="tag">SE1 …</span><span class="desc">SE トラック<small>効果音。既定 1 本、ヘッダの右クリックで max_tracks（既定 4）まで追加可</small></span></div>
   </div>
   <ul class="list">
     <li>クリップの色は種類別で、選択中は輪郭が太くなります。</li>
     <li>「使用しない」にしたクリップは灰色表示になり、書き出しから外れます。</li>
     <li>音声トラックには波形を表示します（設定 <code>timeline.waveform.enabled</code>）。</li>
     <li>音声クリップは V1 のクリップに連動（リンク）しています。音声側を掴んでも V1 側の操作になります。</li>
+    <li><strong>SE（効果音）は音声クリップとは別物</strong>で、自分の位置・長さ・音量を持ちます。移動・トリム・分割・コピー＆ペーストは映像クリップと同じ操作です。SE にも波形が出ます。</li>
     <li>ロックされたトラックのクリップは、移動・トリム・字幕追加ができません。</li>
     <li>テロップトラックのヘッダの色見本を押すと、<strong>そのトラックの文字色</strong>を決められます（設定 <code>timeline.subtitle_tracks.header_color_enabled</code>）。コメント用トラックにはコメントアイコンが出ます。</li>
   </ul>
@@ -721,7 +723,49 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
     音声クリップには削除がありません（V1 側から消します）。
   </div>
 
-  <h3>4.5 ズーム・スクロール</h3>
+  <h3>4.5 SE（効果音）を置く</h3>
+  <p>
+    音声ファイル（<code>.mp3</code> / <code>.wav</code> / <code>.m4a</code> / <code>.aac</code> /
+    <code>.flac</code> / <code>.ogg</code> / <code>.opus</code> / <code>.wma</code>）を SE として置けます。
+  </p>
+  <ul class="list">
+    <li><strong>ドラッグ＆ドロップ</strong>: 音声ファイルを Timeline へ落とすと、落とした時刻に SE が置かれます。SE トラックの行へ落とせばそのトラックへ、別の行へ落としても SE トラックへ入ります。</li>
+    <li><strong>右クリック</strong>: SE トラックの空き領域で右クリック →「SE を追加...」からファイルを選びます。</li>
+    <li>同じ SE トラックの中で音を重ねることはできません。重ねたいときはヘッダの右クリックから SE トラックを追加してください（空きが無ければ自動で増えます）。</li>
+    <li>本編より後ろへ置いた SE は鳴りません（出力の尺は SE では伸びません）。</li>
+    <li>リップル削除（<kbd>Delete</kbd> / <kbd>A</kbd> / <kbd>D</kbd>）では SE も一緒に詰まります。動かしたくないときはトラックをロックしてください。</li>
+  </ul>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>音量の変え方</th><th>使いどころ</th></tr></thead>
+    <tbody>
+      <tr><td>SE を右クリック →「音量 ▶ +6 / +3 / 0 / -3 / -6 dB」</td><td>手早く決め打ちしたいとき（段は <code>timeline.sound_tracks.gain_presets_db</code> で変更可）</td></tr>
+      <tr><td>SE を選んでインスペクタの「音量」スライダ（既定 -40〜+12 dB / 0.5 dB 刻み）</td><td>再生しながら耳で追い込みたいとき。離した時点で確定します（<kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="list">
+    <li>「ミュート」にすると、その SE だけ鳴らなくなります（配置は残ります）。</li>
+    <li>複数の SE を選んでいるときは、音量・ミュートは選択中すべてに効きます。</li>
+    <li>SE ノードのラベルには、素材名と現在の音量（例 <code>pon (-6.0 dB)</code>）が出ます。</li>
+  </ul>
+
+  <h3>4.6 右クリックメニュー（SE 上）</h3>
+  <div class="t-scroll">
+  <table>
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>ここで分割</td><td>右クリックした位置で SE を分割</td></tr>
+      <tr><td>コピー <kbd>Ctrl</kbd>+<kbd>C</kbd> ／ 再生ヘッドへ貼り付け <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>同じ SE を別の位置へ置く。音量・ミュートも一緒に運ばれます</td></tr>
+      <tr><td>ミュート ／ ミュート解除</td><td>その SE だけ鳴らなくする</td></tr>
+      <tr><td>音量 ▶</td><td>決め打ちの段</td></tr>
+      <tr><td>使用する / 使用しない</td><td>書き出しに含めるかの切り替え</td></tr>
+      <tr><td>削除のみ <kbd>BackSpace</kbd> ／ リップル削除 <kbd>Delete</kbd></td><td>映像クリップと同じ規約</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>4.7 ズーム・スクロール</h3>
   <div class="t-scroll">
   <table class="nowrap-first">
     <thead><tr><th>操作</th><th>説明</th></tr></thead>

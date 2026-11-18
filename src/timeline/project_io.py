@@ -408,7 +408,9 @@ def _validate_media(timeline):
         "メディアの実体が見つかりません (%d 件)。該当クリップを無効化します: %s",
         len(missing), ", ".join(sorted(missing)),
     )
-    for track in timeline.video_tracks():
+    # SE トラックも対象にする (ver12 resolve1 §12)。
+    # 素材の無い SE を有効なまま残すと、出力のたびに ffmpeg が入力を開けず落ちる。
+    for track in timeline.video_tracks() + timeline.sound_tracks():
         for clip in track.clips:
             if clip.media_id in missing:
                 clip.enabled = False
@@ -457,7 +459,9 @@ def _validate_clips(timeline, min_clip_sec):
                     "クリップ %s の尺 (%.3fs) が下限 (%.3fs) 未満のため除外します",
                     clip.id, clip.duration, limit)
                 continue
-            if track.is_video() and clip.source_out <= clip.source_in + 1e-6:
+            # SE も素材内の範囲を持つため、映像と同じ条件で検証する
+            if (track.is_video() or track.is_sound()) and \
+                    clip.source_out <= clip.source_in + 1e-6:
                 _logger.warning(
                     "クリップ %s のソース範囲が不正なため除外します (in=%.3f out=%.3f)",
                     clip.id, clip.source_in, clip.source_out)

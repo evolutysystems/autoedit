@@ -25,6 +25,7 @@ from ..timeline.model import (
     ORIGIN_ASR,
     ORIGIN_SILENCE_CUT,
     TRACK_AUDIO,
+    TRACK_SOUND,
     TRACK_SUBTITLE,
     TRACK_VIDEO,
     AudioClip,
@@ -523,6 +524,27 @@ def _build_group_timeline(timeline, clips):
                             enabled=track.enabled, locked=track.locked,
                             clips=moved_clips)
             sub.tracks.append(overlay)
+
+    # 範囲に交差する SE (効果音 / ver12 resolve1 §9)。
+    # 写さないと、切り抜きの書き出しだけ SE が鳴らない。
+    # 字幕と同じく、グループの外へ出る分は打ち切り、素材側も同じだけ進める。
+    for track in timeline.sound_tracks():
+        moved_clips = []
+        for clip in track.clips:
+            start = max(clip.timeline_start, offset)
+            stop = min(clip.timeline_end, end)
+            if stop - start <= _MIN_SEGMENT_SEC:
+                continue
+            moved = clip.copy()
+            moved.timeline_start = start - offset
+            moved.duration = stop - start
+            moved.source_in = clip.source_in + (start - clip.timeline_start)
+            moved.source_out = moved.source_in + moved.duration
+            moved_clips.append(moved)
+        if moved_clips:
+            sub.tracks.append(Track(
+                track.id, TRACK_SOUND, track.index, name=track.name,
+                enabled=track.enabled, locked=track.locked, clips=moved_clips))
 
     sub.normalize()
     return sub

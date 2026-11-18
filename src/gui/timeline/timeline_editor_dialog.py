@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSlider,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -53,7 +55,7 @@ from ...timeline import (
     subtitle_style,
 )
 from ...timeline.builder import recent_path
-from ...timeline.model import AudioClip, SubtitleClip
+from ...timeline.model import AudioClip, SoundClip, SubtitleClip
 from ...utils.logger import get_logger
 from ...version import __version__
 from .. import project_thumbnail, theme
@@ -125,6 +127,10 @@ class TimelineEditorDialog(QDialog):
             timeline, self.controller.cfg["subtitle_tracks"],
             sub_color=(settings or {}).get("subtitle", {}).get(
                 "sub_subtitle_color", ""))
+        # SE (効果音) トラックも同じ考え方で最初から並べる (ver12 resolve1 §15)。
+        # 落とす先の行が見えていないと、音声ファイルを D&D できることに気付けない。
+        commands.ensure_initial_sound_tracks(
+            timeline, self.controller.cfg["sound_tracks"])
         ui_cfg = self.controller.cfg["ui"]
         self._project_cfg = self.controller.cfg["project"]
         # 保存 UI を出すか (アーカイブ用は素材が一時ファイルのため出さない / resolve7 §3-6)
@@ -1363,6 +1369,19 @@ class TimelineEditorDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _on_export_resolve(self):
+        # SE は FCPXML へ書き出せない (ver12 resolve1 §16)。
+        # 黙って落とすと Resolve 側で「音が無い」理由が分からないため先に知らせる。
+        sounds = self.controller.timeline.sound_clips()
+        if sounds:
+            answer = QMessageBox.question(
+                self, tr("SE は引き継がれません"),
+                tr("この Timeline には SE が {count} 件ありますが、"
+                   "DaVinci Resolve への書き出し (FCPXML) には含まれません。\n"
+                   "SE を入れた動画が必要な場合は「決定」から出力してください。\n\n"
+                   "このまま書き出しますか？", count=len(sounds)),
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                return
         run_resolve_export(
             self,
             lambda confirm: resolve_export.export_timeline(
@@ -1783,6 +1802,55 @@ class _InspectorPanel(QWidget):
         base_form.addRow("", self.reset_zoom_button)
         root.addWidget(self.base_widget)
 
+        # SE (効果音) 用の編集欄 (ver12 resolve1 §8)。
+        # 右クリックの刻み (+6/+3/0/-3/-6 dB) では足りない追い込みを、
+        # 再生しながらスライダで合わせられるようにする。
+        self.sound_widget = QWidget()
+        sound_form = QFormLayout(self.sound_widget)
+        sound_form.setContentsMargins(0, 6, 0, 0)
+
+        sound_cfg = self._controller.cfg["sound_tracks"]
+        self._sound_step_db = float(sound_cfg["gain_step_db"])
+        gain_row = QWidget()
+        gain_layout = QHBoxLayout(gain_row)
+        gain_layout.setContentsMargins(0, 0, 0, 0)
+        self.gain_slider = QSlider(Qt.Horizontal)
+        # スライダは整数しか持てないため「刻み何個ぶんか」で持つ
+        self.gain_slider.setRange(
+            int(round(float(sound_cfg["gain_min_db"]) / self._sound_step_db)),
+            int(round(float(sound_cfg["gain_max_db"]) / self._sound_step_db)))
+        self.gain_slider.setToolTip(
+            tr("SE の音量です (0 dB = 素材のまま)\n"
+               "動かしている間は表示だけが変わり、離したときに確定します"))
+        # 動かしている間は数値だけ更新し、離したときに 1 回だけコマンドを積む。
+        # 1 px ごとに積むと Undo 履歴が使い物にならなくなる (resolve1 §6.3)。
+        self.gain_slider.valueChanged.connect(self._on_gain_slider_moved)
+        self.gain_slider.sliderReleased.connect(self._on_gain_committed)
+        gain_layout.addWidget(self.gain_slider, 1)
+        self.gain_value_label = QLabel("0.0 dB")
+        self.gain_value_label.setMinimumWidth(64)
+        self.gain_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        gain_layout.addWidget(self.gain_value_label)
+        sound_form.addRow(tr("音量"), gain_row)
+
+        sound_buttons = QWidget()
+        sound_button_layout = QHBoxLayout(sound_buttons)
+        sound_button_layout.setContentsMargins(0, 0, 0, 0)
+        self.sound_mute_check = QCheckBox(tr("ミュート"))
+        self.sound_mute_check.toggled.connect(self._on_sound_mute_toggled)
+        sound_button_layout.addWidget(self.sound_mute_check)
+        self.reset_gain_button = QPushButton(tr("0 dB に戻す"))
+        self.reset_gain_button.setToolTip(tr("音量を素材のまま (0 dB) に戻します"))
+        self.reset_gain_button.clicked.connect(lambda: self._apply_gain(0.0))
+        sound_button_layout.addWidget(self.reset_gain_button)
+        sound_form.addRow("", sound_buttons)
+
+        self.sound_note_label = QLabel("")
+        self.sound_note_label.setWordWrap(True)
+        theme.mark_note(self.sound_note_label)
+        sound_form.addRow("", self.sound_note_label)
+        root.addWidget(self.sound_widget)
+
         self.reset_position_button = QPushButton(tr("位置を既定へ戻す"))
         self.reset_position_button.setToolTip(
             tr("ドラッグで動かした位置を捨てて、設定の配置・余白に従わせます"))
@@ -1809,10 +1877,16 @@ class _InspectorPanel(QWidget):
                 self.subtitle_widget.setVisible(False)
                 self.overlay_widget.setVisible(False)
                 self.base_widget.setVisible(False)
+                self.sound_widget.setVisible(False)
                 self.reset_position_button.setVisible(False)
                 return
             is_subtitle = isinstance(clip, SubtitleClip)
             self.subtitle_widget.setVisible(is_subtitle)
+            # SE (効果音) の音量欄 (ver12 resolve1 §8)
+            is_sound = isinstance(clip, SoundClip)
+            self.sound_widget.setVisible(is_sound)
+            if is_sound:
+                self._show_sound(clip)
             is_overlay = self._is_overlay_clip(clip)
             self.overlay_widget.setVisible(is_overlay)
             if is_overlay:
@@ -1822,7 +1896,8 @@ class _InspectorPanel(QWidget):
             self.base_widget.setVisible(is_base)
             if is_base:
                 self._show_base_zoom(clip)
-            self.reset_position_button.setVisible(True)
+            # SE は映像を持たないため「位置を既定へ戻す」は出さない
+            self.reset_position_button.setVisible(not is_sound)
             self.title_label.setText(self._title_for(clip))
             info = self._info_for(clip)
             self.info_label.setText(info)
@@ -1995,6 +2070,8 @@ class _InspectorPanel(QWidget):
                     else tr("字幕クリップ（{count} 件選択）", count=count))
         if isinstance(clip, AudioClip):
             return tr("音声クリップ")
+        if isinstance(clip, SoundClip):
+            return tr("SE (効果音)")
         origin = clip.origin_type()
         return tr({"opening": "オープニング", "ending": "エンディング",
                    "silence_cut": "本編クリップ",
@@ -2118,6 +2195,96 @@ class _InspectorPanel(QWidget):
         else:
             lines.append(tr("プレビューをドラッグすると位置を変えられます"))
         self.zoom_note_label.setText("\n".join(lines))
+
+    # ------------------------------------------------------------------
+    # SE (効果音) の音量 (ver12 resolve1 §8)
+    # ------------------------------------------------------------------
+
+    # 選択中の SE の音量・ミュートを欄へ出す
+    def _show_sound(self, clip):
+        locked = self._is_locked(clip)
+        self.gain_slider.setValue(self._gain_to_slider(clip.gain_db))
+        self.gain_value_label.setText(self._gain_text(clip.gain_db))
+        self.gain_slider.setEnabled(not locked and not clip.muted)
+        self.sound_mute_check.setChecked(bool(clip.muted))
+        self.sound_mute_check.setEnabled(not locked)
+        self.reset_gain_button.setEnabled(
+            not locked and abs(clip.gain_db) > 1e-6)
+
+        count = len(self._selected_sound_ids())
+        lines = []
+        if clip.muted:
+            lines.append(tr("ミュート中のため、この SE は鳴りません"))
+        if count > 1:
+            lines.append(tr("※ 音量・ミュートは選択中の {count} 件すべてに適用されます",
+                            count=count))
+        if locked:
+            lines.append(tr("トラックがロックされているため変更できません"))
+        self.sound_note_label.setText("\n".join(lines))
+        self.sound_note_label.setVisible(bool(lines))
+
+    # 選択中の SE の ID (音量の一括適用の対象)
+    def _selected_sound_ids(self):
+        timeline = self._controller.timeline
+        ids = [i for i in self._controller.selected_ids()
+               if isinstance(timeline.clip_by_id(i), SoundClip)]
+        if not ids and isinstance(self._clip, SoundClip):
+            ids = [self._clip.id]
+        return ids
+
+    # そのクリップの載っているトラックがロックされているか
+    def _is_locked(self, clip):
+        track = self._controller.timeline.track_of_clip(clip.id)
+        return bool(track is not None and track.locked)
+
+    def _gain_to_slider(self, gain_db):
+        return int(round(float(gain_db) / self._sound_step_db))
+
+    def _slider_to_gain(self, value):
+        return float(value) * self._sound_step_db
+
+    def _gain_text(self, gain_db):
+        return f"{float(gain_db):+.1f} dB" if abs(float(gain_db)) > 1e-6 else "0.0 dB"
+
+    # ドラッグ中: 数値表示だけ更新する (コマンドは積まない)
+    def _on_gain_slider_moved(self, value):
+        self.gain_value_label.setText(self._gain_text(self._slider_to_gain(value)))
+        if self._updating or self.gain_slider.isSliderDown():
+            return
+        # キーボード操作・ホイールではここで確定する (離す操作が無いため)
+        self._apply_gain(self._slider_to_gain(value))
+
+    # スライダを離した: ここで 1 回だけコマンドを積む
+    def _on_gain_committed(self):
+        if self._updating:
+            return
+        self._apply_gain(self._slider_to_gain(self.gain_slider.value()))
+
+    # 選択中の SE すべてへ音量を適用する
+    def _apply_gain(self, gain_db):
+        ids = self._selected_sound_ids()
+        if not ids:
+            return
+        changed = 0
+        for clip_id in ids:
+            if self._controller.set_audio_gain(clip_id, gain_db):
+                changed += 1
+        if not changed:
+            return
+        if len(ids) > 1:
+            self.status_message.emit(
+                tr("{count} 件の SE の音量を {gain} にしました",
+                   count=changed, gain=self._gain_text(gain_db)))
+        else:
+            self.status_message.emit(
+                tr("SE の音量を {gain} にしました", gain=self._gain_text(gain_db)))
+
+    # ミュートの切り替え (選択中すべて)
+    def _on_sound_mute_toggled(self, muted):
+        if self._updating:
+            return
+        for clip_id in self._selected_sound_ids():
+            self._controller.set_audio_muted(clip_id, bool(muted))
 
     def _on_zoom_changed(self):
         if self._updating or not self._is_base_video_clip(self._clip):

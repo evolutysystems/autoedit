@@ -299,6 +299,61 @@ def _role_move_scope(value):
     return scope if scope in ("role_tracks", "all") else "role_tracks"
 
 
+# SE (効果音) トラックの設定 (ver12 resolve1 §15)
+# 画面・コマンド・レンダリングはここだけを見る (ハードコード禁止 / docs/CLAUDE.md)。
+def _sound_tracks_config(values):
+    values = values if isinstance(values, dict) else {}
+    prefix = str(values.get("track_id_prefix", "") or "SE").strip() or "SE"
+    # 音量の範囲。上下が逆に書かれていても成立するよう並べ替える
+    low = float(values.get("gain_min_db", -40.0))
+    high = float(values.get("gain_max_db", 12.0))
+    if low > high:
+        low, high = high, low
+    return {
+        # false で機能ごと閉じる (行も出ず、音声ファイルの D&D も受理しない)
+        "enabled": bool(values.get("enabled", True)),
+        # 最初から出しておく SE トラックの本数 (0 = 必要になってから作る)
+        "initial_tracks": max(0, int(values.get("initial_tracks", 1) or 0)),
+        "track_id_prefix": prefix,
+        "track_name_format": str(
+            values.get("track_name_format", "") or "SE {index}"),
+        "max_tracks": _positive_int(values.get("max_tracks"), 4),
+        "track_height_px": _positive_int(values.get("track_height_px"), 44),
+        # 置いた直後の音量 (dB)。0 も有効な値のため _positive_float は使わない
+        "default_gain_db": _to_float(values.get("default_gain_db"), 0.0),
+        "gain_min_db": low,
+        "gain_max_db": high,
+        "gain_step_db": _positive_float(values.get("gain_step_db"), 0.5),
+        # 右クリック「音量」に並べる値 (dB)。空なら既定の 5 段
+        "gain_presets_db": _gain_presets(values.get("gain_presets_db")),
+        # amix の normalize。false (既定) = SE を足しても本編の音量が下がらない
+        "mix_normalize": bool(values.get("mix_normalize", False)),
+        # 1 回の ffmpeg へ渡す SE の本数の上限 (超える分は段階的に混ぜる)
+        "max_mix_inputs": max(2, _positive_int(values.get("max_mix_inputs"), 32)),
+        # 縦プロジェクトを作るときに SE を引き継ぐか
+        "carry_to_vertical": bool(values.get("carry_to_vertical", True)),
+    }
+
+
+# 右クリックへ並べる音量 (dB) の一覧。数値へ寄せられない要素は捨てる
+def _gain_presets(values):
+    presets = []
+    for value in (values if isinstance(values, (list, tuple)) else []):
+        try:
+            presets.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return presets or [6.0, 3.0, 0.0, -3.0, -6.0]
+
+
+# 0 や負値も有効な設定値を float へ寄せる (不正値だけ既定へ落とす)
+def _to_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _subtitle_tracks_config(values):
     values = values if isinstance(values, dict) else {}
     track_id = str(values.get("comment_track_id", "") or "").strip()
@@ -428,6 +483,8 @@ def timeline_config(settings):
         "default_subtitle_sec": _positive_float(cfg.get("default_subtitle_sec"), 2.0),
         # 役割別の字幕トラック (ver3 resolve11 §7.3)
         "subtitle_tracks": _subtitle_tracks_config(cfg.get("subtitle_tracks", {})),
+        # SE (効果音) トラック (ver12 resolve1 §15)
+        "sound_tracks": _sound_tracks_config(cfg.get("sound_tracks", {})),
         # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §R1)
         "subtitle_align": _subtitle_align_config(cfg.get("subtitle_align", {})),
         # テロップを分割したときに本文も分けるか (ver9 要望)。

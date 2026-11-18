@@ -11,9 +11,14 @@
 #
 # 位置の決め方 (resolve5 §2.3〜§2.5):
 #   twitch-dl のキャッシュには取得範囲に関わらず **VOD 全体のプレイリスト**が残り、
-#   セグメントの保存名は**全体プレイリストでの並び順** ({index:05d}.ts) である。
+#   セグメントの保存名は**全体プレイリストでの並び順**
+#   ({index:05d} + 元 URI の拡張子 = "00020.ts" / "00307.mp4") である。
 #   よって「取得できた先頭セグメント番号 N」から EXTINF を N 件ぶん足せば原点が決まる。
 #   この方式の位置誤差は実測 ±0.0001 秒 (VOD 前半・後半とも / 音声相関で確認)。
+#
+# 連結の方法はセグメントの種別で変える (error 20261118 §4):
+#   MPEG-TS (.ts) は concat デマルチプレクサ、
+#   fMP4 (.mp4) は #EXT-X-MAP の init セグメントが要るため取得分プレイリスト経由。
 #
 # twitch-dl 自身の --start/--end による切り詰めは使わない。ffmpeg へ整数秒で渡され、
 # しかも int() で切り捨てられるため末尾が最大 1 秒欠ける (resolve5 §2.2)。
@@ -247,7 +252,7 @@ def fetch_range(video_id, start_sec, end_sec, workdir, settings,
     if progress_cb:
         progress_cb(tr("取得した区間をつなぎ合わせています…"))
     dest = os.path.join(cache_root, "range.mp4")
-    concat_segments(fetched["segment_dir"], fetched["segments"], dest, ffmpeg_cfg)
+    join_range(fetched, dest, ffmpeg_cfg, method=cfg["segment_join"])
     duration = float(ffmpeg_runner.probe_duration(dest, ffmpeg_cfg) or 0.0)
     if duration <= 0:
         raise TwitchError(tr("取得した区間をつなぎ合わせられませんでした。"))
@@ -262,7 +267,50 @@ def fetch_range(video_id, start_sec, end_sec, workdir, settings,
             "segments": len(fetched["segments"])}
 
 
-# セグメントを 1 本の mp4 へ連結する (再エンコードなし)。
+# 取得したセグメントを 1 本の mp4 へまとめる (再エンコードなし / error 20261118 §4)。
+#
+# MPEG-TS (.ts) は従来どおり concat デマルチプレクサで連結する
+# (位置誤差 ±0.0001 秒を実測済み / resolve5 §2.3)。
+# fMP4 (.mp4) は #EXT-X-MAP の init セグメントと組にしないと読めず
+# (実測: "error reading header")、twitch-dl が書き出した取得分プレイリスト
+# (playlist_downloaded.m3u8) を HLS デマルチプレクサへ渡す必要がある。
+#
+# method : "auto" (既定 = 形式で判断) / "concat" / "playlist" (設定からの上書き)
+def join_range(fetched, dest, ffmpeg_cfg, method="auto"):
+    method = str(method or "auto").lower()
+    use_playlist = (method == "playlist"
+                    or (method != "concat" and fetched.get("format") != "ts"))
+    if not use_playlist:
+        return concat_segments(fetched["segment_dir"], fetched["segments"],
+                               dest, ffmpeg_cfg)
+    playlist = fetched.get("downloaded_playlist") or ""
+    if not playlist:
+        raise TwitchError(
+            tr("取得した区間をまとめられませんでした（取得分のプレイリストがありません）。"))
+    return join_by_playlist(playlist, dest, ffmpeg_cfg)
+
+
+# 取得分のプレイリストを ffmpeg の HLS デマルチプレクサへ渡してまとめる。
+#
+# セグメント名はプレイリストと同じフォルダの相対名なので、入力はパスだけでよい。
+# -allowed_extensions ALL は .m4s 等が来ても弾かれないようにするための保険。
+# 先頭を 0 秒へ揃える -avoid_negative_ts make_zero は concat 側と同じ作法
+# (原点は呼び側が origin_sec で持つ)。
+def join_by_playlist(playlist_path, dest, ffmpeg_cfg):
+    ffmpeg = ffmpeg_runner.get_ffmpeg_exe(ffmpeg_cfg)
+    cmd = [
+        ffmpeg, "-y",
+        "-allowed_extensions", "ALL",
+        "-i", playlist_path,
+        "-c", "copy",
+        "-avoid_negative_ts", "make_zero",
+        dest,
+    ]
+    ffmpeg_runner.execute(cmd)
+    return dest
+
+
+# セグメントを 1 本の mp4 へ連結する (再エンコードなし / MPEG-TS 用)。
 #
 # concat デマルチプレクサのリストは行頭 file + 単一引用符で書く。
 # Windows の \ はリスト内でエスケープとして解釈されるため / へ直す。
@@ -299,6 +347,8 @@ __all__ = [
     "concat_segments",
     "declared_total_sec",
     "fetch_range",
+    "join_by_playlist",
+    "join_range",
     "parse_segment_starts",
     "plan_window",
     "required_bytes",

@@ -2,7 +2,8 @@
 # 編集情報の唯一のソースである Timeline を、Qt に依存しない純 Python として提供する。
 # GUI (src/gui/timeline) はこのパッケージを読み書きするだけで、編集ロジックを持たない。
 #
-# model        : Timeline / Track / Clip / SubtitleClip / AudioClip / MediaRef / Transform
+# model        : Timeline / Track / Clip / SubtitleClip / AudioClip / SoundClip /
+#                MediaRef / Transform
 # timemap      : TimeMap (元動画時間 ↔ Timeline 時間の写像)
 # project_io   : プロジェクト JSON の読み書き・検証・マイグレーション
 # builder      : 編集点 + 字幕 items → Timeline 構築
@@ -15,6 +16,7 @@ from .model import (
     AudioClip,
     Clip,
     MediaRef,
+    SoundClip,
     SubtitleClip,
     Timeline,
     Track,
@@ -26,6 +28,7 @@ __all__ = [
     "AudioClip",
     "Clip",
     "MediaRef",
+    "SoundClip",
     "SubtitleClip",
     "Timeline",
     "TimeMap",

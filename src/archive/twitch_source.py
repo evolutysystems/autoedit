@@ -456,16 +456,28 @@ def _fill_source_details(details, video_id, quality, path, ffmpeg_cfg):
 # 区間だけの取得 (ver9 resolve5 §4.2)
 # ------------------------------------------------------------------
 
-# セグメント保存名 ("00020.ts")。twitch-dl は全体プレイリストでの並び順を
-# {index:05d} で付ける (twitchdl/playlists.py enumerate_vods)。
-_SEGMENT_NAME_RE = re.compile(r"^(\d+)\.ts$", re.IGNORECASE)
+# セグメント保存名 ("00020.ts" / "00307.mp4")。twitch-dl は全体プレイリストでの
+# 並び順を {index:05d} + **元 URI の拡張子**で付ける
+# (twitchdl/playlists.py enumerate_vods: f"{index:05d}{ext}")。
+# Twitch は配信アーカイブを MPEG-TS (.ts)、ハイライト等を fMP4 (.mp4) で配信するため
+# 両方を拾う (error 20261118 §9 R1)。init セグメント ("init-0.mp4" 等) は
+# 数字で始まらないため、ここには当たらない。
+# .m4s は Twitch では未観測だが HLS/CMAF の標準的な拡張子であるため保険として含める。
+_SEGMENT_NAME_RE = re.compile(r"^(\d+)\.(ts|mp4|m4s)$", re.IGNORECASE)
 
 # VOD 全体のプレイリスト / 取得分のプレイリストの保存名 (twitchdl/commands/download.py)
 PLAYLIST_NAME = "playlist.m3u8"
 DOWNLOADED_PLAYLIST_NAME = "playlist_downloaded.m3u8"
 
+# 取得分プレイリストの init セグメント宣言 (#EXT-X-MAP:URI="init-0.mp4")
+_EXT_X_MAP_RE = re.compile(r'^#EXT-X-MAP:.*URI="([^"]+)"', re.IGNORECASE)
 
-# 指定範囲のセグメント (.ts) をキャッシュへ落とすところまでを行う (ver9 resolve5 §4.2)。
+# MPEG-TS セグメントの拡張子。これだけで構成される区間は従来の concat 経路で連結できる。
+_TS_EXT = ".ts"
+
+
+# 指定範囲のセグメント (.ts / .mp4) をキャッシュへ落とすところまでを行う
+# (ver9 resolve5 §4.2 / fMP4 対応は error 20261118)。
 #
 # **連結も切り詰めも twitch-dl にはさせない** (--no-join)。
 # twitch-dl の --start/--end による切り詰めは ffmpeg へ整数秒で渡され、
@@ -478,10 +490,12 @@ DOWNLOADED_PLAYLIST_NAME = "playlist_downloaded.m3u8"
 # quality_fallback    : 既定 False。画質が変わると既存素材と寸法が割れるため、
 #                       落とすかどうかは呼び側が確認を取ってから決める (§5.4)。
 #
-# 戻り値: {"segment_dir": セグメントの置き場,
-#          "segments"   : 番号順のファイル名,
-#          "playlist"   : VOD 全体のプレイリストのパス,
-#          "quality"    : 実際に指定した画質名}
+# 戻り値: {"segment_dir"        : セグメントの置き場,
+#          "segments"           : 番号順のファイル名,
+#          "playlist"           : VOD 全体のプレイリストのパス (位置の確定に使う),
+#          "downloaded_playlist": 取得分だけのプレイリストのパス (連結に使う / 無ければ ""),
+#          "format"             : セグメントの種別 ("ts" / "fmp4" / ""),
+#          "quality"            : 実際に指定した画質名}
 def download_vod_range(video_id, cache_root, start_hms, end_hms,
                        twitch_dl_path="twitch-dl", quality="source",
                        auth_token="", progress_cb=None, ffmpeg_dir=None,
@@ -520,6 +534,9 @@ def download_vod_range(video_id, cache_root, start_hms, end_hms,
     if auth_token:
         argv += ["--auth-token", auth_token]
 
+    # 前回の取得が残した「再試行を壊すファイル」だけを先に片づける (§9 R5)
+    _clear_broken_leftovers(cache_for_video)
+
     try:
         _run(argv, progress_cb, label="区間取得中…", env=_twitchdl_env(ffmpeg_dir),
              cancel_cb=cancel_cb)
@@ -538,22 +555,114 @@ def download_vod_range(video_id, cache_root, start_hms, end_hms,
             tr("元動画の区間を取得できませんでした (指定画質: {quality} / 利用可能: {available})。\n"
                "{error}", quality=chosen, available=names, error=e)) from e
 
+    # 取得後の検証 (§9 R3)。**失敗したら断片キャッシュを必ず引き取る**。
+    # 残すと次の試行で twitch-dl が init セグメントを置き直せず
+    # FileExistsError (WinError 183) になる (error 20261118 §5)。
     segment_dir = _find_segment_dir(cache_for_video)
     if not segment_dir:
-        raise TwitchError(
-            tr("取得した区間のファイルが見つかりません: {path}", path=cache_for_video))
+        _fail(cache_for_video, keep_cache_on_error,
+              tr("取得した区間のファイルが見つかりません: {path}", path=cache_for_video))
     segments = list_segments(segment_dir)
     if not segments:
-        raise TwitchError(
-            tr("取得した区間のファイルが見つかりません: {path}", path=segment_dir))
+        # 中身はあるのに名前が想定と違うときは、それが分かる文言にする (§9 R6)
+        _fail(cache_for_video, keep_cache_on_error, _unreadable_message(segment_dir))
     playlist = os.path.join(segment_dir, PLAYLIST_NAME)
     if not os.path.isfile(playlist):
-        raise TwitchError(
-            tr("取得した区間の位置を確かめられません（プレイリストがありません）。"))
-    _logger.info("区間取得完了: %s (%d セグメント / 画質 %s)",
-                 segment_dir, len(segments), chosen)
+        _fail(cache_for_video, keep_cache_on_error,
+              tr("取得した区間の位置を確かめられません（プレイリストがありません）。"))
+
+    fmt = segment_format(segments)
+    downloaded = os.path.join(segment_dir, DOWNLOADED_PLAYLIST_NAME)
+    if fmt != "ts":
+        # fMP4 は取得分プレイリストと init セグメント (#EXT-X-MAP) が無いと連結できない
+        if not os.path.isfile(downloaded):
+            _fail(cache_for_video, keep_cache_on_error,
+                  tr("取得した区間をまとめられません（取得分のプレイリストがありません）。"))
+        missing = _missing_init_sections(segment_dir, downloaded)
+        if missing:
+            _fail(cache_for_video, keep_cache_on_error,
+                  tr("取得した区間の先頭データがありません: {names}",
+                     names=", ".join(missing)))
+
+    _logger.info("区間取得完了: %s (%d セグメント / 形式 %s / 画質 %s)",
+                 segment_dir, len(segments), fmt or "不明", chosen)
     return {"segment_dir": segment_dir, "segments": segments,
-            "playlist": playlist, "quality": chosen}
+            "playlist": playlist,
+            "downloaded_playlist": downloaded if os.path.isfile(downloaded) else "",
+            "format": fmt, "quality": chosen}
+
+
+# 取得後の検証で失敗したときの共通処理 (error 20261118 §9 R3)。
+# 断片キャッシュ (動画 1 本ぶん) を引き取ってから TwitchError を送出する。
+# 取得そのものの失敗 (except TwitchError 側) と同じ範囲を片づけることで、
+# 「どこで失敗しても残骸は残らない」を揃える。
+# keep は設定 keep_cache_on_error をそのまま渡す (残すと決めた意思は尊重し、
+# 再試行の衝突のほうは _clear_broken_leftovers で解く)。
+def _fail(cache_dir, keep, message):
+    _cleanup_cache(cache_dir, keep)
+    raise TwitchError(message)
+
+
+# セグメントとして読めなかったときの文言 (error 20261118 §9 R6)。
+# 「見つかりません」だけでは、中身はあるのに名前が想定と違う状況を言い表せない
+# (fMP4 の .mp4 を .ts 前提で弾いていたとき、利用者に原因が伝わらなかった)。
+def _unreadable_message(segment_dir):
+    try:
+        names = sorted(os.listdir(segment_dir))[:5]
+    except OSError:
+        names = []
+    if not names:
+        return tr("取得した区間のファイルが見つかりません: {path}", path=segment_dir)
+    return tr("取得した区間のファイルを読み取れませんでした"
+              "（想定と違う名前です: {names}）。\n{path}",
+              names=", ".join(names), path=segment_dir)
+
+
+# 取得分プレイリストが参照する init セグメント (#EXT-X-MAP) のうち、
+# 実在しないものの名前を返す。空なら連結できる (error 20261118 §9 R3)。
+def _missing_init_sections(segment_dir, downloaded_playlist):
+    missing = []
+    try:
+        with open(downloaded_playlist, "r", encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        return missing
+    for line in text.splitlines():
+        found = _EXT_X_MAP_RE.match(line.strip())
+        if not found:
+            continue
+        name = found.group(1)
+        if name in missing:
+            continue
+        if not os.path.isfile(os.path.join(segment_dir, name)):
+            missing.append(name)
+    return missing
+
+
+# 前回の取得が残した「再試行を壊すファイル」だけを消す (error 20261118 §9 R5)。
+#
+# twitch-dl の download_file() は init セグメント (#EXT-X-MAP) を毎回落とし直し、
+# .tmp へ書いてから os.rename で置く。Windows の os.rename は宛先があると
+# 必ず失敗する (WinError 183) ため、残っていると再試行が 100% 落ちる。
+# **番号付きセグメント本体は残す** = download_with_retries() が既存分を飛ばすので、
+# 再試行が前回の続きから進む (区間ぶんの落とし直しを避ける)。
+# プレイリスト・metadata.txt は twitch-dl が open("w") で上書きするため消して構わない。
+def _clear_broken_leftovers(cache_for_video):
+    if not os.path.isdir(cache_for_video):
+        return
+    removed = 0
+    for root, _dirs, files in os.walk(cache_for_video):
+        for name in files:
+            if segment_index(name) is not None:
+                continue        # 番号付きセグメントは再利用できるので残す
+            try:
+                os.remove(os.path.join(root, name))
+                removed += 1
+            except OSError as e:
+                _logger.warning("前回の残骸を消せませんでした: %s (%s)", name, e)
+    if removed:
+        _logger.info("前回の取得の残骸を片づけました: %s (%d 件)",
+                     cache_for_video, removed)
 
 
 # キャッシュから「セグメントが入っているディレクトリ」を探す。
@@ -588,10 +697,23 @@ def list_segments(segment_dir):
     return [name for _index, name in found]
 
 
-# セグメントのファイル名から番号を取り出す ("00020.ts" → 20 / 読めなければ None)
+# セグメントのファイル名から番号を取り出す
+# ("00020.ts" / "00307.mp4" → 20 / 307 / 読めなければ None)
 def segment_index(name):
     m = _SEGMENT_NAME_RE.match(os.path.basename(str(name or "")))
     return int(m.group(1)) if m else None
+
+
+# セグメント群の種別を返す ("ts" = MPEG-TS / "fmp4" = 断片化 MP4 / "" = 不明)。
+#
+# fMP4 は #EXT-X-MAP の init セグメントと組にしないと単体では読めないため、
+# 連結の方法を変えなければならない (error 20261118 §4)。
+# 混在しているときは安全側の "fmp4" を返す (HLS デマルチプレクサは両方読める)。
+def segment_format(segments):
+    exts = {os.path.splitext(str(name or ""))[1].lower() for name in (segments or [])}
+    if not exts:
+        return ""
+    return "ts" if exts == {_TS_EXT} else "fmp4"
 
 
 # 動画として読める状態かを ffprobe で確かめる (resolve.md §6-4)。

@@ -20,7 +20,7 @@ import time
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
-from . import compositor, crop, subtitle_style
+from . import compositor, crop, sound_mix, subtitle_style
 
 _logger = get_logger(__name__)
 
@@ -31,7 +31,8 @@ MIN_TILE_SEC = 0.5
 # 鍵の書式の版。計算を変えたら上げる = 既存のキャッシュが一斉に無効になる
 # ver9 resolve16: 切り抜きの解決を素材ごとに変えたため、黒帯のまま作られた
 # タイルが残らないように上げる (resolve16 §3.6)
-_KEY_VERSION = "proxy-tile-2"
+# ver12 resolve1 §11: SE を鍵へ足したため版を上げる (旧タイルを無効化)
+_KEY_VERSION = "proxy-tile-3"
 # 生成の打ち切りを確認する間隔 (秒)
 _CANCEL_POLL_SEC = 0.1
 
@@ -168,6 +169,18 @@ def tile_key(timeline, env, tile_index):
                 str(transform.x), str(transform.y), str(transform.scale),
                 str(transform.opacity), str(element.z_order),
             ]))
+
+    # SE (効果音 / ver12 resolve1 §11)。ここへ足し忘れると、音量を変えても
+    # 古いタイルが使われて音が変わらない。
+    for clip in timeline.sound_clips(only_audible=False):
+        if not _overlaps(clip.timeline_start, clip.timeline_end, start, end):
+            continue
+        parts.append("se|" + "|".join([
+            str(clip.media_id), f"{clip.source_in:.4f}",
+            f"{clip.timeline_start:.4f}", f"{clip.duration:.4f}",
+            f"{clip.gain_db:.3f}", str(int(bool(clip.muted))),
+            str(int(bool(clip.enabled))),
+        ]))
 
     return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
 
@@ -419,6 +432,23 @@ def _build_command(timeline, env, tile_index, start, end, pieces, out_path):
             f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:"
             f"duration=first:dropout_transition=0[paout]")
         audio_map = "[paout]"
+
+    # ── ⑥ SE (効果音) をこのタイルへ混ぜる (ver12 resolve1 §11)
+    #
+    # 素材側は -ss/-t で切り、遅延はタイル先頭からの相対秒で掛ける。
+    # 本編の音とは**別の amix** (normalize=0) で混ぜる。上の amix へ相乗りすると
+    # 入力数で割られ、SE を置くほど本編が小さくなる = 出力と音量が食い違う。
+    sound_pieces = sound_mix.collect_pieces(timeline, start, end)
+    if sound_pieces:
+        se_args, se_chains, se_labels = sound_mix.input_chains(
+            sound_pieces, index, sample_rate, prefix="pse")
+        input_args += se_args
+        chains.extend(se_chains)
+        index += len(sound_pieces)
+        chains.append(sound_mix.amix_filter(
+            [audio_map] + se_labels, "[pseout]",
+            normalize=bool(sound_mix.config(settings).get("mix_normalize", False))))
+        audio_map = "[pseout]"
     else:
         audio_map = _map_target(audio_map)
 

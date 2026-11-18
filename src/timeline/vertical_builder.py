@@ -25,6 +25,7 @@ from .model import (
     BASE_SUBTITLE_TRACK_ID,
     BASE_VIDEO_TRACK_ID,
     TRACK_AUDIO,
+    TRACK_SOUND,
     TRACK_SUBTITLE,
     TRACK_VIDEO,
     AudioClip,
@@ -106,6 +107,11 @@ def build(timeline, clip_ids, layout, settings, close_gaps=True, rebase=None):
     # (ver9 resolve15)。設定で従来どおり S1 の 1 本へ潰すこともできる。
     _copy_subtitles(timeline, vertical, offsets, warnings,
                     carry_tracks=crop.config(settings)["carry_subtitle_tracks"])
+
+    # ── ③' SE (効果音 / ver12 resolve1 §14)
+    # 字幕と同じ対応表で写す。設定 carry_to_vertical=false で従来どおり引き継がない。
+    if timeline_config(settings)["sound_tracks"]["carry_to_vertical"]:
+        _copy_sounds(timeline, vertical, offsets, warnings)
 
     # ── ④ 引き継がないもの (§3.6 / §5.4-10)
     _warn_dropped(timeline, clips, warnings)
@@ -307,6 +313,70 @@ def _copy_subtitles(timeline, vertical, offsets, warnings, carry_tracks=True):
         warnings.append(
             tr("選んだ範囲の境目にかかる字幕 {count} 件は、はみ出した部分を切り詰めました。",
                count=trimmed))
+
+
+# 選択区間に重なる SE を縦 Timeline へ移す (ver12 resolve1 §14)
+#
+# 字幕と同じ offsets で写す。素材側の位置 (source_in) も切り詰めた分だけ進めるため、
+# 区間の境目をまたいだ SE でも「音のどこが鳴るか」がずれない。
+# 引き継がなかった SE は黙って落とさず警告へ積む。
+def _copy_sounds(timeline, vertical, offsets, warnings):
+    source_tracks = timeline.sound_tracks()
+    if not source_tracks:
+        return
+
+    dropped = 0
+    created = {}
+    for track in source_tracks:
+        for clip in track.clips:
+            spans = _map_spans(clip.timeline_start, clip.timeline_end, offsets)
+            if not spans:
+                dropped += 1
+                continue
+            target = created.get(track.id)
+            if target is None:
+                target = Track(track.id, TRACK_SOUND, track.index, name=track.name,
+                               enabled=track.enabled, locked=track.locked)
+                vertical.tracks.append(target)
+                created[track.id] = target
+            for span_start, span_end in spans:
+                moved = copy.deepcopy(clip)
+                moved.timeline_start = span_start
+                moved.duration = span_end - span_start
+                # 頭を切られた分だけ素材側も進める (鳴り出しの位置を保つ)
+                head = max(span_start - (clip.timeline_start + _shift_of(
+                    clip.timeline_start, offsets)), 0.0)
+                moved.source_in = clip.source_in + head
+                moved.source_out = moved.source_in + moved.duration
+                target.clips.append(moved)
+
+    for target in created.values():
+        target.clips.sort(key=lambda c: c.timeline_start)
+        seen = set()
+        for clip in target.clips:
+            if clip.id in seen:
+                clip.id = vertical.next_id("se")
+            seen.add(clip.id)
+        # 使っている素材を縦側のプールへ持ち込む (無いと鳴らない)
+        for clip in target.clips:
+            if vertical.media_by_id(clip.media_id) is not None:
+                continue
+            media = timeline.media_by_id(clip.media_id)
+            if media is not None:
+                vertical.media_pool.append(copy.deepcopy(media))
+
+    if dropped:
+        warnings.append(
+            tr("選んだ範囲の外にある SE {count} 件は引き継ぎませんでした。",
+               count=dropped))
+
+
+# その時刻を含む区間のずらし量 (新しい開始 - 元の開始) を返す
+def _shift_of(sec, offsets):
+    for old_start, new_start, duration in offsets:
+        if old_start - _SEAM_TOLERANCE_SEC <= sec < old_start + duration:
+            return new_start - old_start
+    return 0.0
 
 
 # 同じ ID が重なった字幕に新しい ID を振る (1 つの字幕が複数区間へまたがった場合)

@@ -101,13 +101,14 @@ src/
 │   ├── concat_processor.py   OP / ED 結合 (従来フロー用)
 │   └── output_writer.py      最終ファイル配置・検証
 ├── timeline/               編集情報の唯一のソース (Qt 非依存)
-│   ├── model.py              Timeline / Track / Clip / SubtitleClip / AudioClip
+│   ├── model.py              Timeline / Track / Clip / SubtitleClip / AudioClip / SoundClip
 │   ├── project_io.py         プロジェクト JSON の読み書き・検証・移行
 │   ├── builder.py            編集点 + 認識結果 → Timeline 構築
 │   ├── vertical_builder.py   横 Timeline → 縦 Timeline
 │   ├── commands.py           編集操作 (Command) と Undo/Redo
 │   ├── clipboard.py          ノードのコピー/貼り付け
 │   ├── compositor.py         合成フィルタ断片の唯一の計算元 (出力とプレビュー共通)
+│   ├── sound_mix.py          SE (効果音) の混ぜ方の唯一の計算元 (出力/プレビュー共通)
 │   ├── renderer.py           Timeline → FFmpeg → 動画
 │   ├── proxy_render.py       プロキシ (低解像度タイル) 生成
 │   ├── crop.py               縦動画の切り抜き指定
@@ -302,6 +303,20 @@ Timeline を作らず、工程ごとに動画ファイルを作り替える。
   自己完結した時点でゴミ箱へ送る (1 本 10〜25GB を抱えさせない)。
   後から区間を足すときは `vod_range` が**必要な区間だけ**取り直す。
 
+* 区間の取り直し (`vod_range`) は **MPEG-TS (`.ts`) と fMP4 (`.mp4`) の両方**を扱う
+  (error 20261118)。twitch-dl のキャッシュに残る 2 つのプレイリストは役割が違う。
+
+  | ファイル | 中身 | 用途 |
+  |---|---|---|
+  | `playlist.m3u8` | VOD 全体 (`#EXT-X-TWITCH-TOTAL-SECS` 付き) | **位置の確定**。EXTINF 累積で素材の原点を決める |
+  | `playlist_downloaded.m3u8` | 取得分だけ (ローカル名 / `#EXT-X-MAP` 保持) | **連結**。fMP4 のとき ffmpeg へ渡す |
+
+  連結方法は `archive.section_add.refetch.segment_join` (既定 `auto`) で決まる。
+  `auto` は `.ts` のみなら concat デマルチプレクサ、fMP4 を含むなら
+  `playlist_downloaded.m3u8` を HLS デマルチプレクサへ渡す
+  (fMP4 の断片は `#EXT-X-MAP` の init セグメントと組にしないと読めない)。
+  `concat` / `playlist` で固定もできる (Twitch 側の仕様変更時の退避用)。
+
 ### 3.5 縦動画プロジェクト
 
 Timeline の V1 クリップ右クリック →「縦動画プロジェクトを作成」。
@@ -362,12 +377,13 @@ Timeline 編集画面 / 字幕一覧 / アーカイブ結果画面の「DaVinci 
 
 | モジュール | 責務 |
 |---|---|
-| `model` | Timeline / Track / Clip / SubtitleClip / AudioClip / MediaRef / Transform |
+| `model` | Timeline / Track / Clip / SubtitleClip / AudioClip / SoundClip / MediaRef / Transform |
 | `project_io` | JSON の保存・読込・検証・移行 (`SCHEMA_VERSION = 1`)、種別判定 (clip / archive) |
 | `builder` / `vertical_builder` / `archive/timeline_builder` | 編集点と認識結果から Timeline を組む (横 / 縦 / 複数クリップ) |
 | `commands` | 全編集操作を Command として実装し CommandStack に積む (Undo/Redo) |
 | `compositor` | クロップ・正規化・オーバーレイ・字幕・ぼかし・透かしの配置計算の唯一の置き場 |
-| `renderer` | ベース連結 → 合成 → 焼き込みの 3 パスで書き出す。A/V 同期の実測対策を持つ |
+| `sound_mix` | SE (効果音) の区間計算と amix の唯一の置き場 (出力・プレビュー・プロキシ共通) |
+| `renderer` | ベース連結 → 合成 → 焼き込み → SE ミックスで書き出す。A/V 同期の実測対策を持つ |
 | `proxy_render` / `gui/timeline/proxy_manager` | 確認用プロキシをタイル単位で作り、キャッシュする |
 | `timemap` | 元動画時間 ↔ Timeline 時間の写像 (プレビューと字幕配置) |
 | `media_recovery` / `media_sidecar` | 消えた中間ファイルの作り直しと、正規化済み音声の保存 |
@@ -423,7 +439,9 @@ Timeline
  │    ├─ V1  ベース映像 (OP / 本編の残す区間 / ED)。最背面固定
  │    ├─ V2+ オーバーレイ映像・画像 (z_order)
  │    ├─ A1  V1 にリンクした音声 (独立した時刻を持たない)
- │    └─ S1.. 字幕 (役割別。既定 3 トラック / 最大 timeline.subtitle_tracks.max_tracks)
+ │    ├─ S1.. 字幕 (役割別。既定 3 トラック / 最大 timeline.subtitle_tracks.max_tracks)
+ │    └─ SE1.. SE (効果音)。固有の時刻と音量 (gain_db) を持つ独立したノード
+ │             (最大 timeline.sound_tracks.max_tracks / ver12 resolve1)
  ├─ source                            元動画・編集点メタ・ぼかし指定・crop 指定
  └─ 各 Clip: MediaRef (素材と素材内時刻) + Transform (位置・大きさ) + use フラグ
 ```
@@ -480,7 +498,7 @@ Timeline
 | `volume_analysis` | 解析の有無・測り方 (`metric` / `percentile`)・確定カット閾値 `last_cut_db` | 閾値確認 |
 | `loudness` | 目標 I / TP / LRA、2 パス、出力の検証と補正 | 正規化 |
 | `preview` | 字幕プレビュー (尺・寸法・プリセット・音声) | 字幕一覧画面 |
-| `timeline` | 編集画面の全設定 (プロジェクト・トラック・ショートカット・プレビュー・プロキシ・波形・UI 寸法・ヘルプ) | Timeline |
+| `timeline` | 編集画面の全設定 (プロジェクト・トラック・SE トラック・ショートカット・プレビュー・プロキシ・波形・UI 寸法・ヘルプ) | Timeline |
 | `ffmpeg` | 実行ファイルのパス、コーデック、出力寸法/FPS、品質プロファイル、進捗タイムアウト | 全 FFmpeg 実行 |
 | `vertical` | 縦動画のキャンバス・字幕配置・切り抜き (crop) の既定 | 縦動画 |
 | `logging` | ログの出力先とレベル | 全体 |

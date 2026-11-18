@@ -340,7 +340,10 @@ class TimelineController(QObject):
         return min(float(width) / float(canvas), 1.0)
 
     # メディアを追加する。追加できたら新しいクリップ ID を返す。
+    # 音だけの素材は SE として SE トラックへ置く (ver12 resolve1 §6.2)。
     def add_media(self, media, timeline_start, duration, track_id=None):
+        if getattr(media, "is_audio", None) is not None and media.is_audio():
+            return self.add_sound(media, timeline_start, duration, track_id=track_id)
         command = commands.AddMediaClip(
             media, timeline_start, duration, track_id=track_id,
             max_video_tracks=self._cfg["media"]["max_video_tracks"],
@@ -350,6 +353,44 @@ class TimelineController(QObject):
             return None
         self.select([command.created_clip_id])
         return command.created_clip_id
+
+    # SE (効果音) を追加する。置けたら新しいノード ID を返す (ver12 resolve1 §6.1)。
+    # 置けなかった理由は last_sound_failure() で引ける (画面のステータス表示用)。
+    def add_sound(self, media, timeline_start, duration, track_id=None):
+        command = commands.AddSoundClip(
+            media, timeline_start, duration, track_id=track_id,
+            cfg=self._cfg["sound_tracks"],
+        )
+        if not self.execute(command):
+            self._sound_failure = command.failure
+            return None
+        self._sound_failure = ""
+        self.select([command.created_clip_id])
+        return command.created_clip_id
+
+    # 直前の SE 追加が失敗した理由 ("" = 失敗していない)
+    def last_sound_failure(self):
+        return getattr(self, "_sound_failure", "")
+
+    # SE トラックを 1 本足す (トラックヘッダの右クリック / ver12 resolve1 §7.4)
+    # 戻り値: 作ったトラック ID (上限などで作れなければ None)
+    def add_sound_track(self):
+        command = commands.AddSoundTrack(cfg=self._cfg["sound_tracks"])
+        if not self.execute(command):
+            return None
+        return command.created_track_id
+
+    # SE トラックを削除する (中身ごと消える / ver12 resolve1 §7.4)
+    def remove_sound_track(self, track_id):
+        return self.execute(commands.RemoveSoundTrack(track_id))
+
+    # その SE トラックを消してよいか (最後の 1 本は残す)
+    # 戻り値: (消せるか, 載っているノード数)
+    def can_remove_sound_track(self, track_id):
+        track = self._timeline.track_by_id(track_id)
+        if track is None or not track.is_sound():
+            return False, 0
+        return len(self._timeline.sound_tracks()) > 1, len(track.clips)
 
     # 字幕クリップを追加する。追加できたら新しいクリップ ID を返す (置けなければ None)。
     # duration 省略時は設定 (timeline.default_subtitle_sec) の尺を使う。
@@ -457,6 +498,7 @@ class TimelineController(QObject):
             archive_index_policy=paste_cfg["archive_index_policy"],
             max_video_tracks=self._cfg["media"]["max_video_tracks"],
             subtitle_tracks_cfg=self._cfg["subtitle_tracks"],
+            sound_tracks_cfg=self._cfg["sound_tracks"],
         )
         if not self.execute(command):
             return {"pasted": 0,

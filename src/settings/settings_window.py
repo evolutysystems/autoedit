@@ -284,6 +284,41 @@ DEFAULT_SETTINGS = {
         "margin_l": 40,
         "margin_r": 40,
         "margin_v": 60,
+        # ── テロップアニメーション (ver12 resolve2 §9)
+        # 動きの種類はテロップ 1 本ごとに選ぶ (Timeline 編集画面のインスペクタ)。
+        # ここにあるのは「どれくらい動くか」の共通パラメータだけで、
+        # 既定ではどのテロップにも動きが付いていない (= 従来と同じ出力)。
+        "animation": {
+            # false で機能ごと閉じる (UI も出さず、ASS も従来どおり)
+            "enabled": True,
+            # ── Word Pop (単語が 1 つずつ拡大して現れ、元の大きさへ戻る)
+            "word_pop_grow_ms": 80,        # 拡大しきるまでの時間
+            "word_pop_settle_ms": 120,     # 元の大きさへ戻すまでの時間
+            "word_pop_scale": 130,         # 拡大率 (%)
+            # ── 重要語句の強調 (resolve2 §2.2)
+            # 「重要かどうか」を機械で判定できるデータが無いため、
+            # ここの一覧とテロップ 1 本ごとの指定 (emphasis) で決める。
+            "emphasis_words": [],
+            "emphasis_color": "#FFD34D",
+            "emphasis_scale": 115,         # 強調語の大きさ (%)
+            # ── Bounce (単語が上下に跳ね、バネのように収まる)
+            "bounce_height_ratio": 0.35,   # 跳ねる高さ (文字サイズに対する比)
+            "bounce_ms": 420,              # 1 単語が収まるまでの時間
+            "bounce_segments": 3,          # 跳ねる段数 (多いほどイベントが増える)
+            "bounce_word_stagger_ms": 60,  # 単語ごとに遅らせる量
+            # ── Big Word (画面中央へ大きな単語を 1 語ずつ)
+            "big_word_scale": 260,         # 文字サイズ (%)
+            "big_word_min_ms": 240,        # 1 語を出す最短時間 (短い語でも読めるように)
+            "big_word_position": "center",
+            # ── Fade (種類と併用できる)
+            "fade_in_ms": 200,
+            "fade_out_ms": 200,
+            # ── 保護 (resolve2 §10)
+            # 単語数・イベント数が多すぎるテロップは行単位の動きへ落とす。
+            # 黙って ASS を数 MB にしないため。
+            "max_words_per_clip": 24,
+            "max_events_per_clip": 96,
+        },
         # ── テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5)
         # 複数行になったテロップの「行の揃え」。テロップの位置は動かさない。
         "line_align": {
@@ -1008,8 +1043,38 @@ DEFAULT_SETTINGS = {
         "media": {
             "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"],
             "image_extensions": [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"],
+            # SE (効果音) として置ける音声ファイル (ver12 resolve1 §5)
+            "audio_extensions": [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg",
+                                 ".opus", ".wma"],
             "default_image_duration_sec": 5.0,
             "max_video_tracks": 8,
+        },
+        # SE (効果音) トラック (ver12 resolve1 §15)
+        # Timeline へ音声ファイルを D&D すると、ここで決めた規約で SE トラックへ載る。
+        "sound_tracks": {
+            # false で機能ごと従来どおり (行も出ず、D&D も受理しない)
+            "enabled": True,
+            # 最初から出しておく SE トラックの本数 (0 = 必要になってから作る)。
+            # 落とす先が見えていないと D&D に気付けないため、既定で 1 本出す。
+            "initial_tracks": 1,
+            "track_id_prefix": "SE",
+            "track_name_format": "SE {index}",
+            "max_tracks": 4,
+            "track_height_px": 44,
+            # 置いた直後の音量 (dB)。0.0 = 素材のまま
+            "default_gain_db": 0.0,
+            # インスペクタのスライダの範囲と刻み (dB)
+            "gain_min_db": -40.0,
+            "gain_max_db": 12.0,
+            "gain_step_db": 0.5,
+            # 右クリック「音量」に並べる値 (dB)
+            "gain_presets_db": [6.0, 3.0, 0.0, -3.0, -6.0],
+            # amix の normalize。既定 false = SE を足しても本編の音量が下がらない
+            "mix_normalize": False,
+            # 1 回の ffmpeg へ渡す SE の本数の上限 (超える分は段階的に混ぜる)
+            "max_mix_inputs": 32,
+            # 縦プロジェクトを作るときに SE を引き継ぐか
+            "carry_to_vertical": True,
         },
         "render": {
             # "black"=空白を黒+無音として出力 (既定) / "close"=空白を詰める
@@ -1274,6 +1339,11 @@ DEFAULT_SETTINGS = {
                 # 記録された画質が使えないとき、別の画質へ落として取得してよいか。
                 # 既定 false = 落とさない (画質が変わると既存素材と寸法が割れる)。
                 "allow_quality_fallback": False,
+                # 取得したセグメントの連結方法 (error 20261118)。
+                # "auto" = 形式で判断 (MPEG-TS は concat / fMP4 はプレイリスト経由)。
+                # Twitch 側が変わったときの退避用に "concat" / "playlist" も受ける。
+                # 利用者が触る値ではないため設定画面には出さない。
+                "segment_join": "auto",
             },
         },
         # クリップ処理 (request18): 各クリップを現行クリップ用と同じ工程に通す。
@@ -1607,6 +1677,8 @@ def _normalize_legacy_values(merged):
         changed = True
     if _fill_timeline_nested_defaults(merged):
         changed = True
+    if _fill_subtitle_nested_defaults(merged):
+        changed = True
     if _fill_ui_nested_defaults(merged):
         changed = True
     if _fill_blur_nested_defaults(merged):
@@ -1779,6 +1851,13 @@ def _fill_twitch_client_id(merged):
 # timeline セクションに限って 1 段深く補完する。既存値は上書きしない。
 def _fill_timeline_nested_defaults(merged):
     return _fill_nested_defaults(merged, "timeline")
+
+
+# subtitle セクションの入れ子 (animation / line_align …) も補完する
+# (ver12 resolve2 §11)。アニメーションの動き量は設定画面に出さず
+# setting.json で調整する前提のため、増えたキーがファイル上に現れる必要がある。
+def _fill_subtitle_nested_defaults(merged):
+    return _fill_nested_defaults(merged, "subtitle")
 
 
 # ui セクションの入れ子 (glass / background) についても欠落キーを既定で補完する

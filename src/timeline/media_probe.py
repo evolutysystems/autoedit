@@ -10,13 +10,16 @@ from ..exceptions import FFmpegError
 from ..modules import ffmpeg_runner
 from ..utils.logger import get_logger
 from ..utils.proc import no_window_creationflags
-from .model import MEDIA_IMAGE, MEDIA_VIDEO, MediaRef
+from .model import MEDIA_AUDIO, MEDIA_IMAGE, MEDIA_VIDEO, MediaRef
 
 _logger = get_logger(__name__)
 
 # 拡張子の既定 (setting.json timeline.media.* が未指定のときのフォールバック)
 DEFAULT_VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv")
 DEFAULT_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp")
+# 音だけの素材 = SE として置ける拡張子 (ver12 resolve1 §5)
+DEFAULT_AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg",
+                            ".opus", ".wma")
 
 # 寸法が取れなかった場合のフォールバック (キャンバス側で正規化されるため実害は小さい)
 _FALLBACK_WIDTH = 1920
@@ -31,17 +34,24 @@ def media_config(settings):
             str(e).lower() for e in cfg.get("video_extensions", DEFAULT_VIDEO_EXTENSIONS)),
         "image_extensions": tuple(
             str(e).lower() for e in cfg.get("image_extensions", DEFAULT_IMAGE_EXTENSIONS)),
+        # SE として置ける音声ファイル (ver12 resolve1 §5)
+        "audio_extensions": tuple(
+            str(e).lower() for e in cfg.get("audio_extensions", DEFAULT_AUDIO_EXTENSIONS)),
         "default_image_duration_sec": float(cfg.get("default_image_duration_sec", 5.0)),
         "max_video_tracks": int(cfg.get("max_video_tracks", 8)),
     }
 
 
 # パスの拡張子からメディア種別を判定する (対応外は None)
+# 画像 → 音声 → 動画の順に見る。拡張子が複数の一覧に重複していても、
+# 先に書いた種別が勝つ (利用者が setting.json を書き換えても壊れない)。
 def classify(path, cfg=None):
     cfg = cfg or media_config(None)
     ext = os.path.splitext(str(path))[1].lower()
     if ext in cfg["image_extensions"]:
         return MEDIA_IMAGE
+    if ext in cfg.get("audio_extensions", ()):
+        return MEDIA_AUDIO
     if ext in cfg["video_extensions"]:
         return MEDIA_VIDEO
     return None
@@ -129,13 +139,31 @@ def probe(path, media_id, settings=None, cfg=None):
         return MediaRef(
             media_id, kind, path,
             duration_sec=None if kind == MEDIA_IMAGE else 0.0,
-            width=_FALLBACK_WIDTH, height=_FALLBACK_HEIGHT,
-            fps=0.0, has_audio=False,
+            width=0 if kind == MEDIA_AUDIO else _FALLBACK_WIDTH,
+            height=0 if kind == MEDIA_AUDIO else _FALLBACK_HEIGHT,
+            # 音声素材は拡張子の時点で音を持つ前提 (尺が 0 なら追加側で弾かれる)
+            fps=0.0, has_audio=(kind == MEDIA_AUDIO),
         )
 
     streams = raw.get("streams", []) or []
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+
+    # 音だけの素材は寸法を持たない (ver12 resolve1 §5)。
+    # mp3 のジャケット画像が video ストリームとして見えることがあるため、
+    # 種別が音声のときは寸法を見ずに 0 で確定させる。
+    if kind == MEDIA_AUDIO:
+        duration = 0.0
+        try:
+            duration = float((raw.get("format", {}) or {}).get("duration"))
+        except (TypeError, ValueError):
+            duration = 0.0
+        return MediaRef(
+            media_id, kind, path,
+            duration_sec=duration,
+            width=0, height=0, fps=0.0,
+            has_audio=bool(audio_streams),
+        )
 
     width, height, fps = _FALLBACK_WIDTH, _FALLBACK_HEIGHT, 0.0
     if video_streams:

@@ -10,6 +10,7 @@ import os
 
 from ..modules import ffmpeg_runner, silence_cutter
 from ..utils.logger import get_logger
+from . import sound_mix
 from .model import ORIGIN_ENDING, ORIGIN_OPENING
 
 _logger = get_logger(__name__)
@@ -57,19 +58,24 @@ class AudioChunkSource:
             _logger.info("プレビュー音声に認識用音声を再利用します (未編集)")
         # 初回音声の遅延生成 (resolve3 R8)。先に作られていれば使う必要がない。
         self._initial_builder = None if initial_audio_path else initial_audio_builder
+        # SE (効果音) の混ぜ方 (ver12 resolve1 §10)
+        self._sound_cfg = sound_mix.config(self._settings)
 
     # ------------------------------------------------------------------
     # 初回音声の再利用判定
     # ------------------------------------------------------------------
 
     # 認識用音声をそのまま使えるか
-    # 条件: ファイルが在る / V1 に OP・ED が無い (在ると先頭・末尾がずれるため)
+    # 条件: ファイルが在る / V1 に OP・ED が無い (在ると先頭・末尾がずれるため) /
+    #       SE が 1 つも無い (認識用音声には SE が入っていないため / ver12 resolve1 §10)
     def _can_reuse_initial(self, timeline, path):
         if not path or not os.path.exists(path):
             return False
         for clip in timeline.base_clips():
             if clip.origin_type() in (ORIGIN_OPENING, ORIGIN_ENDING):
                 return False
+        if sound_mix.has_sound(timeline):
+            return False
         return True
 
     # ------------------------------------------------------------------
@@ -134,10 +140,15 @@ class AudioChunkSource:
         out_path = os.path.join(
             self._work_dir, f"preview_audio_{self._sequence:04d}.{extension}")
         try:
+            # SE (効果音) はチャンク区間に重なるものを混ぜる (ver12 resolve1 §10)
+            sound_pieces = sound_mix.collect_pieces(
+                self._timeline, start, start + length)
             if self._build_mode == "per_piece":
                 self._render_pieces_each(pieces, out_path, extension)
+                if sound_pieces:
+                    self._mix_sound_into(out_path, sound_pieces, extension)
             else:
-                self._render_pieces(pieces, out_path)
+                self._render_pieces(pieces, out_path, sound_pieces)
         except Exception:  # noqa: BLE001 (音声生成の失敗で編集を止めない / §10)
             _logger.exception("プレビュー音声の生成に失敗しました")
             self._cleanup_paths([out_path])
@@ -209,7 +220,7 @@ class AudioChunkSource:
     # 断片ごとに -ss/-t 付きの入力を並べ、concat フィルタで 1 本へ繋ぐ。
     # 【重要】1 入力 + atrim にしてはならない。入力シークが効かず素材の先頭から
     #         デコードするため、後方の区間では逆に数倍遅くなる (実測 7.62s / resolve6 §2.2)。
-    def _render_pieces(self, pieces, out_path):
+    def _render_pieces(self, pieces, out_path, sound_pieces=None):
         ffmpeg = ffmpeg_runner.get_ffmpeg_exe(self._ffmpeg_cfg)
         layout = "mono" if self._channels == 1 else "stereo"
         cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
@@ -231,7 +242,20 @@ class AudioChunkSource:
                 label = f"g{index}"
             labels.append(f"[{label}]")
         filters.append("".join(labels) + f"concat=n={len(pieces)}:v=0:a=1[out]")
-        cmd += ["-filter_complex", ";".join(filters), "-map", "[out]",
+        # SE を本編の音へ重ねる (ver12 resolve1 §10)。
+        # 遅延はチャンク先頭を 0 とした相対秒。入力はここから採番する。
+        out_label = "[out]"
+        if sound_pieces:
+            se_args, se_chains, se_labels = sound_mix.input_chains(
+                sound_pieces, len(pieces), self._sample_rate,
+                channels=self._channels, prefix="pse")
+            cmd += se_args
+            filters.extend(se_chains)
+            filters.append(sound_mix.amix_filter(
+                [out_label] + se_labels, "[mixed]",
+                normalize=bool(self._sound_cfg.get("mix_normalize", False))))
+            out_label = "[mixed]"
+        cmd += ["-filter_complex", ";".join(filters), "-map", out_label,
                 "-c:a", self._codec, "-ar", str(self._sample_rate),
                 "-ac", str(self._channels), out_path]
         ffmpeg_runner.execute(
@@ -256,6 +280,29 @@ class AudioChunkSource:
                 silence_cutter.concat_files(part_paths, out_path, self._ffmpeg_cfg)
         finally:
             self._cleanup_paths(part_paths)
+
+    # 連結済みのチャンクへ SE を後から混ぜる (per_piece 方式 / ver12 resolve1 §10)
+    #
+    # 1 プロセス方式では concat の後ろへ継ぎ足せるが、こちらは断片を繋いだ
+    # ファイルが既にあるため、もう 1 回だけ ffmpeg を通して差し替える。
+    def _mix_sound_into(self, out_path, sound_pieces, extension):
+        ffmpeg = ffmpeg_runner.get_ffmpeg_exe(self._ffmpeg_cfg)
+        mixed_path = f"{os.path.splitext(out_path)[0]}_se.{extension}"
+        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", out_path]
+        se_args, chains, labels = sound_mix.input_chains(
+            sound_pieces, 1, self._sample_rate, channels=self._channels,
+            prefix="pse")
+        cmd += se_args
+        chains.append(sound_mix.amix_filter(
+            ["[0:a]"] + labels, "[mixed]",
+            normalize=bool(self._sound_cfg.get("mix_normalize", False))))
+        cmd += ["-filter_complex", ";".join(chains), "-map", "[mixed]",
+                "-c:a", self._codec, "-ar", str(self._sample_rate),
+                "-ac", str(self._channels), mixed_path]
+        ffmpeg_runner.execute(
+            cmd,
+            progress_timeout_sec=ffmpeg_runner.get_progress_timeout_sec(self._ffmpeg_cfg))
+        os.replace(mixed_path, out_path)
 
     # 断片 1 つを音声ファイルとして書き出す (per_piece 方式で使う)
     def _render_piece(self, piece, out_path):

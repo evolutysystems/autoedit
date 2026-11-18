@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractSlider,
     QApplication,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -36,12 +37,13 @@ from ..color_field import ColorField, parse_color
 from .waveform import WaveformCache
 from ...i18n import tr
 from ...modules import comment_decor
-from ...timeline import commands, media_probe, subtitle_style
+from ...timeline import commands, media_probe, model, subtitle_style
 from ...timeline.model import (
     DEFAULT_ROLE,
     ORIGIN_ENDING,
     ORIGIN_OPENING,
     AudioClip,
+    SoundClip,
     SubtitleClip,
 )
 from ...utils.logger import get_logger
@@ -82,7 +84,10 @@ _COLOR_SUBTITLE = QColor(178, 130, 46)      # 字幕
 # 「どこが怪しいか」が分からないと全件を順に読むことになる。
 # 赤系にすると再生ヘッドと紛れるため、注意を引く橙寄りの色にする。
 _COLOR_SUBTITLE_LOW = QColor(186, 92, 46)
-_COLOR_AUDIO = QColor(56, 130, 78)          # 音声
+_COLOR_AUDIO = QColor(56, 130, 78)          # 音声 (A1 / 本編の音)
+# SE (効果音 / ver12 resolve1 §7.2)。本編の音 (緑) と並ぶため、
+# 同系統で明度と色相をずらした青緑にして、ひと目で別物と分かるようにする。
+_COLOR_SOUND = QColor(48, 122, 136)
 _COLOR_DISABLED = QColor(96, 96, 96)        # 無効化されたクリップ
 _COLOR_SELECTED_BORDER = QColor(255, 214, 92)   # 選択枠 (琥珀。赤にすると再生ヘッドと紛れる)
 
@@ -197,6 +202,12 @@ def build_rows(timeline, cfg):
         height = ui["track_height_px"]
         rows.append({"track": track, "y": y, "height": height})
         y += height
+    # SE (効果音) は音声トラックの下へ並べる (ver12 resolve1 §7.1)
+    sound_height = (cfg.get("sound_tracks", {}) or {}).get(
+        "track_height_px", ui["track_height_px"])
+    for track in timeline.sound_tracks():
+        rows.append({"track": track, "y": y, "height": sound_height})
+        y += sound_height
     return rows
 
 
@@ -492,12 +503,56 @@ class TrackHeaderWidget(QWidget):
         if row is None:
             return
         track = row["track"]
+        # SE トラック: 追加と削除 (ver12 resolve1 §7.4)
+        if track.is_sound():
+            menu = QMenu(self)
+            menu.addAction(tr("SE トラックを追加"), self._add_sound_track)
+            removable, count = self._controller.can_remove_sound_track(track.id)
+            action = menu.addAction(
+                tr("SE トラック {track} を削除", track=track.id),
+                lambda: self._remove_sound_track(track.id, count))
+            # 最後の 1 本は残す (落とす先が無くなるため)
+            action.setEnabled(removable)
+            menu.exec(event.globalPos())
+            return
         if not self._controller.can_remove_subtitle_track(track.id):
             return
         menu = QMenu(self)
         menu.addAction(tr("テロップトラック {track} を削除", track=track.id),
                        lambda: self._remove_track(track.id))
         menu.exec(event.globalPos())
+
+    # SE トラックを 1 本足す (上限に達していたら理由を出す)
+    def _add_sound_track(self):
+        track_id = self._controller.add_sound_track()
+        if track_id is None:
+            self.status_message.emit(
+                tr("SE トラックの上限に達しているため追加できません"))
+            return
+        self.status_message.emit(tr("SE トラック {track} を追加しました", track=track_id))
+
+    # SE トラックを削除する (SE が載っているときだけ確認を取る)
+    def _remove_sound_track(self, track_id, count):
+        if count and not self._confirm_remove_sound(track_id, count):
+            return
+        if not self._controller.remove_sound_track(track_id):
+            self.status_message.emit(tr("このトラックは削除できません"))
+            return
+        self.status_message.emit(
+            tr("SE トラック {track} を削除しました", track=track_id) if not count else
+            tr("SE トラック {track} を SE {count} 件ごと削除しました",
+               track=track_id, count=count))
+
+    # 削除の確認 (SE ごと消えることを明示する)
+    def _confirm_remove_sound(self, track_id, count):
+        answer = QMessageBox.question(
+            self, tr("SE トラックの削除"),
+            tr("{track} には SE が {count} 件あります。\n"
+               "トラックごと削除しますか？\n\n"
+               "削除してもすぐに Ctrl+Z で元に戻せます。",
+               track=track_id, count=count),
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        return answer == QMessageBox.Yes
 
     # トラックを削除する。テロップが載っているときだけ確認を取る (ver9 要望)
     def _remove_track(self, track_id):
@@ -669,9 +724,9 @@ class TimelineView(QWidget):
         color = self._clip_color(clip, track)
         painter.fillRect(rect, QBrush(color))
 
-        # 音声クリップは塗りの上に波形 (X=時間 / Y=音量) を重ねる。
+        # 音声クリップ・SE は塗りの上に波形 (X=時間 / Y=音量) を重ねる。
         # アウトライン・ラベルより先に描き、枠と文字が波形に埋もれないようにする。
-        if isinstance(clip, AudioClip):
+        if isinstance(clip, (AudioClip, SoundClip)):
             self._paint_waveform(painter, clip, rect, color)
 
         # アウトライン (ver3 resolve4 E5)。太さは設定から引く (値は __init__ で解決済み)。
@@ -705,10 +760,16 @@ class TimelineView(QWidget):
         if self._waveform_hide_while_dragging and self._drag != _DRAG_NONE:
             return
         timeline = self._controller.timeline
-        video = timeline.clip_by_id(clip.link_clip)
-        if video is None:
+        # 波形を引く素材と、クリップが素材のどこから始まるか。
+        #   AudioClip … リンク先の V1 クリップから導く (自前の時刻を持たないため)
+        #   SoundClip … 自分自身が素材と位置を持つ (ver12 resolve1 §7.2)
+        if isinstance(clip, SoundClip):
+            source = clip
+        else:
+            source = timeline.clip_by_id(clip.link_clip)
+        if source is None:
             return
-        peaks = self._waveform.peaks_for(timeline.media_by_id(video.media_id))
+        peaks = self._waveform.peaks_for(timeline.media_by_id(source.media_id))
         if peaks is None:
             return
         zoom = self._controller.zoom()
@@ -723,8 +784,8 @@ class TimelineView(QWidget):
         # この幅のクリップが数千個並ぶため、ここで落とすと描画コストが跳ねない。
         if columns < _WAVE_MIN_PX:
             return
-        source_start = video.source_in + (left - rect.left()) / zoom
-        source_end = video.source_in + (right + 1 - rect.left()) / zoom
+        source_start = source.source_in + (left - rect.left()) / zoom
+        source_end = source.source_in + (right + 1 - rect.left()) / zoom
         # RMS は細いクリップでは重なって見えないので計算しない。
         # 無音カット後は細いクリップが大量に並ぶため、ここが描画コストに効く。
         result = peaks.columns(source_start, source_end, columns,
@@ -828,6 +889,9 @@ class TimelineView(QWidget):
     def _clip_color(self, clip, track):
         if isinstance(clip, AudioClip):
             return _COLOR_AUDIO if not clip.muted else _COLOR_DISABLED
+        if isinstance(clip, SoundClip):
+            # ミュート・使用しないは灰色 (音声クリップと同じ規約)
+            return _COLOR_SOUND if clip.is_audible() else _COLOR_DISABLED
         if isinstance(clip, SubtitleClip):
             if not clip.use:
                 return _COLOR_DISABLED
@@ -880,6 +944,18 @@ class TimelineView(QWidget):
     def _clip_label(self, clip, track):
         if isinstance(clip, SubtitleClip):
             return clip.text.replace("\\N", " ")[:40]
+        if isinstance(clip, SoundClip):
+            # 素材のファイル名 (拡張子なし) + 状態 (ver12 resolve1 §7.2)
+            media = self._controller.timeline.media_by_id(clip.media_id)
+            name = (os.path.splitext(os.path.basename(media.path))[0]
+                    if media is not None else clip.id)
+            if clip.muted:
+                return name + tr(" (ミュート)")
+            if not clip.enabled:
+                return name + tr(" (使用しない)")
+            if abs(clip.gain_db) > 1e-6:
+                return f"{name} ({clip.gain_db:+.1f} dB)"
+            return name
         if isinstance(clip, AudioClip):
             video = self._controller.timeline.clip_by_id(clip.link_clip)
             suffix = tr(" (ミュート)") if clip.muted else ""
@@ -1210,12 +1286,24 @@ class TimelineView(QWidget):
                 # 字幕の開始をカット頭へ揃える (ver8 resolve6 R5)
                 menu.addAction(tr("すべての字幕をカット頭へ揃える"),
                                lambda: self._align_subtitles(None))
+            # SE トラックの空き領域には「SE を追加...」を出す (ver12 resolve1 §7.4)。
+            # D&D を知らなくてもここから置ける。
+            if track is not None and track.is_sound():
+                menu.addSeparator()
+                action = menu.addAction(
+                    tr("SE を追加..."), lambda: self._add_sound(pos, track))
+                action.setEnabled(not track.locked)
             menu.exec(event.globalPos())
             return
 
         clip, track, _row = hit
         if isinstance(clip, AudioClip):
             self._build_audio_menu(menu, clip)
+            menu.exec(event.globalPos())
+            return
+
+        if isinstance(clip, SoundClip):
+            self._build_sound_menu(menu, clip, track, pos)
             menu.exec(event.globalPos())
             return
 
@@ -1459,6 +1547,87 @@ class TimelineView(QWidget):
             gain.addAction(label, lambda v=value: self._controller.set_audio_gain(clip.id, v))
 
     # ------------------------------------------------------------------
+    # SE (効果音 / ver12 resolve1 §7.4)
+    # ------------------------------------------------------------------
+
+    # SE ノードのメニュー。音量は刻み (ここ) とインスペクタのスライダの両方から触れる。
+    def _build_sound_menu(self, menu, clip, track, pos):
+        if clip.id not in self._controller.selected_ids():
+            self._controller.select([clip.id])
+        at_sec = self.x_to_sec(pos.x())
+        split = menu.addAction(
+            tr("ここで分割"),
+            lambda: self._controller.split_at_playhead(clip.id, at_sec))
+        split.setEnabled(not track.locked)
+        menu.addSeparator()
+        menu.addAction(tr("コピー\tCtrl+C"), self._copy)
+        paste = menu.addAction(tr("再生ヘッドへ貼り付け\tCtrl+V"), self._paste)
+        paste.setEnabled(self._controller.can_paste())
+        menu.addSeparator()
+        menu.addAction(tr("ミュート解除") if clip.muted else tr("ミュート"),
+                       lambda: self._controller.set_audio_muted(clip.id, not clip.muted))
+        gain = menu.addMenu(tr("音量"))
+        for value in self._controller.cfg["sound_tracks"]["gain_presets_db"]:
+            gain.addAction(
+                f"{value:+.0f} dB" if abs(value) > 1e-6 else "0 dB",
+                lambda v=value: self._controller.set_audio_gain(clip.id, v))
+        menu.addSeparator()
+        menu.addAction(tr("使用しない") if clip.enabled else tr("使用する"),
+                       lambda: self._controller.set_clip_enabled(
+                           clip.id, not clip.enabled))
+        menu.addSeparator()
+        menu.addAction(tr("削除のみ (空白を残す)\tBackSpace"),
+                       lambda: self._controller.delete_selected(ripple=False))
+        menu.addAction(tr("リップル削除\tDelete"),
+                       lambda: self._controller.delete_selected(ripple=True))
+
+    # ファイル選択ダイアログから SE を置く (D&D を知らなくても辿り着ける経路)
+    def _add_sound(self, pos, track):
+        cfg = self._controller.cfg["media"]
+        patterns = " ".join(f"*{ext}" for ext in cfg.get("audio_extensions", ()))
+        paths, _filter = QFileDialog.getOpenFileNames(
+            self, tr("SE に使う音声ファイルを選ぶ"), "",
+            tr("音声ファイル ({patterns})", patterns=patterns) + ";;" + tr("すべてのファイル (*.*)"))
+        if not paths:
+            return
+        self._place_sounds(paths, max(self.x_to_sec(pos.x()), 0.0), track.id)
+
+    # 音声ファイルを SE として順に置く。戻り値: 置けた件数
+    def _place_sounds(self, paths, start, track_id=None):
+        settings = self._controller.settings
+        cfg = self._controller.cfg["media"]
+        cursor = max(float(start), 0.0)
+        placed = 0
+        for path in paths:
+            media = media_probe.probe(path, "", settings, cfg)
+            duration = media_probe.default_clip_duration(media, cfg, settings)
+            if duration <= 0:
+                _logger.warning("尺を取得できないため SE を追加しません: %s", path)
+                self.status_message.emit(
+                    tr("尺を取得できないため追加できませんでした: {name}",
+                       name=os.path.basename(path)))
+                continue
+            if self._controller.add_sound(
+                    media, cursor, duration, track_id=track_id) is None:
+                self.status_message.emit(self._sound_failure_message())
+                continue
+            cursor += duration
+            placed += 1
+        if placed:
+            self.status_message.emit(tr("SE を {count} 件追加しました", count=placed))
+        return placed
+
+    # SE を置けなかった理由を画面の文言にする
+    def _sound_failure_message(self):
+        reason = self._controller.last_sound_failure()
+        if reason == "no_track":
+            return tr("SE トラックの上限に達しているため追加できません "
+                      "(既存の SE を動かすか、トラックを整理してください)")
+        if reason == "disabled":
+            return tr("SE の配置は設定で無効になっています (timeline.sound_tracks.enabled)")
+        return tr("SE を追加できませんでした")
+
+    # ------------------------------------------------------------------
     # メディアの D&D (§6.8)
     # ------------------------------------------------------------------
 
@@ -1486,12 +1655,25 @@ class TimelineView(QWidget):
             if row["y"] <= pos.y() < row["y"] + row["height"]:
                 hit_row = row
                 break
-        track_id = hit_row["track"].id if hit_row and hit_row["track"].is_video() else None
+        hit_track = hit_row["track"] if hit_row else None
+        track_id = hit_track.id if hit_track is not None and hit_track.is_video() else None
+        # SE トラックの行へ落とした場合はそのトラックを置き先にする
+        # (ver12 resolve1 §7.3)。音声以外の素材は従来どおり映像トラックへ回る。
+        sound_track_id = (hit_track.id if hit_track is not None and hit_track.is_sound()
+                          else None)
 
         cfg = self._controller.cfg["media"]
         settings = self._controller.settings
         cursor = start
+        # 音声ファイルは SE として置く (落とした行が SE トラックでなくても同じ)
+        sound_paths = [p for p in paths
+                       if media_probe.classify(p, cfg) == model.MEDIA_AUDIO]
+        if sound_paths:
+            self._place_sounds(sound_paths, start, sound_track_id)
+
         for path in paths:
+            if path in sound_paths:
+                continue
             media = media_probe.probe(path, "", settings, cfg)
             duration = media_probe.default_clip_duration(media, cfg, settings)
             if duration <= 0:
@@ -1509,11 +1691,17 @@ class TimelineView(QWidget):
         if not mime.hasUrls():
             return []
         cfg = self._controller.cfg["media"]
+        # SE の機能を切っているときは音声ファイルを受理しない (ver12 resolve1 §15)
+        sound_enabled = self._controller.cfg["sound_tracks"]["enabled"]
         paths = []
         for url in mime.urls():
             local = url.toLocalFile()
-            if local and media_probe.is_supported(local, cfg):
-                paths.append(local)
+            if not local or not media_probe.is_supported(local, cfg):
+                continue
+            if (not sound_enabled
+                    and media_probe.classify(local, cfg) == model.MEDIA_AUDIO):
+                continue
+            paths.append(local)
         return paths
 
 

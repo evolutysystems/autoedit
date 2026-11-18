@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...i18n import tr
 from ...timeline import media_probe
-from ...timeline.model import MEDIA_IMAGE
+from ...timeline.model import MEDIA_AUDIO, MEDIA_IMAGE
 from ...utils.logger import get_logger
 from .. import theme
 
@@ -50,7 +50,8 @@ class MissingMediaDialog(QDialog):
         root.addWidget(title)
 
         missing = str(self._info.get("path", "") or "")
-        kind_label = (tr("画像") if self._info.get("kind") == MEDIA_IMAGE
+        kind_label = (tr("音声") if self._info.get("kind") == MEDIA_AUDIO else
+                      tr("画像") if self._info.get("kind") == MEDIA_IMAGE
                       else tr("動画"))
         message = QLabel(tr(
             "このプロジェクトが使っている{kind}素材が元の場所にありません。\n"
@@ -91,8 +92,14 @@ class MissingMediaDialog(QDialog):
     # 差し替え先を選ぶ。選べたらそのまま閉じる。
     def _on_browse(self):
         cfg = media_probe.media_config(self._settings)
-        extensions = (cfg["image_extensions"] if self._info.get("kind") == MEDIA_IMAGE
-                      else cfg["video_extensions"])
+        # 種別ごとに拾う拡張子を変える (SE の素材は音声ファイル / ver12 resolve1 §12)
+        kind = self._info.get("kind")
+        if kind == MEDIA_IMAGE:
+            extensions = cfg["image_extensions"]
+        elif kind == MEDIA_AUDIO:
+            extensions = cfg["audio_extensions"]
+        else:
+            extensions = cfg["video_extensions"]
         pattern = " ".join(f"*{e}" for e in extensions)
         start_dir = os.path.dirname(str(self._info.get("path", "") or ""))
         if not os.path.isdir(start_dir):

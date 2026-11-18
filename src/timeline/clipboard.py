@@ -5,13 +5,15 @@
 #   ・Qt に依存しないためテストから直接叩ける
 #   ・将来 OS クリップボードへ載せ替える場合もこの payload をそのまま使える
 from ..utils.logger import get_logger
-from .model import AudioClip, SubtitleClip, round_sec
+from .model import AudioClip, SoundClip, SubtitleClip, round_sec
 
 _logger = get_logger(__name__)
 
 PAYLOAD_VERSION = 1
 KIND_VIDEO = "video"
 KIND_SUBTITLE = "subtitle"
+# SE (効果音 / ver12 resolve1 §13)。同じ音を何度も置く使い方が多いためコピペを支える。
+KIND_SOUND = "sound"
 
 
 # コピー対象を (トラック, クリップ) の一覧へ解決する
@@ -35,8 +37,10 @@ def _resolve_targets(timeline, clip_ids):
 # クリップ 1 件を payload の項目へ変換する
 def _build_item(timeline, track, clip, anchor):
     is_subtitle = isinstance(clip, SubtitleClip)
+    is_sound = isinstance(clip, SoundClip)
+    kind = KIND_SOUND if is_sound else (KIND_SUBTITLE if is_subtitle else KIND_VIDEO)
     item = {
-        "kind": KIND_SUBTITLE if is_subtitle else KIND_VIDEO,
+        "kind": kind,
         "offset_sec": round_sec(clip.timeline_start - anchor),
         "track": {"id": track.id, "kind": track.kind,
                   "index": track.index, "is_base": bool(track.is_base)},
@@ -48,9 +52,13 @@ def _build_item(timeline, track, clip, anchor):
         media = timeline.media_by_id(clip.media_id)
         if media is not None:
             item["media"] = media.to_dict()          # 別 Timeline へ貼るときの再登録用
-        linked = timeline.audio_clip_for(clip.id)
-        if linked is not None:
-            item["audio"] = {"gain_db": linked.gain_db, "muted": linked.muted}
+        if is_sound:
+            # SE は自分自身が音量を持つ (リンク音声は持たない)
+            item["audio"] = {"gain_db": clip.gain_db, "muted": clip.muted}
+        else:
+            linked = timeline.audio_clip_for(clip.id)
+            if linked is not None:
+                item["audio"] = {"gain_db": linked.gain_db, "muted": linked.muted}
     return item
 
 

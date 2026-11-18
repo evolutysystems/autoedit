@@ -4,6 +4,7 @@
 #   Step 1  ベース映像の構築   V1 の各クリップを抽出 → 連結 (OP/ED/ギャップを含む)
 #   Step 2  オーバーレイ合成   V2 以降のクリップを z_order 順に overlay
 #   Step 3  字幕焼き込み       ASS 生成 → 焼き込み
+#   Step 3.7 SE のミックス     SE トラックの音を混ぜる (映像は -c:v copy / ver12 resolve1 §9)
 #   Step 4  出力配置           output_writer (呼び出し側)
 #
 # 区間抽出・連結・ASS 生成・焼き込みは既存資産をそのまま使う (§4-3)。
@@ -29,7 +30,7 @@ from ..modules import (
 from ..settings.settings_window import resolve_fonts_dir
 from ..utils import stage_timer
 from ..utils.logger import get_logger
-from . import compositor
+from . import compositor, sound_mix
 from .builder import timeline_config
 from .model import SubtitleClip
 
@@ -110,6 +111,17 @@ def render(timeline, context):
     result_path = watermark_overlay.ensure_applied(
         context, result_path, (timeline.width, timeline.height), ffmpeg_cfg,
         total_duration=timeline.duration_sec())
+
+    # ── Step 3.7: SE (効果音) のミックス (ver12 resolve1 §9)
+    # 合成 (_composite) の amix へ混ぜるとオーバーレイも字幕も無い案件で
+    # 合成自体が走らず、SE だけ鳴らなくなる。最後に 1 段置けば必ず鳴る。
+    # 映像は -c:v copy で通すため画質は落ちず、SE が無ければ何も起きない。
+    with stage_timer.timed("SE"):
+        mixed_path = sound_mix.apply(timeline, context, result_path, ffmpeg_cfg)
+    if mixed_path != result_path:
+        # ミックス前の動画は用済み (ピークを増やさないため解放する)
+        context.release_intermediate(os.path.basename(result_path))
+        result_path = mixed_path
 
     context.set_current_video_path(result_path)
     return result_path

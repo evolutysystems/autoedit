@@ -360,7 +360,19 @@ def _section_refetch_config(refetch):
         # 既定 false = 落とさない。画質が変わると既存素材と寸法が割れるため、
         # 黙って通さず呼び出し側で確認を取る (resolve5 §5.4)。
         "allow_quality_fallback": bool(refetch.get("allow_quality_fallback", False)),
+        # 取得したセグメントの連結方法 (error 20261118 §9 R7)。
+        # "auto" = 形式で判断 (.ts は concat デマルチプレクサ / fMP4 は取得分
+        # プレイリスト経由)。Twitch 側の仕様が変わったときに再ビルド無しで
+        # 退避できるよう "concat" / "playlist" での固定も受ける。
+        "segment_join": _join_method(refetch.get("segment_join", "auto")),
     }
+
+
+# セグメントの連結方法を正規化する。未知の値は "auto" へ丸める
+# (設定の打ち間違いで取得そのものが止まらないようにする)。
+def _join_method(value):
+    name = str(value or "auto").strip().lower()
+    return name if name in ("auto", "concat", "playlist") else "auto"
 
 
 # 切り抜き出力ファイル名の接頭辞を返す (既定 "archive")

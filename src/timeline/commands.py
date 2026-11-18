@@ -21,13 +21,16 @@ from .model import (
     DEFAULT_SUBTITLE_Z_ORDER,
     ORIGIN_USER_SUBTITLE,
     ROLE_COMMENT,
+    ORIGIN_USER_SE,
     TRACK_AUDIO,
+    TRACK_SOUND,
     TRACK_SUBTITLE,
     TRACK_VIDEO,
     Z_ORDER_STEP,
     AudioClip,
     Clip,
     MediaRef,
+    SoundClip,
     SubtitleClip,
     Track,
     Transform,
@@ -166,6 +169,73 @@ def ensure_initial_subtitle_tracks(timeline, cfg=None, sub_color=""):
     if created:
         timeline.tracks.extend(created)
         _logger.info("テロップトラックをそろえました: %s",
+                     ", ".join(track.id for track in created))
+    return created
+
+
+# ------------------------------------------------------------------
+# SE (効果音) トラック (ver12 resolve1 §6)
+# ------------------------------------------------------------------
+
+# SE トラックの既定設定 (cfg を渡さずに呼ばれても成立させるため)
+_DEFAULT_SOUND_TRACKS_CFG = {
+    "enabled": True,
+    "initial_tracks": 1,
+    "track_id_prefix": "SE",
+    "track_name_format": "SE {index}",
+    "max_tracks": 4,
+    "default_gain_db": 0.0,
+    "gain_presets_db": [6.0, 3.0, 0.0, -3.0, -6.0],
+}
+
+
+# SE トラック名を書式から作る (書式が壊れていても ID で代用して落とさない)
+def _sound_track_name(name_format, index, track_id):
+    try:
+        return str(name_format).format(index=index)
+    except (KeyError, IndexError, ValueError):
+        _logger.warning("SE トラック名の書式が不正です: %r", name_format)
+        return track_id
+
+
+# SE トラックを 1 本作って返す (上限に達していれば None)
+def create_sound_track(timeline, cfg=None):
+    cfg = {**_DEFAULT_SOUND_TRACKS_CFG, **(cfg or {})}
+    limit = _positive_int(cfg.get("max_tracks"), 4)
+    if len(timeline.sound_tracks()) >= limit:
+        _logger.warning("SE トラックの上限 (%d) に達しているため追加できません", limit)
+        return None
+    track_id, index = timeline.next_sound_track_id(cfg["track_id_prefix"])
+    name = _sound_track_name(cfg["track_name_format"], index, track_id)
+    track = Track(track_id, TRACK_SOUND, index, name=name)
+    timeline.tracks.append(track)
+    _logger.info("SE トラックを追加しました: %s (%s)", track_id, name)
+    return track
+
+
+# 最初から並べておく SE トラックをそろえる (ver12 resolve1 §15)
+#
+# 落とす先の行が見えていないと D&D に気付けないため、既定で 1 本出す。
+# 作るのは**空のトラック**だけで、既にあるものには触らない。履歴へも積まない
+# (Undo で消えず、保存するまでプロジェクトファイルは変わらない)。
+# 戻り値: 作ったトラックの一覧
+def ensure_initial_sound_tracks(timeline, cfg=None):
+    cfg = {**_DEFAULT_SOUND_TRACKS_CFG, **(cfg or {})}
+    if not cfg.get("enabled", True):
+        return []
+    count = max(0, int(cfg.get("initial_tracks", 1) or 0))
+    count = min(count, _positive_int(cfg.get("max_tracks"), 4))
+    created = []
+    # 作ったトラックはその場で timeline へつなぐ (次の採番とぶつからないため)。
+    # 本数の判定も timeline 側だけを見る。
+    while len(timeline.sound_tracks()) < count:
+        track_id, index = timeline.next_sound_track_id(cfg["track_id_prefix"])
+        name = _sound_track_name(cfg["track_name_format"], index, track_id)
+        track = Track(track_id, TRACK_SOUND, index, name=name)
+        created.append(track)
+        timeline.tracks.append(track)
+    if created:
+        _logger.info("SE トラックをそろえました: %s",
                      ", ".join(track.id for track in created))
     return created
 
@@ -456,7 +526,8 @@ def split_clip_at(timeline, track, clip, at_sec, min_clip_sec=0.05, split_text=F
         return new_clip
 
     new_clip = clip.copy()
-    new_clip.id = timeline.next_id("c")
+    # SE は "se1, se2…" で採番する (ID から種別が読めるようにする / ver12 resolve1)
+    new_clip.id = timeline.next_id("se" if isinstance(clip, SoundClip) else "c")
     new_clip.timeline_start = at_sec
     new_clip.duration = clip.duration - offset
     new_clip.source_in = clip.source_in + offset
@@ -1104,6 +1175,85 @@ class AddMediaClip(Command):
         return highest + Z_ORDER_STEP
 
 
+# SE (効果音) を Timeline へ追加する (ver12 resolve1 §6.1)
+#
+# 置き先は SE トラック。指定トラックが埋まっていれば空いている SE トラックへ回し、
+# どれも空いていなければ新しい SE トラックを作る (上限 max_tracks)。
+# 同一トラック内で音を重ねることはできない (重ねたいときはトラックを足す)。
+class AddSoundClip(Command):
+
+    label = "SE の追加"
+
+    def __init__(self, media, timeline_start, duration, track_id=None, cfg=None):
+        self._media = media
+        self._start = max(float(timeline_start), 0.0)
+        self._duration = float(duration)
+        self._track_id = track_id
+        self._cfg = {**_DEFAULT_SOUND_TRACKS_CFG, **(cfg or {})}
+        # 追加したノードの ID (呼び出し側が選択状態にするため公開する)
+        self.created_clip_id = None
+        self.created_track_id = None
+        # 置けなかった理由 (画面のステータス表示用)。"" = 成功
+        self.failure = ""
+
+    def apply(self, timeline):
+        if self._duration <= _EPS:
+            self.failure = "duration"
+            return False
+        if not self._cfg.get("enabled", True):
+            self.failure = "disabled"
+            return False
+
+        # メディアプールへ登録 (同一パスは再利用する / AddMediaClip と同じ規約)
+        media = timeline.media_by_path(self._media.path)
+        if media is None:
+            media = self._media
+            if not media.id:
+                media.id = timeline.next_id("m")
+            timeline.media_pool.append(media)
+
+        track = self._resolve_track(timeline)
+        if track is None:
+            self.failure = "no_track"
+            return False
+
+        clip = SoundClip(
+            timeline.next_id("se"), media.id, self._start, self._duration,
+            source_in=0.0, source_out=self._duration,
+            gain_db=float(self._cfg.get("default_gain_db", 0.0) or 0.0),
+            origin={"type": ORIGIN_USER_SE},
+        )
+        track.clips.append(clip)
+        track.sort_clips(timeline)
+        self.created_clip_id = clip.id
+        self.created_track_id = track.id
+        self.failure = ""
+        _logger.info("SE を追加しました: %s (%s / %.3fs から %.3fs)",
+                     clip.id, track.id, clip.timeline_start, clip.duration)
+        return True
+
+    # 置き先の SE トラックを決める (空いていなければ新規作成)
+    def _resolve_track(self, timeline):
+        end = self._start + self._duration
+        if self._track_id:
+            track = timeline.track_by_id(self._track_id)
+            if (track is not None and track.is_sound() and not track.locked
+                    and self._is_free(track, self._start, end)):
+                return track
+        for track in timeline.sound_tracks():
+            if track.locked:
+                continue
+            if self._is_free(track, self._start, end):
+                return track
+        return create_sound_track(timeline, self._cfg)
+
+    def _is_free(self, track, start, end):
+        for clip in track.clips:
+            if start < clip.timeline_end - _EPS and end > clip.timeline_start + _EPS:
+                return False
+        return True
+
+
 # 字幕クリップを追加する (Timeline の右クリック「字幕追加」)
 # 右クリックした位置を開始として新しい字幕を 1 つ置く。
 # 同じトラック上の既存字幕とは重ねない (重なると ASS で同時に 2 行出てしまうため):
@@ -1204,7 +1354,7 @@ class PasteClips(Command):
     def __init__(self, payload, at_sec, min_clip_sec=0.05,
                  insert_policy=INSERT_SPLIT, ripple_scope=SCOPE_BASE_SYNCS_ALL,
                  archive_index_policy=ARCHIVE_INDEX_INHERIT, max_video_tracks=8,
-                 subtitle_tracks_cfg=None):
+                 subtitle_tracks_cfg=None, sound_tracks_cfg=None):
         self._payload = payload or {}
         self._at = max(float(at_sec), 0.0)
         self._min_clip_sec = float(min_clip_sec)
@@ -1214,6 +1364,8 @@ class PasteClips(Command):
         self._max_video_tracks = int(max_video_tracks)
         # 役割別の字幕トラック (貼り付け先が見つからないときの解決に使う / resolve11 §5.2-4)
         self._subtitle_tracks_cfg = subtitle_tracks_cfg
+        # SE トラック (貼り付け先が無いときに作る / ver12 resolve1 §13)
+        self._sound_tracks_cfg = sound_tracks_cfg
         # 呼び出し側が選択・再生ヘッド・案内に使う結果
         self.created_clip_ids = []
         self.pasted_end_sec = None
@@ -1258,7 +1410,7 @@ class PasteClips(Command):
         if duration < self._min_clip_sec:
             return None
         media_id = None
-        if item.get("kind") == clipboard.KIND_VIDEO:
+        if item.get("kind") in (clipboard.KIND_VIDEO, clipboard.KIND_SOUND):
             media_id = self._resolve_media(timeline, item)
             if media_id is None:            # 素材が見つからない → 貼らない (§3-7)
                 return None
@@ -1331,6 +1483,16 @@ class PasteClips(Command):
             clip.duration = duration
             return clip
 
+        # SE (ver12 resolve1 §13)。音量・ミュートもそのまま貼る
+        if item.get("kind") == clipboard.KIND_SOUND:
+            clip = SoundClip.from_dict(data)
+            clip.id = timeline.next_id("se")
+            clip.media_id = media_id
+            clip.timeline_start = start
+            clip.duration = duration
+            clip.source_out = clip.source_in + duration
+            return clip
+
         clip = Clip.from_dict(data)
         clip.id = timeline.next_id("c")
         clip.media_id = media_id
@@ -1369,6 +1531,16 @@ class PasteClips(Command):
     # 規約は使わない (要望は「押しのける」であり、逃がすと違う結果になるため)。
     def _resolve_track(self, timeline, item):
         info = item.get("track") or {}
+        # SE: コピー元と同じ SE トラック → 無ければ既存の SE トラック → 無ければ新規
+        if item.get("kind") == clipboard.KIND_SOUND:
+            track = timeline.track_by_id(str(info.get("id") or ""))
+            if track is not None and track.is_sound():
+                return track
+            existing = timeline.sound_tracks()
+            if existing:
+                return existing[0]
+            return create_sound_track(timeline, self._sound_tracks_cfg)
+
         if item.get("kind") == clipboard.KIND_SUBTITLE:
             track = timeline.track_by_id(str(info.get("id") or ""))
             if track is not None and track.is_subtitle():
@@ -1486,6 +1658,9 @@ class MoveOverlay(Command):
         clip = timeline.clip_by_id(self._clip_id)
         if clip is None:
             return False
+        # SE は映像を持たないため位置の概念が無い (ver12 resolve1 §6.4)
+        if isinstance(clip, SoundClip):
+            return False
         if self._x is None or self._y is None:
             if clip.transform.x is None and clip.transform.y is None:
                 return False
@@ -1520,6 +1695,9 @@ class ResizeOverlay(Command):
         clip = timeline.clip_by_id(self._clip_id)
         # 字幕の大きさはフォントサイズで表すため、ここでは扱わない (transform は位置のみ)
         if clip is None or isinstance(clip, SubtitleClip) or not hasattr(clip, "transform"):
+            return False
+        # SE は映像を持たないため大きさの概念が無い (ver12 resolve1 §6.4)
+        if isinstance(clip, SoundClip):
             return False
         # ベース (V1) のクリップはキャンバスへ合わせて描かれ transform を見ない (renderer)
         track = timeline.track_of_clip(clip.id)
@@ -1857,6 +2035,48 @@ class MoveSubtitleToTrack(Command):
         return True
 
 
+# SE トラックを 1 本足す (ver12 resolve1 §7.4 / ヘッダの右クリック)
+class AddSoundTrack(Command):
+
+    def __init__(self, cfg=None):
+        self._cfg = {**_DEFAULT_SOUND_TRACKS_CFG, **(cfg or {})}
+        self.created_track_id = None
+        self.label = tr("SE トラックの追加")
+
+    def apply(self, timeline):
+        track = create_sound_track(timeline, self._cfg)
+        if track is None:
+            return False
+        self.created_track_id = track.id
+        return True
+
+
+# SE トラックを 1 本削除する (ver12 resolve1 §7.4 / ヘッダの右クリック)
+#
+# 載っている SE も一緒に消える。消えることの確認は呼び出し側 (UI) で取る。
+# Undo はスナップショット方式なので、間違えても Ctrl+Z で丸ごと戻る。
+# 最後の 1 本は残す (落とす先が無くなると D&D できなくなるため)。
+class RemoveSoundTrack(Command):
+
+    def __init__(self, track_id):
+        self._track_id = track_id
+        # 呼び出し側の案内文言用 (一緒に消した SE の件数)
+        self.removed_clips = 0
+        self.label = tr("SE トラックの削除")
+
+    def apply(self, timeline):
+        track = timeline.track_by_id(self._track_id)
+        if track is None or not track.is_sound() or track.locked:
+            return False
+        if len(timeline.sound_tracks()) <= 1:
+            return False
+        self.removed_clips = len(track.clips)
+        timeline.tracks = [t for t in timeline.tracks if t.id != track.id]
+        _logger.info("SE トラックを削除しました: %s (SE %d 件)",
+                     track.id, self.removed_clips)
+        return True
+
+
 # テロップトラックを 1 本削除する (ver9 要望 / ヘッダの右クリック)
 #
 # 載っているテロップも一緒に消える。消えることの確認は呼び出し側 (UI) で取る。
@@ -2138,6 +2358,8 @@ class SetClipEnabled(Command):
 
 
 # 音声クリップのゲインを変える (R18: A1 固有の値。V1 には影響しない)
+# SE (SoundClip) も同じ意味の gain_db を持つため、同じコマンドで扱う
+# (ver12 resolve1 §6.3)。
 class SetAudioGain(Command):
 
     label = "音量の変更"
@@ -2148,7 +2370,7 @@ class SetAudioGain(Command):
 
     def apply(self, timeline):
         clip = timeline.clip_by_id(self._clip_id)
-        if not isinstance(clip, AudioClip):
+        if not isinstance(clip, (AudioClip, SoundClip)):
             return False
         if abs(clip.gain_db - self._gain_db) <= _EPS:
             return False
@@ -2156,7 +2378,7 @@ class SetAudioGain(Command):
         return True
 
 
-# 音声クリップのミュートを切り替える
+# 音声クリップのミュートを切り替える (SE も同じコマンドで扱う)
 class SetAudioMuted(Command):
 
     label = "ミュートの切り替え"
@@ -2167,7 +2389,7 @@ class SetAudioMuted(Command):
 
     def apply(self, timeline):
         clip = timeline.clip_by_id(self._clip_id)
-        if not isinstance(clip, AudioClip):
+        if not isinstance(clip, (AudioClip, SoundClip)):
             return False
         if clip.muted == self._muted:
             return False

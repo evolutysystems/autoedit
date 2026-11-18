@@ -9,10 +9,16 @@
 TRACK_VIDEO = "video"
 TRACK_AUDIO = "audio"
 TRACK_SUBTITLE = "subtitle"
+# SE (効果音) 専用トラック (ver12 resolve1 §4)。
+# TRACK_AUDIO (A1) が「V1 へリンクした導出音声」であるのに対し、こちらは
+# Timeline 上に固有の時刻を持つ音のノード (SoundClip) を載せる別物である。
+TRACK_SOUND = "sound"
 
 # ── メディア種別
 MEDIA_VIDEO = "video"
 MEDIA_IMAGE = "image"
+# 音だけの素材 (mp3 / wav …)。SE として置くために受理する (ver12 resolve1 §5)
+MEDIA_AUDIO = "audio"
 
 # ── クリップの由来 (§6.2.3)。記録専用で、編集やレンダリングの分岐には使わない。
 ORIGIN_SILENCE_CUT = "silence_cut"
@@ -22,6 +28,8 @@ ORIGIN_ASR = "asr"
 ORIGIN_USER_MEDIA = "user_media"
 # Timeline の右クリックメニューから手で足した字幕 (認識由来と区別するための記録)
 ORIGIN_USER_SUBTITLE = "user_subtitle"
+# 利用者が置いた SE (効果音 / ver12 resolve1 §4)
+ORIGIN_USER_SE = "user_se"
 
 # ── 字幕の役割 (既存 subtitle_generator と同じキー)
 DEFAULT_ROLE = "streamer"
@@ -32,6 +40,15 @@ ROLE_COMMENT = "comment"
 # 複数行になったテロップの「行の揃え」であり、テロップの表示位置は動かさない。
 # "" = 設定の表示位置 (subtitle.alignment / vertical.alignment) に従う。
 SUBTITLE_ALIGNS = ("left", "center", "right")
+
+# ── テロップのアニメーション (ver12 resolve2 §4)
+# 動きの種類は 1 本につき 1 つ。フェードは種類と独立に掛けられる
+# (「Word Pop しながらフェードインする」が自然に出てくるため / resolve2 §4)。
+ANIM_NONE = ""
+ANIM_WORD_POP = "word_pop"      # 単語が 1 つずつ拡大して現れ、元の大きさへ戻る
+ANIM_BOUNCE = "bounce"          # 単語が上下に跳ね、バネのように収まる
+ANIM_BIG_WORD = "big_word"      # 画面中央へ大きな単語を 1 語ずつ出す
+SUBTITLE_ANIMATIONS = (ANIM_WORD_POP, ANIM_BOUNCE, ANIM_BIG_WORD)
 
 # ベースクリップ (V1 の本編・OP・ED) の描画順。オーバーレイは 1 以上を使う (§6.5-2)。
 BASE_Z_ORDER = 0
@@ -46,6 +63,9 @@ BASE_AUDIO_TRACK_ID = "A1"
 BASE_SUBTITLE_TRACK_ID = "S1"
 # コメント専用の字幕トラック ID (ver3 resolve11 §5.1)。設定で変更できる。
 COMMENT_SUBTITLE_TRACK_ID = "S2"
+# SE (効果音) トラックの既定 ID と接頭辞 (ver12 resolve1 §4)
+BASE_SOUND_TRACK_ID = "SE1"
+SOUND_TRACK_ID_PREFIX = "SE"
 
 
 # 値を float へ寄せる (不正値は既定へフォールバック)
@@ -93,6 +113,12 @@ def _to_int_or_none(value):
 def _to_align(value):
     text = str(value or "").strip().lower()
     return text if text in SUBTITLE_ALIGNS else ""
+
+
+# アニメーションの種類を正規化する (不正値は「なし」へ倒す / ver12 resolve2 §4)
+def _to_animation(value):
+    text = str(value or "").strip().lower()
+    return text if text in SUBTITLE_ANIMATIONS else ANIM_NONE
 
 
 # 秒値を JSON 書き出し用にミリ秒精度へ丸める (§6.2.3)
@@ -179,6 +205,10 @@ class MediaRef:
     # 静止画かどうか (尺を無限に伸ばせる素材か)
     def is_image(self):
         return self.kind == MEDIA_IMAGE
+
+    # 音だけの素材か (SE として置ける素材か / ver12 resolve1 §4.2)
+    def is_audio(self):
+        return self.kind == MEDIA_AUDIO
 
     # トリムの上限となる素材尺 (画像は上限なし= None)
     def max_source_sec(self):
@@ -291,6 +321,73 @@ class Clip:
         )
 
 
+# SE (効果音) クリップ (ver12 resolve1 §4.1)
+#
+# Timeline 上に固有の時刻を持つ「音のノード」。Clip の派生にしてあるため、
+# 移動・トリム・分割・削除・リップル・吸着は映像クリップ用の既存コマンドが
+# そのまま効く (commands.py が時刻を持つノードを isinstance(clip, Clip) で
+# 判定しているため / resolve1 §2)。
+#
+# 【AudioClip との違い】AudioClip は V1 のクリップへのリンクで固有の時刻を
+# 持たない。こちらは自前の時刻を持ち、どの映像クリップにも紐付かない。
+# 映像を持たないため z_order / transform は使わない (継承はするが既定のまま)。
+class SoundClip(Clip):
+
+    def __init__(self, clip_id, media_id, timeline_start, duration,
+                 source_in=0.0, source_out=None, gain_db=0.0, muted=False,
+                 enabled=True, origin=None):
+        super().__init__(
+            clip_id, media_id, timeline_start, duration,
+            source_in=source_in, source_out=source_out,
+            z_order=BASE_Z_ORDER, enabled=enabled, transform=None,
+            origin=origin or {"type": ORIGIN_USER_SE},
+        )
+        # 音量 (dB)。0.0 = 素材のまま。AudioClip と同じ意味・同じコマンドで触る
+        self.gain_db = _to_float(gain_db)
+        self.muted = bool(muted)
+
+    # 実際に音が出るか (無効・ミュート・尺なしは鳴らない)
+    def is_audible(self):
+        return bool(self.enabled) and not self.muted and self.duration > 0.0
+
+    def copy(self):
+        return SoundClip(
+            self.id, self.media_id, self.timeline_start, self.duration,
+            self.source_in, self.source_out, self.gain_db, self.muted,
+            self.enabled, dict(self.origin),
+        )
+
+    # z_order / transform は使わないため書き出さない (旧版との差分を増やさない)
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "media_id": self.media_id,
+            "timeline_start": round_sec(self.timeline_start),
+            "duration": round_sec(self.duration),
+            "source_in": round_sec(self.source_in),
+            "source_out": round_sec(self.source_out),
+            "gain_db": round(self.gain_db, 3),
+            "muted": self.muted,
+            "enabled": self.enabled,
+            "origin": dict(self.origin),
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return SoundClip(
+            clip_id=str(data.get("id", "")),
+            media_id=str(data.get("media_id", "")),
+            timeline_start=data.get("timeline_start", 0.0),
+            duration=data.get("duration", 0.0),
+            source_in=data.get("source_in", 0.0),
+            source_out=data.get("source_out"),
+            gain_db=data.get("gain_db", 0.0),
+            muted=data.get("muted", False),
+            enabled=data.get("enabled", True),
+            origin=data.get("origin"),
+        )
+
+
 # 字幕クリップ (§6.2.2)
 # 時刻は Timeline 時間。V1 の編集には追従しない (回答 Q2 / §6.3.1)。
 # origin.source_start/source_end に由来の元動画時刻を残し、将来の再同期に備える。
@@ -298,7 +395,8 @@ class SubtitleClip:
 
     def __init__(self, clip_id, timeline_start, duration, text="", role=DEFAULT_ROLE,
                  font="", font_size=None, use=True, z_order=DEFAULT_SUBTITLE_Z_ORDER,
-                 transform=None, origin=None, color="", outline_color="", align=""):
+                 transform=None, origin=None, color="", outline_color="", align="",
+                 animation=ANIM_NONE, fade_in=False, fade_out=False, emphasis=""):
         self.id = clip_id
         self.timeline_start = _to_float(timeline_start)
         self.duration = _to_float(duration)
@@ -318,6 +416,16 @@ class SubtitleClip:
         # このクリップだけの文字寄せ (left/center/right)。空文字 = 設定の表示位置に従う
         # (ver9 resolve3 §R2)。行の揃えだけを変え、テロップの位置は動かさない。
         self.align = align
+        # ── アニメーション (ver12 resolve2 §4)
+        # 動きの種類 (空文字 = 動かさない = 従来と完全に同じ出力)
+        self.animation = animation
+        # フェードは種類と独立に掛けられる
+        self.fade_in = bool(fade_in)
+        self.fade_out = bool(fade_out)
+        # 強調する語 (読点・カンマ区切り)。Word Pop でのみ使う。
+        # 「重要かどうか」を判定できるデータが無いため、利用者と設定が決める
+        # (resolve2 §2.2)。設定 subtitle.animation.emphasis_words との合算になる。
+        self.emphasis = str(emphasis or "")
 
     # 文字寄せは EditSubtitle の setattr から直接入るため、setter で正規化する
     # (ver9 resolve3 §1.5)。不正値は「設定に従う」へ倒して画面を壊さない。
@@ -328,6 +436,27 @@ class SubtitleClip:
     @align.setter
     def align(self, value):
         self._align = _to_align(value)
+
+    # アニメーションの種類も EditSubtitle の setattr から直接入るため、
+    # setter で正規化する (文字寄せと同じ流儀 / ver12 resolve2 §4)。
+    @property
+    def animation(self):
+        return self._animation
+
+    @animation.setter
+    def animation(self, value):
+        self._animation = _to_animation(value)
+
+    # 動きかフェードのどれかが付いているか (画面の印・プレビューの判定に使う)
+    def has_animation(self):
+        return bool(self._animation or self.fade_in or self.fade_out)
+
+    # 強調する語の一覧 (読点・カンマ・空白区切りを配列へ)
+    def emphasis_words(self):
+        text = str(self.emphasis or "")
+        for separator in ("、", ",", "，", "　"):
+            text = text.replace(separator, " ")
+        return [word for word in (w.strip() for w in text.split(" ")) if word]
 
     @property
     def timeline_end(self):
@@ -345,6 +474,7 @@ class SubtitleClip:
             self.font, self.font_size, self.use, self.z_order,
             self.transform.copy(), dict(self.origin),
             self.color, self.outline_color, self.align,
+            self.animation, self.fade_in, self.fade_out, self.emphasis,
         )
 
     # 既存資産 (build_subtitle_file / resolve_export) が扱う item 形式へ変換する
@@ -378,6 +508,22 @@ class SubtitleClip:
         # 文字寄せも指定があるときだけ載せる (未指定なら現行と完全に同一の辞書 / resolve3 §R12)
         if self.align:
             item["align"] = self.align
+        # アニメーション (ver12 resolve2 §4)。指定があるときだけ載せるため、
+        # 動きを付けていないテロップの item は現行と 1 キーも変わらない。
+        if self.animation:
+            item["animation"] = self.animation
+        if self.fade_in:
+            item["fade_in"] = True
+        if self.fade_out:
+            item["fade_out"] = True
+        if self.emphasis:
+            item["emphasis"] = self.emphasis
+        # 単語ごとの動きには単語の時刻が要る (resolve2 §2.1)。
+        # 認識由来の時刻をそのまま渡し、無ければ下流が本文から句へ切る。
+        if self.animation:
+            words = self.origin.get("words")
+            if words:
+                item["words"] = words
         return item
 
     def to_dict(self):
@@ -387,7 +533,7 @@ class SubtitleClip:
         # 終端を丸めてから差を取り、隣り合うテロップの境界を保つ。
         start = round_sec(self.timeline_start)
         duration = round_sec(self.timeline_start + self.duration) - start
-        return {
+        data = {
             "id": self.id,
             "timeline_start": start,
             "duration": round_sec(duration),
@@ -405,6 +551,17 @@ class SubtitleClip:
             # 個別の文字寄せ (未指定は空文字 = 設定の表示位置に従う / resolve3 §R11)
             "align": self.align,
         }
+        # アニメーションは指定があるときだけ書く (ver12 resolve2 §11)。
+        # 旧プロジェクトとの差分が増えず、旧版アプリでは未知キーとして無視される。
+        if self.animation:
+            data["animation"] = self.animation
+        if self.fade_in:
+            data["fade_in"] = True
+        if self.fade_out:
+            data["fade_out"] = True
+        if self.emphasis:
+            data["emphasis"] = self.emphasis
+        return data
 
     @staticmethod
     def from_dict(data):
@@ -423,6 +580,11 @@ class SubtitleClip:
             color=data.get("color", ""),
             outline_color=data.get("outline_color", ""),
             align=data.get("align", ""),
+            # 旧プロジェクトにはこれらのキーが無い = 動きなし = 従来の見え方
+            animation=data.get("animation", ANIM_NONE),
+            fade_in=data.get("fade_in", False),
+            fade_out=data.get("fade_out", False),
+            emphasis=data.get("emphasis", ""),
         )
 
 
@@ -505,6 +667,10 @@ class Track:
     def is_subtitle(self):
         return self.kind == TRACK_SUBTITLE
 
+    # SE (効果音) トラックか (ver12 resolve1 §4.3)
+    def is_sound(self):
+        return self.kind == TRACK_SOUND
+
     # 時系列順に整列する (編集後は必ず呼ぶ)
     def sort_clips(self, timeline=None):
         if self.is_audio():
@@ -553,6 +719,8 @@ class Track:
         kind = str(data.get("kind", TRACK_VIDEO))
         if kind == TRACK_AUDIO:
             clips = [AudioClip.from_dict(c) for c in data.get("clips", [])]
+        elif kind == TRACK_SOUND:
+            clips = [SoundClip.from_dict(c) for c in data.get("clips", [])]
         elif kind == TRACK_SUBTITLE:
             clips = [SubtitleClip.from_dict(c) for c in data.get("clips", [])]
         else:
@@ -679,6 +847,11 @@ class Timeline:
     def subtitle_tracks(self):
         return [t for t in self.tracks if t.is_subtitle()]
 
+    # SE (効果音) トラックを index 昇順で返す (ver12 resolve1 §4.3)
+    def sound_tracks(self):
+        return sorted((t for t in self.tracks if t.is_sound()),
+                      key=lambda t: t.index)
+
     # ベース映像トラック (V1)。未設定なら index 最小の映像トラックを返す。
     def base_video_track(self):
         for track in self.video_tracks():
@@ -758,6 +931,11 @@ class Timeline:
         for track in self.tracks:
             if track.is_audio():
                 continue  # 音声は映像からの導出のため計算に含めない
+            # SE は本編の尺の中で鳴らすものとし、総尺を伸ばさない
+            # (伸ばすと映像の無い黒画面が生える / ver12 resolve1 §4.3)。
+            # 本編より後ろへはみ出した SE は出力・プレビューとも切られる。
+            if track.is_sound():
+                continue
             for clip in track.clips:
                 end = max(end, clip.timeline_end)
         return end
@@ -803,6 +981,21 @@ class Timeline:
                     clips.append(clip)
         return sorted(clips, key=lambda c: c.timeline_start)
 
+    # 鳴らす SE を時系列順に返す (出力・プレビューの入力 / ver12 resolve1 §4.3)
+    #
+    # only_audible=True では、トラックが無効・ロック対象外ではなく「鳴らない」
+    # ノード (無効・ミュート) を落とす。レンダリングはこちらを使う。
+    def sound_clips(self, only_audible=True):
+        clips = []
+        for track in self.sound_tracks():
+            if only_audible and not track.enabled:
+                continue
+            for clip in track.clips:
+                if only_audible and not clip.is_audible():
+                    continue
+                clips.append(clip)
+        return sorted(clips, key=lambda c: c.timeline_start)
+
     # ベーストラック上の空白 (ギャップ) を [(start, end), ...] で返す (§8.2)
     def base_gaps(self):
         gaps = []
@@ -837,6 +1030,16 @@ class Timeline:
     def next_audio_track_id(self):
         index = max([t.index for t in self.audio_tracks()] or [0]) + 1
         return f"A{index}", index
+
+    # 新しい SE トラックの ID を払い出す (ver12 resolve1 §4.3)
+    # 既存トラックと ID がぶつからない番号まで送る (SE1 → SE2 → …)。
+    def next_sound_track_id(self, prefix=SOUND_TRACK_ID_PREFIX):
+        prefix = str(prefix or SOUND_TRACK_ID_PREFIX)
+        index = max([t.index for t in self.sound_tracks()] or [0]) + 1
+        used_ids = {t.id for t in self.tracks}
+        while f"{prefix}{index}" in used_ids:
+            index += 1
+        return f"{prefix}{index}", index
 
     # 全トラックのクリップを時系列順へ整列する (編集後に呼ぶ)
     def normalize(self):
