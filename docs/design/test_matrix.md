@@ -48,6 +48,7 @@ python -m unittest discover -s tests
 | §4.3 テロップトラック | `test_subtitle_track_edit` / `test_subtitle_track_color` / `test_subtitle_new_track` / `test_subtitle_comment_track` / `test_subtitle_role_track_keep` / `test_subtitle_split_text` | ◯ |
 | §4.3 プレビュー | `test_preview_playback` (53) / `test_subtitle_preview_metrics` / `test_waveform` / `test_waveform_draw` / `test_timeline_drag_perf` | ◯ |
 | §5.3 文字色の優先順 | `test_subtitle_color` / `test_subtitle_track_color` | ◯ |
+| §5.4 テロップのアニメーション (ver12 resolve2) | `test_subtitle_animation` / `test_subtitle_animation_model` / `test_subtitle_animation_preview` / `test_proxy_render` (タイル鍵) | ◯ |
 | §6 設定の既定値・移行 | `test_settings_migration` (47) / `test_autosave_default` / `test_theme` / `test_output_canvas` (実行時の解決値を保存しない / 焼き付いた設定の自己修復 — ver11 resolve2) | ◯ |
 | §7.1 認証・JWT | `test_stretheus_auth` / `test_device_id` | △ `api_client` 単体が無い (§2-①) |
 | §7.2 ポイント・透かし判定 | `test_points_service` / `test_points_ui` / `test_points_refresh_pending` / `test_points_indicator_shutdown` | ◯ |

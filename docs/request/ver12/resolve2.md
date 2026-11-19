@@ -7,7 +7,7 @@
 　　　`docs/CLAUDE.md` (実装前に設計 / ハードコード禁止 / 既存実装を破壊しない)
 対象: `src/modules/subtitle_generator.py` / `src/modules/subtitle_animation.py` (新規) /
 　　　`src/timeline/model.py` / `src/gui/timeline/*` / `src/settings/*` / `tests/*`
-状態: **設計 (未実装)**
+状態: **実装済み** (2026-11-19 / R1〜R9 すべて。実装時に決めたことは §16)
 
 ---
 
@@ -326,3 +326,51 @@ for entry in timeline:
 | Q3 | プレビューでも動かすか (§2.3) | 動かす (アニメ付きのテロップだけ描き直す)。重ければ設定で静止表示へ |
 | Q4 | コメント役割はフェードのみでよいか | よい (箱とアイコンが追従できない) |
 | Q5 | 単語の区切りが近似になる場合 (手直し済みの本文) の扱い | BudouX の句 + 文字数按分で出す。画面に注記を出す |
+
+### 15.1 回答 (2026-11-19 / 利用者)
+
+* **Q1〜Q5 は本書の案どおり**。5 種すべて入れ、プレビューでも動かす (アニメ付きのみ)。
+* 画面 (R4 インスペクタ / R5 プレビュー) も**今回まとめて実装する**と確認。
+
+---
+
+## 16. 実装の記録 (2026-11-19)
+
+設計どおりに入れたが、**3 点は設計と変えた**。理由とともに残す。
+
+| # | 設計 (§) | 実装 | 理由 |
+| --- | --- | --- | --- |
+| **①** | §8: プレビューの単語レイアウトは焼き込みと同じ中間表現 (`layout()`) を共有する | プレビューは**単語の切り方・時刻・動きの式だけ**を共有し、**位置は画面側の実測 (`QFontMetricsF`) で積む** | 焼き込みは `font_advance` の送り幅、プレビューは Qt の実測で字を描いている。ASS 側の px をそのまま使うと、**動いた単語だけが画面に見えている文字列からずれる**。「プレビューで見えている行の中で単語が正しい位置にある」ことを優先した (位置の最終的な正しさは焼き込みが持つ) |
+| **②** | §5: 時刻ごとの変形は libass が補間する | `subtitle_animation` へ**時刻ごとの状態を返す関数**を足した (`word_pop_scale` / `bounce_offset` / `fade_alpha` / `big_word_spans`) | Qt では自分で補間する必要がある。式を画面側へ書くと焼き込みと食い違うため、ASS タグと同じ式をモジュール側へ 1 つだけ置いた (テスト `CurveTest` で突き合わせている) |
+| **③** | §6: 差し込みは `events()` の結果をそのまま Dialogue へ書く | 各行へ**そのテロップの個別指定 (`\fn` / `\fs` / 色) を付け直す**ようにした (`_animation_text`) | 単語ごとに行を分けると Style へ戻ってしまい、**個別フォント・個別サイズ・個別色が動きを付けた途端に効かなくなる**。行単位へ落ちた退避口には位置タグ (`\an..\pos..`) も付け直す (libass に位置を決めさせないため / ver9 resolve8 §3.2) |
+
+### 16.1 付随して直したこと
+
+* **プロキシのタイル鍵** (`proxy_render._content_signature`) に、アニメーションの 4 項目と
+  **文字寄せ (`align`)** を足した。文字寄せは ver9 resolve3 の時点で鍵へ入っておらず、
+  寄せを変えてもタイルが作り直されない状態だった (同じ種類の取りこぼし)。
+* 位置タグの計算を `subtitle_generator.position_anchor()` として切り出した
+  (タグ文字列を組む経路と単語の位置を求める経路が同じ基準点を見るため)。出力は不変。
+
+### 16.2 設定 (実装後の形)
+
+| キー | 既定 | 意味 |
+| --- | --- | --- |
+| `subtitle.animation.*` | §9 のとおり | 動きの量 (焼き込み・プレビュー共通) |
+| `timeline.subtitle_animation.enabled` | `true` | インスペクタに欄を出すか |
+| `timeline.subtitle_animation.apply_to_selection` | `true` | 選択中すべてへ効かせるか |
+| `timeline.subtitle_animation.node_marker` | `" ♪"` | Timeline のノードに出す印 |
+| `timeline.subtitle_animation.emphasis_always_enabled` | `false` | 強調する語の欄を常に触れるようにするか |
+| `timeline.preview.subtitle_animation` | `true` | プレビューで動かすか (false = 静止表示) |
+
+### 16.3 テスト (実装後)
+
+| ファイル | 件数 | 検証 |
+| --- | --- | --- |
+| `tests/test_subtitle_animation.py` | 24 | 単語分割の 3 段 / 各アニメの ASS タグ / 上限超過で行単位へ / **アニメ無しの ASS が従来と 1 文字も変わらないこと** / コメントはフェードのみ / 個別指定が行ごとに付くこと |
+| `tests/test_subtitle_animation_model.py` | 14 | 新 4 項目の往復・既定・旧プロジェクト互換・`to_item` の形・EditSubtitles と Undo |
+| `tests/test_subtitle_animation_preview.py` | 19 | プレビューの単語パス・時刻ごとの変形・Big Word の配置・静止表示・インスペクタ操作 (種類/フェード/コメント無効/機能 OFF) |
+| `tests/test_proxy_render.py` (追記) | 2 | アニメ・フェード・強調語・文字寄せでタイル鍵が変わること |
+
+`python -m unittest discover -s tests` = 2471 件。既存の失敗は `test_updater_verify`
+(本件と無関係。main でも同じく失敗する自動更新の一時フォルダの検査) のみ。

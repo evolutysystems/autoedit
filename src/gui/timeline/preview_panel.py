@@ -889,6 +889,9 @@ class PreviewPanel(QWidget):
         # タイル完成のたびに走ると停止中の表示がチカチカしていた。
         signature = self._overlay_signature(elements)
         if signature == self._overlay_signature_cache:
+            # 顔ぶれが同じでも、動きが付いたテロップは時刻で見た目が変わる
+            # (ver12 resolve2 §8 方式 A)。作り直しはせず時刻だけ渡す。
+            self._sync_overlay_time()
             return
         self._overlay_signature_cache = signature
 
@@ -915,6 +918,23 @@ class PreviewPanel(QWidget):
         # 作り直したアイテムへ現在の下書き表示を引き継ぐ (ver6 resolve3 §4.4)。
         # 引き継がないと、プロキシの絵が出ているのに近似描画が重なって二重になる。
         self._set_draft_visible(self._draft_visible)
+        self._sync_overlay_time()
+
+    # 動きが付いたテロップへ「テロップ開始からの相対秒」を渡す (ver12 resolve2 §8)
+    #
+    # 作り直し (破棄 → 再生成) ではなく paint のやり直しだけで動かすため、
+    # アイテムは残したまま時刻を更新する。動きが無いテロップ・画像では
+    # set_time を持たない / is_animated() が False のため何も起きない。
+    def _sync_overlay_time(self):
+        playhead = self._controller.playhead()
+        timeline = self._controller.timeline
+        for clip_id, item in self._overlay_items.items():
+            if not callable(getattr(item, "set_time", None)):
+                continue
+            clip = timeline.clip_by_id(clip_id)
+            if clip is None:
+                continue
+            item.set_time(max(playhead - clip.timeline_start, 0.0))
 
     def _make_item(self, element):
         try:
@@ -928,7 +948,10 @@ class PreviewPanel(QWidget):
                     # トラックの既定色 (ver9 resolve13 §3.2)。
                     # 個別指定があるテロップではそちらが優先される。
                     track_color=subtitle_style.track_color_for(
-                        self._controller.timeline, element))
+                        self._controller.timeline, element),
+                    # プレビューで動きを再現するか (ver12 resolve2 §8)。
+                    # false では「動き終わった状態」を静止表示する。
+                    animate=bool(self._cfg["subtitle_animation"]))
             media = self._controller.timeline.media_by_id(element.media_id)
             if media is None:
                 return None

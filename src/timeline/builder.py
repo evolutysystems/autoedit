@@ -412,6 +412,22 @@ def _subtitle_align_config(values):
     }
 
 
+# テロップアニメーション (ver12 resolve2 §7) の UI 設定を検証して既定で補う
+# 動きの量 (拡大率・跳ねる高さ・時間) は subtitle.animation 側にある
+# (ASS 生成は subtitle セクションしか見ないため / 文字寄せと同じ分担)。
+def _subtitle_animation_config(values):
+    values = values if isinstance(values, dict) else {}
+    return {
+        "enabled": bool(values.get("enabled", True)),
+        # 選択中の字幕すべてへ効かせるか (文字色・文字寄せと同じ規約)
+        "apply_to_selection": bool(values.get("apply_to_selection", True)),
+        # Timeline のノードのラベル末尾へ出す印 (空文字で印を出さない)
+        "node_marker": str(values.get("node_marker", " ♪") or ""),
+        # 強調する語の欄を Word Pop 以外でも触れるようにするか
+        "emphasis_always_enabled": bool(values.get("emphasis_always_enabled", False)),
+    }
+
+
 # ドックの配置指定を検証する (ver3 resolve5 §7)。想定外の値は既定 "top" へ寄せる。
 def _dock_area(value):
     area = str(value or "top").strip().lower()
@@ -487,6 +503,9 @@ def timeline_config(settings):
         "sound_tracks": _sound_tracks_config(cfg.get("sound_tracks", {})),
         # テロップ 1 本ごとの文字寄せ (ver9 resolve3 §R1)
         "subtitle_align": _subtitle_align_config(cfg.get("subtitle_align", {})),
+        # テロップアニメーション (ver12 resolve2 §R4)
+        "subtitle_animation": _subtitle_animation_config(
+            cfg.get("subtitle_animation", {})),
         # テロップを分割したときに本文も分けるか (ver9 要望)。
         # false (既定) = 両方へ同じ本文が入る / true = 再生ヘッド位置で本文も分ける
         "subtitle_split_text": bool(cfg.get("subtitle_split_text", False)),
@@ -664,6 +683,9 @@ def timeline_config(settings):
             "subtitle_metrics_mode": (
                 "em" if str(preview.get("subtitle_metrics_mode", "libass")
                             ).strip().lower() == "em" else "libass"),
+            # プレビューでテロップのアニメーションを再現するか (ver12 resolve2 §8)。
+            # false = 「動き終わった状態」の静止表示 (重い環境向けの退避口)。
+            "subtitle_animation": bool(preview.get("subtitle_animation", True)),
             # 字幕の縁と影の描き方 (ver9 resolve11 §3)。
             # "pen"   = 幅 2W のペンでストロークする (既定。パス演算をしない)
             # "union" = QPainterPath.united() で合併してから塗る (従来。長い

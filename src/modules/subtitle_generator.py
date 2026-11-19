@@ -17,7 +17,8 @@ from ..i18n import tr
 from ..settings.settings_window import resolve_fonts_dir
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
-from . import comment_decor, ffmpeg_runner, silence_cutter, speaker_filter
+from . import (comment_decor, ffmpeg_runner, silence_cutter, speaker_filter,
+               subtitle_animation)
 
 _logger = get_logger(__name__)
 
@@ -1144,6 +1145,21 @@ def default_anchor(role, font_profile, video_width, video_height):
 # = 既存の生成結果と完全に一致する (後方互換)。
 def _inline_position_override(entry, video_width, video_height, line_align=None,
                               font_profile=None, subtitle_cfg=None):
+    anchor = position_anchor(entry, video_width, video_height, line_align,
+                             font_profile, subtitle_cfg)
+    if anchor is None:
+        return ""
+    return f"\\an{anchor['an']}\\pos({anchor['x']:.1f},{anchor['y']:.1f})"
+
+
+# テロップの基準点 (テンキー配置と \pos の座標) を求める (ver12 resolve2 §R3)
+#
+# 位置タグの文字列を組む _inline_position_override と、単語ごとのアニメーション
+# (subtitle_animation) が **同じ基準点**を見るために切り出してある。
+# 2 か所で計算すると「焼き込みの位置」と「単語の位置」がずれる。
+# 戻り値 {"an", "x", "y"} / None = 位置タグを出さない (Style の配置に従う)
+def position_anchor(entry, video_width, video_height, line_align=None,
+                    font_profile=None, subtitle_cfg=None):
     x = entry.get("pos_x")
     y = entry.get("pos_y")
     align = (line_align or {}).get("align", "")
@@ -1151,7 +1167,7 @@ def _inline_position_override(entry, video_width, video_height, line_align=None,
         # 位置未指定: 既定のアンカー点を自前で書き、libass に位置を決めさせない
         # (ver9 resolve8 §3.2)。設定 OFF / 旧来の呼び出しでは従来どおり何も出さない。
         if font_profile is None or not _explicit_position_enabled(subtitle_cfg):
-            return ""
+            return None
         anchor, px, py = default_anchor(
             entry.get("role", _DEFAULT_ROLE), font_profile, video_width, video_height)
         # 文字寄せがあるときは、段 (上下) を保ったまま箱の左/中央/右へアンカーを移す
@@ -1166,7 +1182,7 @@ def _inline_position_override(entry, video_width, video_height, line_align=None,
                 px = box_left + width
             else:
                 px = box_left + width / 2.0
-        return f"\\an{anchor}\\pos({px:.1f},{py:.1f})"
+        return {"an": anchor, "x": px, "y": py}
     # 正規化座標 → ピクセル (\pos はテキストのアンカー位置。\an5 で中央基準に揃える)
     px = (float(x) + 1.0) * video_width / 2.0
     py = (1.0 - float(y)) * video_height / 2.0
@@ -1186,7 +1202,7 @@ def _inline_position_override(entry, video_width, video_height, line_align=None,
             anchor, px = 6, box_left + width
         else:
             anchor, px = 5, box_left + width / 2.0
-    return f"\\an{anchor}\\pos({px:.1f},{py:.1f})"
+    return {"an": anchor, "x": px, "y": py}
 
 
 # ASS 色文字列 (&HAABBGGRR / &HBBGGRR) を (BBGGRR, AA) へ分解する (resolve6 §5.3)
@@ -1248,6 +1264,20 @@ def _inline_overrides(entry, video_width, video_height, line_align=None,
     # 持つため、ここで \an を重ねない (重ねると基準が二重に変わる)。
     if not position and (line_align or {}).get("align", ""):
         override += f"\\an{line_align['an']}"
+    override += _inline_style_overrides(entry)
+    if not position and not override:
+        return ""
+    return "{" + position + override + "}"
+
+
+# 1 エントリぶんの「見た目」の上書きタグ (フォント → サイズ → 塗り → 縁) を返す
+# (ver12 resolve2 §R3)。位置・文字寄せは含まない。
+#
+# 単語ごとのアニメーションでは本文を複数の Dialogue 行へ分けるため、
+# 各行へこのタグを付け直す必要がある (付けないと個別フォント・個別サイズ・
+# 個別色が動きを付けた途端に効かなくなる)。従来の 1 行経路も同じものを使う。
+def _inline_style_overrides(entry):
+    override = ""
     font = entry.get("font", "")
     if font:
         override += f"\\fn{font}"
@@ -1256,9 +1286,34 @@ def _inline_overrides(entry, video_width, video_height, line_align=None,
         override += f"\\fs{size}"
     # クリップ個別の色 (resolve6 §3-3)。未指定なら空文字が返る。
     override += _inline_color_override(entry)
-    if not position and not override:
-        return ""
-    return "{" + position + override + "}"
+    return override
+
+
+# 本文の先頭の上書きブロックへタグを足す (ブロックが無ければ作る / ver12 resolve2 §R3)
+# ここで足したタグは本文側のタグより**先**に来るため、本文が同じ項目を指定して
+# いればそちらが勝つ (強調語の色・大きさが個別指定を上書きできる)。
+def _prepend_tags(text, tags):
+    text = str(text or "")
+    if not tags:
+        return text
+    if text.startswith("{"):
+        return "{" + tags + text[1:]
+    return "{" + tags + "}" + text
+
+
+# アニメーションの 1 行へ、そのテロップの個別指定を付け直す (ver12 resolve2 §R3)
+#   style_tags : フォント・サイズ・色 (_inline_style_overrides)
+#   position   : 従来の 1 行に付ける位置タグ (\an..\pos..)
+#
+# 単語ごとのイベントは自前の \pos / \move を持つため位置タグは足さない。
+# 行単位へ落ちた退避口 (単語の位置を測れなかった場合) は位置を持たないため、
+# 従来と同じ位置タグを足して libass に位置を決めさせない (ver9 resolve8 §3.2)。
+def _animation_text(text, style_tags, position):
+    text = str(text or "")
+    head = str(style_tags or "")
+    if position and "\\pos(" not in text and "\\move(" not in text:
+        head = str(position) + head
+    return _prepend_tags(text, head)
 
 
 # 背景と本文の ASS Layer を決める (ver3 resolve11 §5.11-4)
@@ -1320,6 +1375,14 @@ def build_subtitle_file(timeline, font_profile, output_path,
     # 個別の文字寄せの件数と、効かせられなかった件数 (ver9 resolve3 §8)
     align_override_count = 0
     align_skipped = {}
+    # テロップアニメーション (ver12 resolve2 §R3)。
+    # 指定の無いテロップはこの経路へ入らないため、ASS は従来と完全に同一になる。
+    anim_cfg = subtitle_animation.config(subtitle_cfg)
+    anim_enabled = subtitle_animation.is_enabled(anim_cfg)
+    anim_count = 0              # 単語ごと (または行単位) の動きを出した本数
+    anim_event_count = 0        # その動きのために増えた Dialogue 行の本数
+    fade_count = 0              # フェードだけを付けた本数
+    anim_comment_skipped = 0    # コメント役割のため動きを落とした本数
     for entry in timeline:
         start, end = _format_ass_range(entry["start"], entry["end"])
         text = entry["text"].replace("\n", "\\N")
@@ -1363,16 +1426,54 @@ def build_subtitle_file(timeline, font_profile, output_path,
                 outline_override_count += 1
         # 役割に対応する Style 名で色分けする (role 未指定は配信者)
         style_name = font_profile.style_for_role(role)
+        # ── テロップアニメーション (ver12 resolve2 §R3) ──────────────
+        # フェードはどの種類とも併用できるため、まず単独で求める。
+        fade = subtitle_animation.fade_tag(entry, anim_cfg) if anim_enabled else ""
+        anim_lines = []
+        if anim_enabled and subtitle_animation.animation_of(entry):
+            if role == _ROLE_COMMENT:
+                # 背景の箱とアイコンは単語ごとの位置に追従できない (§12 ②)。
+                # 黙って崩さず、フェードだけ残して従来の 1 行へ落とす。
+                anim_comment_skipped += 1
+            else:
+                anim_lines = subtitle_animation.events(
+                    entry, anim_cfg, subtitle_cfg, font_profile,
+                    video_width, video_height,
+                    anchor=position_anchor(entry, video_width, video_height,
+                                           line_align, font_profile, subtitle_cfg))
         # 背景 → 本文 の順に並べ、Layer でも前後関係を明示する (実装依存の描画順に頼らない)
         if background:
+            # 箱と文字が一緒に消えるよう、背景にも同じフェードを掛ける (§1)
             body_lines.append(
-                f"Dialogue: {bg_layer},{start},{end},{style_name},,0,0,0,,{background}")
+                f"Dialogue: {bg_layer},{start},{end},{style_name},,0,0,0,,"
+                + _prepend_tags(background, fade))
             background_count += 1
         layer = comment_layer if role == _ROLE_COMMENT else 0
         # 文字寄せの箱はイベント余白で表す (背景の行は \pos を持つため 0 のまま)。
         # 位置を \pos で明示する設定では resolve_line_align が余白を 0 で返すため、
         # ここは常に 0,0,0 になる (余白は \pos のとき無視される / ver9 resolve8 §3.2-4)。
         margins = f"{line_align['margin_l']},{line_align['margin_r']},0"
+        if anim_lines:
+            # 単語ごと (または行単位) の動きは Dialogue を複数行へ分けて表す。
+            # 位置は各行が自前で持つため、イベント余白は使わない (0,0,0)。
+            anim_count += 1
+            anim_event_count += len(anim_lines)
+            # 個別のフォント・サイズ・色は行ごとに付け直す (§R3)
+            style_tags = _inline_style_overrides(entry)
+            position = _inline_position_override(
+                entry, video_width, video_height, line_align, font_profile,
+                subtitle_cfg)
+            for event in anim_lines:
+                event_start, event_end = _format_ass_range(event["start"],
+                                                           event["end"])
+                body_lines.append(
+                    f"Dialogue: {layer},{event_start},{event_end},{style_name},"
+                    f",0,0,0,,"
+                    + _animation_text(event["text"], style_tags, position))
+            continue
+        if fade:
+            fade_count += 1
+            text = _prepend_tags(text, fade)
         body_lines.append(
             f"Dialogue: {layer},{start},{end},{style_name},,{margins},,{text}")
 
@@ -1389,6 +1490,17 @@ def build_subtitle_file(timeline, font_profile, output_path,
             font_override_count, size_override_count,
             color_override_count, outline_override_count, align_override_count,
         )
+
+    # アニメーションの件数を知らせる (ver12 resolve2 §R3)。
+    # Dialogue 行がどれだけ増えたかを出す (Bounce は 1 本で数十行になるため)。
+    if anim_count or fade_count:
+        _logger.info(
+            "テロップアニメーション 動き %d 件 (Dialogue %d 行) / フェードのみ %d 件",
+            anim_count, anim_event_count, fade_count)
+    if anim_comment_skipped:
+        _logger.warning(
+            "コメント役割のテロップは背景とアイコンが動きに追従できないため、"
+            "動きを付けずフェードのみ適用しました: %d 件", anim_comment_skipped)
 
     # 文字寄せを効かせられなかったものは理由ごとに 1 回だけ知らせる (§R8 / §8)。
     # どちらもテロップの位置は現状どおりのまま、寄せだけが効かない状態。

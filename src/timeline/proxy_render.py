@@ -154,13 +154,22 @@ def tile_key(timeline, env, tile_index):
             continue
         transform = element.transform
         if hasattr(element, "text"):
-            # 字幕 (文字・役割・フォント・色・位置・使用フラグ)
+            # 字幕 (文字・役割・フォント・色・文字寄せ・動き・位置・使用フラグ)
+            #
+            # ここへ足し忘れると、見た目を変えても古いタイルが使われて
+            # プレビューの絵が変わらない (SE の音量と同じ失敗 / ver12 resolve1 §11)。
             parts.append("sub|" + "|".join([
                 str(element.text), str(element.role), str(element.font),
                 str(element.font_size), str(element.color),
                 str(element.outline_color), str(int(bool(element.use))),
                 f"{element.timeline_start:.4f}", f"{element.duration:.4f}",
                 str(transform.x), str(transform.y), str(element.z_order),
+                # 文字寄せ (ver9 resolve3) とアニメーション (ver12 resolve2 §R6)
+                str(getattr(element, "align", "")),
+                str(getattr(element, "animation", "")),
+                str(int(bool(getattr(element, "fade_in", False)))),
+                str(int(bool(getattr(element, "fade_out", False)))),
+                str(getattr(element, "emphasis", "")),
             ]))
         else:
             parts.append("ov|" + "|".join([

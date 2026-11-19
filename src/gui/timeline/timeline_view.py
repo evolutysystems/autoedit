@@ -943,7 +943,13 @@ class TimelineView(QWidget):
 
     def _clip_label(self, clip, track):
         if isinstance(clip, SubtitleClip):
-            return clip.text.replace("\\N", " ")[:40]
+            label = clip.text.replace("\\N", " ")[:40]
+            # 動き (アニメーション・フェード) が付いたテロップへ印を出す
+            # (ver12 resolve2 §R4)。どれに動きを付けたかを一覧で見分けるため。
+            if clip.has_animation():
+                label += str(
+                    self._controller.cfg["subtitle_animation"]["node_marker"])
+            return label
         if isinstance(clip, SoundClip):
             # 素材のファイル名 (拡張子なし) + 状態 (ver12 resolve1 §7.2)
             media = self._controller.timeline.media_by_id(clip.media_id)

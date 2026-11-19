@@ -188,7 +188,10 @@ class BlurCanvas(QGraphicsView):
             if spec.get("kind") == "text":
                 return SubtitleOverlayItem(
                     element, self._subtitle_cfg, self._font_profile, canvas,
-                    track_color=str(spec.get("track_color", "") or ""))
+                    track_color=str(spec.get("track_color", "") or ""),
+                    # ぼかし指定画面は 1 枚の静止画を見る画面なので動かさない
+                    # (ver12 resolve2 §8)。動き終わった状態で全部の語を出す。
+                    animate=False)
             return ImageOverlayItem(element, spec.get("pixmap"), canvas,
                                     overlay_cfg=self._overlay_cfg)
         except Exception:                   # noqa: BLE001 (1 件の失敗で画面を落とさない)

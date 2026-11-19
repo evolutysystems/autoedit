@@ -115,18 +115,20 @@ def has_animation(entry):
 # フェード (種類と併用できる)
 # ------------------------------------------------------------------
 
-# \fad(in,out) を返す (どちらも無ければ空文字)
+# フェードの長さ (ms) を (イン, アウト) で返す
 #
-# フェードはテロップ全体に掛かるため、単語ごとのイベントにも同じタグを付ける。
-# コメントの背景 (別イベント) へも同じものを付けると箱と文字が一緒に消える。
-def fade_tag(entry, cfg):
+# 表示時間より長いフェードは入れない (出た瞬間に消えるため)。
+# ASS タグ (fade_tag) とプレビューの不透明度 (fade_alpha) が同じ値を見るために
+# ここへ 1 つだけ置く。
+def fade_ms(entry, cfg):
     entry = entry or {}
     cfg = config(None) if cfg is None else cfg
     fade_in = _to_int(cfg.get("fade_in_ms"), 200) if entry.get("fade_in") else 0
     fade_out = _to_int(cfg.get("fade_out_ms"), 200) if entry.get("fade_out") else 0
+    fade_in = max(fade_in, 0)
+    fade_out = max(fade_out, 0)
     if fade_in <= 0 and fade_out <= 0:
-        return ""
-    # 表示時間より長いフェードは入れない (出た瞬間に消えるため)
+        return 0, 0
     duration_ms = max(
         int((_to_float(entry.get("end"), 0.0) - _to_float(entry.get("start"), 0.0))
             * 1000), 0)
@@ -134,7 +136,39 @@ def fade_tag(entry, cfg):
         scale = duration_ms / float(fade_in + fade_out)
         fade_in = int(fade_in * scale)
         fade_out = int(fade_out * scale)
-    return f"\\fad({max(fade_in, 0)},{max(fade_out, 0)})"
+    return fade_in, fade_out
+
+
+# \fad(in,out) を返す (どちらも無ければ空文字)
+#
+# フェードはテロップ全体に掛かるため、単語ごとのイベントにも同じタグを付ける。
+# コメントの背景 (別イベント) へも同じものを付けると箱と文字が一緒に消える。
+def fade_tag(entry, cfg):
+    fade_in, fade_out = fade_ms(entry, cfg)
+    if fade_in <= 0 and fade_out <= 0:
+        return ""
+    return f"\\fad({fade_in},{fade_out})"
+
+
+# その時刻のテロップの不透明度 (0.0〜1.0 / プレビュー用 / resolve2 §8)
+#   t_rel: テロップ開始からの相対秒
+# \fad と同じ直線補間で求める (libass の \fad も直線)。
+def fade_alpha(entry, cfg, t_rel):
+    fade_in, fade_out = fade_ms(entry, cfg)
+    if fade_in <= 0 and fade_out <= 0:
+        return 1.0
+    t_ms = max(_to_float(t_rel, 0.0), 0.0) * 1000.0
+    duration_ms = max(
+        (_to_float((entry or {}).get("end"), 0.0)
+         - _to_float((entry or {}).get("start"), 0.0)) * 1000.0, 0.0)
+    alpha = 1.0
+    if fade_in > 0 and t_ms < fade_in:
+        alpha = t_ms / float(fade_in)
+    if fade_out > 0 and duration_ms > 0:
+        remain = duration_ms - t_ms
+        if remain < fade_out:
+            alpha = min(alpha, max(remain, 0.0) / float(fade_out))
+    return min(max(alpha, 0.0), 1.0)
 
 
 # ------------------------------------------------------------------
@@ -175,6 +209,18 @@ def split_words(entry, cfg=None):
 
     emphasis = _emphasis_set(entry, cfg)
     return _assign_lines(pieces, lines, emphasis)
+
+
+# 単語の切り方がどれになったかを返す ("asr" = 認識由来の単語時刻 /
+# "phrase" = 句へ切って尺を按分した近似)。画面の注記に使う (resolve2 §2.1)。
+def word_source(entry, cfg=None):
+    entry = entry or {}
+    plain = "".join(_lines_of(entry))
+    duration = max(_to_float(entry.get("end"), 0.0)
+                   - _to_float(entry.get("start"), 0.0), 0.0)
+    if plain and duration > 0 and _words_from_asr(entry, plain, duration):
+        return "asr"
+    return "phrase"
 
 
 # 本文の行 (ASS の \N と実改行の両方を区切りとして扱う)
@@ -595,33 +641,50 @@ def _bounce_events(entry, cfg, plan, fade):
 def _big_word_events(entry, cfg, eff_cfg, font_profile, words,
                      video_width, video_height, fade):
     start = _to_float(entry.get("start"), 0.0)
-    end = _to_float(entry.get("end"), 0.0)
     scale = max(_to_int(cfg.get("big_word_scale"), 260), 100)
-    min_sec = max(_to_int(cfg.get("big_word_min_ms"), 240), 0) / 1000.0
     size = int(round(_font_size(entry, eff_cfg, font_profile) * scale / 100.0))
     cx = video_width / 2.0
     cy = video_height / 2.0
 
     events_out = []
-    for index, word in enumerate(words):
-        word_start = start + word["offset"]
-        # 次の語が出るまで (最後の語はテロップの終わりまで) 出しておく
-        if index + 1 < len(words):
-            word_end = start + words[index + 1]["offset"]
-        else:
-            word_end = end
-        word_end = max(word_end, word_start + max(word["duration"], min_sec))
-        word_end = min(word_end, end)
-        if word_end - word_start <= _MIN_EVENT_SEC:
-            continue
+    for span in big_word_spans(entry, cfg, words):
         tags = [f"\\an5\\pos({cx:.1f},{cy:.1f})\\fs{size}"]
         if fade:
             tags.append(fade)
         events_out.append({
-            "start": word_start, "end": word_end,
-            "text": "{" + "".join(tags) + "}" + _escape(word["text"]),
+            "start": start + span["start"], "end": start + span["end"],
+            "text": "{" + "".join(tags) + "}" + _escape(span["text"]),
         })
     return events_out
+
+
+# Big Word で 1 語ずつ出す区間を返す (テロップ開始からの相対秒)
+#
+# 戻り値: [{"text", "emphasis", "start", "end"}]
+# 焼き込み (_big_word_events) とプレビューが同じ切り替え時刻を見るために
+# ここへ 1 つだけ置く (2 か所で計算すると切り替わる瞬間がずれる)。
+def big_word_spans(entry, cfg, words=None):
+    cfg = config(None) if cfg is None else cfg
+    words = split_words(entry, cfg) if words is None else words
+    total = max(_to_float((entry or {}).get("end"), 0.0)
+                - _to_float((entry or {}).get("start"), 0.0), 0.0)
+    min_sec = max(_to_int(cfg.get("big_word_min_ms"), 240), 0) / 1000.0
+
+    spans = []
+    for index, word in enumerate(words):
+        word_start = word["offset"]
+        # 次の語が出るまで (最後の語はテロップの終わりまで) 出しておく
+        if index + 1 < len(words):
+            word_end = words[index + 1]["offset"]
+        else:
+            word_end = total
+        word_end = max(word_end, word_start + max(word["duration"], min_sec))
+        word_end = min(word_end, total)
+        if word_end - word_start <= _MIN_EVENT_SEC:
+            continue
+        spans.append({"text": word["text"], "emphasis": word.get("emphasis", False),
+                      "start": word_start, "end": word_end})
+    return spans
 
 
 # 行全体を動かす退避口 (単語の位置が測れない / 語数が多い場合)
@@ -685,6 +748,72 @@ def _line_events(entry, cfg, eff_cfg, font_profile, kind,
         out.append({"start": cursor, "end": end,
                     "text": "{" + head + f"\\pos({x:.1f},{y:.1f})}}" + text})
     return out
+
+
+# ------------------------------------------------------------------
+# 時刻ごとの状態 (プレビュー用 / resolve2 §8)
+#
+# ASS では上書きタグ (\t / \move) が libass 側で補間されるが、Qt の自前描画では
+# 自分で補間する必要がある。**同じ式をここへ 1 つだけ置き**、焼き込みと
+# プレビューが食い違わないようにする (§2.3 で採った方式 A の土台)。
+# ------------------------------------------------------------------
+
+# Word Pop の拡大率 (%) を返す
+#   t_rel: その語が現れてからの相対秒
+# \fscx{scale} → \t(grow, grow+settle, \fscx100) と同じ直線補間。
+def word_pop_scale(cfg, t_rel):
+    cfg = config(None) if cfg is None else cfg
+    scale = max(_to_int(cfg.get("word_pop_scale"), 130), 100)
+    grow = max(_to_int(cfg.get("word_pop_grow_ms"), 80), 0) / 1000.0
+    settle = max(_to_int(cfg.get("word_pop_settle_ms"), 120), 1) / 1000.0
+    t = max(_to_float(t_rel, 0.0), 0.0)
+    if t <= grow:
+        return float(scale)
+    if t >= grow + settle:
+        return 100.0
+    return scale + (100.0 - scale) * ((t - grow) / settle)
+
+
+# Bounce の上下のずれ (px / 上が負) を返す
+#   t_rel: その語が跳ね始めてからの相対秒
+#   size : その語の文字サイズ (px)
+# \move を段に分けたイベント列と同じ三角波 (振幅は段ごとに半分へ減衰)。
+def bounce_offset(cfg, t_rel, size):
+    cfg = config(None) if cfg is None else cfg
+    total = max(_to_int(cfg.get("bounce_ms"), 420), 60) / 1000.0
+    segments = min(max(_to_int(cfg.get("bounce_segments"), 3), 1), 6)
+    height = _to_float(cfg.get("bounce_height_ratio"), 0.35) * _to_float(size, 0.0)
+    t = max(_to_float(t_rel, 0.0), 0.0)
+    if t >= total or height <= 0:
+        return 0.0
+    span = total / segments
+    step = min(int(t / span), segments - 1)
+    local = t - step * span
+    amplitude = height * (0.5 ** step)
+    half = span / 2.0
+    if local <= half:
+        return -amplitude * (local / half)
+    return -amplitude * (1.0 - (local - half) / half)
+
+
+# 単語ごとに遅らせる量 (秒 / Bounce)
+def bounce_stagger(cfg, index):
+    cfg = config(None) if cfg is None else cfg
+    return max(_to_int(cfg.get("bounce_word_stagger_ms"), 60), 0) / 1000.0 * max(index, 0)
+
+
+# 強調語の色 (#RRGGBB) と大きさ (%) を返す
+def emphasis_style(cfg):
+    cfg = config(None) if cfg is None else cfg
+    color = str(cfg.get("emphasis_color", "#FFD34D") or "#FFD34D")
+    scale = max(_to_int(cfg.get("emphasis_scale"), 115), 100)
+    return color, scale
+
+
+# Big Word の文字サイズ (%)
+def big_word_scale(cfg):
+    cfg = config(None) if cfg is None else cfg
+    return max(_to_int(cfg.get("big_word_scale"), 260), 100)
 
 
 # ------------------------------------------------------------------

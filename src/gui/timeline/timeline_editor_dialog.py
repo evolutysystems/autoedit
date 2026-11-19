@@ -77,6 +77,12 @@ _ROLE_CHOICES = [("配信者", "streamer"), ("サブ", "sub"), ("コメント", 
 # 文字寄せの選択肢 (ver9 resolve3 §R1)。並び順がボタンの並び順になる。
 _ALIGN_CHOICES = [("left", "左寄せ"), ("center", "中央寄せ"), ("right", "右寄せ")]
 
+# アニメーションの選択肢 (ver12 resolve2 §R4)。並び順がコンボの並び順になる。
+# 値は SubtitleClip.animation と同じ (先頭の空文字 = 動かさない)。
+# フェードは種類と併用できるため、コンボではなくチェック 2 つで持つ (§4)。
+_ANIMATION_CHOICES = [("", "なし"), ("word_pop", "Word Pop"),
+                      ("bounce", "Bounce"), ("big_word", "Big Word")]
+
 # フォント一覧の先頭に置く「指定なし」= setting.json の字幕フォントに従う
 _FONT_DEFAULT_LABEL = "(設定のフォント)"
 # 一覧の各項目をそのフォント自身で描くときの文字サイズ (字幕編集画面と同じ)
@@ -1369,6 +1375,22 @@ class TimelineEditorDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _on_export_resolve(self):
+        # テロップの動きは FCPXML へ書けない (ver12 resolve2 §12 ①)。
+        # <caption>/<title> に単語ごとの動きを書く仕様が無いため、
+        # 黙って落とさず先に知らせる (SE と同じ扱い)。
+        animated = [c for c in self.controller.timeline.subtitle_clips()
+                    if c.has_animation()]
+        if animated:
+            answer = QMessageBox.question(
+                self, tr("テロップの動きは引き継がれません"),
+                tr("この Timeline には動き (アニメーション・フェード) を付けた"
+                   "テロップが {count} 件ありますが、"
+                   "DaVinci Resolve への書き出し (FCPXML) には含まれません。\n"
+                   "動きを付けた動画が必要な場合は「決定」から出力してください。\n\n"
+                   "このまま書き出しますか？", count=len(animated)),
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                return
         # SE は FCPXML へ書き出せない (ver12 resolve1 §16)。
         # 黙って落とすと Resolve 側で「音が無い」理由が分からないため先に知らせる。
         sounds = self.controller.timeline.sound_clips()
@@ -1697,6 +1719,58 @@ class _InspectorPanel(QWidget):
             align_layout.addStretch(1)
             form.addRow(tr("文字寄せ"), align_row)
 
+        # テロップ 1 本ごとのアニメーション (ver12 resolve2 §R4)。
+        # 本文と同じ欄で設定できるようにする、が要望の条件 (request2 §1 B)。
+        #   アニメーション : 種類 (なし / Word Pop / Bounce / Big Word)
+        #   フェード       : イン / アウト (種類と併用できる)
+        #   強調する語     : Word Pop で色と大きさを変える語 (読点区切り)
+        self.animation_combo = None
+        self.fade_in_check = None
+        self.fade_out_check = None
+        self.emphasis_edit = None
+        self.animation_note_label = None
+        if self._controller.cfg["subtitle_animation"]["enabled"]:
+            self.animation_combo = QComboBox()
+            for value, label in _ANIMATION_CHOICES:
+                self.animation_combo.addItem(tr(label), value)
+            # activated = 利用者が選び直したときだけ (フォント・役割と同じ流儀)。
+            # currentIndexChanged だと、欄の上でホイールを回しただけで
+            # 動きが付いて Undo 履歴が埋まる (ver9 resolve10 §2.4)。
+            self.animation_combo.activated.connect(self._on_animation_changed)
+            form.addRow(tr("アニメーション"), self.animation_combo)
+
+            fade_row = QWidget()
+            fade_layout = QHBoxLayout(fade_row)
+            fade_layout.setContentsMargins(0, 0, 0, 0)
+            self.fade_in_check = QCheckBox(tr("イン"))
+            self.fade_in_check.setToolTip(
+                tr("表示のはじめにテロップを浮かび上がらせます\n"
+                   "時間は setting.json の subtitle.animation.fade_in_ms で変わります"))
+            self.fade_in_check.clicked.connect(self._on_fade_changed)
+            fade_layout.addWidget(self.fade_in_check)
+            self.fade_out_check = QCheckBox(tr("アウト"))
+            self.fade_out_check.setToolTip(
+                tr("表示の終わりにテロップを消していきます\n"
+                   "時間は setting.json の subtitle.animation.fade_out_ms で変わります"))
+            self.fade_out_check.clicked.connect(self._on_fade_changed)
+            fade_layout.addWidget(self.fade_out_check)
+            fade_layout.addStretch(1)
+            form.addRow(tr("フェード"), fade_row)
+
+            self.emphasis_edit = QLineEdit()
+            self.emphasis_edit.setPlaceholderText(tr("強調する語 (読点区切り)"))
+            self.emphasis_edit.setToolTip(
+                tr("Word Pop でこの語だけ色と大きさを変えます (読点・カンマ区切り)\n"
+                   "設定 subtitle.animation.emphasis_words の語と合わせて効きます"))
+            # 1 文字ごとにコマンドを積まないよう、入力を終えたときだけ確定する
+            self.emphasis_edit.editingFinished.connect(self._on_emphasis_changed)
+            form.addRow(tr("強調する語"), self.emphasis_edit)
+
+            self.animation_note_label = QLabel("")
+            self.animation_note_label.setWordWrap(True)
+            theme.mark_note(self.animation_note_label)
+            form.addRow("", self.animation_note_label)
+
         # 文字色・縁の色は「このクリップだけの上書き」(resolve6 §3-1)。
         # 空欄なら設定の役割色 (配信者/サブ/コメント) に従う。
         # 複数選択しているときは選択中の字幕すべてへ適用する (resolve6 §3-10)。
@@ -1917,6 +1991,8 @@ class _InspectorPanel(QWidget):
                 self.color_field.set_value(clip.color)
                 self.outline_color_field.set_value(clip.outline_color)
                 self._show_align(clip)
+                # アニメーション (ver12 resolve2 §R4)。本文と同じ欄に出す。
+                self._show_animation(clip)
                 self._update_multi_note()
         finally:
             self._updating = False
@@ -1972,7 +2048,8 @@ class _InspectorPanel(QWidget):
         self.multi_note_label.setVisible(count > 1)
         if count > 1:
             self.multi_note_label.setText(
-                tr("※ 文字色・縁の色・文字寄せは選択中の {count} 件すべてに適用されます"
+                tr("※ 文字色・縁の色・文字寄せ・アニメーションは選択中の {count} 件"
+                   "すべてに適用されます"
                    "（字幕・役割・フォント・サイズはこの 1 件のみ）", count=count))
 
     # 文字寄せボタンの表示を現在の値に合わせる (ver9 resolve3 §R3 / §R5)
@@ -2062,6 +2139,141 @@ class _InspectorPanel(QWidget):
         if skipped:
             message += tr(" ({count} 件はコメントのため変えていません)", count=skipped)
         return message
+
+    # ------------------------------------------------------------------
+    # テロップアニメーション (ver12 resolve2 §R4)
+    # ------------------------------------------------------------------
+
+    # 欄の表示を現在の値に合わせる (文字寄せの _show_align と同じ役割)
+    def _show_animation(self, clip):
+        if self.animation_combo is None:
+            return
+        allowed = self._animation_allowed(clip)
+        index = self.animation_combo.findData(clip.animation or "")
+        self.animation_combo.setCurrentIndex(max(index, 0))
+        self.animation_combo.setEnabled(allowed)
+        self.animation_combo.setToolTip(self._animation_tooltip(allowed))
+        self.fade_in_check.setChecked(bool(clip.fade_in))
+        self.fade_out_check.setChecked(bool(clip.fade_out))
+        self.emphasis_edit.setText(clip.emphasis or "")
+        self.emphasis_edit.setEnabled(self._emphasis_enabled(clip))
+        note = self._animation_note(clip, allowed)
+        self.animation_note_label.setText(note)
+        self.animation_note_label.setVisible(bool(note))
+
+    # 動きを付けられるテロップか (コメントは背景とアイコンが追従できない / §12 ②)
+    def _animation_allowed(self, clip):
+        return str(getattr(clip, "role", "")) != "comment"
+
+    # 強調する語の欄を触れるか (既定は Word Pop を選んでいるときだけ)
+    def _emphasis_enabled(self, clip):
+        if self._controller.cfg["subtitle_animation"]["emphasis_always_enabled"]:
+            return True
+        return str(getattr(clip, "animation", "")) == "word_pop"
+
+    def _animation_tooltip(self, allowed):
+        if not allowed:
+            return tr("コメントは背景の箱とアイコンが単語の動きに追従できないため、"
+                      "フェードだけ使えます")
+        return tr("選択中のテロップに動きを付けます\n"
+                  "動きの量 (拡大率・跳ねる高さ・時間) は setting.json の "
+                  "subtitle.animation で変わります")
+
+    # 欄の下に出す注意書き (黙って崩さず、効き方が変わることを先に知らせる)
+    def _animation_note(self, clip, allowed):
+        if not allowed:
+            return tr("※ コメントはフェードのみ使えます（背景とアイコンが"
+                      "単語の動きに追従できないため）")
+        kind = str(getattr(clip, "animation", ""))
+        if not kind:
+            return ""
+        notes = []
+        if kind == "big_word":
+            notes.append(tr("※ Big Word は画面中央へ 1 語ずつ出すため、"
+                            "位置・文字寄せ・折り返しは効きません"))
+        if kind in ("word_pop", "bounce", "big_word"):
+            from ...modules import subtitle_animation  # noqa: PLC0415 (遅延 import)
+
+            if subtitle_animation.word_source(clip.to_item()) != "asr":
+                notes.append(tr("※ 本文を書き直したテロップは単語の区切りが"
+                                "近似になります（句で切って尺を按分します）"))
+        return "\n".join(notes)
+
+    # 動きの種類。選択中のテロップすべてへ 1 コマンドで適用する (Undo 1 手)
+    def _on_animation_changed(self, _index=0):
+        if self._updating or not isinstance(self._clip, SubtitleClip):
+            return
+        value = str(self.animation_combo.currentData() or "")
+        targets, skipped = self._animation_targets()
+        if not targets:
+            self.status_message.emit(tr("動きを付けられるテロップがありません"))
+            self._show_animation(self._clip)
+            return
+        self._controller.edit_subtitles(targets, animation=value)
+        self._show_animation(self._clip)
+        label = dict(_ANIMATION_CHOICES).get(value, "")
+        if not value:
+            message = (tr("動きを外しました") if len(targets) <= 1
+                       else tr("{count} 件の動きを外しました", count=len(targets)))
+        elif len(targets) <= 1:
+            message = tr("動きを「{name}」にしました", name=tr(label))
+        else:
+            message = tr("{count} 件の動きを「{name}」にしました",
+                         count=len(targets), name=tr(label))
+        if skipped:
+            message += tr(" ({count} 件はコメントのため変えていません)", count=skipped)
+        self.status_message.emit(message)
+
+    # フェード (イン / アウト)。コメントにも掛けられるため対象を絞らない。
+    def _on_fade_changed(self, _checked=False):
+        if self._updating or not isinstance(self._clip, SubtitleClip):
+            return
+        ids = self._animation_target_ids()
+        if not ids:
+            return
+        self._controller.edit_subtitles(
+            ids, fade_in=bool(self.fade_in_check.isChecked()),
+            fade_out=bool(self.fade_out_check.isChecked()))
+        self._show_animation(self._clip)
+        if len(ids) > 1:
+            self.status_message.emit(
+                tr("{count} 件のフェードを変えました", count=len(ids)))
+
+    # 強調する語 (Word Pop で色と大きさを変える語)
+    def _on_emphasis_changed(self):
+        if self._updating or not isinstance(self._clip, SubtitleClip):
+            return
+        value = str(self.emphasis_edit.text() or "").strip()
+        if value == str(self._clip.emphasis or ""):
+            return
+        ids = self._animation_target_ids()
+        if not ids:
+            return
+        self._controller.edit_subtitles(ids, emphasis=value)
+        if len(ids) > 1:
+            self.status_message.emit(
+                tr("{count} 件の強調する語を変えました", count=len(ids)))
+
+    # 適用先の ID (設定で「選択中すべて」か「この 1 件」かが変わる)
+    def _animation_target_ids(self):
+        if self._controller.cfg["subtitle_animation"]["apply_to_selection"]:
+            return self._selected_subtitle_ids()
+        return [self._clip.id] if isinstance(self._clip, SubtitleClip) else []
+
+    # 動きを付けられるテロップだけを選び出す (戻り値 (対象 ID, 除外した件数))
+    def _animation_targets(self):
+        timeline = self._controller.timeline
+        targets = []
+        skipped = 0
+        for clip_id in self._animation_target_ids():
+            clip = timeline.clip_by_id(clip_id)
+            if not isinstance(clip, SubtitleClip):
+                continue
+            if self._animation_allowed(clip):
+                targets.append(clip_id)
+            else:
+                skipped += 1
+        return targets, skipped
 
     def _title_for(self, clip):
         if isinstance(clip, SubtitleClip):

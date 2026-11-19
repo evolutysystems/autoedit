@@ -274,6 +274,12 @@
             "clear_on_reclick": true,
             "allow_comment_role": false
         },
+        "subtitle_animation": {
+            "enabled": true,
+            "apply_to_selection": true,
+            "node_marker": " ♪",
+            "emphasis_always_enabled": false
+        },
         "subtitle_split_text": false,
         "ripple_delete": true,
         "ripple_delete_migrated": true,
@@ -341,6 +347,7 @@
             "backend": "pyav",
             "subtitle_metrics_mode": "libass",
             "subtitle_outline_mode": "pen",
+            "subtitle_animation": true,
             "update_debounce_ms": 100,
             "cache_frames": 64,
             "high_quality_button": true,

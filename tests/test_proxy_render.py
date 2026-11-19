@@ -208,6 +208,27 @@ class TileKeyTest(unittest.TestCase):
         self.assertNotEqual(before[0], after[0])
         self.assertEqual(before[2], after[2])
 
+    # テロップに動きを付けたら、その字幕が乗るタイルの鍵が変わる
+    # (ver12 resolve2 §R6)。足し忘れると動きを付けても古い絵が残る。
+    def test_animation_changes_its_tile(self):
+        before = self._keys()
+        clip = self.timeline.clip_by_id("s1")
+        clip.animation = "word_pop"
+        after = self._keys()
+
+        self.assertNotEqual(before[0], after[0])
+        self.assertEqual(before[2], after[2])
+
+    # フェード・強調する語・文字寄せも鍵に入る (見た目が変わる指定だから)
+    def test_fade_and_emphasis_change_the_tile(self):
+        clip = self.timeline.clip_by_id("s1")
+        for field, value in (("fade_in", True), ("fade_out", True),
+                             ("emphasis", "天気"), ("align", "left")):
+            before = self._keys()
+            setattr(clip, field, value)
+            self.assertNotEqual(before[0], self._keys()[0],
+                                f"{field} がタイルの鍵に入っていません")
+
     # オーバーレイの位置を変えたら、またがる両方のタイルの鍵が変わる
     def test_moving_an_overlay_changes_both_tiles(self):
         before = self._keys()

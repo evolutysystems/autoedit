@@ -781,6 +781,20 @@ DEFAULT_SETTINGS = {
             # コメント役割でも変えられるようにするか (アイコン・背景は追従しない)
             "allow_comment_role": False,
         },
+        # テロップアニメーション (ver12 resolve2 §7)。
+        # 動きの量 (拡大率・跳ねる高さなど) は subtitle.animation 側にあり、
+        # ここは「編集画面に欄を出すか・どう効かせるか」だけを持つ。
+        "subtitle_animation": {
+            # false でインスペクタにアニメーションの行を出さない (保存した値は残す)
+            "enabled": True,
+            # 選択中の字幕すべてへ効かせるか (文字色・文字寄せと同じ規約)
+            "apply_to_selection": True,
+            # Timeline のノードのラベル末尾へ出す印 (動きが付いているテロップの目印)
+            "node_marker": " ♪",
+            # 強調する語の欄を Word Pop 以外でも触れるようにするか
+            # (false = Word Pop を選んでいるときだけ入力できる)
+            "emphasis_always_enabled": False,
+        },
         # テロップを分割したときに本文も分けるか (ver9 要望)。
         # false (既定): 「こんにちは」を割ると「こんにちは」が 2 本できる。
         # true: 再生ヘッド位置で本文も分ける (「こんに」「ちは」/ 旧 G4 の挙動)。
@@ -874,6 +888,9 @@ DEFAULT_SETTINGS = {
             # 字幕プレビューのメトリクス基準 (ver8 resolve8 §5)。
             # "libass" = 出力と同じ字の大きさ・行送り・字間 / "em" = 従来の Qt 近似
             "subtitle_metrics_mode": "libass",
+            # プレビューでテロップのアニメーションを再現するか (ver12 resolve2 §8)。
+            # false にすると「動き終わった状態」を静止表示する (退避口)。
+            "subtitle_animation": True,
             # 字幕の縁と影の描き方 (ver9 resolve11 §3)。
             # "pen"   = 幅 2W のペンでストロークする (既定。パス演算をしない)
             # "union" = QPainterPath.united() で合併してから塗る (従来。長い

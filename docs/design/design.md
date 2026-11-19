@@ -92,6 +92,7 @@ src/
 │   ├── volume_analyzer.py    発話区間の最低 dB 実測 (カット閾値の初期値)
 │   ├── silence_cutter.py     無音検出 / 編集点算出 / 実カット
 │   ├── subtitle_generator.py 音声認識 → ASS 生成 → 焼き込み
+│   ├── subtitle_animation.py テロップの動き (単語分割・ASS タグ・時刻ごとの変形)
 │   ├── speaker_filter.py     話者照合によるテロップの絞り込み
 │   ├── comment_decor.py      コメント字幕の背景ボックス・アイコンの幾何
 │   ├── font_advance.py       フォントの送り幅 (折り返し計算の実測)
@@ -365,6 +366,7 @@ Timeline 編集画面 / 字幕一覧 / アーカイブ結果画面の「DaVinci 
 | `volume_analyzer` | 発話候補区間を測り「発話区間の最低 dB」を出す (閾値ダイアログの初期値) |
 | `silence_cutter` | `silencedetect` → 残す区間の算出。実カット (`extract_mode` / `batch_size`) と編集点算出の両方 |
 | `subtitle_generator` | 音声認識 (faster-whisper) → テロップ単位の整形・折り返し → ASS 生成 → 焼き込み。モデルの保持と解放 |
+| `subtitle_animation` | テロップの動き (Word Pop / Bounce / Big Word / Fade) の唯一の計算元。単語の切り方・ASS タグ・時刻ごとの変形 (焼き込みとプレビュー共通) |
 | `speaker_filter` | 話者照合でゲーム内音声由来のテロップを落とす (`subtitle.speaker_filter`) |
 | `comment_decor` | コメント字幕の背景ボックス・アイコンの幾何 (プレビューと焼き込みの唯一の計算元) |
 | `font_advance` / `gui/timeline/font_metrics` | フォントファイルから送り幅・縦メトリクスを読み、libass と同じ折り返しを再現 |
@@ -467,6 +469,36 @@ Timeline
 既定で出さない (`timeline.subtitle_tracks.role_control_enabled = false`)。
 フォント・サイズ・配置は `subtitle.*` を既定とし、縦動画では `vertical.*` が上書きする。
 
+### 5.4 テロップのアニメーション (`modules/subtitle_animation.py`)
+
+テロップ 1 本ごとに動きを付けられる (ver12 resolve2)。種類は Timeline 編集画面の
+インスペクタ (本文と同じ欄) で選び、`SubtitleClip` の 4 項目として保存される。
+
+| 項目 | 値 | 意味 |
+|---|---|---|
+| `animation` | `""` / `word_pop` / `bounce` / `big_word` | 動きの種類 (`""` = 動かさない) |
+| `fade_in` / `fade_out` | bool | フェード (種類と併用できる) |
+| `emphasis` | str | 強調する語 (読点区切り。Word Pop でのみ効く) |
+
+* **計算元は `modules/subtitle_animation.py` だけ**。単語の切り方・位置・時刻ごとの
+  拡大率と上下動をここが持ち、焼き込み (`subtitle_generator.build_subtitle_file`) と
+  プレビュー (`gui/timeline/preview_items.SubtitleOverlayItem`) の両方が同じ式を引く。
+* 単語の切り方は 3 段: ① 認識由来で本文が未編集なら `origin["words"]` の単語時刻、
+  ② 手直し済み・手入力なら BudouX で句へ切って尺を文字数で按分、③ BudouX が無ければ
+  句読点で切って按分。どれになったかは `word_source()` が返し、画面の注記に出る。
+* ASS では **単語 1 つ = 独立した Dialogue 行**にして `\pos` を持たせる
+  (行の中で文字を拡大すると後続が押し出されて行全体が揺れるため)。Bounce は
+  `\t` が位置を動かせないため `\move` を段に分ける。
+* 動きを付けていないテロップは分岐へ入らないため、**ASS は従来と完全に同一**。
+* 効かない組み合わせは黙って崩さず落とす: コメント役割は**フェードのみ**
+  (背景の箱とアイコンが単語に追従できない) / フォントの送り幅が読めない・語数が
+  `max_words_per_clip` を超える場合は**行単位の動き**へ落とす (警告を出す)。
+* DaVinci Resolve 出力 (FCPXML) には動きを書けないため、書き出し前に知らせる。
+* プレビューは**動きが付いたテロップだけ** paint をやり直す (アイテムは作り直さない)。
+  `timeline.preview.subtitle_animation = false` で「動き終わった状態」の静止表示へ戻せる。
+* 動きの量 (拡大率・跳ねる高さ・時間・強調色・上限) は `subtitle.animation.*`、
+  画面側の出し方は `timeline.subtitle_animation.*`。
+
 ---
 
 ## 6. setting.json 定義
@@ -493,12 +525,12 @@ Timeline
 | セクション | 内容 | 主な利用者 |
 |---|---|---|
 | `general` | 入出力フォルダ、OP/ED とその有効フラグ、自動更新、作業フォルダ、必要空き容量、残骸の掃除 | 全経路 |
-| `subtitle` | 言語・役割色・フォント・折り返し・ASS スタイル・コメント装飾・Whisper パラメータ・テロップ分割結合・語彙/置換・話者照合 (約 100 キー) | 認識〜焼き込み |
+| `subtitle` | 言語・役割色・フォント・折り返し・ASS スタイル・コメント装飾・アニメーション (`animation.*`)・Whisper パラメータ・テロップ分割結合・語彙/置換・話者照合 (約 120 キー) | 認識〜焼き込み |
 | `silence_cut` | 有効/無効、`mode` (`edit_points` / `physical`)、閾値、最小無音長、フェード、抽出方式 | 無音カット |
 | `volume_analysis` | 解析の有無・測り方 (`metric` / `percentile`)・確定カット閾値 `last_cut_db` | 閾値確認 |
 | `loudness` | 目標 I / TP / LRA、2 パス、出力の検証と補正 | 正規化 |
 | `preview` | 字幕プレビュー (尺・寸法・プリセット・音声) | 字幕一覧画面 |
-| `timeline` | 編集画面の全設定 (プロジェクト・トラック・SE トラック・ショートカット・プレビュー・プロキシ・波形・UI 寸法・ヘルプ) | Timeline |
+| `timeline` | 編集画面の全設定 (プロジェクト・トラック・SE トラック・文字寄せ・アニメーション・ショートカット・プレビュー・プロキシ・波形・UI 寸法・ヘルプ) | Timeline |
 | `ffmpeg` | 実行ファイルのパス、コーデック、出力寸法/FPS、品質プロファイル、進捗タイムアウト | 全 FFmpeg 実行 |
 | `vertical` | 縦動画のキャンバス・字幕配置・切り抜き (crop) の既定 | 縦動画 |
 | `logging` | ログの出力先とレベル | 全体 |
