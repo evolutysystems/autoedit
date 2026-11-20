@@ -291,33 +291,70 @@ DEFAULT_SETTINGS = {
         "animation": {
             # false で機能ごと閉じる (UI も出さず、ASS も従来どおり)
             "enabled": True,
-            # ── Word Pop (単語が 1 つずつ拡大して現れ、元の大きさへ戻る)
-            "word_pop_grow_ms": 80,        # 拡大しきるまでの時間
-            "word_pop_settle_ms": 120,     # 元の大きさへ戻すまでの時間
-            "word_pop_scale": 130,         # 拡大率 (%)
-            # ── 重要語句の強調 (resolve2 §2.2)
-            # 「重要かどうか」を機械で判定できるデータが無いため、
-            # ここの一覧とテロップ 1 本ごとの指定 (emphasis) で決める。
-            "emphasis_words": [],
-            "emphasis_color": "#FFD34D",
-            "emphasis_scale": 115,         # 強調語の大きさ (%)
-            # ── Bounce (単語が上下に跳ね、バネのように収まる)
-            "bounce_height_ratio": 0.35,   # 跳ねる高さ (文字サイズに対する比)
-            "bounce_ms": 420,              # 1 単語が収まるまでの時間
-            "bounce_segments": 3,          # 跳ねる段数 (多いほどイベントが増える)
-            "bounce_word_stagger_ms": 60,  # 単語ごとに遅らせる量
-            # ── Big Word (画面中央へ大きな単語を 1 語ずつ)
-            "big_word_scale": 260,         # 文字サイズ (%)
-            "big_word_min_ms": 240,        # 1 語を出す最短時間 (短い語でも読めるように)
-            "big_word_position": "center",
+            # ── 動きの量 (ver12 resolve2-add §4)。長さは ms / 比は文字サイズに対する比 /
+            # 拡大率は %。廃止した種類 (Word Pop / Bounce / Big Word、
+            # クリッピング登場 / 発光ワイプ / 波打ち / 右から・左からEZ) の項目は使わない。
+            # なめらかな減速を何区間の直線で近似するか (多いほど滑らか・行が増える)
+            "ease_segments": 6,
+            # 震える
+            "shake_amplitude_ratio": 0.05,   # 揺れ幅
+            "shake_step_ms": 50,             # 揺れの刻み
+            "shake_blur": 2.0,               # ときどき掛けるブレ (px)
+            # 発光登場 (白く光ってぼけた塊から字が現れる)
+            "glow_in_ms": 450,
+            "glow_blur": 10.0,               # 光のぼかし (px / 発光ブラーも共通)
+            "glow_border": 6.0,              # 光の広がり (縁へ足す px)
+            # つっこみ (一瞬大きく傾いて戻る)
+            "tsukkomi_ms": 150,
+            "tsukkomi_scale": 135,
+            "tsukkomi_rotate": 6.0,          # 傾き (度)
+            # 発光ブラー (横長の光のぼかしから現れる)
+            "glow_blur_ms": 450,
+            "glow_blur_stretch": 170,        # 横へ伸ばす率 (%)
+            # 衝撃1 (後ろに四角い光が出て消える)
+            "shock1_ms": 600,
+            "shock1_box_color": "#FFFFFF",
+            "shock1_box_opacity": 0.75,
+            "shock1_box_padding_ratio": 0.35,  # 箱の余白
+            "shock1_box_blur": 8.0,
+            # 衝撃2 (大きな残像が縮みながら消える)
+            "shock2_ms": 600,
+            "shock2_scale": 170,
+            "shock2_opacity": 0.5,
+            "shock2_blur": 3.0,
+            # ぴかっと (光の帯が字の上を横切る)
+            "shine_delay_ms": 100,
+            "shine_ms": 400,
+            "shine_width_ratio": 0.18,       # 帯の幅 (字の塊の幅に対する比)
+            "shine_opacity": 0.9,
+            "shine_blur": 3.0,
+            # ポヨン (小さく出て弾んで収まる)
+            "poyon_ms": 400,
+            "poyon_start_scale": 60,
+            "poyon_overshoot": 20,           # 行き過ぎる量 (%)
+            # 飛び込みツッコミ (大きく飛び込んで縮み、揺れて止まる)
+            "dive_ms": 150,
+            "dive_scale": 170,
+            "dive_wobble_ms": 300,
+            "dive_rotate": 4.0,
+            # 2回ジャンプ
+            "jump_ms": 600,                  # 2 回跳ね終わるまで
+            "jump_height_ratio": 0.35,
+            "jump_second_ratio": 0.6,        # 2 回目の高さ (1 回目に対する比)
+            # 黒ブラー拡大 / 縮小 (黒くぼけた字が大きさを変えながら戻る)
+            "black_blur_ms": 500,
+            "black_blur": 10.0,
+            "black_blur_zoom_in_scale": 60,  # 拡大: はじめの大きさ (%)
+            "black_blur_zoom_out_scale": 150,  # 縮小: はじめの大きさ (%)
+            # ぴかっとの帯の範囲の端に足す余白 (縁・影・ぼかしを切らないため)
+            "clip_margin_ratio": 0.3,
             # ── Fade (種類と併用できる)
             "fade_in_ms": 200,
             "fade_out_ms": 200,
-            # ── 保護 (resolve2 §10)
-            # 単語数・イベント数が多すぎるテロップは行単位の動きへ落とす。
-            # 黙って ASS を数 MB にしないため。
-            "max_words_per_clip": 24,
-            "max_events_per_clip": 96,
+            # ── 保護 (resolve2-add §6)
+            # 1 本のテロップで出す Dialogue 行の上限。震えるのように
+            # 表示中ずっと動くものは、超えないよう刻みを粗くする。
+            "max_events_per_clip": 120,
         },
         # ── テロップ 1 本ごとの文字寄せ (ver9 resolve3 §5)
         # 複数行になったテロップの「行の揃え」。テロップの位置は動かさない。
@@ -791,9 +828,6 @@ DEFAULT_SETTINGS = {
             "apply_to_selection": True,
             # Timeline のノードのラベル末尾へ出す印 (動きが付いているテロップの目印)
             "node_marker": " ♪",
-            # 強調する語の欄を Word Pop 以外でも触れるようにするか
-            # (false = Word Pop を選んでいるときだけ入力できる)
-            "emphasis_always_enabled": False,
         },
         # テロップを分割したときに本文も分けるか (ver9 要望)。
         # false (既定): 「こんにちは」を割ると「こんにちは」が 2 本できる。

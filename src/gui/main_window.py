@@ -656,7 +656,7 @@ class ClipTabWidget(QWidget):
         # 左右の端が揃わない。塗りは付けない (主要動作は実行ボタンだけ)。
         self.resume_button = QPushButton(tr("続きから"))
         self.resume_button.setToolTip(
-            tr("保存した Timeline プロジェクトを一覧から選びます"))
+            tr("保存した Timeline プロジェクトを一覧から選び、編集の続きを開きます"))
         self.resume_button.setFixedWidth(theme.PRIMARY_ACTION_BUTTON_WIDTH_PX)
         self.resume_button.clicked.connect(self._open_library)
         root.addLayout(_centered(self.resume_button))
@@ -712,7 +712,7 @@ class ClipTabWidget(QWidget):
         self.browse_button.setText(tr("参照..."))
         self.resume_button.setText(tr("続きから"))
         self.resume_button.setToolTip(
-            tr("保存した Timeline プロジェクトを一覧から選びます"))
+            tr("保存した Timeline プロジェクトを一覧から選び、編集の続きを開きます"))
         self.run_button.setToolTip(tr("実行"))
         if not self._spinner_timer.isActive():
             self._spinner_message = tr("待機中")
@@ -752,19 +752,30 @@ class ClipTabWidget(QWidget):
 
     # 保存済みプロジェクトを選択状態にする (種別を確かめてから / resolve15 §5.6-5)。
     # MainWindow からも呼ぶため公開名にしている (種別違いの受け渡し / §5.7)。
+    # ここは選択するだけで実行はしない (種別違いで相手のタブから回ってきた場合など)。
+    # 戻り値: このタブで選択状態にできたか
     def select_project(self, path):
         if not path:
-            return
+            return False
         ok, kind = confirm_project_kind(self, path, project_io.KIND_CLIP)
         if not ok:
             if kind:
                 # 相手のタブへ回す (選択状態にするところまで。実行はしない)
                 self.switch_tab_requested.emit(kind, path)
-            return
+            return False
         self._selection = (_KIND_PROJECT, path)
         self.input_edit.clear()
         self.drop_area.set_selection(
             os.path.basename(path), path, tr(_DROP_HINT_PROJECT))
+        return True
+
+    # 一覧の「開く」(ダブルクリック) で選ばれたプロジェクトをそのまま再開する
+    # (ver12 resolve2-add §12)。以前は選択状態にするだけで、続けて「実行」を
+    # 押す必要があった。アーカイブ用タブ (_on_library_open) と同じ流れにそろえる。
+    # 種別違いで相手のタブへ回したときは、そちらで選択するだけにとどめる。
+    def _open_project(self, path):
+        if self.select_project(path):
+            self._on_run()
 
     # 選択を取り消して案内文へ戻す (× ボタン / resolve15 C4)
     def _clear_selection(self):
@@ -857,21 +868,27 @@ class ClipTabWidget(QWidget):
         self._settings = load_settings()
 
     # 一覧画面を開く (ver3 resolve9 §5.12 / ver3 resolve15 C6 で「続きから」の動作)。
-    # 選ばれても実行はしない。文言へ名前を出すところまで (resolve15 §3-6)。
+    # 「開く」(ダブルクリック) で選ばれたら、そのまま再開する (ver12 resolve2-add §12)。
+    # 以前は選択状態にするだけ (resolve15 §3-6) で、続けて「実行」を押す必要があった。
     def _open_library(self):
         self._refresh_recent_projects()
         if not timeline_config(self._settings)["project"]["library"]["enabled"]:
             # 一覧を無効にしている設定でもボタンが死ににならないよう、
-            # ファイル選択ダイアログへ落とす
+            # ファイル選択ダイアログへ落とす (選んだら一覧の「開く」と同じく再開する)
             path = self._browse_project()
             if path:
-                self.select_project(path)
+                self._open_project(path)
             return
         dialog = ProjectLibraryDialog(project_io.KIND_CLIP, self._settings, parent=self)
-        dialog.open_requested.connect(self.select_project)
+        # 再開は一覧画面を閉じきってから始める。開いたまま始めると、自動保存の確認や
+        # 編集画面が閉じかけの一覧画面と重なる。
+        chosen = []
+        dialog.open_requested.connect(chosen.append)
         dialog.changed.connect(self._refresh_recent_projects)
         dialog.exec()
         self._refresh_recent_projects()
+        if chosen:
+            self._open_project(chosen[-1])
 
     # プロジェクトファイルを直接選ぶ (初期フォルダ: project_dir → 出力先)
     def _browse_project(self):

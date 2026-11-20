@@ -1301,13 +1301,40 @@ def _prepend_tags(text, tags):
     return "{" + tags + "}" + text
 
 
+# アニメーションの色と縁の基準を返す (ver12 resolve2-add §5)
+#
+# 発光 (白へ寄せる)・黒ブラー (黒へ寄せる)・不透明度は、元の色と元のアルファから
+# 計算する。個別色 → 役割の色 の順で決め、Style と同じ値を見る
+# (トラック色は to_item が entry["color"] へ入れてくる / ver9 resolve13 §3.8)。
+# 戻り値 {"fill": "RRGGBB", "outline": "BBGGRR", "a1", "a3", "a4": 0〜255, "bord": px}
+def animation_base(entry, font_profile):
+    role = str((entry or {}).get("role", _DEFAULT_ROLE) or _DEFAULT_ROLE)
+    fill = (_normalize_hex_color((entry or {}).get("color", ""))
+            or _normalize_hex_color(font_profile.role_colors.get(
+                role, font_profile.color_hex))
+            or "FFFFFF")
+    outline, outline_alpha = _split_ass_color((entry or {}).get("outline_color", ""))
+    if not outline:
+        outline, outline_alpha = _split_ass_color(
+            font_profile.role_outline_colors.get(role, font_profile.outline_color))
+    _back, back_alpha = _split_ass_color(font_profile.back_color)
+    return {
+        "fill": fill,
+        "outline": outline or "000000",
+        "a1": 0,
+        "a3": int(outline_alpha, 16) if outline_alpha else 0,
+        "a4": int(back_alpha, 16) if back_alpha else 0,
+        "bord": float(font_profile.outline_width or 0),
+    }
+
+
 # アニメーションの 1 行へ、そのテロップの個別指定を付け直す (ver12 resolve2 §R3)
 #   style_tags : フォント・サイズ・色 (_inline_style_overrides)
 #   position   : 従来の 1 行に付ける位置タグ (\an..\pos..)
 #
-# 単語ごとのイベントは自前の \pos / \move を持つため位置タグは足さない。
-# 行単位へ落ちた退避口 (単語の位置を測れなかった場合) は位置を持たないため、
-# 従来と同じ位置タグを足して libass に位置を決めさせない (ver9 resolve8 §3.2)。
+# 動きのイベントは自前の \pos / \move を持つため位置タグは足さない。
+# 位置を持たない行が来たときだけ、従来と同じ位置タグを足して libass に
+# 位置を決めさせない (ver9 resolve8 §3.2)。
 def _animation_text(text, style_tags, position):
     text = str(text or "")
     head = str(style_tags or "")
@@ -1379,7 +1406,7 @@ def build_subtitle_file(timeline, font_profile, output_path,
     # 指定の無いテロップはこの経路へ入らないため、ASS は従来と完全に同一になる。
     anim_cfg = subtitle_animation.config(subtitle_cfg)
     anim_enabled = subtitle_animation.is_enabled(anim_cfg)
-    anim_count = 0              # 単語ごと (または行単位) の動きを出した本数
+    anim_count = 0              # 動き (キーフレームの区間ごとのイベント) を出した本数
     anim_event_count = 0        # その動きのために増えた Dialogue 行の本数
     fade_count = 0              # フェードだけを付けた本数
     anim_comment_skipped = 0    # コメント役割のため動きを落とした本数
@@ -1432,7 +1459,7 @@ def build_subtitle_file(timeline, font_profile, output_path,
         anim_lines = []
         if anim_enabled and subtitle_animation.animation_of(entry):
             if role == _ROLE_COMMENT:
-                # 背景の箱とアイコンは単語ごとの位置に追従できない (§12 ②)。
+                # 背景の箱とアイコンは動きに追従できない (resolve2 §12 ②)。
                 # 黙って崩さず、フェードだけ残して従来の 1 行へ落とす。
                 anim_comment_skipped += 1
             else:
@@ -1440,7 +1467,8 @@ def build_subtitle_file(timeline, font_profile, output_path,
                     entry, anim_cfg, subtitle_cfg, font_profile,
                     video_width, video_height,
                     anchor=position_anchor(entry, video_width, video_height,
-                                           line_align, font_profile, subtitle_cfg))
+                                           line_align, font_profile, subtitle_cfg),
+                    base=animation_base(entry, font_profile))
         # 背景 → 本文 の順に並べ、Layer でも前後関係を明示する (実装依存の描画順に頼らない)
         if background:
             # 箱と文字が一緒に消えるよう、背景にも同じフェードを掛ける (§1)
@@ -1454,7 +1482,7 @@ def build_subtitle_file(timeline, font_profile, output_path,
         # ここは常に 0,0,0 になる (余白は \pos のとき無視される / ver9 resolve8 §3.2-4)。
         margins = f"{line_align['margin_l']},{line_align['margin_r']},0"
         if anim_lines:
-            # 単語ごと (または行単位) の動きは Dialogue を複数行へ分けて表す。
+            # 動きはキーフレームの区間ごとに Dialogue を分けて表す (resolve2-add §3)。
             # 位置は各行が自前で持つため、イベント余白は使わない (0,0,0)。
             anim_count += 1
             anim_event_count += len(anim_lines)
@@ -1492,7 +1520,7 @@ def build_subtitle_file(timeline, font_profile, output_path,
         )
 
     # アニメーションの件数を知らせる (ver12 resolve2 §R3)。
-    # Dialogue 行がどれだけ増えたかを出す (Bounce は 1 本で数十行になるため)。
+    # Dialogue 行がどれだけ増えたかを出す (震えるは 1 本で数十行になるため)。
     if anim_count or fade_count:
         _logger.info(
             "テロップアニメーション 動き %d 件 (Dialogue %d 行) / フェードのみ %d 件",

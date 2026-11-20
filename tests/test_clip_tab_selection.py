@@ -165,6 +165,77 @@ class ClipTabSelectionTest(unittest.TestCase):
         self.assertTrue(callable(getattr(self.tab, "select_project", None)))
 
 
+
+# 一覧画面の代わり (exec() で「開く」が押されたことにする)
+class _FakeLibrary:
+    chosen = None
+
+    def __init__(self, *_args, **_kwargs):
+        from PySide6.QtCore import QObject, Signal
+
+        class _Signals(QObject):
+            open_requested = Signal(str)
+            changed = Signal()
+
+        self._signals = _Signals()
+        self.open_requested = self._signals.open_requested
+        self.changed = self._signals.changed
+
+    def exec(self):
+        if _FakeLibrary.chosen:
+            self.open_requested.emit(_FakeLibrary.chosen)
+        return 0
+
+
+@unittest.skipUnless(_QT_AVAILABLE, "PySide6 が利用できないためスキップ")
+class LibraryOpenTest(unittest.TestCase):
+    # 一覧の「開く」(ダブルクリック) でそのまま再開する (ver12 resolve2-add §12)。
+    # 以前は選択状態にするだけで、続けて「実行」を押す必要があった。
+
+    def setUp(self):
+        from unittest import mock
+
+        _app()
+        theme.invalidate_cache()
+        self.tab = main_window.ClipTabWidget()
+        self.project = os.path.join(os.path.dirname(__file__), "_dummy.timeline.json")
+        with open(self.project, "w", encoding="utf-8"):
+            pass
+        self.started = []
+        self.tab._start_resume = self.started.append
+        patches = [
+            mock.patch.object(main_window, "ProjectLibraryDialog", _FakeLibrary),
+            # 種別の確認はプロジェクトの中身を読むため、ここではクリップ用と答える
+            mock.patch.object(main_window, "confirm_project_kind",
+                              lambda _parent, _path, kind: (True, kind)),
+        ]
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        _FakeLibrary.chosen = None
+        self.tab.deleteLater()
+        if os.path.exists(self.project):
+            os.remove(self.project)
+
+    def test_open_from_library_starts_resume(self):
+        _FakeLibrary.chosen = self.project
+        self.tab._open_library()
+        self.assertEqual(self.started, [self.project], "実行ボタンを押さずに再開する")
+        self.assertEqual(self.tab._selection[1], self.project)
+
+    # 閉じただけ (何も開かない) なら何も始めない
+    def test_closing_the_library_starts_nothing(self):
+        self.tab._open_library()
+        self.assertEqual(self.started, [])
+
+    # 種別違いで相手のタブから回ってきたときは選択だけ (実行しない)
+    def test_select_project_alone_does_not_run(self):
+        self.assertTrue(self.tab.select_project(self.project))
+        self.assertEqual(self.started, [])
+
+
 @unittest.skipUnless(_QT_AVAILABLE, "PySide6 が利用できないためスキップ")
 class MainWindowIntegrationTest(unittest.TestCase):
     # タブをまたぐ受け渡しと初期サイズ (resolve15 §5.7)

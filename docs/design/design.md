@@ -92,7 +92,7 @@ src/
 │   ├── volume_analyzer.py    発話区間の最低 dB 実測 (カット閾値の初期値)
 │   ├── silence_cutter.py     無音検出 / 編集点算出 / 実カット
 │   ├── subtitle_generator.py 音声認識 → ASS 生成 → 焼き込み
-│   ├── subtitle_animation.py テロップの動き (単語分割・ASS タグ・時刻ごとの変形)
+│   ├── subtitle_animation.py テロップの動き (キーフレーム・ASS タグ・時刻ごとの状態)
 │   ├── speaker_filter.py     話者照合によるテロップの絞り込み
 │   ├── comment_decor.py      コメント字幕の背景ボックス・アイコンの幾何
 │   ├── font_advance.py       フォントの送り幅 (折り返し計算の実測)
@@ -366,7 +366,7 @@ Timeline 編集画面 / 字幕一覧 / アーカイブ結果画面の「DaVinci 
 | `volume_analyzer` | 発話候補区間を測り「発話区間の最低 dB」を出す (閾値ダイアログの初期値) |
 | `silence_cutter` | `silencedetect` → 残す区間の算出。実カット (`extract_mode` / `batch_size`) と編集点算出の両方 |
 | `subtitle_generator` | 音声認識 (faster-whisper) → テロップ単位の整形・折り返し → ASS 生成 → 焼き込み。モデルの保持と解放 |
-| `subtitle_animation` | テロップの動き (Word Pop / Bounce / Big Word / Fade) の唯一の計算元。単語の切り方・ASS タグ・時刻ごとの変形 (焼き込みとプレビュー共通) |
+| `subtitle_animation` | テロップの動き (震える・発光登場・ポヨンなど 12 種 + Fade) の唯一の計算元。キーフレーム・ASS タグ・時刻ごとの状態 (焼き込みとプレビュー共通) |
 | `speaker_filter` | 話者照合でゲーム内音声由来のテロップを落とす (`subtitle.speaker_filter`) |
 | `comment_decor` | コメント字幕の背景ボックス・アイコンの幾何 (プレビューと焼き込みの唯一の計算元) |
 | `font_advance` / `gui/timeline/font_metrics` | フォントファイルから送り幅・縦メトリクスを読み、libass と同じ折り返しを再現 |
@@ -471,32 +471,35 @@ Timeline
 
 ### 5.4 テロップのアニメーション (`modules/subtitle_animation.py`)
 
-テロップ 1 本ごとに動きを付けられる (ver12 resolve2)。種類は Timeline 編集画面の
-インスペクタ (本文と同じ欄) で選び、`SubtitleClip` の 4 項目として保存される。
+テロップ 1 本ごとに動きを付けられる (ver12 resolve2 / resolve2-add)。種類は Timeline 編集画面の
+インスペクタ (本文と同じ欄) で選び、`SubtitleClip` の項目として保存される。
 
 | 項目 | 値 | 意味 |
 |---|---|---|
-| `animation` | `""` / `word_pop` / `bounce` / `big_word` | 動きの種類 (`""` = 動かさない) |
+| `animation` | `""` / `shake` / `glow_in` / `tsukkomi` / `glow_blur` / `shock1` / `shock2` / `shine` / `poyon` / `dive_tsukkomi` / `double_jump` / `black_blur_zoom_in` / `black_blur_zoom_out` | 動きの種類 (`""` = 動かさない)。画面の名前は震える / 発光登場 / つっこみ / 発光ブラー / 衝撃1 / 衝撃2 / ぴかっと / ポヨン / 飛び込みツッコミ / 2回ジャンプ / 黒ブラー拡大 / 黒ブラー縮小。廃止した値 (`word_pop` / `bounce` / `big_word` / `clip_in` / `glow_wipe` / `wave` / `ez_from_right` / `ez_from_left`) は読み込み時に `""` になる |
 | `fade_in` / `fade_out` | bool | フェード (種類と併用できる) |
-| `emphasis` | str | 強調する語 (読点区切り。Word Pop でのみ効く) |
+| `emphasis` | str | 廃止した Word Pop 用。旧プロジェクトの値を落とさないよう読み書きだけ残す (画面には出さない) |
 
-* **計算元は `modules/subtitle_animation.py` だけ**。単語の切り方・位置・時刻ごとの
-  拡大率と上下動をここが持ち、焼き込み (`subtitle_generator.build_subtitle_file`) と
-  プレビュー (`gui/timeline/preview_items.SubtitleOverlayItem`) の両方が同じ式を引く。
-* 単語の切り方は 3 段: ① 認識由来で本文が未編集なら `origin["words"]` の単語時刻、
-  ② 手直し済み・手入力なら BudouX で句へ切って尺を文字数で按分、③ BudouX が無ければ
-  句読点で切って按分。どれになったかは `word_source()` が返し、画面の注記に出る。
-* ASS では **単語 1 つ = 独立した Dialogue 行**にして `\pos` を持たせる
-  (行の中で文字を拡大すると後続が押し出されて行全体が揺れるため)。Bounce は
-  `\t` が位置を動かせないため `\move` を段に分ける。
+旧版の Word Pop / Bounce / Big Word は ver12 resolve2-add で廃止した。旧プロジェクトの値は「なし」で開く。
+
+* **計算元は `modules/subtitle_animation.py` だけ**。動きはすべて**キーフレーム**
+  (時刻と状態 = ずれ・拡大・回転・ぼかし・不透明度・白/黒への寄せ・縁の太り・表示範囲)
+  で表し、`spec()` が 1 か所で作る。焼き込み (`subtitle_generator.build_subtitle_file`) と
+  プレビュー (`gui/timeline/preview_items.SubtitleOverlayItem`) の両方が同じキーを引く。
+* ASS では**キーの区間ごとに 1 イベント**にし、位置は `\move`、それ以外は `\t` で補間させる。
+  1 本のテロップは層の重ね (衝撃1 の光の箱・衝撃2 の残像・ぴかっとの光の帯)。
+  フェードは区間ごとに点滅しないよう、テロップ開始からのずれを引いた `\fade` (7 引数) で掛ける。
+* 拡大・回転の中心を合わせるため、動きを付けたテロップは基準点を上下中央 (`\an4〜6`) へ移す
+  (塊の高さ = 行数 x Fontsize / libass で実測)。動き終わりは動きなしと同じ位置。
+* 発光・黒ブラーの色は `subtitle_generator.animation_base()` (個別色 → 役割の色) から計算する。
 * 動きを付けていないテロップは分岐へ入らないため、**ASS は従来と完全に同一**。
 * 効かない組み合わせは黙って崩さず落とす: コメント役割は**フェードのみ**
-  (背景の箱とアイコンが単語に追従できない) / フォントの送り幅が読めない・語数が
-  `max_words_per_clip` を超える場合は**行単位の動き**へ落とす (警告を出す)。
+  (背景の箱とアイコンが動きに追従できない)。震えるは `max_events_per_clip` を
+  超えないよう刻みを粗くする。
 * DaVinci Resolve 出力 (FCPXML) には動きを書けないため、書き出し前に知らせる。
 * プレビューは**動きが付いたテロップだけ** paint をやり直す (アイテムは作り直さない)。
   `timeline.preview.subtitle_animation = false` で「動き終わった状態」の静止表示へ戻せる。
-* 動きの量 (拡大率・跳ねる高さ・時間・強調色・上限) は `subtitle.animation.*`、
+* 動きの量 (時間・大きさ・ぼかし・上限) は `subtitle.animation.*`、
   画面側の出し方は `timeline.subtitle_animation.*`。
 
 ---

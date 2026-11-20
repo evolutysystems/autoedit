@@ -41,14 +41,30 @@ ROLE_COMMENT = "comment"
 # "" = 設定の表示位置 (subtitle.alignment / vertical.alignment) に従う。
 SUBTITLE_ALIGNS = ("left", "center", "right")
 
-# ── テロップのアニメーション (ver12 resolve2 §4)
-# 動きの種類は 1 本につき 1 つ。フェードは種類と独立に掛けられる
-# (「Word Pop しながらフェードインする」が自然に出てくるため / resolve2 §4)。
+# ── テロップのアニメーション (ver12 resolve2 §4 / resolve2-add §4)
+# 動きの種類は 1 本につき 1 つ。フェードは種類と独立に掛けられる。
+# 値は modules.subtitle_animation.ANIMATIONS と同じ (並びは画面のコンボの並び)。
+# 旧版の word_pop / bounce / big_word と、いったん入れた clip_in / glow_wipe / wave /
+# ez_from_right / ez_from_left は廃止した (resolve2-add §1 / §13)。旧プロジェクトの
+# これらの値は読み込み時に「なし」へ倒れる (_to_animation)。
 ANIM_NONE = ""
-ANIM_WORD_POP = "word_pop"      # 単語が 1 つずつ拡大して現れ、元の大きさへ戻る
-ANIM_BOUNCE = "bounce"          # 単語が上下に跳ね、バネのように収まる
-ANIM_BIG_WORD = "big_word"      # 画面中央へ大きな単語を 1 語ずつ出す
-SUBTITLE_ANIMATIONS = (ANIM_WORD_POP, ANIM_BOUNCE, ANIM_BIG_WORD)
+ANIM_SHAKE = "shake"                            # 震える
+ANIM_GLOW_IN = "glow_in"                        # 発光登場
+ANIM_TSUKKOMI = "tsukkomi"                      # つっこみ
+ANIM_GLOW_BLUR = "glow_blur"                    # 発光ブラー
+ANIM_SHOCK1 = "shock1"                          # 衝撃1
+ANIM_SHOCK2 = "shock2"                          # 衝撃2
+ANIM_SHINE = "shine"                            # ぴかっと
+ANIM_POYON = "poyon"                            # ポヨン
+ANIM_DIVE_TSUKKOMI = "dive_tsukkomi"            # 飛び込みツッコミ
+ANIM_DOUBLE_JUMP = "double_jump"                # 2回ジャンプ
+ANIM_BLACK_BLUR_ZOOM_IN = "black_blur_zoom_in"  # 黒ブラー拡大
+ANIM_BLACK_BLUR_ZOOM_OUT = "black_blur_zoom_out"  # 黒ブラー縮小
+SUBTITLE_ANIMATIONS = (
+    ANIM_SHAKE, ANIM_GLOW_IN, ANIM_TSUKKOMI, ANIM_GLOW_BLUR, ANIM_SHOCK1,
+    ANIM_SHOCK2, ANIM_SHINE, ANIM_POYON, ANIM_DIVE_TSUKKOMI, ANIM_DOUBLE_JUMP,
+    ANIM_BLACK_BLUR_ZOOM_IN, ANIM_BLACK_BLUR_ZOOM_OUT,
+)
 
 # ベースクリップ (V1 の本編・OP・ED) の描画順。オーバーレイは 1 以上を使う (§6.5-2)。
 BASE_Z_ORDER = 0
@@ -422,9 +438,8 @@ class SubtitleClip:
         # フェードは種類と独立に掛けられる
         self.fade_in = bool(fade_in)
         self.fade_out = bool(fade_out)
-        # 強調する語 (読点・カンマ区切り)。Word Pop でのみ使う。
-        # 「重要かどうか」を判定できるデータが無いため、利用者と設定が決める
-        # (resolve2 §2.2)。設定 subtitle.animation.emphasis_words との合算になる。
+        # 強調する語 (読点・カンマ区切り)。廃止した Word Pop 用 (resolve2-add §1)。
+        # 旧プロジェクトの値を落とさないよう、読み書きだけ残している (画面には出さない)。
         self.emphasis = str(emphasis or "")
 
     # 文字寄せは EditSubtitle の setattr から直接入るため、setter で正規化する
@@ -518,12 +533,6 @@ class SubtitleClip:
             item["fade_out"] = True
         if self.emphasis:
             item["emphasis"] = self.emphasis
-        # 単語ごとの動きには単語の時刻が要る (resolve2 §2.1)。
-        # 認識由来の時刻をそのまま渡し、無ければ下流が本文から句へ切る。
-        if self.animation:
-            words = self.origin.get("words")
-            if words:
-                item["words"] = words
         return item
 
     def to_dict(self):

@@ -8,6 +8,8 @@
 対象: `src/modules/subtitle_generator.py` / `src/modules/subtitle_animation.py` (新規) /
 　　　`src/timeline/model.py` / `src/gui/timeline/*` / `src/settings/*` / `tests/*`
 状態: **実装済み** (2026-11-19 / R1〜R9 すべて。実装時に決めたことは §16)
+　　　**2026-11-20: Word Pop / Bounce / Big Word は廃止し、参考動画の 12 種へ差し替えた → `resolve2-add.md`**
+　　　(フェード・インスペクタの置き場・プレビューの方式 A・コメントはフェードのみ、は引き継ぐ)
 
 ---
 

@@ -434,18 +434,10 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
                               else OUTLINE_PEN)
         self._outline_cache = None
         # 文字の外接矩形 (位置決め・選択枠・コメント装飾の基準)。
-        # Big Word では画面中央の大きな 1 語の矩形へ差し替える (_setup_animation)。
         self._rect = QRectF(0.0, 0.0, float(self._text_width), float(self._text_height))
 
         # ── アニメーション (ver12 resolve2 §R5)
         self._setup_animation(clip, eff_cfg, canvas_size, ass_size, bool(animate))
-        if self._anim_kind == subtitle_animation.ANIM_BIG_WORD:
-            # 画面中央へ 1 語ずつ出すため、位置・文字寄せ・折り返しは効かない (§1)。
-            # 動かせる余地が無いためドラッグも止める。
-            self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            self.setCursor(Qt.ArrowCursor)
-            self.setPos(canvas_size[0] / 2.0, canvas_size[1] / 2.0)
-            return
         self._place(clip, eff_cfg, canvas_size)
         # コメントは背景 (角丸の箱) とアイコンを子アイテムとして持たせる
         # (ver3 resolve11 §5.11-6)。親を動かせば一緒に付いてくる。
@@ -465,14 +457,16 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
 
     # 文字そのものの外接矩形 (ASS の行送りで積んだ推定値 / ver6 resolve3 §4.7-3)
     # 位置決め・選択枠・コメント装飾の基準はすべてこれを使う。
-    # Big Word (ver12 resolve2) では中央へ出す大きな 1 語の矩形になる。
     def text_rect(self):
         return QRectF(self._rect)
 
-    # 描画範囲は影とアウトラインのぶんだけ外へ広い (はみ出すと描画が欠ける)
+    # 描画範囲は影とアウトラインのぶんだけ外へ広い (はみ出すと描画が欠ける)。
+    # 動き付きのテロップは動きではみ出す量も足す (ver12 resolve2-add §8)。
     def boundingRect(self):
         margin = float(self._outline_width) + float(self._shadow_px) + 1.0
-        return self.text_rect().adjusted(-margin, -margin, margin, margin)
+        anim_x, anim_y = getattr(self, "_anim_margin", (0.0, 0.0))
+        return self.text_rect().adjusted(-margin - anim_x, -margin - anim_y,
+                                         margin + anim_x, margin + anim_y)
 
     # 掴める範囲は文字の矩形とする (行間の隙間でも掴めるほうが操作しやすい)
     def shape(self):
@@ -481,43 +475,46 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         return path
 
     # ------------------------------------------------------------------
-    # アニメーション (ver12 resolve2 §R5)
+    # アニメーション (ver12 resolve2 §R5 / resolve2-add §8)
     #
-    # 【方針】単語ごとのパスを**生成時に 1 回だけ**作り、paint のときに
-    #   変形 (拡大・上下のずれ・色・不透明度) だけを掛ける。再生ヘッドが動く
-    #   たびにアイテムを作り直すと、縁の作り直しが入って重い (ver9 resolve11 §2)。
-    #   動きの量は subtitle_animation が持つ式をそのまま使い、焼き込み (ASS) と
-    #   食い違わないようにする。
+    # 【方針】動きは subtitle_animation.spec() が返すキーフレームをそのまま使い、
+    #   paint のときに state_at() で補間した状態 (ずれ・拡大・回転・色・不透明度・
+    #   表示範囲) を掛けて描く。焼き込み (ASS) と同じキーを見るため動きが揃う。
+    #   パスは生成時に 1 回だけ作り、再生ヘッドが動いても作り直さない
+    #   (縁の作り直しが重い / ver9 resolve11 §2)。
+    #   ぼかしは Qt で安く描けないため、半透明の太い縁を重ねて近似する。
     # ------------------------------------------------------------------
 
-    # 単語ごとのパスと時刻を用意する (動きが無ければ何も作らない)
+    # 動きのキーフレームを用意する
     def _setup_animation(self, clip, eff_cfg, canvas_size, ass_size, animate):
         self._anim_kind = ""
-        self._anim_words = []
+        self._anim_spec = None
         self._anim_time = 0.0
         self._anim_static = not animate
         self._anim_entry = {}
         self._anim_cfg = subtitle_animation.config(eff_cfg)
+        self._anim_size = float(ass_size)
+        self._anim_margin = (0.0, 0.0)
         self._anim_fade = bool(getattr(clip, "fade_in", False)
                                or getattr(clip, "fade_out", False))
         self._anim_duration = max(float(getattr(clip, "duration", 0.0) or 0.0), 0.0)
         if not subtitle_animation.is_enabled(self._anim_cfg):
             self._anim_fade = False
             return
-        # 焼き込みと同じ辞書を見る (単語の切り方・強調語・フェード長の判定が揃う)
+        # 焼き込みと同じ辞書を見る (種類・フェード長の判定が揃う)
         self._anim_entry = clip.to_item()
         kind = subtitle_animation.animation_of(self._anim_entry)
-        # コメントは背景の箱とアイコンが単語の動きに追従できない (§12 ②)。
+        # コメントは背景の箱とアイコンが動きに追従できない (resolve2 §12 ②)。
         # 焼き込み側もフェードだけに落とすため、プレビューも同じにする。
-        if kind and self._role != _ROLE_COMMENT:
-            self._anim_kind = kind
-        if self._anim_kind == subtitle_animation.ANIM_BIG_WORD:
-            self._build_big_words(ass_size)
-        elif self._anim_kind:
-            self._build_word_paths()
-        if self._anim_kind and not self._anim_words:
-            # 単語へ切れなかった (空の本文など) ときは従来どおり 1 本で描く
-            self._anim_kind = ""
+        if not kind or self._role == _ROLE_COMMENT:
+            return
+        self._anim_spec = subtitle_animation.spec(
+            kind, self._anim_cfg, ass_size, self._anim_duration,
+            float(canvas_size[0]))
+        if self._anim_spec is None:
+            return
+        self._anim_kind = kind
+        self._anim_margin = self._animation_margin()
 
     # テロップ開始からの相対秒を伝える (PreviewPanel が再生ヘッドから渡す)
     # 作り直しではなく paint のやり直しだけで動かすための入口 (§8 方式 A)。
@@ -544,126 +541,144 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
             return (self._text_width - width) / 2.0
         return 0.0
 
-    # Word Pop / Bounce 用: 単語ごとのパスと中心を作る
-    #
-    # 位置は**この画面の実測 (QFontMetricsF)** で積む。焼き込み側は
-    # font_advance の送り幅で積むため 1px 単位では一致しないが、
-    # 「このプレビューで見えている文字列」と単語の位置が合うことを優先する
-    # (ずらすと動いた単語だけ本文からはみ出して見える)。
-    def _build_word_paths(self):
-        words = subtitle_animation.split_words(self._anim_entry, self._anim_cfg)
-        if not words:
-            return
-        font = self.font()
-        metrics = QFontMetricsF(font)
-        inner = (self._line_height - (metrics.ascent() + metrics.descent())) / 2.0
-        cursors = {}
-        stagger_index = 0
-        for word in words:
-            text = str(word.get("text", ""))
-            if not text:
-                continue
-            index = min(max(int(word.get("line", 0)), 0), max(len(self._lines) - 1, 0))
-            if index not in cursors:
-                cursors[index] = self._line_left(index)
-            width = metrics.horizontalAdvance(text)
-            left = cursors[index]
-            cursors[index] = left + width
-            baseline = index * self._line_height + inner + metrics.ascent()
-            path = QPainterPath()
-            path.addText(left, baseline, font, text)
-            self._anim_words.append({
-                "path": path,
-                "cx": left + width / 2.0,
-                "cy": index * self._line_height + self._line_height / 2.0,
-                "offset": float(word.get("offset", 0.0)),
-                "emphasis": bool(word.get("emphasis", False)),
-                "stagger": subtitle_animation.bounce_stagger(
-                    self._anim_cfg, stagger_index),
-            })
-            stagger_index += 1
+    # 拡大・回転の中心 (焼き込みは上下中央 + テロップの左右の寄せ / resolve2-add §5)
+    def _pivot(self):
+        if self._line_align == "left":
+            x = 0.0
+        elif self._line_align == "right":
+            x = self._text_width
+        else:
+            x = self._text_width / 2.0
+        return QPointF(x, self._text_height / 2.0)
 
-    # Big Word 用: 画面中央へ出す大きな 1 語を区間ごとに作る
-    # パスは原点を中心に作り、アイテム自身をキャンバス中央へ置く。
-    def _build_big_words(self, ass_size):
-        spans = subtitle_animation.big_word_spans(self._anim_entry, self._anim_cfg)
-        if not spans:
-            return
-        scale = subtitle_animation.big_word_scale(self._anim_cfg)
-        font = QFont(self.font())
-        big_ass_size = max(int(round(ass_size * scale / 100.0)), 1)
-        font.setPixelSize(max(int(font_metrics.libass_pixel_size(
-            font, big_ass_size, self._metrics_mode)), 1))
-        metrics = QFontMetricsF(font)
-        height = metrics.ascent() + metrics.descent()
-        max_width = 0.0
-        for span in spans:
-            text = str(span.get("text", ""))
-            width = metrics.horizontalAdvance(text)
-            max_width = max(max_width, width)
-            path = QPainterPath()
-            # 原点 (= キャンバス中央) を中心に置く
-            path.addText(-width / 2.0, -height / 2.0 + metrics.ascent(), font, text)
-            self._anim_words.append({
-                "path": path, "cx": 0.0, "cy": 0.0,
-                "offset": float(span.get("start", 0.0)),
-                "end": float(span.get("end", 0.0)),
-                "emphasis": bool(span.get("emphasis", False)),
-                "stagger": 0.0,
-            })
-        self._rect = QRectF(-max_width / 2.0, -height / 2.0, max_width, height)
+    # 動きで文字の矩形の外へはみ出す量 (描画範囲を広げて欠けないようにする)
+    def _animation_margin(self):
+        margin_x = margin_y = 0.0
+        # 拡大の中心が端 (左寄せ・右寄せ) のときは反対側へ全幅ぶん伸びる
+        half = max(self._text_width, self._text_height)
+        for layer in self._anim_spec["layers"]:
+            for _t, state in layer["keys"]:
+                grow = max(state["sx"], state["sy"], 100.0) / 100.0 - 1.0
+                extra = (grow * half + state["blur"] * 2.0 + state["bord"]
+                         + self._anim_size * 0.2)
+                margin_x = max(margin_x, abs(state["dx"]) + extra)
+                margin_y = max(margin_y, abs(state["dy"]) + extra)
+            if layer["kind"] == subtitle_animation.LAYER_BOX:
+                _color, padding = subtitle_animation.box_style(self._anim_cfg)
+                pad = padding * self._anim_size * 1.3 + self._anim_size * 0.3
+                margin_x = max(margin_x, pad)
+                margin_y = max(margin_y, pad)
+        return margin_x, margin_y
 
-    # いま描く単語と、それぞれの変形を返す
-    #   [(パス, 拡大率, 上下のずれ, 強調語か)]
-    def _animation_frame(self):
-        time_sec = 0.0 if self._anim_static else self._anim_time
-        if self._anim_kind == subtitle_animation.ANIM_BIG_WORD:
-            # 1 語ずつ切り替える (区間の外は描かない)
-            for word in self._anim_words:
-                if word["offset"] <= time_sec < word["end"]:
-                    return [(word["path"], 1.0, 0.0, word["emphasis"])]
-            # 区間を外れたとき (端の丸めなど) は最後の語を残す
-            last = self._anim_words[-1]
-            return [(last["path"], 1.0, 0.0, last["emphasis"])]
-        out = []
-        for word in self._anim_words:
-            if self._anim_kind == subtitle_animation.ANIM_BOUNCE:
-                begin = word["offset"] + word["stagger"]
-                if time_sec < begin and not self._anim_static:
-                    continue        # まだ現れていない
-                offset_y = (0.0 if self._anim_static
-                            else subtitle_animation.bounce_offset(
-                                self._anim_cfg, time_sec - begin, self._line_height))
-                out.append((word["path"], 1.0, offset_y, word["emphasis"]))
-                continue
-            # Word Pop
-            if time_sec < word["offset"] and not self._anim_static:
-                continue
-            scale = (100.0 if self._anim_static
-                     else subtitle_animation.word_pop_scale(
-                         self._anim_cfg, time_sec - word["offset"]))
-            out.append((word["path"], scale / 100.0, 0.0, word["emphasis"]))
-        return out
+    # 層がその時刻に見えているか (はじめのキーより前・消える層の最後のキーより後は描かない)
+    def _layer_visible(self, layer, keys, time_sec):
+        if not keys:
+            return False
+        if time_sec < keys[0][0]:
+            return False
+        if not layer["hold"] and time_sec > keys[-1][0]:
+            return False
+        return True
 
-    # 単語ごとに変形を掛けて描く (影 → 縁 → 塗り の順は 1 本描きと同じ)
+    # キーフレームの状態を掛けて層ごとに描く (下の層から)
     def _paint_animation(self, painter):
-        emphasis_color, emphasis_scale = subtitle_animation.emphasis_style(
-            self._anim_cfg)
-        emphasis_brush = QBrush(QColor(emphasis_color))
-        for path, scale, offset_y, emphasis in self._animation_frame():
-            factor = scale * (emphasis_scale / 100.0 if emphasis else 1.0)
-            painter.save()
-            if offset_y:
-                painter.translate(0.0, offset_y)
-            if abs(factor - 1.0) > 1e-6:
-                # 語の中心を保ったまま拡縮する (行が組み直されないのと同じ見え方)
-                center = path.boundingRect().center()
-                painter.translate(center)
-                painter.scale(factor, factor)
-                painter.translate(-center)
-            self._paint_path(painter, path,
-                             emphasis_brush if emphasis else self.brush())
-            painter.restore()
+        time_sec = self._anim_time
+        fill = self.brush().color()
+        for layer in self._anim_spec["layers"]:
+            if layer["kind"] == subtitle_animation.LAYER_BOX:
+                if self._layer_visible(layer, layer["keys"], time_sec):
+                    self._paint_box(painter, subtitle_animation.state_at(
+                        layer["keys"], time_sec))
+                continue
+            if self._layer_visible(layer, layer["keys"], time_sec):
+                self._paint_state(painter, self._text_path(),
+                                  subtitle_animation.state_at(layer["keys"], time_sec),
+                                  fill)
+
+    # 1 つの状態で文字のパスを描く
+    def _paint_state(self, painter, path, state, fill):
+        opacity = min(max(state["opacity"], 0.0), 1.0)
+        if opacity <= 0.0:
+            return
+        painter.save()
+        painter.setOpacity(painter.opacity() * opacity)
+        rect = self.text_rect()
+        # 表示範囲 (焼き込みと同じ px 換算 / subtitle_animation.clip_range)
+        if state["clip_l"] > 1e-6 or state["clip_r"] < 1.0 - 1e-6:
+            x1, x2 = subtitle_animation.clip_range(
+                rect.left(), rect.right(), self._anim_size, self._anim_cfg, state)
+            margin_y = self._anim_margin[1] + rect.height()
+            painter.setClipRect(QRectF(x1, rect.top() - margin_y, max(x2 - x1, 0.0),
+                                       rect.height() + margin_y * 2.0))
+        painter.translate(state["dx"], state["dy"])
+        pivot = self._pivot()
+        painter.translate(pivot)
+        if state["rot"]:
+            # ASS の \frz は反時計回りが正、Qt の rotate は時計回りが正
+            painter.rotate(-state["rot"])
+        if state["sx"] != 100.0 or state["sy"] != 100.0:
+            painter.scale(state["sx"] / 100.0, state["sy"] / 100.0)
+        painter.translate(-pivot)
+        fill_color = QColor(subtitle_animation.mix_color(fill.name()[1:], state))
+        outline_color = QColor(subtitle_animation.mix_color(
+            self._outline_color.name()[1:], state))
+        outline_color.setAlpha(self._outline_color.alpha())
+        width = float(self._outline_width) + max(state["bord"], 0.0)
+        blur = max(state["blur"], 0.0)
+        if blur > 0.5:
+            # ぼかしの近似: 字の色の太い縁を薄く重ねて輪郭をにじませる
+            glow = QColor(outline_color if width > 0 else fill_color)
+            glow.setAlphaF(min(0.25 + blur / 40.0, 0.6) * glow.alphaF())
+            pen = QPen(glow, (width + blur) * 2.0)
+            pen.setJoinStyle(Qt.RoundJoin)
+            pen.setCapStyle(Qt.RoundCap)
+            painter.strokePath(path, pen)
+        if self._shadow_px > 0:
+            painter.translate(self._shadow_px, self._shadow_px)
+            if width > 0:
+                painter.strokePath(path, self._stroke_pen_width(self._shadow_color, width))
+            painter.fillPath(path, QBrush(self._shadow_color))
+            painter.translate(-self._shadow_px, -self._shadow_px)
+        if width > 0:
+            painter.strokePath(path, self._stroke_pen_width(outline_color, width))
+        painter.fillPath(path, QBrush(fill_color))
+        painter.restore()
+
+    # 衝撃1 の光の箱 (文字の矩形 + 余白 / 焼き込みと同じ比)
+    def _paint_box(self, painter, state):
+        opacity = min(max(state["opacity"], 0.0), 1.0)
+        if opacity <= 0.0:
+            return
+        color_hex, padding_ratio = subtitle_animation.box_style(self._anim_cfg)
+        padding = padding_ratio * self._anim_size
+        rect = self.text_rect().adjusted(-padding, -padding, padding, padding)
+        painter.save()
+        painter.setOpacity(painter.opacity() * opacity)
+        center = rect.center()
+        painter.translate(center)
+        painter.scale(state["sx"] / 100.0, state["sy"] / 100.0)
+        painter.translate(-center)
+        color = QColor(color_hex)
+        blur = max(state["blur"], 0.0)
+        if blur > 0.5:
+            # ぼかしの近似: 外周を薄い太線でにじませる
+            soft = QColor(color)
+            soft.setAlphaF(0.35)
+            pen = QPen(soft, blur * 2.0)
+            pen.setJoinStyle(Qt.RoundJoin)
+            painter.setPen(pen)
+        else:
+            painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawRect(rect)
+        painter.restore()
+
+    # 太さを指定できる縁のペン (発光で縁を太らせるため)
+    def _stroke_pen_width(self, color, width):
+        pen = QPen(color, float(width) * 2.0)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        return pen
 
     # 影 → 縁 → 塗り を 1 つのパスへ描く (1 本描きと単語ごとの描画で共用)
     def _paint_path(self, painter, path, brush):
@@ -820,8 +835,9 @@ class SubtitleOverlayItem(_OverlayMixin, QGraphicsSimpleTextItem):
         if self._anim_fade and not self._anim_static:
             painter.setOpacity(subtitle_animation.fade_alpha(
                 self._anim_entry, self._anim_cfg, self._anim_time))
-        # 単語ごとの動きが付いているテロップはこちらで描く (1 本描きは通らない)
-        if self._anim_kind:
+        # 動きが付いているテロップはこちらで描く (1 本描きは通らない)。
+        # 静止表示のときは「動き終わった状態」= 通常の 1 本描きにする。
+        if self._anim_kind and not self._anim_static:
             self._paint_animation(painter)
             painter.restore()
             self._paint_selection(painter)

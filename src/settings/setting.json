@@ -50,23 +50,50 @@
         "margin_v": 60,
         "animation": {
             "enabled": true,
-            "word_pop_grow_ms": 80,
-            "word_pop_settle_ms": 120,
-            "word_pop_scale": 130,
-            "emphasis_words": [],
-            "emphasis_color": "#FFD34D",
-            "emphasis_scale": 115,
-            "bounce_height_ratio": 0.35,
-            "bounce_ms": 420,
-            "bounce_segments": 3,
-            "bounce_word_stagger_ms": 60,
-            "big_word_scale": 260,
-            "big_word_min_ms": 240,
-            "big_word_position": "center",
+            "ease_segments": 6,
+            "shake_amplitude_ratio": 0.05,
+            "shake_step_ms": 50,
+            "shake_blur": 2.0,
+            "glow_in_ms": 450,
+            "glow_blur": 10.0,
+            "glow_border": 6.0,
+            "tsukkomi_ms": 150,
+            "tsukkomi_scale": 135,
+            "tsukkomi_rotate": 6.0,
+            "glow_blur_ms": 450,
+            "glow_blur_stretch": 170,
+            "shock1_ms": 600,
+            "shock1_box_color": "#FFFFFF",
+            "shock1_box_opacity": 0.75,
+            "shock1_box_padding_ratio": 0.35,
+            "shock1_box_blur": 8.0,
+            "shock2_ms": 600,
+            "shock2_scale": 170,
+            "shock2_opacity": 0.5,
+            "shock2_blur": 3.0,
+            "shine_delay_ms": 100,
+            "shine_ms": 400,
+            "shine_width_ratio": 0.18,
+            "shine_opacity": 0.9,
+            "shine_blur": 3.0,
+            "poyon_ms": 400,
+            "poyon_start_scale": 60,
+            "poyon_overshoot": 20,
+            "dive_ms": 150,
+            "dive_scale": 170,
+            "dive_wobble_ms": 300,
+            "dive_rotate": 4.0,
+            "jump_ms": 600,
+            "jump_height_ratio": 0.35,
+            "jump_second_ratio": 0.6,
+            "black_blur_ms": 500,
+            "black_blur": 10.0,
+            "black_blur_zoom_in_scale": 60,
+            "black_blur_zoom_out_scale": 150,
+            "clip_margin_ratio": 0.3,
             "fade_in_ms": 200,
             "fade_out_ms": 200,
-            "max_words_per_clip": 24,
-            "max_events_per_clip": 96
+            "max_events_per_clip": 120
         },
         "line_align": {
             "enabled": true,
@@ -158,7 +185,7 @@
         "percentile": 10,
         "metric_migrated": true,
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -20
+        "last_cut_db": -18
     },
     "loudness": {
         "enabled": true,
@@ -213,6 +240,8 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
+                "C:\\Users\\evolu\\Downloads\\20261105_RelievedResilientDinosaurWutFace-fuIcXHNN5Vr2Fi1k_source.timeline.json",
+                "C:\\Users\\evolu\\Downloads\\20261116_CourageousInspiringTaroOneHand-C-6wvX7Ae0y8F1ss_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae_vertical.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276_vertical.timeline.json"
@@ -277,8 +306,7 @@
         "subtitle_animation": {
             "enabled": true,
             "apply_to_selection": true,
-            "node_marker": " ♪",
-            "emphasis_always_enabled": false
+            "node_marker": " ♪"
         },
         "subtitle_split_text": false,
         "ripple_delete": true,
@@ -310,7 +338,7 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAE2AAAAfgAABjUAAAQtAAABNgAAAJ0AAAY1AAAELQAAAAAAAAAAB4AAAAE2AAAAnQAABjUAAAQt",
+                "archive": "AdnQywADAAAAAAQ5AAAA9gAACTgAAAUlAAAEOQAAARUAAAk4AAAFJQAAAAAAAAAADXAAAAQ5AAABFQAACTgAAAUl",
                 "clip": "AdnQywADAAAAAATOAAAAAAAACc0AAAVtAAAEzgAAAB8AAAnNAAAFbQAAAAAAAAAADXAAAATOAAAAHwAACc0AAAVt"
             },
             "splitter_state": {
@@ -319,12 +347,12 @@
                     "upper": "AAAA/wAAAAEAAAACAAADBgAAAwUB/////wEAAAABAA=="
                 },
                 "clip": {
-                    "main": "AAAA/wAAAAEAAAACAAADNQAAAdsB/////wEAAAACAA==",
+                    "main": "AAAA/wAAAAEAAAACAAABngAAA3IB/////wEAAAACAA==",
                     "upper": "AAAA/wAAAAEAAAACAAACdgAAAm8B/////wEAAAABAA=="
                 }
             },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAncAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAvcAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28,
             "subtitle_align_button_width_px": 56
         },

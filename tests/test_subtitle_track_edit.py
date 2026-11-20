@@ -366,6 +366,65 @@ class DragAndDropTest(unittest.TestCase):
         self.assertEqual(controller.timeline.clip_by_id("s1").role, ROLE_COMMENT)
 
 
+class StaleDragTest(unittest.TestCase):
+
+    # 離した通知を取りこぼしたドラッグは、ボタンを押していない移動で捨てる
+    # (ver12 resolve2-add §11)。以前は、インスペクタのコンボで種類を選んだ瞬間に
+    # テロップがコメント用トラック (S2) へ落ち、役割がコメントになって
+    # アニメーションの欄が使えなくなっていた。
+    def _setup(self):
+        from PySide6.QtWidgets import QApplication
+
+        from src.gui.timeline.timeline_controller import TimelineController
+        from src.gui.timeline.timeline_view import TimelineView, build_rows
+
+        self.app = QApplication.instance() or QApplication([])
+        controller = TimelineController(_timeline(), dict(sw.DEFAULT_SETTINGS))
+        view = TimelineView(controller)
+        view.resize(800, 400)
+        rows = {row["track"].id: row for row in build_rows(controller.timeline,
+                                                           controller.cfg)}
+        y1 = rows[BASE_SUBTITLE_TRACK_ID]["y"] + rows[BASE_SUBTITLE_TRACK_ID]["height"] / 2
+        y2 = (rows[COMMENT_SUBTITLE_TRACK_ID]["y"]
+              + rows[COMMENT_SUBTITLE_TRACK_ID]["height"] / 2)
+        return controller, view, y1, y2
+
+    @staticmethod
+    def _event(kind, y, buttons, button=None):
+        from PySide6.QtCore import QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+
+        point = QPointF(60.0, y)
+        return QMouseEvent(kind, point, point,
+                           Qt.LeftButton if button is None else button,
+                           buttons, Qt.NoModifier)
+
+    def test_buttonless_move_cancels_the_drag(self):
+        from PySide6.QtCore import QEvent, Qt
+
+        controller, view, y1, y2 = self._setup()
+        view.mousePressEvent(self._event(QEvent.MouseButtonPress, y1, Qt.LeftButton))
+        # 離した通知が届かないまま、ボタンを押さずに S2 の上を通る
+        view.mouseMoveEvent(self._event(QEvent.MouseMove, y2, Qt.NoButton,
+                                        button=Qt.NoButton))
+        view.mouseReleaseEvent(self._event(QEvent.MouseButtonRelease, y2, Qt.NoButton))
+
+        self.assertEqual(_track_of(controller.timeline, "s1"), BASE_SUBTITLE_TRACK_ID)
+        self.assertEqual(controller.timeline.clip_by_id("s1").role, "streamer")
+
+    # 左以外のボタンを離してもドラッグは確定しない
+    def test_other_button_release_does_not_commit(self):
+        from PySide6.QtCore import QEvent, Qt
+
+        controller, view, y1, y2 = self._setup()
+        view.mousePressEvent(self._event(QEvent.MouseButtonPress, y1, Qt.LeftButton))
+        view.mouseMoveEvent(self._event(QEvent.MouseMove, y2, Qt.LeftButton,
+                                        button=Qt.NoButton))
+        view.mouseReleaseEvent(self._event(QEvent.MouseButtonRelease, y2,
+                                           Qt.LeftButton, button=Qt.RightButton))
+        self.assertEqual(_track_of(controller.timeline, "s1"), BASE_SUBTITLE_TRACK_ID)
+
+
 class ControllerTrackTest(unittest.TestCase):
 
     def _controller(self, settings=None):

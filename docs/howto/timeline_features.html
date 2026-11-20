@@ -630,9 +630,8 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
       <tr><td>フォント</td><td>一覧から選択。先頭の「(設定のフォント)」= 設定値に従う。各項目はそのフォント自体で描画されます</td></tr>
       <tr><td>サイズ</td><td>数値指定。<code>0</code> で「既定」</td></tr>
       <tr><td>文字寄せ</td><td>複数行になったテロップの行の揃え（左 / 中央 / 右）。テロップの表示位置は動きません</td></tr>
-      <tr><td>アニメーション</td><td>動きの種類（なし / Word Pop / Bounce / Big Word）。下の 3.2 を参照</td></tr>
+      <tr><td>アニメーション</td><td>動きの種類（なし / 震える / 発光登場 / ポヨン など 12 種）。下の 3.2 を参照</td></tr>
       <tr><td>フェード</td><td>イン / アウト。動きの種類と併用できます</td></tr>
-      <tr><td>強調する語</td><td>Word Pop で色と大きさを変える語（読点区切り）。設定 <code>subtitle.animation.emphasis_words</code> の語と合わせて効きます</td></tr>
       <tr><td>文字色</td><td>このクリップだけの上書き。空欄にすると<strong>トラックの既定色 → 役割色</strong>の順で決まります</td></tr>
       <tr><td>縁の色</td><td>同上（透明度も指定可）</td></tr>
       <tr><td>位置を既定へ戻す</td><td>ドラッグで動かした位置を捨て、設定の配置・余白に従わせる</td></tr>
@@ -650,19 +649,28 @@ section:target{outline:2px solid var(--accent);outline-offset:2px;}
   <table class="nowrap-first">
     <thead><tr><th>種類</th><th>見え方</th></tr></thead>
     <tbody>
-      <tr><td>Word Pop</td><td>発言した単語が 1 つずつ現れ、出た瞬間に拡大して元の大きさへ戻ります。現れた語はテロップの終わりまで残ります。「強調する語」に入れた語は色と大きさが変わります</td></tr>
-      <tr><td>Bounce</td><td>単語が上下に跳ね、バネのように弾みながら止まります。単語ごとに少し遅れて跳ね始めます</td></tr>
-      <tr><td>Big Word</td><td>画面中央に大きな単語を 1 語ずつ表示し、順に切り替えます。<strong>位置・文字寄せ・折り返しは効きません</strong></td></tr>
-      <tr><td>フェード イン / アウト</td><td>表示のはじめに現れる / 終わりに消える。上の 3 種と併用できます</td></tr>
+      <tr><td>震える</td><td>表示中ずっと細かく揺れ、ときどきブレます</td></tr>
+      <tr><td>発光登場</td><td>白く光ってぼけた塊から、光とぼかしが引いて現れます</td></tr>
+      <tr><td>つっこみ</td><td>一瞬大きく傾いて出て、すぐ元に戻ります</td></tr>
+      <tr><td>発光ブラー</td><td>横長の光のぼかしから現れます</td></tr>
+      <tr><td>衝撃1</td><td>文字の後ろに白い四角い光が出て、広がりながら消えます</td></tr>
+      <tr><td>衝撃2</td><td>大きな半透明の残像が、縮みながら消えます</td></tr>
+      <tr><td>ぴかっと</td><td>白い光の帯が文字の上を左から右へ横切ります</td></tr>
+      <tr><td>ポヨン</td><td>小さく出て大きく弾み、収まります</td></tr>
+      <tr><td>飛び込みツッコミ</td><td>大きく飛び込んで縮み、首を振るように揺れて止まります</td></tr>
+      <tr><td>2回ジャンプ</td><td>上下に 2 回跳ねます（2 回目は低め）</td></tr>
+      <tr><td>黒ブラー拡大</td><td>黒くぼけた小さい文字が、大きくなりながら色とピントを取り戻します</td></tr>
+      <tr><td>黒ブラー縮小</td><td>黒くぼけた大きい文字が、縮みながら色とピントを取り戻します</td></tr>
+      <tr><td>フェード イン / アウト</td><td>表示のはじめに現れる / 終わりに消える。上の種類と併用できます</td></tr>
     </tbody>
   </table>
   </div>
   <ul>
     <li>動きを付けたテロップは Timeline のノードに <strong>♪</strong> が付きます（印は <code>timeline.subtitle_animation.node_marker</code>）。</li>
-    <li>動きの量（拡大率・跳ねる高さ・時間・強調色）は <code>setting.json</code> の <code>subtitle.animation.*</code> で変えられます。</li>
-    <li><strong>単語の区切り</strong>は、認識したままの本文なら発話どおりの単語時刻を使います。本文を書き直した場合は句で切って表示時間を文字数で按分するため、切り替わる時刻は近似になります（その旨が欄の下に出ます）。</li>
-    <li><strong>コメント役割のテロップはフェードだけ</strong>使えます（背景の箱とアイコンが単語の動きに追従できないため）。</li>
-    <li>語数が多いテロップ（既定 24 語超）やフォントの送り幅が読めない場合は、単語ごとではなく<strong>テロップ全体の動き</strong>になります。</li>
+    <li>動きの量（時間・大きさ・ぼかしなど）は <code>setting.json</code> の <code>subtitle.animation.*</code> で変えられます。</li>
+    <li>以前の Word Pop / Bounce / Big Word は廃止しました。それらを付けていた古いプロジェクトは「なし」で開きます（フェードは残ります）。</li>
+    <li><strong>コメント役割のテロップはフェードだけ</strong>使えます（背景の箱とアイコンが動きに追従できないため）。</li>
+    <li>横方向だけのブレ（発光ブラー）や斜めの光（ぴかっと）は、ASS の仕組み上、普通のぼかし・縦の光の帯で近いものを表しています。</li>
     <li>編集画面のプレビューでも動きます。重いときは <code>timeline.preview.subtitle_animation</code> を false にすると「動き終わった状態」の静止表示になります（書き出しの結果は変わりません）。</li>
   </ul>
 

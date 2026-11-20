@@ -1,20 +1,20 @@
-# テロップアニメーションのプレビュー再現 (docs/request/ver12/resolve2.md §8) の単体テスト
+# テロップアニメーションのプレビュー再現 (docs/request/ver12/resolve2-add.md §8) の単体テスト
 # 実行: python -m unittest discover -s tests
 # 重点:
-#   ・動きが付いたテロップだけが「時刻で描き直す」対象になること (§8 方式 A)
-#   ・単語ごとのパスが本文の文字列と一致すること (取りこぼし・重複が無い)
-#   ・時刻を進めると見た目 (拡大率・上下のずれ) が変わること
-#   ・Big Word は画面中央へ置かれ、位置ドラッグができないこと (§1)
+#   ・動きが付いたテロップだけが「時刻で描き直す」対象になること (resolve2 §8 方式 A)
+#   ・プレビューが焼き込みと同じキーフレーム (subtitle_animation.spec) を見ること
+#   ・時刻を進めると見た目が変わり、描画で落ちないこと (12 種すべて)
 #   ・設定 timeline.preview.subtitle_animation=false で静止表示へ戻せること
-#   ・コメント役割はフェードのみ (単語ごとの動きにしない / §12 ②)
-#   ・動きの量の式が焼き込み (ASS タグ) と同じ値を返すこと
+#   ・コメント役割はフェードのみ (resolve2 §12 ②)
+#   ・インスペクタ (本文と同じ欄) から 12 種を選べること
 import copy
 import os
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication                       # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter                # noqa: E402
+from PySide6.QtWidgets import QApplication, QGraphicsScene        # noqa: E402
 
 from src.gui.timeline.preview_items import SubtitleOverlayItem   # noqa: E402
 from src.modules import subtitle_animation, subtitle_generator   # noqa: E402
@@ -44,143 +44,96 @@ def _item(clip, animate=True, cfg=None):
                                _CANVAS, animate=animate)
 
 
+# アイテムを画像へ描いて、背景以外の画素数を返す
+def _ink(item):
+    scene = QGraphicsScene(0, 0, _CANVAS[0], _CANVAS[1])
+    scene.addItem(item)
+    image = QImage(_CANVAS[0] // 4, _CANVAS[1] // 4, QImage.Format_RGB32)
+    image.fill(QColor(128, 128, 128))
+    painter = QPainter(image)
+    scene.render(painter)
+    painter.end()
+    background = QColor(128, 128, 128).rgb()
+    count = 0
+    for y in range(0, image.height(), 2):
+        for x in range(0, image.width(), 2):
+            if image.pixel(x, y) != background:
+                count += 1
+    scene.removeItem(item)
+    return count
+
+
 class AnimatedFlagTest(unittest.TestCase):
 
     # 動きが無いテロップは時刻を渡しても何も起きない (従来どおり描き直さない)
     def test_plain_clip_is_not_animated(self):
-        item = _item(_clip())
-        self.assertFalse(item.is_animated())
+        self.assertFalse(_item(_clip()).is_animated())
 
     def test_animated_clip_is_marked(self):
-        self.assertTrue(_item(_clip(animation="word_pop")).is_animated())
+        self.assertTrue(_item(_clip(animation="poyon")).is_animated())
         self.assertTrue(_item(_clip(fade_in=True)).is_animated())
         self.assertTrue(_item(_clip(fade_out=True)).is_animated())
 
-    # コメントは単語ごとの動きにしない (背景とアイコンが追従できない)
-    def test_comment_role_has_no_word_motion(self):
-        item = _item(_clip(role="comment", animation="word_pop", fade_in=True))
+    # 廃止した種類は動きなし
+    def test_removed_kind_is_not_animated(self):
+        self.assertFalse(_item(_clip(animation="word_pop")).is_animated())
+
+    # コメントは動きにしない (背景とアイコンが追従できない)
+    def test_comment_role_has_no_motion(self):
+        item = _item(_clip(role="comment", animation="poyon", fade_in=True))
         self.assertEqual(item._anim_kind, "")
         self.assertTrue(item.is_animated(), "フェードは掛かる")
 
-    # 機能を切ったら動きも印も付かない
+    # 機能を切ったら動きも付かない
     def test_disabled_setting_turns_everything_off(self):
         cfg = copy.deepcopy(_CFG)
         cfg["animation"]["enabled"] = False
-        item = _item(_clip(animation="word_pop", fade_in=True), cfg=cfg)
+        item = _item(_clip(animation="poyon", fade_in=True), cfg=cfg)
         self.assertFalse(item.is_animated())
 
 
-class WordPathTest(unittest.TestCase):
+class KeyframeTest(unittest.TestCase):
 
-    # 単語ごとのパスは本文を取りこぼさない (焼き込みと同じ切り方を使う)
-    def test_words_cover_the_text(self):
-        item = _item(_clip(animation="word_pop"))
-        words = subtitle_animation.split_words(
-            item._anim_entry, subtitle_animation.config(_CFG))
-        self.assertEqual(len(item._anim_words), len(words))
-        self.assertEqual("".join(w["text"] for w in words), _TEXT)
+    # プレビューは焼き込みと同じキーフレームを使う
+    def test_uses_the_same_spec_as_the_burn_in(self):
+        item = _item(_clip(animation="poyon"))
+        expected = subtitle_animation.spec(
+            "poyon", subtitle_animation.config(_CFG), item._anim_size, 2.0,
+            float(_CANVAS[0]))
+        self.assertEqual(item._anim_spec["layers"][0]["keys"],
+                         expected["layers"][0]["keys"])
 
-    # 単語は左から順に並ぶ (行の中で重ならない)
-    def test_words_are_laid_out_left_to_right(self):
-        item = _item(_clip(animation="word_pop"))
-        centers = [w["cx"] for w in item._anim_words]
-        self.assertEqual(centers, sorted(centers))
+    # 動きではみ出す分だけ描画範囲が広がる (飛び込みツッコミは 170% から縮む)
+    def test_bounding_rect_covers_the_motion(self):
+        plain = _item(_clip())
+        moving = _item(_clip(animation="dive_tsukkomi"))
+        extra = moving.boundingRect().width() - plain.boundingRect().width()
+        self.assertGreater(extra, plain._text_width)
 
-    # 時刻を進めると拡大率が変わる (paint のやり直しだけで動く)
-    def test_scale_changes_over_time(self):
-        item = _item(_clip(animation="word_pop"))
+    # 12 種すべてが時刻を進めても落ちずに描ける
+    def test_every_kind_paints(self):
+        for kind in subtitle_animation.ANIMATIONS:
+            for time_sec in (0.0, 0.1, 0.3, 1.0):
+                item = _item(_clip(animation=kind))
+                item.set_time(time_sec)
+                _ink(item)
+
+    # 飛び込みツッコミは、はじめは見えず (透明)、あとで見える
+    def test_dive_tsukkomi_reveals_over_time(self):
+        item = _item(_clip(animation="dive_tsukkomi"))
         item.set_time(0.0)
-        first = item._animation_frame()
-        self.assertEqual(len(first), 1, "まだ 1 語目だけ出ている")
-        self.assertGreater(first[0][1], 1.0, "出た直後は拡大している")
+        hidden = _ink(item)
+        item = _item(_clip(animation="dive_tsukkomi"))
+        item.set_time(1.0)
+        shown = _ink(item)
+        self.assertLess(hidden, shown / 10 + 1)
 
-        item.set_time(0.5)
-        later = item._animation_frame()
-        self.assertGreater(len(later), 1, "時間が進めば語が増える")
-        self.assertAlmostEqual(later[0][1], 1.0, places=3,
-                               msg="先に出た語は元の大きさへ戻る")
-
-    # Bounce は上下にずれる (最後は 0 へ収まる)
-    def test_bounce_offset_settles(self):
-        item = _item(_clip(animation="bounce"))
-        item.set_time(0.05)
-        self.assertLess(item._animation_frame()[0][2], 0.0, "上へ跳ねる")
-        item.set_time(1.5)
-        self.assertAlmostEqual(item._animation_frame()[0][2], 0.0, places=6)
-
-    # 静止表示では時刻を渡しても動かない (退避口 / §8 B 案)
+    # 静止表示では時刻を渡しても動かない (退避口 / resolve2 §8 B 案)
     def test_static_mode_shows_the_settled_state(self):
-        item = _item(_clip(animation="word_pop"), animate=False)
+        plain = _ink(_item(_clip()))
+        item = _item(_clip(animation="dive_tsukkomi"), animate=False)
         item.set_time(0.0)
-        frame = item._animation_frame()
-        self.assertEqual(len(frame), len(item._anim_words),
-                         "静止表示では全部の語が出ている")
-        for _path, scale, offset_y, _emphasis in frame:
-            self.assertAlmostEqual(scale, 1.0, places=6)
-            self.assertAlmostEqual(offset_y, 0.0, places=6)
-
-
-class BigWordTest(unittest.TestCase):
-
-    def test_placed_at_the_canvas_center(self):
-        item = _item(_clip(animation="big_word"))
-        self.assertAlmostEqual(item.pos().x(), _CANVAS[0] / 2.0, places=3)
-        self.assertAlmostEqual(item.pos().y(), _CANVAS[1] / 2.0, places=3)
-        # 文字の矩形は原点 (= 画面中央) を囲む
-        rect = item.text_rect()
-        self.assertLess(rect.left(), 0.0)
-        self.assertLess(rect.top(), 0.0)
-
-    # 1 語ずつ切り替わる (同時に 2 語は出ない)
-    def test_shows_one_word_at_a_time(self):
-        item = _item(_clip(animation="big_word"))
-        for time_sec in (0.0, 0.5, 1.0, 1.9):
-            item.set_time(time_sec)
-            self.assertEqual(len(item._animation_frame()), 1)
-
-    # 位置は意味を持たないためドラッグさせない
-    def test_not_movable(self):
-        from PySide6.QtWidgets import QGraphicsItem
-
-        item = _item(_clip(animation="big_word"))
-        self.assertFalse(bool(item.flags() & QGraphicsItem.ItemIsMovable))
-
-
-class CurveTest(unittest.TestCase):
-
-    # プレビューの式が ASS タグと同じ値を返すこと (ずれると見え方が食い違う)
-    def test_word_pop_scale_matches_the_tag(self):
-        cfg = subtitle_animation.config(_CFG)
-        grow = cfg["word_pop_grow_ms"] / 1000.0
-        settle = cfg["word_pop_settle_ms"] / 1000.0
-        self.assertAlmostEqual(
-            subtitle_animation.word_pop_scale(cfg, 0.0),
-            float(cfg["word_pop_scale"]), places=6)
-        self.assertAlmostEqual(
-            subtitle_animation.word_pop_scale(cfg, grow),
-            float(cfg["word_pop_scale"]), places=6)
-        self.assertAlmostEqual(
-            subtitle_animation.word_pop_scale(cfg, grow + settle), 100.0, places=6)
-        middle = subtitle_animation.word_pop_scale(cfg, grow + settle / 2.0)
-        self.assertGreater(middle, 100.0)
-        self.assertLess(middle, float(cfg["word_pop_scale"]))
-
-    def test_bounce_offset_matches_the_segments(self):
-        cfg = subtitle_animation.config(_CFG)
-        total = cfg["bounce_ms"] / 1000.0
-        span = total / cfg["bounce_segments"]
-        height = cfg["bounce_height_ratio"] * 100.0
-        # 1 段目の頂点 (= span の半分) で最大の高さになる
-        self.assertAlmostEqual(
-            subtitle_animation.bounce_offset(cfg, span / 2.0, 100.0),
-            -height, places=6)
-        # 2 段目は振幅が半分
-        self.assertAlmostEqual(
-            subtitle_animation.bounce_offset(cfg, span + span / 2.0, 100.0),
-            -height / 2.0, places=6)
-        # 収まったら 0
-        self.assertAlmostEqual(
-            subtitle_animation.bounce_offset(cfg, total, 100.0), 0.0, places=6)
+        self.assertEqual(_ink(item), plain)
 
 
 class InspectorTest(unittest.TestCase):
@@ -209,31 +162,33 @@ class InspectorTest(unittest.TestCase):
     def test_shows_the_current_values(self):
         controller, panel = self._panel()
         clip = controller.timeline.clip_by_id("s1")
-        clip.animation = "bounce"
+        clip.animation = "shock2"
         clip.fade_in = True
-        clip.emphasis = "天気"
         panel.show_clip(clip)
 
-        self.assertEqual(panel.animation_combo.currentData(), "bounce")
+        self.assertEqual(panel.animation_combo.currentData(), "shock2")
         self.assertTrue(panel.fade_in_check.isChecked())
         self.assertFalse(panel.fade_out_check.isChecked())
-        self.assertEqual(panel.emphasis_edit.text(), "天気")
-        # 強調する語は Word Pop のときだけ触れる (既定)
-        self.assertFalse(panel.emphasis_edit.isEnabled())
-        clip.animation = "word_pop"
-        panel.show_clip(clip)
-        self.assertTrue(panel.emphasis_edit.isEnabled())
+        # 廃止した「強調する語」の欄は出さない
+        self.assertFalse(hasattr(panel, "emphasis_edit"))
+
+    # コンボには「なし」+ 12 種が並ぶ (値は焼き込みと同じ)
+    def test_combo_lists_all_kinds(self):
+        _controller, panel = self._panel()
+        values = [panel.animation_combo.itemData(i)
+                  for i in range(panel.animation_combo.count())]
+        self.assertEqual(values, [""] + list(subtitle_animation.ANIMATIONS))
 
     def test_selecting_a_kind_applies_to_the_selection(self):
         controller, panel = self._panel()
         controller.select(["s1", "s2"])
         panel.show_clip(controller.timeline.clip_by_id("s1"))
         panel.animation_combo.setCurrentIndex(
-            panel.animation_combo.findData("word_pop"))
+            panel.animation_combo.findData("double_jump"))
         panel.animation_combo.activated.emit(panel.animation_combo.currentIndex())
 
         self.assertEqual([c.animation for c in controller.timeline.subtitle_clips()],
-                         ["word_pop", "word_pop"])
+                         ["double_jump", "double_jump"])
         # 1 コマンド = Undo 1 手
         controller.undo()
         self.assertEqual([c.animation for c in controller.timeline.subtitle_clips()],
@@ -268,11 +223,11 @@ class InspectorTest(unittest.TestCase):
         settings["timeline"]["subtitle_animation"]["enabled"] = False
         controller, panel = self._panel(settings)
         clip = controller.timeline.clip_by_id("s1")
-        clip.animation = "bounce"
+        clip.animation = "shine"
         panel.show_clip(clip)               # 落ちないこと
 
         self.assertIsNone(panel.animation_combo)
-        self.assertEqual(clip.animation, "bounce")
+        self.assertEqual(clip.animation, "shine")
 
 
 if __name__ == "__main__":

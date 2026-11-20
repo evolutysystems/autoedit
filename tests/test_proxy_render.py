@@ -213,7 +213,7 @@ class TileKeyTest(unittest.TestCase):
     def test_animation_changes_its_tile(self):
         before = self._keys()
         clip = self.timeline.clip_by_id("s1")
-        clip.animation = "word_pop"
+        clip.animation = "shake"
         after = self._keys()
 
         self.assertNotEqual(before[0], after[0])

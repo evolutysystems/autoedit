@@ -77,11 +77,24 @@ _ROLE_CHOICES = [("配信者", "streamer"), ("サブ", "sub"), ("コメント", 
 # 文字寄せの選択肢 (ver9 resolve3 §R1)。並び順がボタンの並び順になる。
 _ALIGN_CHOICES = [("left", "左寄せ"), ("center", "中央寄せ"), ("right", "右寄せ")]
 
-# アニメーションの選択肢 (ver12 resolve2 §R4)。並び順がコンボの並び順になる。
+# アニメーションの選択肢 (ver12 resolve2 §R4 / resolve2-add §7)。並び順がコンボの並び順になる。
 # 値は SubtitleClip.animation と同じ (先頭の空文字 = 動かさない)。
 # フェードは種類と併用できるため、コンボではなくチェック 2 つで持つ (§4)。
-_ANIMATION_CHOICES = [("", "なし"), ("word_pop", "Word Pop"),
-                      ("bounce", "Bounce"), ("big_word", "Big Word")]
+_ANIMATION_CHOICES = [
+    ("", "なし"),
+    ("shake", "震える"),
+    ("glow_in", "発光登場"),
+    ("tsukkomi", "つっこみ"),
+    ("glow_blur", "発光ブラー"),
+    ("shock1", "衝撃1"),
+    ("shock2", "衝撃2"),
+    ("shine", "ぴかっと"),
+    ("poyon", "ポヨン"),
+    ("dive_tsukkomi", "飛び込みツッコミ"),
+    ("double_jump", "2回ジャンプ"),
+    ("black_blur_zoom_in", "黒ブラー拡大"),
+    ("black_blur_zoom_out", "黒ブラー縮小"),
+]
 
 # フォント一覧の先頭に置く「指定なし」= setting.json の字幕フォントに従う
 _FONT_DEFAULT_LABEL = "(設定のフォント)"
@@ -1719,15 +1732,14 @@ class _InspectorPanel(QWidget):
             align_layout.addStretch(1)
             form.addRow(tr("文字寄せ"), align_row)
 
-        # テロップ 1 本ごとのアニメーション (ver12 resolve2 §R4)。
+        # テロップ 1 本ごとのアニメーション (ver12 resolve2 §R4 / resolve2-add §7)。
         # 本文と同じ欄で設定できるようにする、が要望の条件 (request2 §1 B)。
-        #   アニメーション : 種類 (なし / Word Pop / Bounce / Big Word)
+        #   アニメーション : 種類 (なし / 震える / … / 黒ブラー縮小 の 12 種)
         #   フェード       : イン / アウト (種類と併用できる)
-        #   強調する語     : Word Pop で色と大きさを変える語 (読点区切り)
+        # 廃止した Word Pop 用の「強調する語」の欄は出さない (resolve2-add §1)。
         self.animation_combo = None
         self.fade_in_check = None
         self.fade_out_check = None
-        self.emphasis_edit = None
         self.animation_note_label = None
         if self._controller.cfg["subtitle_animation"]["enabled"]:
             self.animation_combo = QComboBox()
@@ -1756,15 +1768,6 @@ class _InspectorPanel(QWidget):
             fade_layout.addWidget(self.fade_out_check)
             fade_layout.addStretch(1)
             form.addRow(tr("フェード"), fade_row)
-
-            self.emphasis_edit = QLineEdit()
-            self.emphasis_edit.setPlaceholderText(tr("強調する語 (読点区切り)"))
-            self.emphasis_edit.setToolTip(
-                tr("Word Pop でこの語だけ色と大きさを変えます (読点・カンマ区切り)\n"
-                   "設定 subtitle.animation.emphasis_words の語と合わせて効きます"))
-            # 1 文字ごとにコマンドを積まないよう、入力を終えたときだけ確定する
-            self.emphasis_edit.editingFinished.connect(self._on_emphasis_changed)
-            form.addRow(tr("強調する語"), self.emphasis_edit)
 
             self.animation_note_label = QLabel("")
             self.animation_note_label.setWordWrap(True)
@@ -2155,8 +2158,6 @@ class _InspectorPanel(QWidget):
         self.animation_combo.setToolTip(self._animation_tooltip(allowed))
         self.fade_in_check.setChecked(bool(clip.fade_in))
         self.fade_out_check.setChecked(bool(clip.fade_out))
-        self.emphasis_edit.setText(clip.emphasis or "")
-        self.emphasis_edit.setEnabled(self._emphasis_enabled(clip))
         note = self._animation_note(clip, allowed)
         self.animation_note_label.setText(note)
         self.animation_note_label.setVisible(bool(note))
@@ -2165,39 +2166,20 @@ class _InspectorPanel(QWidget):
     def _animation_allowed(self, clip):
         return str(getattr(clip, "role", "")) != "comment"
 
-    # 強調する語の欄を触れるか (既定は Word Pop を選んでいるときだけ)
-    def _emphasis_enabled(self, clip):
-        if self._controller.cfg["subtitle_animation"]["emphasis_always_enabled"]:
-            return True
-        return str(getattr(clip, "animation", "")) == "word_pop"
-
     def _animation_tooltip(self, allowed):
         if not allowed:
-            return tr("コメントは背景の箱とアイコンが単語の動きに追従できないため、"
+            return tr("コメントは背景の箱とアイコンが動きに追従できないため、"
                       "フェードだけ使えます")
         return tr("選択中のテロップに動きを付けます\n"
-                  "動きの量 (拡大率・跳ねる高さ・時間) は setting.json の "
+                  "動きの量 (時間・大きさ・ぼかし) は setting.json の "
                   "subtitle.animation で変わります")
 
     # 欄の下に出す注意書き (黙って崩さず、効き方が変わることを先に知らせる)
     def _animation_note(self, clip, allowed):
         if not allowed:
             return tr("※ コメントはフェードのみ使えます（背景とアイコンが"
-                      "単語の動きに追従できないため）")
-        kind = str(getattr(clip, "animation", ""))
-        if not kind:
-            return ""
-        notes = []
-        if kind == "big_word":
-            notes.append(tr("※ Big Word は画面中央へ 1 語ずつ出すため、"
-                            "位置・文字寄せ・折り返しは効きません"))
-        if kind in ("word_pop", "bounce", "big_word"):
-            from ...modules import subtitle_animation  # noqa: PLC0415 (遅延 import)
-
-            if subtitle_animation.word_source(clip.to_item()) != "asr":
-                notes.append(tr("※ 本文を書き直したテロップは単語の区切りが"
-                                "近似になります（句で切って尺を按分します）"))
-        return "\n".join(notes)
+                      "動きに追従できないため）")
+        return ""
 
     # 動きの種類。選択中のテロップすべてへ 1 コマンドで適用する (Undo 1 手)
     def _on_animation_changed(self, _index=0):
@@ -2238,21 +2220,6 @@ class _InspectorPanel(QWidget):
         if len(ids) > 1:
             self.status_message.emit(
                 tr("{count} 件のフェードを変えました", count=len(ids)))
-
-    # 強調する語 (Word Pop で色と大きさを変える語)
-    def _on_emphasis_changed(self):
-        if self._updating or not isinstance(self._clip, SubtitleClip):
-            return
-        value = str(self.emphasis_edit.text() or "").strip()
-        if value == str(self._clip.emphasis or ""):
-            return
-        ids = self._animation_target_ids()
-        if not ids:
-            return
-        self._controller.edit_subtitles(ids, emphasis=value)
-        if len(ids) > 1:
-            self.status_message.emit(
-                tr("{count} 件の強調する語を変えました", count=len(ids)))
 
     # 適用先の ID (設定で「選択中すべて」か「この 1 件」かが変わる)
     def _animation_target_ids(self):

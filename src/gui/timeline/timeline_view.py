@@ -1085,6 +1085,16 @@ class TimelineView(QWidget):
             self._update_cursor(pos)
             return
 
+        # 左ボタンを離しているのにドラッグが残っている = 離した通知を取りこぼした
+        # (ver12 resolve2-add §11)。Timeline はマウス追跡 (setMouseTracking) が有効な
+        # ため、そのままだとボタンを押していない移動でテロップが動き、次に離した
+        # 瞬間 (インスペクタのコンボの選択など) に別トラックへ落ちてしまう。
+        # 確定せずにドラッグを捨てる。
+        if not (event.buttons() & Qt.LeftButton):
+            self._cancel_drag()
+            self._update_cursor(pos)
+            return
+
         if self._drag == _DRAG_PLAYHEAD:
             self._controller.set_playhead(
                 self._playhead_sec_at(pos.x(), event.modifiers()))
@@ -1127,6 +1137,9 @@ class TimelineView(QWidget):
     def mouseReleaseEvent(self, event):
         if self._drag == _DRAG_NONE:
             return
+        # ドラッグは左ボタンで始めたものだけ。別のボタンを離しても確定しない。
+        if event.button() != Qt.LeftButton:
+            return
         drag = self._drag
         clip_id = self._drag_clip_id
         preview = self._drag_preview
@@ -1165,6 +1178,19 @@ class TimelineView(QWidget):
         else:
             self._controller.trim_clip(
                 clip_id, commands.EDGE_RIGHT, preview["start"] + preview["duration"])
+        self.update()
+
+    # 確定せずにドラッグを捨てる (離した通知を取りこぼしたとき / ver12 resolve2-add §11)
+    def _cancel_drag(self):
+        drag = self._drag
+        self._drag = _DRAG_NONE
+        self._drag_clip_id = None
+        self._drag_preview = None
+        self._drag_moved = False
+        self._drag_source_track_id = None
+        self._drag_track_id = None
+        if drag == _DRAG_PLAYHEAD:
+            self._controller.end_scrub()
         self.update()
 
     def mouseDoubleClickEvent(self, event):
