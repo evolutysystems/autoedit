@@ -1,7 +1,7 @@
 # Stretheus (autoedit) 設計書
 
-最終更新日: 2026-11-19
-対象バージョン: **v1.8.5** (`src/version.py` / `installer/AutoEdit.iss` と一致)
+最終更新日: 2026-11-20
+対象バージョン: **v1.8.6** (`src/version.py` / `installer/AutoEdit.iss` と一致)
 対象: autoedit リポジトリ (配布名 **Stretheus**)
 
 ---
