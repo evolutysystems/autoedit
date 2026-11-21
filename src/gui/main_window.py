@@ -37,6 +37,7 @@ if __package__ is None or __package__ == "":
         run_from_project,
         run_pipeline,
     )
+    from src.ai import store as ai_store
     from src.archive import legacy_cache
     from src.services import config as services_config
     from src.services import telemetry
@@ -65,6 +66,7 @@ else:
         run_from_project,
         run_pipeline,
     )
+    from ..ai import store as ai_store
     from ..archive import legacy_cache
     from ..services import config as services_config
     from ..services import telemetry
@@ -1767,6 +1769,13 @@ def _main():
     # (resolve.md §6-10)。失敗しても起動は続ける。
     workspace.sweep_stale(
         max_age_hours=settings.get("general", {}).get("cleanup_stale_work_hours", 24))
+    # AI の学習データの掃除 (docs/AiEditor/resolve1.md §13.4)。
+    # ai.learning.keep_days (既定 180 日) より古い**差分だけ**を片付ける。
+    # プロファイル本体と更新履歴は捨てない。失敗しても起動は続ける。
+    try:
+        ai_store.cleanup(settings)
+    except Exception:  # noqa: BLE001 (掃除の失敗で起動を止めない)
+        _logger.exception("AI の学習データの掃除に失敗しました")
     window = MainWindow()
     window.show()
     # 旧版が残した取得データの回収 (§6-6-6)。画面が出てから 1 度だけ尋ねる。

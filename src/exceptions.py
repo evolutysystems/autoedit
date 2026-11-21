@@ -100,3 +100,41 @@ class ReauthRequiredError(ApiError):
 # オフライン扱いとし、機能を止めずに縮退させる判断材料にする。
 class ApiOfflineError(ApiError):
     pass
+
+
+# AI 機能 (AI Clip Studio) の失敗の親 (docs/AiEditor/resolve1.md §17.1)
+# AutoEditError 派生のため、既存の except AutoEditError 経路はそのまま効く。
+# PipelineCancelled と DiskSpaceError は AI 層でも握り潰さず貫通させる。
+class AiError(AutoEditError):
+    pass
+
+
+# 通信・認証・レート制限・上限超過。
+# status は HTTP ステータス、code は ProblemDetails の機械判読用コード
+# (ai_busy / ai_quota_exceeded / insufficient_points / login_required など)。
+class AiProviderError(AiError):
+
+    def __init__(self, message, status=None, code=None, retry_after=None):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.retry_after = retry_after
+
+
+# AI へ到達できない (5xx / 接続失敗 / タイムアウト / 機能停止中)。
+# オフライン扱いとし、既存の採点結果へ縮退させる判断材料にする。
+#
+# 設計書 §17.1 の図では AiProviderError と兄弟だが、既存の
+# ApiOfflineError(ApiError) と同じく「一般の失敗の下に到達不能を置く」形にした。
+# status / code をそのまま持てるうえ、except AiProviderError で両方を受けられる。
+class AiOfflineError(AiProviderError):
+    pass
+
+
+# 応答が JSON でない / スキーマ不正 / 検証で致命。
+# 安全側の拒否 (stop_reason = refusal) もこれに寄せ、再試行で押し通さない。
+class AiPlanError(AiError):
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code

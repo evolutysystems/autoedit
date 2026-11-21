@@ -356,8 +356,13 @@ def _restore(timeline, snapshot):
 # 編集履歴 (Undo/Redo)
 class CommandStack:
 
-    def __init__(self, limit=100):
+    # observer: 操作ログの観測口 (docs/AiEditor/resolve1.md §15)。
+    #   push が**成功したときだけ** observer(label, command) を呼ぶ。
+    #   既定の None は現行と完全に同じ挙動 (失敗時・Undo/Redo では呼ばない)。
+    #   観測側で例外が出ても編集は止めない。
+    def __init__(self, limit=100, observer=None):
         self._limit = max(int(limit), 1)
+        self._observer = observer
         self._undo = []
         self._redo = []
         # 保存済みの位置 (= その時点の undo スタックの深さ / resolve7 §5.6)。
@@ -391,7 +396,21 @@ class CommandStack:
                     self._clean_depth = None
         self._redo.clear()
         _logger.debug("編集: %s", command.label)
+        self._notify(command)
         return True
+
+    # 操作ログへ 1 行渡す (§15)。記録の失敗で編集を壊さない。
+    def _notify(self, command):
+        if self._observer is None:
+            return
+        try:
+            self._observer(command.label, command)
+        except Exception:  # noqa: BLE001 (記録の失敗で編集を止めない)
+            _logger.exception("操作ログの記録に失敗しました: %s", command.label)
+
+    # 観測口を後から差す (画面がプロジェクトのパスを知った時点で繋ぐ / §15)。
+    def set_observer(self, observer):
+        self._observer = observer
 
     def can_undo(self):
         return bool(self._undo)

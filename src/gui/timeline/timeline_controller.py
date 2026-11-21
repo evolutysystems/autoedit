@@ -44,6 +44,10 @@ class TimelineController(QObject):
         # 実効字幕設定の控え (縦動画の上書き反映済み / ver9 resolve3 §R3)
         self._eff_subtitle_cfg = None
 
+    # 操作ログの観測口を差す (ai/edit_log。既定は差さない = 現行と同じ / §15)。
+    def set_command_observer(self, observer):
+        self._stack.set_observer(observer)
+
     # ------------------------------------------------------------------
     # 参照
     # ------------------------------------------------------------------

@@ -438,17 +438,22 @@ class SaveProjectWiringTest(unittest.TestCase):
         class _Dialog:
             save_project = ted.TimelineEditorDialog.save_project
             _on_autosave = ted.TimelineEditorDialog._on_autosave
+            # AI の学習の口 (docs/AiEditor/resolve1.md §14.1)。
+            # AI が作ったプロジェクトではないため、呼ばれても何も起きない。
+            _record_ai_learning = ted.TimelineEditorDialog._record_ai_learning
 
             def __init__(inner):
                 inner.extra_calls = []
                 inner._project_path = outer.target
                 inner._settings = {"ffmpeg": _FFMPEG_CFG}
+                inner._logged_project = ""
                 inner._created_at = "2026-01-01T00:00:00"
                 inner._project_cfg = {"keep_media": False, "keep_audio": False,
                                       "keep_blur_cache": False, "recent_limit": 10}
                 inner.controller = types.SimpleNamespace(
                     timeline=object(), mark_saved=lambda: None,
                     is_modified=lambda: modified,
+                    set_command_observer=lambda *_a: None,
                     cfg={"project_suffix": ".timeline.json"})
                 inner.preview = types.SimpleNamespace(set_status=lambda *_a: None)
 

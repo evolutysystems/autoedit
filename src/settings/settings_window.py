@@ -1632,6 +1632,123 @@ DEFAULT_SETTINGS = {
             "name_max_len": 32,       # 指定に付けられる名前の最大文字数
         },
     },
+    # AI Clip Studio (docs/AiEditor/resolve1.md §16)。設定画面には出さない。
+    #
+    # 【重要】鍵はここに入れない (§6.1 / §6.5)。入るのはパスと希望モデル名だけで、
+    #   Anthropic の API キーはサーバー (StretheusAPI) だけが持つ。
+    #
+    # 入れ子があるため、欠落キーの補完は src/ai/config.py が行う
+    # (_merge_with_defaults はセクション単位の浅いマージで入れ子を見ない。
+    #  既存の archive セクションと同じ作法)。
+    # 既定値の出どころはここ 1 か所で、src/ai/config.py の DEFAULT_AI は
+    # 「単体で動かしたときの保険」として同じ値を持つ (tests/test_ai_config.py が一致を見る)。
+    "ai": {
+        # 実装が揃うまで既定オフ。false のとき ai/ は import されない。
+        "enabled": False,
+        # true は開発用の直接呼び出し (§6.5)。配布では使わない。
+        "direct_mode": False,
+        # Stretheus API 側のパス。接続先は api.base_url を共有する (出どころを 2 つにしない)。
+        "endpoint": {
+            "complete": "/api/ai/complete",
+            "count": "/api/ai/count",
+            "config": "/api/ai/config",
+            # 同期で終わらなかった処理の受け取り口 (A2 / StretheusAPI resolve1.md §10)
+            "jobs": "/api/ai/jobs",
+        },
+        # 希望として送る。最終決定はサーバー (§6.1)。
+        "models": {
+            "scene_eval": "claude-sonnet-5-5",
+            "plan": "claude-opus-5-5",
+            "review": "claude-sonnet-5-5",
+            "review_critic": "claude-opus-5-5",
+            "profile": "claude-sonnet-5-5",
+            "classify": "claude-haiku-5-5",
+        },
+        # 深さ (low/medium/high)。モデルの既定に任せない (§6.3)。
+        "effort": {
+            "scene_eval": "medium",
+            "plan": "high",
+            "review": "medium",
+            "profile": "medium",
+            "classify": "low",
+        },
+        "max_output_tokens": 8192,
+        "timeout_sec": 180,
+        "retry": {"max_attempts": 3, "backoff_sec": 2.0},
+        # 202 で受理された処理を待つ上限 (秒) とポーリング間隔の下限 (ミリ秒)。
+        # サーバー側のジョブの上限は 600 秒であり、それに余裕を足した値とする。
+        "jobs": {"wait_sec": 900, "poll_min_ms": 1000},
+        "consent": {"accepted_version": 0},
+        "privacy": {"include_comment_user": False, "include_transcript": True},
+        "candidates": {
+            "top_n": 30, "allow_overlap": False, "min_score": 0,
+            "window_sec": 0, "transcribe_pad_sec": 15.0,
+        },
+        "transcribe": {"speaker_filter": True, "reuse_existing": True},
+        # 回答 Q4: 一旦 OFF。実測してから既定を決める (§22 T2)。
+        "sweep": {"enabled": False, "chunk_sec": 600},
+        "scene_eval": {
+            "batch_size": 8, "max_reason_chars": 120, "base_score_weight": 0.2,
+            "weights": {
+                "long": {"funny": 0.30, "surprise": 0.15, "first_time_clarity": 0.15,
+                         "excitement": 0.20, "shorts_fit": 0.0, "long_fit": 0.20,
+                         "standalone": 0.0, "context_dependency": -0.10},
+                "shorts": {"funny": 0.30, "surprise": 0.20, "first_time_clarity": 0.15,
+                           "excitement": 0.10, "shorts_fit": 0.25, "long_fit": 0.0,
+                           "standalone": 0.20, "context_dependency": -0.20},
+            },
+        },
+        "plan": {
+            # 回答 Q6: TikTok を有効にする
+            "targets": ["youtube_long", "youtube_shorts", "tiktok"],
+            # 回答 Q10: 長尺は一旦 15 分
+            "youtube_long": {"min_sec": 180, "max_sec": 900, "max_scenes": 12},
+            "youtube_shorts": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
+            "tiktok": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
+            "subtitle_mode": "full",
+            # 回答 Q11: 構成案は 1 案
+            "variants": 1,
+            "allow_reuse_scene": True,
+        },
+        # 回答 Q9: SE プリセットの既定は空 (登録まで適用しない)
+        "sounds": {"enabled": True, "presets": {}},
+        "review": {
+            # Phase 2 で有効化
+            "enabled": False,
+            "roles": {"director": True, "critic": True, "viewer": True,
+                      "platform": True, "qa": False},
+            "max_rounds": 2, "max_issues_per_round": 5, "min_severity": "major",
+        },
+        # 回答 Q5: 映像を見せてよい
+        "vision": {
+            "enabled": True, "frames_per_scene": 1, "max_frames": 12,
+            "max_edge_px": 768, "points": ["peak", "head"],
+        },
+        # 回答 Q9: レビュー PDF
+        "report": {
+            "enabled": True, "format": "pdf", "auto_open": False,
+            "font": "", "include_frames": True, "name_suffix": "_review",
+        },
+        # 1 プロジェクトで使う量の上限。0 で無制限。
+        # サーバー側も日次・プロジェクト単位で独立に強制する (申告は信用されない)。
+        "cost": {"max_calls_per_project": 20, "max_input_tokens_per_project": 300000,
+                 "confirm_over_points": 0},
+        "budget": {
+            "max_input_tokens": 60000, "chars_per_token": 2.0, "cell_pad_sec": 60,
+            "curve_window_span": 2, "max_comments_per_cell": 20,
+            "merge_transcript_gap_sec": 1.0,
+            # 共通前置きをキャッシュへ乗せる (§6.4)
+            "cache_prefix": True,
+        },
+        # 回答 Q7: 既定で学習し、保持は半年
+        "learning": {
+            "enabled": True, "upload": False, "operation_log": False,
+            "min_evidence": 10, "match_tolerance_sec": 0.3,
+            "keep_days": 180, "exclude": [],
+        },
+        "profile": {"active": {"youtube_long": "", "youtube_shorts": "", "tiktok": ""}},
+        "debug": {"dump_payloads": False},
+    },
     # 画面の見た目 (ガラスモーフィズム / resolve3 §6)。
     # 既定の実体は src/gui/theme.py が持つ (デザイントークンの唯一の出どころ)。
     # ui.theme = "system" で従来の Qt 既定へ完全に戻せる。

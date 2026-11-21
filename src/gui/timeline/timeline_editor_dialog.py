@@ -54,6 +54,7 @@ from ...timeline import (
     project_io,
     subtitle_style,
 )
+from ...ai import edit_log, plan_diff
 from ...timeline.builder import recent_path
 from ...timeline.model import AudioClip, SoundClip, SubtitleClip
 from ...utils.logger import get_logger
@@ -133,6 +134,8 @@ class TimelineEditorDialog(QDialog):
         self._settings = settings
         self._project_path = project_path or None
         self._created_at = created_at or None
+        # 操作ログを繋いだプロジェクト (二重に繋がないための控え / §15)
+        self._logged_project = ""
         self._mode = str(mode or "pipeline")
         # 背景グラデーションを敷く (この上に Timeline の半透明な下地が乗る / resolve3 §3-2)
         theme.install_window_background(self)
@@ -962,6 +965,31 @@ class TimelineEditorDialog(QDialog):
     # 現在の Timeline をプロジェクトファイルへ書き出す
     # path 省略時は現在のプロジェクトパス、それも無ければ既定のパスを使う。
     # 戻り値: 保存できたら True (失敗しても画面は閉じない / 閉じる確認からも使うため)
+    # AI の学習の口 (docs/AiEditor/resolve1.md §14.1 / §15)
+    #
+    #   ・<project>.ai-base.json (AI 版) と保存した本体の差分を端末内へ残す
+    #   ・操作ログが有効なら、ここから先の操作を <project>.editlog.jsonl へ追記する
+    # AI が作ったプロジェクトでなければ比べる相手が無いため何も起きない。
+    # 失敗しても保存は成功のままにする (学習は編集の邪魔をしない)。
+    def _record_ai_learning(self, project_path):
+        try:
+            rows, path = plan_diff.record_for_project(project_path, self._settings)
+            if rows:
+                _logger.info("AI 版との差分を %d 件記録しました: %s", len(rows), path)
+        except Exception as e:  # noqa: BLE001 (学習の失敗で保存を壊さない)
+            _logger.warning("AI 版との差分を記録できませんでした: %s", e)
+        try:
+            if self._logged_project == project_path:
+                return
+            observer = edit_log.observer(self._settings, project_path)
+            if observer is not None:
+                self.controller.set_command_observer(observer)
+                self._logged_project = project_path
+                _logger.info("操作ログを記録します: %s",
+                             edit_log.log_path_for(project_path))
+        except Exception as e:  # noqa: BLE001 (記録の失敗で保存を壊さない)
+            _logger.warning("操作ログを繋げませんでした: %s", e)
+
     def save_project(self, path=None, ask=False):
         target = path or self._project_path or self._default_project_path()
         if ask:
@@ -1001,6 +1029,8 @@ class TimelineEditorDialog(QDialog):
             return False
         self._project_path = target
         self.controller.mark_saved()
+        # AI の学習 (§14.1 / §15)。差分は**保存の瞬間**に取る (編集中は取らない)。
+        self._record_ai_learning(target)
         self._update_window_title()
         self._remember_recent(target)
         # 本体へ保存できた時点で自動保存ファイルは役目を終える

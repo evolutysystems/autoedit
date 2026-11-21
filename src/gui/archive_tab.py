@@ -32,19 +32,26 @@ from ..archive import (
     twitch_source,
     vod_retention,
 )
+from ..ai import config as ai_config
+from ..ai import consent as ai_consent
+from ..ai import provider as ai_provider
+from ..ai import usage_log as ai_usage_log
 from ..archive.twitch_auth import MARKER_SCOPE, TwitchAuth
 from ..exceptions import PipelineCancelled, TwitchError
 from ..i18n import tr
+from ..pipeline import ai_runner
+from ..services import config as services_config
 from ..timeline import project_io
 from ..timeline.builder import timeline_config
 from ..settings.settings_window import (
     load_settings,
     register_fonts_in_dir,
     resolve_fonts_dir,
+    save_settings,
 )
 from ..utils import disk, trash
 from ..utils.logger import get_logger
-from . import theme
+from . import ai_report, theme
 from .failure_message import format_failure_message
 from .archive_result_window import ArchiveResultBridge
 from .points_indicator import WatermarkConfirmBridge
@@ -146,7 +153,10 @@ class ArchiveAnalyzeWorker(QThread):
             # vod_source は「元 VOD を手放したあとに区間だけ取り直す」ための控え
             # (ver9 resolve5 §4.3)。ローカル動画経路では None になる。
             self.finished_ok.emit({"result": result, "input_path": input_path,
-                                   "vod_source": vod_source})
+                                   "vod_source": vod_source,
+                                   # 経路 D (AI) がコメントも材料に使う (§5.1)。
+                                   # 採点済みの結果を渡し直すため一緒に返す。
+                                   "comments": comments})
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("アーカイブ採点に失敗")
             self.failed.emit(format_failure_message(e))
@@ -358,6 +368,70 @@ class ArchiveResumeWorker(QThread):
 
 
 # アーカイブ切り抜き用タブ
+# 経路 D (AI 編集) をワーカースレッドで実行する (docs/AiEditor/resolve1.md §11.2 / §18.1)
+#
+# 採点までは既存のまま。ここから先は AI がシーンと構成を決め、
+# **既存コマンド経由で編集したプロジェクト**を保存する。
+# 出力は保存したプロジェクトを既存の「編集の続き」経路が開いて行う (§18.1)。
+class ArchiveAiWorker(QThread):
+    progress = Signal(float, str)
+    finished_ok = Signal(object)   # ai_runner.AiAutoResult
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, input_path, settings, analysis, comments=None, source=None,
+                 vod_source=None, parent=None):
+        super().__init__(parent)
+        self._input_path = input_path
+        self._settings = settings
+        self._analysis = analysis
+        self._comments = comments
+        self._source = source
+        self._vod_source = vod_source
+        # 中止の要求 (resolve3 R9-5 と同じ作法)
+        self._cancel_requested = False
+        # 利用量の記録はこのワーカーが 1 本持つ (VOD 1 本 = 1 プロジェクト分 / §17.2)。
+        # 走り終えたら必ず集計をログへ残す。これが実測の一次資料になる (§22 T1)。
+        self._tracker = ai_usage_log.UsageTracker(settings)
+
+    def run(self):
+        try:
+            result = ai_runner.run_ai(
+                self._input_path, self._settings, self._provider(),
+                analysis=self._analysis, comments=self._comments,
+                source=self._source, vod_source=self._vod_source,
+                progress_cb=self._emit, cancel_cb=self._is_cancelled)
+            self.finished_ok.emit(result)
+        except PipelineCancelled:
+            self.cancelled.emit()
+        except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
+            _logger.exception("AI の編集に失敗")
+            self.failed.emit(format_failure_message(e))
+        finally:
+            # 中止・失敗でも残す (そこまでに使った分は実費として出ている)。
+            try:
+                self._tracker.log_summary()
+            except Exception as e:  # noqa: BLE001 - 記録で本処理を壊さない
+                _logger.debug("AI の利用量の記録に失敗しました: %s", e)
+
+    # 認証はアプリ全体で 1 つを持ち回る (services/config §6.4)。
+    # ai.enabled=false のときは create_provider が None を返し、
+    # 既存の採点だけで構成する (経路 B 相当まで縮退 / §11.2)。
+    def _provider(self):
+        return ai_provider.create_provider(
+            self._settings, services_config.shared_auth(self._settings),
+            self._tracker)
+
+    def _emit(self, ratio, label):
+        self.progress.emit(float(ratio), str(label))
+
+    def cancel(self):
+        self._cancel_requested = True
+
+    def _is_cancelled(self):
+        return self._cancel_requested
+
+
 class ArchiveTabWidget(QWidget):
 
     # 実行状態の変化を親へ通知する (ver3 resolve4 §5.7-4 / 回答 Q1)
@@ -958,6 +1032,13 @@ class ArchiveTabWidget(QWidget):
         _logger.info("書き出し対象: %d セクション / 合計 %.0fs / 想定 %.0fs (R13)",
                      len(clips), total_sec, estimate_sec)
 
+        # 経路 D: AI が有効なときは AI にシーンと構成を決めさせる (§18.1)。
+        # 画面の流れは変えない (この後、既存の編集画面が開く)。
+        # 同意が無ければ AI は使わず、そのまま従来の経路へ落ちる (§5.5)。
+        if ai_config.is_enabled(self._settings) and self._ensure_ai_consent():
+            self._start_ai(payload, result)
+            return
+
         # 追加フォント(settings/fonts)を Qt へ登録し編集画面の一覧へ反映する (resolve16 §4.2)
         register_fonts_in_dir(resolve_fonts_dir(self._settings))
         subtitle_cfg = self._settings.get("subtitle", {})
@@ -997,9 +1078,81 @@ class ArchiveTabWidget(QWidget):
     # ワーカーへフラグを立てるだけにする。スレッドを強制終了すると書きかけの
     # ファイルや一時フォルダが残るため、工程の境目と ffmpeg の進捗 1 行ごとに
     # ワーカー側が自分で止まるのを待つ。
+    # AI を使う前の同意 (§5.5 / §13.4)
+    #
+    # 初回 (と文面が新しくなったとき) に 1 度だけ尋ねる。同意しなければ AI を使わず、
+    # **従来どおりの切り抜きで続行する** (機能ごと止めない)。
+    # 同意は setting.json へ残す (ai.consent.accepted_version)。
+    def _ensure_ai_consent(self):
+        if not ai_consent.needs_consent(self._settings):
+            return True
+        answer = QMessageBox.question(
+            self, ai_consent.title(), ai_consent.text(self._settings),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            _logger.info("AI の利用に同意されなかったため従来の経路で続行します")
+            self.status_label.setText(tr("AI を使わずに切り抜きます"))
+
+            return False
+        ai_consent.accept(self._settings)
+        try:
+            save_settings(self._settings)
+        except Exception as e:  # noqa: BLE001 (保存できなくても今回は使える)
+            _logger.warning("同意を保存できませんでした (次回また尋ねます): %s", e)
+
+        return True
+
+    # ===== 経路 D (AI 編集 / §18.1) =====
+
+    def _start_ai(self, payload, result):
+        register_fonts_in_dir(resolve_fonts_dir(self._settings))
+        vod_source = payload.get("vod_source") if isinstance(payload, dict) else None
+        source = {"video_id": str((vod_source or {}).get("video_id", "") or "")}
+        self._ai_worker = ArchiveAiWorker(
+            self._pending_input, self._settings, result,
+            comments=payload.get("comments") if isinstance(payload, dict) else None,
+            source=source, vod_source=vod_source, parent=self)
+        self._ai_worker.progress.connect(self._on_progress)
+        self._ai_worker.finished_ok.connect(self._on_ai_done)
+        self._ai_worker.cancelled.connect(self._on_resume_cancelled)
+        self._ai_worker.failed.connect(self._on_failed)
+        self._spinner_message = tr("AI が編集しています…")
+        self._set_running(True)
+        self._ai_worker.start()
+
+    # AI が組んだプロジェクトを**既存の編集画面**で開く (§18.1)。
+    # ターゲットが複数のときは最初の 1 本を開き、残りは「編集の続き」から開ける。
+    def _on_ai_done(self, outcome):
+        self._set_running(False)
+        self._write_ai_reports(outcome)
+        paths = list(getattr(outcome, "project_paths", []) or [])
+        if not paths:
+            self.status_label.setText(tr("AI の編集結果がありません"))
+            QMessageBox.information(self, tr("完了"),
+                                    tr("AI が編集できるシーンがありませんでした。"))
+            return
+        message = getattr(outcome.report, "message", lambda: "")()
+        if message:
+            _logger.info("AI の編集: %s", message)
+        if len(paths) > 1:
+            self.status_label.setText(
+                tr("AI の編集を {n} 本作りました。1 本目を開きます", n=len(paths)))
+        self._start_resume(paths[0])
+
+    # レビューの読み物を PDF へ (§12.6)。PDF 化は Qt が要るためここで行う。
+    def _write_ai_reports(self, outcome):
+        for run in getattr(outcome, "runs", []) or []:
+            if not getattr(run, "report_html", ""):
+                continue
+            try:
+                ai_report.write(self._settings, run.report_html, run.project_path)
+            except Exception as e:  # noqa: BLE001 (読み物が出なくても編集結果は残る)
+                _logger.warning("レビューの読み物を書き出せませんでした: %s", e)
+
     def _on_cancel(self):
         requested = False
-        for name in ("_clip_worker", "_resume_worker", "_analyze_worker"):
+        for name in ("_clip_worker", "_resume_worker", "_analyze_worker",
+                     "_ai_worker"):
             worker = getattr(self, name, None)
             if worker is None or not worker.isRunning():
                 continue
@@ -1150,7 +1303,7 @@ class ArchiveTabWidget(QWidget):
 
     # 直前の実行で中止が要求されていたか (resolve3 R9-5)
     def _cancel_was_requested(self):
-        for name in ("_clip_worker", "_resume_worker"):
+        for name in ("_clip_worker", "_resume_worker", "_ai_worker"):
             worker = getattr(self, name, None)
             if worker is not None and getattr(worker, "_cancel_requested", False):
                 return True

@@ -820,6 +820,183 @@
             "name_max_len": 32
         }
     },
+    "ai": {
+        "enabled": false,
+        "direct_mode": false,
+        "endpoint": {
+            "complete": "/api/ai/complete",
+            "count": "/api/ai/count",
+            "config": "/api/ai/config",
+            "jobs": "/api/ai/jobs"
+        },
+        "models": {
+            "scene_eval": "claude-sonnet-5-5",
+            "plan": "claude-opus-5-5",
+            "review": "claude-sonnet-5-5",
+            "review_critic": "claude-opus-5-5",
+            "profile": "claude-sonnet-5-5",
+            "classify": "claude-haiku-5-5"
+        },
+        "effort": {
+            "scene_eval": "medium",
+            "plan": "high",
+            "review": "medium",
+            "profile": "medium",
+            "classify": "low"
+        },
+        "max_output_tokens": 8192,
+        "timeout_sec": 180,
+        "retry": {
+            "max_attempts": 3,
+            "backoff_sec": 2.0
+        },
+        "jobs": {
+            "wait_sec": 900,
+            "poll_min_ms": 1000
+        },
+        "consent": {
+            "accepted_version": 0
+        },
+        "privacy": {
+            "include_comment_user": false,
+            "include_transcript": true
+        },
+        "candidates": {
+            "top_n": 30,
+            "allow_overlap": false,
+            "min_score": 0,
+            "window_sec": 0,
+            "transcribe_pad_sec": 15.0
+        },
+        "transcribe": {
+            "speaker_filter": true,
+            "reuse_existing": true
+        },
+        "sweep": {
+            "enabled": false,
+            "chunk_sec": 600
+        },
+        "scene_eval": {
+            "batch_size": 8,
+            "max_reason_chars": 120,
+            "base_score_weight": 0.2,
+            "weights": {
+                "long": {
+                    "funny": 0.3,
+                    "surprise": 0.15,
+                    "first_time_clarity": 0.15,
+                    "excitement": 0.2,
+                    "shorts_fit": 0.0,
+                    "long_fit": 0.2,
+                    "standalone": 0.0,
+                    "context_dependency": -0.1
+                },
+                "shorts": {
+                    "funny": 0.3,
+                    "surprise": 0.2,
+                    "first_time_clarity": 0.15,
+                    "excitement": 0.1,
+                    "shorts_fit": 0.25,
+                    "long_fit": 0.0,
+                    "standalone": 0.2,
+                    "context_dependency": -0.2
+                }
+            }
+        },
+        "plan": {
+            "targets": [
+                "youtube_long",
+                "youtube_shorts",
+                "tiktok"
+            ],
+            "youtube_long": {
+                "min_sec": 180,
+                "max_sec": 900,
+                "max_scenes": 12
+            },
+            "youtube_shorts": {
+                "min_sec": 15,
+                "max_sec": 60,
+                "max_scenes": 5
+            },
+            "tiktok": {
+                "min_sec": 15,
+                "max_sec": 60,
+                "max_scenes": 5
+            },
+            "subtitle_mode": "full",
+            "variants": 1,
+            "allow_reuse_scene": true
+        },
+        "sounds": {
+            "enabled": true,
+            "presets": {}
+        },
+        "review": {
+            "enabled": false,
+            "roles": {
+                "director": true,
+                "critic": true,
+                "viewer": true,
+                "platform": true,
+                "qa": false
+            },
+            "max_rounds": 2,
+            "max_issues_per_round": 5,
+            "min_severity": "major"
+        },
+        "vision": {
+            "enabled": true,
+            "frames_per_scene": 1,
+            "max_frames": 12,
+            "max_edge_px": 768,
+            "points": [
+                "peak",
+                "head"
+            ]
+        },
+        "report": {
+            "enabled": true,
+            "format": "pdf",
+            "auto_open": false,
+            "font": "",
+            "include_frames": true,
+            "name_suffix": "_review"
+        },
+        "cost": {
+            "max_calls_per_project": 20,
+            "max_input_tokens_per_project": 300000,
+            "confirm_over_points": 0
+        },
+        "budget": {
+            "max_input_tokens": 60000,
+            "chars_per_token": 2.0,
+            "cell_pad_sec": 60,
+            "curve_window_span": 2,
+            "max_comments_per_cell": 20,
+            "merge_transcript_gap_sec": 1.0,
+            "cache_prefix": true
+        },
+        "learning": {
+            "enabled": true,
+            "upload": false,
+            "operation_log": false,
+            "min_evidence": 10,
+            "match_tolerance_sec": 0.3,
+            "keep_days": 180,
+            "exclude": []
+        },
+        "profile": {
+            "active": {
+                "youtube_long": "",
+                "youtube_shorts": "",
+                "tiktok": ""
+            }
+        },
+        "debug": {
+            "dump_payloads": false
+        }
+    },
     "ui": {
         "language": "ja",
         "theme": "glass",
