@@ -47,6 +47,12 @@ _ASS_SCALE_Y = 100
 _ASS_SHADOW = 1
 _ASS_ENCODING = 1
 
+# ASS の BorderStyle の値 (設定画面の「縁取りスタイル」と同じ 2 択)。
+# 3 = 不透明ボックス。libass はこの箱を**縁の色 (OutlineColour)** で塗る
+# (背景色 BackColour は影にしか効かない / error 20261122)。
+_ASS_BORDER_STYLE_OUTLINE = 1
+_ASS_BORDER_STYLE_BOX = 3
+
 # 不正値フォールバック用の既定 ASS 色
 _DEFAULT_OUTLINE_COLOR = "&H00000000"
 _DEFAULT_BACK_COLOR = "&H64000000"
@@ -136,7 +142,7 @@ class FontProfile:
         self.strikeout = bool(strikeout)
         self.spacing = _to_int(spacing, 0)
         self.angle = _to_int(angle, 0)
-        self.border_style = _to_int(border_style, 1)
+        self.border_style = _to_int(border_style, _ASS_BORDER_STYLE_OUTLINE)
         self.alignment = _to_int(alignment, 2)
         self.margin_l = _to_int(margin_l, 40)
         self.margin_r = _to_int(margin_r, 40)
@@ -1386,6 +1392,19 @@ def build_subtitle_file(timeline, font_profile, output_path,
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
+
+    # 「不透明ボックス」(BorderStyle=3) を使っていることをログへ残す (error 20261122)。
+    #
+    # libass は BorderStyle=3 の箱を**縁の色**で塗る (背景色 back_color は影にしか
+    # 効かない)。白い縁取りのままこれを選ぶと、テロップの背後が白一色の箱になる。
+    # プレビューは border_style を見ないため画面では分からず、実測では
+    # 設定画面でホイールが当たって 1 → 3 へ変わったまま 1 本まるごと焼けていた。
+    # 映像から逆算せずに済むよう、焼き込みのたびに 1 行残す。
+    if font_profile.border_style == _ASS_BORDER_STYLE_BOX:
+        _logger.warning(
+            "縁取りスタイル=不透明ボックス のため、テロップの背後へ「縁の色」で"
+            "塗った箱が出ます (縁の色=%s / 設定: subtitle.border_style=%d)",
+            font_profile.outline_color, font_profile.border_style)
 
     # コメントの背景と重ね順 (ver3 resolve11 §5.11-4)。
     # subtitle_cfg 未指定の呼び出しでは背景を出さず、Layer も 0 のまま = 従来と同一出力。
