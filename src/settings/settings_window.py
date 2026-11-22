@@ -39,15 +39,17 @@ from PySide6.QtWidgets import (
 # ための小部品 (resolve6 §5.4)。theme と同じ経路で読み込む。
 # output_profile は出力キャンバスの解決と、その実行時キーの定義を持つ唯一の場所
 # (ver11 resolve2 R2)。保存の出口でそれを剥がすため読み込む。PySide6 には依存しない。
+# wheel_guard はドロップダウン・数値入力がホイールで勝手に変わるのを止める小部品
+# (error 20261122)。
 try:
-    from src.gui import color_field, theme
+    from src.gui import color_field, theme, wheel_guard
     from src.i18n import tr
     from src.modules import output_profile
     from src.utils import disk
 except ImportError:
     sys.path.insert(
         0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from src.gui import color_field, theme
+    from src.gui import color_field, theme, wheel_guard
     from src.i18n import tr
     from src.modules import output_profile
     from src.utils import disk
@@ -2268,6 +2270,19 @@ class SettingsWindow(QWidget):
         if self._blur_ui_enabled():
             self.tabs.addTab(self._blur_tab, tr("ぼかし"))
         self.tabs.addTab(self._build_account_tab(), tr("アカウント"))
+
+        # ドロップダウンと数値入力をホイールで変えられなくする (error 20261122)。
+        #
+        # カーソルが載っているだけでホイール 1 ノッチで値が飛ぶため、
+        # 「縁取りスタイル」が不透明ボックスへ変わったまま保存され、テロップの
+        # 背後に縁の色で塗った箱が出る事故が起きた。画面では分からないので、
+        # **タブを組む 1 か所**でまとめて塞ぐ (以後タブや項目が増えても守られる)。
+        # 並べていないぼかしタブも保存対象のため、同じように塞ぐ。
+        #
+        # 入れ先は self ではなく self.tabs。ここはまだ _build_ui が
+        # root_layout へ載せる前で、self から辿っても 1 つも見つからない。
+        wheel_guard.install(self.tabs)
+        wheel_guard.install(self._blur_tab)
 
     # ぼかしの設定を利用者へ見せるか (blur.enabled かつ blur.ui_enabled)。
     # タブを組む時点では _loaded_settings がまだ無いため、保存済みの設定を読む。
