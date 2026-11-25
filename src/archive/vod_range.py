@@ -25,6 +25,7 @@
 import math
 import os
 import re
+import shutil
 
 from ..exceptions import InputError, TwitchError
 from ..i18n import tr
@@ -105,6 +106,83 @@ def segment_origin(starts, index):
                "（セグメント {index} / プレイリスト {count} 件）。",
                index=index, count=len(starts)))
     return float(starts[index])
+
+
+
+# 区間取得のキャッシュは「そのフォルダで前回どの区間を取ったか」を控える
+# (docs/error/20261125b/resolve.md §4 R1)。
+_WINDOW_NAME = "requested_window.txt"
+
+# 同じ区間とみなす許容 (秒)。丸め違いで取り直しにならないようにする。
+_WINDOW_TOLERANCE_SEC = 0.5
+
+
+# 取得する区間が前回と違うならキャッシュを捨てる。
+#
+# twitch_source._clear_broken_leftovers は**番号付きセグメントをわざと残す**
+# (error 20261118 §9 R5「再試行が前回の続きから進む」)。この前提は
+# 「再試行は同じ区間に対して行われる」ことであり、区間が変わるときには成り立たない。
+# 残ったままだと別の区間のセグメントが混ざり、verify_continuous が
+# 「取得した区間が途切れています」で必ず失敗する (error 20261125b)。
+#
+# 控えが無い (前のセッションの残り) ときも捨てる。何の区間か分からないものは使えない。
+def reset_cache_for_window(cache_root, window_start, window_end):
+    recorded = _read_window(cache_root)
+    want = (float(window_start), float(window_end))
+    if recorded is not None and _same_window(recorded, want):
+        return False            # 同じ区間の取り直し = 前回の続きから進める
+
+    if recorded is not None:
+        _logger.info("前回と違う区間のため取得キャッシュを捨てます "
+                     "(前回 %.0f→%.0f / 今回 %.0f→%.0f)",
+                     recorded[0], recorded[1], want[0], want[1])
+    _clear_dir(cache_root)
+    _write_window(cache_root, want)
+
+    return True
+
+
+def _same_window(left, right):
+    return (abs(left[0] - right[0]) <= _WINDOW_TOLERANCE_SEC
+            and abs(left[1] - right[1]) <= _WINDOW_TOLERANCE_SEC)
+
+
+# 控えを読む (無い・壊れている場合は None)
+def _read_window(cache_root):
+    path = os.path.join(cache_root, _WINDOW_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            start, end = handle.read().strip().split("-")
+
+        return float(start), float(end)
+    except (OSError, ValueError):
+        return None
+
+
+# 控えを書く。書けなくても取得は続ける (次回に捨てる判断ができないだけ)。
+def _write_window(cache_root, window):
+    try:
+        os.makedirs(cache_root, exist_ok=True)
+        with open(os.path.join(cache_root, _WINDOW_NAME), "w",
+                  encoding="utf-8") as handle:
+            handle.write("{0:.3f}-{1:.3f}".format(window[0], window[1]))
+    except OSError as e:
+        _logger.warning("取得区間の控えを書けませんでした: %s", e)
+
+
+# フォルダの中身だけを消す (フォルダ自体は残す)
+def _clear_dir(cache_root):
+    if not os.path.isdir(cache_root):
+        return
+    for name in os.listdir(cache_root):
+        target = os.path.join(cache_root, name)
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            else:
+                os.remove(target)
+        except OSError as e:
+            _logger.warning("取得キャッシュを消せませんでした: %s (%s)", target, e)
 
 
 # セグメントが連番で揃っているかを確かめる。
@@ -230,6 +308,9 @@ def fetch_range(video_id, start_sec, end_sec, workdir, settings,
 
     cache_root = os.path.join(workdir, f"vod_range_{tag or 'x'}")
     os.makedirs(cache_root, exist_ok=True)
+    # 前回と違う区間ならキャッシュを捨てる。残すと別の区間のセグメントが
+    # 混ざり、verify_continuous が必ず失敗する (error 20261125b §4 R1)。
+    reset_cache_for_window(cache_root, window_start, window_end)
     _logger.info("区間取得: %s %d→%d 秒 (要求 %.1f→%.1f / 余裕 %.1fs / 画質 %s)",
                  video_id, window_start, window_end, start, end, pad, quality)
 

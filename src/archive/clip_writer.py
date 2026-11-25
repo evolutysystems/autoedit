@@ -40,6 +40,7 @@ from ..timeline import renderer
 from ..utils import stage_timer
 from ..utils.logger import get_logger
 from . import config
+from . import cut_origin
 from . import features
 from . import timeline_builder as archive_timeline
 
@@ -693,6 +694,14 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
     # 保存され、素材の復元に使われる唯一のキーであるため)。
     origin = float(source_origin_sec or 0.0)
     cut_region(input_path, clip["start"] - origin, clip["end"] - origin, raw, ffmpeg_cfg)
+    # -c copy の切り出しは要求位置ちょうどでは始まらない。シーク点と要求位置の
+    # 間を捨てられないため、素材の先頭は**その手前** (Twitch VOD なら最大 1 GOP
+    # ≒ 2 秒) になる (archive/cut_origin.py)。
+    # 「素材内の秒 → VOD の秒」の原点はここで実測した値だけが正しく、
+    # clip["start"] をそのまま使うと最大 1 GOP ずれる
+    # (docs/request/ver13/resolve2.md §3)。測れなければ要求位置が返り、処理は止まらない。
+    media_vod_start = origin + cut_origin.measure(
+        input_path, clip["start"] - origin, ffmpeg_cfg)
     # 音声解析・正規化: クリップの最初の編集として YouTube 向けラウドネスへ揃える
     # (resolve22 §5.4。スキップ/失敗時は raw がそのまま返るため分岐不要)
     #
@@ -762,6 +771,9 @@ def prepare_one_clip(input_path, settings, clip_settings, clip, ffmpeg_cfg, work
         # Timeline の clip_meta まで運び、保存プロジェクトにも残す。
         "marker": bool(clip.get("marker")),
         "marker_labels": list(clip.get("marker_labels") or []),
+        # 素材の先頭に当たる VOD 時刻 (実測)。素材の復元情報 (archive.media の
+        # vod_start) はこれを使う (docs/request/ver13/resolve2.md §3.3)。
+        "media_vod_start": media_vod_start,
     }
     _logger.info(
         "clip%s prepare 完了 (字幕 %d 件%s)",

@@ -14,6 +14,15 @@ from . import ffmpeg_runner
 
 _logger = get_logger(__name__)
 
+# 残す区間として採用する最小の長さ (秒)。
+# 「ほぼ 0 の区間を捨てる」ための値であり、クリップの下限ではない。
+_MIN_KEEP_SEC = 0.01
+
+# timeline.min_clip_sec の既定 (timeline.builder.timeline_config と同じ値)。
+# Timeline のクリップになる経路では 0.01 秒ではなくこちらを下限にする
+# (docs/error/20261124/resolve.md §4 R1)。
+_DEFAULT_MIN_CLIP_SEC = 0.05
+
 # silencedetect の出力パターン
 _RE_SILENCE_START = re.compile(r"silence_start:\s*([0-9.]+)")
 _RE_SILENCE_END = re.compile(r"silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)")
@@ -85,7 +94,14 @@ def _parse_silence_log(stderr_text):
 # 残すべき有音区間を算出する
 # 入力: 無音区間リスト, 動画総尺
 # 出力: [(keep_start, keep_end), ...]
-def build_keep_segments(silence_ranges, total_duration):
+#
+# min_segment_sec: これ以下の区間は採用しない (既定 0.01 秒)。
+#   **Timeline のクリップになる経路は timeline.min_clip_sec を渡すこと**
+#   (docs/error/20261124/resolve.md §4 R1)。既定のままだと
+#   0.01〜min_clip_sec 秒の区間がクリップとして作られ、
+#   project_io.validate が必ず消す形になる。
+def build_keep_segments(silence_ranges, total_duration, min_segment_sec=_MIN_KEEP_SEC):
+    limit = float(min_segment_sec or _MIN_KEEP_SEC)
     keep = []
     cursor = 0.0
     for s_start, s_end in silence_ranges:
@@ -94,7 +110,17 @@ def build_keep_segments(silence_ranges, total_duration):
         cursor = max(cursor, s_end)
     if cursor < total_duration:
         keep.append((cursor, total_duration))
-    return [seg for seg in keep if (seg[1] - seg[0]) > 0.01]
+    return [seg for seg in keep if (seg[1] - seg[0]) > limit]
+
+
+# Timeline のクリップ下限 (timeline.min_clip_sec) を設定から取り出す。
+# 編集点をそのままクリップにする経路で、作る側と検証側の下限を一致させるために要る。
+def timeline_min_clip_sec(settings):
+    timeline_cfg = (settings or {}).get("timeline", {}) or {}
+
+    return max(_MIN_KEEP_SEC,
+               _coerce_float(timeline_cfg.get("min_clip_sec"),
+                             default=_DEFAULT_MIN_CLIP_SEC))
 
 
 # 残す区間を trim+concat フィルタで結合する
@@ -520,15 +546,26 @@ def detect_edit_points(context):
     min_silence_duration_sec = _coerce_float(
         va_cfg.get("cut_min_silence_sec"), default=0.6)
 
+    # 編集点はそのまま Timeline のクリップになる。クリップの下限 (min_clip_sec) を
+    # 割る区間は作らない (docs/error/20261124/resolve.md §4 R1)。
+    # ここで通してしまうと project_io.validate が必ずそのクリップを消し、
+    # AI 編集の V15 がそれを「plan が壊した」と誤判定して全部巻き戻す。
+    min_keep_sec = timeline_min_clip_sec(settings)
+
     if not silence_cfg.get("enabled", True):
         # 無音カット OFF: 全長 1 区間を編集点とする (Timeline は成立させる / §7.2)
         _logger.info("無音カット無効のため全長 1 区間を編集点とします")
         keep_segments = [(0.0, total_duration)]
         silence_ranges = []
+        dropped = 0
     else:
         silence_ranges = detect_silence(
             input_path, noise_threshold_db, min_silence_duration_sec, ffmpeg_cfg)
-        keep_segments = build_keep_segments(silence_ranges, total_duration)
+        keep_segments = build_keep_segments(
+            silence_ranges, total_duration, min_segment_sec=min_keep_sec)
+        # 下限で落ちた件数 (案内用)。0.01 秒での採用数との差で数える。
+        dropped = (len(build_keep_segments(silence_ranges, total_duration))
+                   - len(keep_segments))
         if not keep_segments:
             # 有音区間 0 件でも中断しない。Timeline 上で手編集して救済できるため (§10)
             _logger.warning("有音区間が抽出できなかったため全長 1 区間として続行します")
@@ -539,6 +576,9 @@ def detect_edit_points(context):
         len(silence_ranges), len(keep_segments),
         noise_threshold_db, min_silence_duration_sec, total_duration,
     )
+    if dropped:
+        _logger.info(
+            "下限 (%.3fs) 未満のため編集点にしなかった区間: %d 件", min_keep_sec, dropped)
 
     # 算出した編集点を context へ保持する (既存 API をそのまま使う / resolve20 §5.3)
     setter = getattr(context, "set_keep_segments", None)

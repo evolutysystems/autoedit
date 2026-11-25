@@ -9,6 +9,9 @@
 # 上限 (ai.cost.*) はクライアント側の自衛である。サーバーも日次・プロジェクト単位で
 # 独立に強制しており (申告は信用されない)、ここで止めるのは
 # 「無駄な往復を減らす」ためである。
+import hashlib
+import json
+
 from ..exceptions import AiProviderError
 from ..i18n import tr
 from ..utils.logger import get_logger
@@ -157,11 +160,22 @@ class UsageTracker:
             except Exception as e:  # noqa: BLE001 - 計測で本処理を止めない
                 _logger.debug("AI のテレメトリー送信に失敗しました: %s", e)
 
-    # キャッシュが効いているかを見る。0 が続いたら前置きが揺れている (§6.4)。
+    # キャッシュが効いているかを見る (§6.4)。
+    #
+    # 数えるのは **前置きの実体が同じ呼び出し** だけである。cache_prefix_id は
+    # 「同じ前置きを使い回す意思表示」であって、中身が同じことの保証ではない。
+    # 前置き (役割の固定文 + 指示 + スキーマ) が違えば 1 回目は必ず外れるため、
+    # id だけで数えると「出力先ごとに 1 回ずつ呼ぶ」正常な実行でも警告が出る
+    # (2026-11-24: plan 役割で誤検知していた)。
+    #
+    # 実体が同じなのに続けて外れるときだけ警告する。これは本当に直すべき状態
+    # (前置きに時刻や乱数が混ざった / TTL より呼び出し間隔が長い) を指す。
     def _check_cache(self, request, completion):
         key = request.cache_prefix_id
         if not key:
             return
+
+        key = (key, _prefix_digest(request))
 
         if completion.usage.cache_read_input_tokens > 0:
             self._cache_miss_streak.pop(key, None)
@@ -174,8 +188,9 @@ class UsageTracker:
         if streak >= _CACHE_MISS_WARN_STREAK:
             _logger.warning(
                 "AI のプロンプトキャッシュが効いていません "
-                "(cache_prefix_id=%s 連続=%d role=%s)。前置きが揺れている可能性があります。",
-                key, streak, request.role)
+                "(cache_prefix_id=%s 前置き=%s 連続=%d role=%s)。"
+                "同じ前置きで続けて外れています。",
+                key[0], key[1], streak, request.role)
 
     def _reject(self, reason, role):
         _logger.warning(
@@ -185,3 +200,19 @@ class UsageTracker:
         raise AiProviderError(
             tr("この動画での AI の利用上限に達しました。"),
             code=CODE_BUDGET_EXCEEDED)
+
+
+# 前置きの実体を表す短い指紋。キャッシュの前方一致に入るもの
+# (役割・指示・スキーマ) だけから作る。payload は breakpoint の後ろにあり
+# キャッシュを壊さないため入れない (実測で確認 / 2026-11-24)。
+def _prefix_digest(request):
+    schema = request.schema
+    material = "\n".join((
+        str(request.role),
+        str(request.system or ""),
+        json.dumps(schema, sort_keys=True, ensure_ascii=False,
+                   default=str) if schema is not None else "",
+        str(len(request.images or [])),
+    ))
+
+    return hashlib.sha1(material.encode("utf-8")).hexdigest()[:8]

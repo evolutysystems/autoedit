@@ -259,6 +259,7 @@ AI の 1 回は**実費**である。クライアントがタイムアウトで�
   "requireLogin": true,
   "roles": {
     "sceneEval": { "model": "claude-sonnet-5-5", "effort": "medium", "maxOutputTokens": 8192 },
+    "sceneScan": { "model": "claude-sonnet-5-5", "effort": "medium", "maxOutputTokens": 16000 },
     "plan":      { "model": "claude-opus-5-5",   "effort": "high",   "maxOutputTokens": 16000 }
   },
   "allowedModels": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],

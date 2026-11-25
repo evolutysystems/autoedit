@@ -6,6 +6,7 @@
 # 既存セクションと重なる場合は 1 つへ統合される (resolve13 §3-4)。
 # 破壊的に見える挙動のため、追加を押す前に統合後の区間を画面へ出す。
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialogButtonBox,
     QDialog,
     QFormLayout,
@@ -56,7 +57,12 @@ class SectionAddDialog(QDialog):
     # preview_cb   : callable(開始, 終了) -> 案内文字列、または (案内文字列, 追加できるか)。
     #                統合の予告と、「使われていて追加できない」の通知に使う
     #                (ver5 resolve6 §5.8)
-    def __init__(self, vod_duration, default_start, cfg, preview_cb=None, parent=None):
+    # silence_cut_default : 「無音カット」チェックの初期値。呼び出し側が今使っている
+    #                値を渡す (docs/request/ver13/resolve1.md §3 R1)。区間ごとに
+    #                決めたいという要望のため、ここでの選択は setting.json へ
+    #                書き戻さない。
+    def __init__(self, vod_duration, default_start, cfg, preview_cb=None, parent=None,
+                 silence_cut_default=True):
         super().__init__(parent)
         self.setWindowTitle(tr("セクションの追加"))
         self._duration = float(vod_duration or 0.0)
@@ -70,10 +76,10 @@ class SectionAddDialog(QDialog):
         if self._duration > 0:
             start = min(start, self._duration)
             end = min(end, self._duration)
-        self._build_ui(start, end)
+        self._build_ui(start, end, bool(silence_cut_default))
         self._on_changed()
 
-    def _build_ui(self, start, end):
+    def _build_ui(self, start, end, silence_cut):
         root = QVBoxLayout(self)
 
         if self._duration > 0:
@@ -93,6 +99,15 @@ class SectionAddDialog(QDialog):
         form.addRow(tr("開始"), self.start_edit)
         form.addRow(tr("終了"), self.end_edit)
         root.addLayout(form)
+
+        # この区間だけ無音カットの有無を決める (ver13 resolve1 §3 R1)。
+        # 入力の妥当性には関わらないため _on_changed へは繋がない。
+        self.silence_cut_check = QCheckBox(tr("無音カット"))
+        self.silence_cut_check.setToolTip(tr(
+            "この区間だけ無音カットの有無を決めます。"
+            "追加したあとも Timeline で戻せます"))
+        self.silence_cut_check.setChecked(silence_cut)
+        root.addWidget(self.silence_cut_check)
 
         # 長さと、統合が起きる場合の予告をここへ出す
         self.info_label = QLabel("")
@@ -144,3 +159,7 @@ class SectionAddDialog(QDialog):
     # 指定された区間 (開始, 終了) を秒で返す
     def selected_range(self):
         return self._start, self._end
+
+    # この区間へ無音カットを掛けるか
+    def silence_cut_enabled(self):
+        return bool(self.silence_cut_check.isChecked())

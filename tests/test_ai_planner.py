@@ -276,6 +276,36 @@ class FallbackTest(unittest.TestCase):
         self.assertEqual(1, len(video_plan["sections"]))
 
 
+# プロンプトキャッシュは「役割の固定文 + 前置き + スキーマ」の前方一致で効く
+# (payload は breakpoint の後ろで、変わっても外れない / 2026-11-24 実測)。
+# 出力先ごとに前置きを変えると 3 出力先の呼び出しが 3 つの entry に分かれて
+# 2 回目以降が乗らないため、出力先の違いは payload で伝える。
+class PrefixIsSharedAcrossTargetsTest(unittest.TestCase):
+
+    def _calls(self, target):
+        provider = _Provider()
+        planner.build(_bundle(), _scenes(), provider, {}, target)
+
+        return provider.calls
+
+    def test_system_prompt_does_not_vary_by_target(self):
+        systems = {}
+        for target in ps.TARGETS:
+            for call in self._calls(target):
+                systems.setdefault(call.cache_prefix_id, set()).add(call.system)
+
+        for prefix, texts in systems.items():
+            self.assertEqual(1, len(texts), prefix)
+
+    def test_target_and_roles_travel_in_the_payload(self):
+        for target in ps.TARGETS:
+            payload = self._calls(target)[0].payload
+
+            self.assertEqual(target, payload["target"])
+            self.assertEqual(list(ps.SECTION_ROLE_ORDER[target]),
+                             payload["section_roles"])
+
+
 class UseOfTargetTest(unittest.TestCase):
 
     def test_targets_map_to_the_weight_sets(self):

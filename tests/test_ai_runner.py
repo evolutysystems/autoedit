@@ -368,6 +368,8 @@ class RunAiTest(RunnerBase):
         super().setUp()
         self.analyzed = []
         self.transcribed = []
+        # analyze へ渡された採点スイープ (resolve2.md §6.2)
+        self.scan_runners = []
 
     def _analysis(self, count=3):
         return {"duration": 7200.0, "curve": [],
@@ -376,9 +378,13 @@ class RunAiTest(RunnerBase):
                            "emotion": 5.0, "comment": 5.0} for i in range(count)],
                 "audio_scan": None}
 
+    # 本物の archive.pipeline.analyze と同じ形で受ける。
+    # scan は AI の採点スイープ (docs/AiEditor/resolve2.md §6.2)。
+    # 渡されたかどうかだけ控え、ここでは呼ばない (AI も ffmpeg も動かさない)。
     def _analyze(self, input_path, settings, progress_cb=None, comments=None,
-                 markers=None):
+                 markers=None, scan=None):
         self.analyzed.append(settings["archive"]["scoring"]["top_n"])
+        self.scan_runners.append(scan)
         if progress_cb is not None:
             progress_cb(1.0, "採点完了")
 
@@ -464,8 +470,10 @@ class RunAiTest(RunnerBase):
                          if n["check"] in ("E2", "P4")])
 
     def test_no_candidate_is_fatal(self):
-        def empty(input_path, settings, progress_cb=None, comments=None, markers=None):
-            return {"duration": 10.0, "curve": [], "clips": [], "audio_scan": None}
+        def empty(input_path, settings, progress_cb=None, comments=None,
+                  markers=None, scan=None):
+            return {"duration": 10.0, "curve": [], "clips": [],
+                    "audio_scan": None, "moments": []}
 
         with self.assertRaises(AiPlanError):
             ai_runner.run_ai(self.input_path, self.settings,

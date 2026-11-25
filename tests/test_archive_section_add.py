@@ -416,5 +416,88 @@ class UsedRangeTest(SectionAddTestBase):
         self.assertEqual(plan["span"], (100.0, 500.0))
 
 
+
+# 切り出し原点のずれ (ver13 resolve2 §3) — 要求位置より手前の余りを落とす
+class HeadTrimTest(unittest.TestCase):
+
+    def setUp(self):
+        self._original_probe = media_probe.probe
+        media_probe.probe = _fake_probe
+        self.settings = {"ffmpeg": {}}
+        self.stack = commands.CommandStack()
+
+    def tearDown(self):
+        media_probe.probe = self._original_probe
+
+    def _timeline(self):
+        prepared = [_entry(1, 100.0, 200.0)]
+        return archive_timeline.build_archive_timeline(
+            prepared, self.settings, source_path="vod.mp4")
+
+    # 追加する素材 1 件 (実測原点つき)
+    def _added(self, start, end, media_vod_start=None):
+        entry = _entry(9, start, end)
+        # -c copy の余りぶん素材が長い (先頭が要求位置の手前から始まる)
+        if media_vod_start is not None:
+            entry["media_vod_start"] = float(media_vod_start)
+            length = float(end) - float(media_vod_start)
+            _DURATIONS[entry["normalized_path"]] = length
+            entry["normalized_duration"] = length
+
+        return entry
+
+    def _add(self, timeline, entry):
+        plan = {"ranges": [(entry["start"], entry["end"])], "merge_indexes": [],
+                "target_index": None, "span": (entry["start"], entry["end"]),
+                "covered_sec": 0.0, "too_many": 0}
+
+        return self.stack.push(
+            timeline, archive_timeline.AddArchiveSection(
+                [entry], self.settings, plan))
+
+    def _added_clip(self, timeline):
+        base = timeline.base_video_track()
+        clips = [c for c in base.clips
+                 if c.origin.get(archive_timeline.ORIGIN_ARCHIVE_INDEX) == 9]
+        self.assertEqual(len(clips), 1)
+
+        return clips[0]
+
+    # T10: 要求位置より手前の余りを落とす
+    def test_extra_head_is_trimmed(self):
+        timeline = self._timeline()
+        # 要求 300.0-310.0 に対し、素材は 298.3 から始まっている (1.7 秒の余り)
+        self.assertTrue(self._add(timeline, self._added(300.0, 310.0, 298.3)))
+        clip = self._added_clip(timeline)
+        self.assertAlmostEqual(clip.source_in, 1.7, places=3)
+        self.assertAlmostEqual(clip.duration, 10.0, places=3)
+
+    # 素材の復元情報は実測原点で残る (素材内の秒 → VOD の秒 がそろう)
+    def test_media_record_uses_the_measured_origin(self):
+        timeline = self._timeline()
+        self._add(timeline, self._added(300.0, 310.0, 298.3))
+        clip = self._added_clip(timeline)
+        row = archive_timeline.archive_media_entry(timeline, clip.media_id)
+        self.assertAlmostEqual(row["vod_start"], 298.3, places=3)
+        # 素材内の秒 + 原点 = 要求した VOD 位置
+        self.assertAlmostEqual(row["vod_start"] + clip.source_in, 300.0, places=3)
+
+    # T11: 余りが無い (実測 = 要求) なら従来と同じ
+    def test_no_extra_head_keeps_the_whole_material(self):
+        timeline = self._timeline()
+        self.assertTrue(self._add(timeline, self._added(300.0, 310.0, 300.0)))
+        clip = self._added_clip(timeline)
+        self.assertAlmostEqual(clip.source_in, 0.0, places=3)
+        self.assertAlmostEqual(clip.duration, 10.0, places=3)
+
+    # media_vod_start を持たない古い entry でも従来どおり動く (回帰)
+    def test_entry_without_the_key_is_unchanged(self):
+        timeline = self._timeline()
+        self.assertTrue(self._add(timeline, self._added(300.0, 310.0)))
+        clip = self._added_clip(timeline)
+        self.assertAlmostEqual(clip.source_in, 0.0, places=3)
+        self.assertAlmostEqual(clip.duration, 10.0, places=3)
+
+
 if __name__ == "__main__":
     unittest.main()

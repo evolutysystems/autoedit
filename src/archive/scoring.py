@@ -126,6 +126,70 @@ def _weighted_total(emotion, comment, cfg):
     return emotion * w_emotion + comment * w_comment
 
 
+# ------------------------------------------------------------------
+# AI の山を窓スコアへ混ぜる (docs/AiEditor/resolve2.md §6.1 / P3)
+# ------------------------------------------------------------------
+#
+# 採点そのものは変えない。既存の窓 (180 秒 / 45 秒スライド) をそのまま使い、
+# **total だけ**を混ぜる。
+#
+#   ai_window = 窓に重なる山の scan_score の最大値 (重なりが無ければ 0)
+#   total     = ai_weight * ai_window + (1 - ai_weight) * machine_total
+#
+# emotion / comment は**機械の値をそのまま残す**。採点グラフの内訳表示と
+# セクション追加の best_window_for_range がこの 2 つを見ているためである。
+# 窓には ai_score / moment_index を**足す** (既存の鍵は消さない)。
+#
+# ここは純粋関数であり ai/ を import しない。山は呼び出し側が用意して渡す
+# (pipeline → ai/ の向きを作らない / resolve1.md §4)。
+
+
+# 窓スコア列へ AI の山を混ぜた新しい列を返す。
+#
+# curve    : score_window の戻り値の一覧
+# moments  : [{"start","end","scan_score"}] (ai/scene_scanner.Moment.as_dict())
+# ai_weight: 0..1。0 なら**完全に従来どおり** (混ぜない)
+#
+# 山が空、または ai_weight が 0 のときは curve をそのまま返す。
+def blend_ai_moments(curve, moments, ai_weight):
+    weight = _clamp(float(ai_weight or 0.0), 0.0, 1.0)
+    rows = list(curve or [])
+    items = [m for m in (moments or []) if isinstance(m, dict)]
+    if weight <= 0.0 or not items or not rows:
+        return rows
+
+    blended = []
+    for window in rows:
+        row = dict(window)
+        start = float(row.get("start", 0.0))
+        end = float(row.get("end", 0.0))
+        best, index = _best_moment(items, start, end)
+        machine = float(row.get("total", 0.0))
+        row["ai_score"] = round(best, 1)
+        row["moment_index"] = index
+        row["total"] = round(weight * best + (1.0 - weight) * machine, 1)
+        blended.append(row)
+
+    return blended
+
+
+# 窓に最も強く効く山 (重なるもののうち scan_score が最大) を返す。
+# 戻り値: (点, 山の番号)。重なりが無ければ (0.0, None)。
+def _best_moment(moments, start, end):
+    best = 0.0
+    index = None
+    for position, moment in enumerate(moments):
+        if not _overlaps(start, end, float(moment.get("start", 0.0)),
+                         float(moment.get("end", 0.0))):
+            continue
+        score = float(moment.get("scan_score", 0.0))
+        if score > best or index is None:
+            best = score
+            index = position
+
+    return max(best, 0.0), index
+
+
 # 2区間が時間的に重なるか
 def _overlaps(a_start, a_end, b_start, b_end):
     return a_start < b_end and b_start < a_end

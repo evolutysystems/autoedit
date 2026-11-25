@@ -48,18 +48,23 @@ SCENE_EVAL = """あなたはゲーム配信のアーカイブから切り抜き�
 {time_rules}"""
 
 # 企画・構成 (役割 plan / §8.1)
+#
+# **前置き (この文面) は出力先ごとに変えない。** 出力先・尺・役割の並びは
+# payload の target / limits / section_roles へ入れる。こうすると
+# youtube_long / youtube_shorts / tiktok の 3 回が同じ前置きを共有し、
+# 2 回目以降がキャッシュへ乗る (§6.4 / REVIEW と同じ作法)。
 PLAN = """あなたはゲーム配信の切り抜き動画の構成を決める編集者である。
 評価済みのシーンから、1 本の動画の構成を組む。
 
-出力先: {target}
-想定の尺: {min_sec}〜{max_sec} 秒 (section の合計)
-役割の並び: {roles}
+出力先・想定の尺・役割の並びは入力の target / limits / section_roles を見る。
 
 守ること:
 ・渡されたシーン (scene_ref) の中からだけ選ぶ。新しい時刻を作らない。
 ・start / end はそのシーンの範囲内に収める。
 ・同じシーンを 2 回使ってよい (冒頭で山を見せ、後で全部見せる構成など)。
-・合計の尺を守る。足りなければシーンを増やし、超えるなら削る。
+・section の role は section_roles に挙がったものだけを使い、その並びに沿わせる。
+・section の合計の尺を limits の min_sec〜max_sec に収める。
+  足りなければシーンを増やし、超えるなら削る。
 ・title は視聴者が内容を想像できる {max_chars} 文字以内の 1 行。煽り過多にしない。
 ・concept は「何をどの順で見せるか」を {max_chars} 文字以内で書く。
 ・direction.emphasis_scenes には特に立てたいシーンの scene_ref を入れる。
@@ -67,10 +72,14 @@ PLAN = """あなたはゲーム配信の切り抜き動画の構成を決める�
 {time_rules}"""
 
 # 編集指示 (役割 plan / §9)
+#
+# **前置き (この文面) は出力先ごとに変えない** (PLAN と同じ理由 / §6.4)。
+# 出力先は payload の target を見せる。動きとプリセットは出力先では変わらない
+# ため前置きに置いたままでよい。
 EDIT_PLAN = """あなたはゲーム配信の切り抜き動画の編集指示を書く編集者である。
 決まった構成に対して、実際の編集指示 (EditPlan) を書く。
 
-出力先: {target}
+出力先は入力の target を見る。
 使えるテロップの動き: {animations}
 使える効果音のプリセット: {presets}
 
@@ -96,6 +105,41 @@ def render(template, **values):
         return str(template).format(**values)
     except (KeyError, IndexError):
         return str(template)
+
+
+# 採点スイープ (役割 scene_scan / docs/AiEditor/resolve2.md §4.3)
+#
+# **前置きは区間ごとに変えない** (SCENE_EVAL と同じ理由 / resolve1.md §6.4)。
+# 区間の位置・フレームの秒・コメントは payload で見せる。
+SCENE_SCAN = """あなたは YouTube で伸びる切り抜きを選ぶ編集者である。
+渡された区間の静止画 (秒つき)・音量の数値・視聴者コメントだけを根拠に、
+「指が止まり、最後まで見られ、人に見せたくなる」山を列挙する。
+
+山とは次の形を持つひとまとまりである。
+    起こり (setup) → 山 (hit) → 落ち (settle)
+期待が作られ、それが外れるか満たされるところを探す。
+音が大きいだけ・コメントが多いだけの区間は山ではない。
+
+評価の軸 (それぞれ 0〜100):
+・hook           冒頭 3 秒で指が止まるか (画面の変化・表情・音の立ち上がり)
+・payoff         期待から解決までがこの区間の中で閉じるか。解決が区間の外にあるなら低い
+・emotion_delta  感情の振れ幅。音量の絶対値ではなく**変化量**を見る
+・surprise       予測を外しているか
+・clarity        初見で何が起きたか分かるか (前提の説明が要らないか)
+・shareability   人に見せたい・もう一度見たいか
+・drop_risk      離脱しやすさ (説明が長い・無反応が続く・同じ絵が続く)。**高いほど悪い**
+
+守ること:
+・時刻は渡された区間の中だけで答える。新しい時刻を作らない。
+・根拠は渡されたものだけに置く。画面に無いものを推測して書かない。
+・**山が無い区間には何も返さない (moments を空にする)。** 無理に埋めない。
+・1 つの山は {min_sec:g}〜{max_sec:g} 秒に収める。
+・title_line は視聴者が内容を想像できる {max_chars} 文字以内の 1 行。煽り過多にしない。
+・why には「なぜ山なのか」を {max_reason_chars} 文字以内で書く。
+・evidence.frames には根拠にしたフレームの秒を、evidence.comments には
+  根拠にしたコメントの件数を入れる。
+・出力は {language} で書く。
+{time_rules}"""
 
 
 # 品質レビュー (役割 review / §12.1)

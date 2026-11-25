@@ -24,7 +24,7 @@ import time
 
 from ..ai import (context_builder, plan_applier, plan_schema, plan_validator,
                   planner, profile as ai_profile, review_report, reviewer,
-                  scene_finder)
+                  scene_finder, scene_scanner)
 from ..ai import config as ai_config
 from ..archive import clip_writer, config as archive_config, vod_rebase
 from ..archive import pipeline as archive_pipeline
@@ -84,11 +84,15 @@ class AiRunResult:
 # cancel_cb    : True を返すと PipelineCancelled
 # prepare      : 素材を用意する呼び出し (テストで差し替える)
 # vertical     : 縦ターゲットのときに縦プロジェクトも作るか
+# curve        : 採点グラフの窓スコア列 (archive_pipeline.analyze の "curve")。
+#                source.archive.curve へ残さないと、保存したプロジェクトを開いた
+#                ときに採点グラフの折れ線が出ない
+#                (docs/error/20261125/resolve.md §4 R3)。
 def run_plan(input_path, settings, plan, target=None, project_path="",
              duration_sec=0.0, progress_cb=None, cancel_cb=None,
              vod_source=None, vod_scan=None, stack=None, media_dir="",
              prepare=None, vertical=True, rebase_plan=None, vertical_build=None,
-             report=None):
+             report=None, curve=None):
     stage_timer.reset()
     started_at = time.monotonic()
     if not input_path or not os.path.exists(input_path):
@@ -148,7 +152,7 @@ def run_plan(input_path, settings, plan, target=None, project_path="",
     _notify(progress_cb, _RATIO_BUILD, tr("Timeline を組んでいます"))
     with stage_timer.timed("ai_build"):
         timeline = archive_timeline.build_archive_timeline(
-            prepared, clip_settings, source_path=input_path,
+            prepared, clip_settings, source_path=input_path, curve=curve,
             vod_source=vod_source, vod_analysis=vod_scan)
 
     # ---- ⑤ 適用
@@ -368,7 +372,9 @@ def run_ai(input_path, settings, provider=None, targets=None, analysis=None,
     if not chosen:
         raise AiPlanError(tr("EditPlan の target が不正です。"))
 
-    # ① 採点 (既存のまま。候補の本数だけ AI 用へ差し替える / §7.1)
+    # ① 採点 (docs/AiEditor/resolve2.md)。
+    # 機械測定はそのまま。AI のスイープを**関数として**渡し、山を候補へ混ぜる。
+    # ai.scan.ai_weight = 0 の間は混ざらず、従来と同じ結果になる (§6.1)。
     _check_cancel(cancel_cb)
     scoring_settings = context_builder.analysis_settings(settings)
     if analysis is None:
@@ -377,11 +383,15 @@ def run_ai(input_path, settings, provider=None, targets=None, analysis=None,
         analysis = runner(input_path, scoring_settings,
                           lambda ratio, label: _notify(
                               progress_cb, 0.05 + ratio * 0.35, label),
-                          comments, None)
+                          comments, None,
+                          scan=_scan_runner(settings, provider, cancel_cb))
     duration = float(duration_sec or analysis.get("duration", 0.0) or 0.0)
 
     bundle = context_builder.build(analysis, settings, source=source,
                                    comments=comments)
+    if bundle.moments:
+        _logger.info("AI の山: %d 件 (採点へ混ぜた比率 %.2f)",
+                     len(bundle.moments), archive_pipeline.ai_scan_weight(settings))
     if not bundle.candidates:
         raise AiPlanError(tr("EditPlan に使えるシーンがありません。"))
 
@@ -446,7 +456,8 @@ def run_ai(input_path, settings, provider=None, targets=None, analysis=None,
             progress_cb=lambda ratio, label, base=base: _notify(
                 progress_cb, base + ratio * (0.25 / max(len(chosen), 1)), label),
             cancel_cb=cancel_cb, vod_source=vod_source, prepare=prepare,
-            vertical=vertical, report=report)
+            vertical=vertical, report=report,
+            curve=analysis.get("curve") or [])
         run.review = checked
         _write_report(run, plan, bundle, ranked, checked, settings)
         runs.append(run)
@@ -457,6 +468,28 @@ def run_ai(input_path, settings, provider=None, targets=None, analysis=None,
 
     return AiAutoResult(bundle=bundle, scenes=scenes, report=report, runs=runs,
                         eval_path=plan_schema.eval_path_for(primary))
+
+
+# 採点スイープを archive/pipeline へ渡す形にする (docs/AiEditor/resolve2.md §6.2)。
+#
+# pipeline は ai/ を import しない。**関数を渡す**ことで依存の向きを保つ。
+# プロバイダーが無い (AI 無効・未ログイン) ときや設定で切ってあるときは None を返し、
+# pipeline 側は従来どおり機械採点だけで動く。
+def _scan_runner(settings, provider, cancel_cb=None):
+    if provider is None or not ai_config.ai_config(settings)["scan"].get("enabled", True):
+        return None
+
+    def run(input_path, scoring_settings, cells, comments, duration):
+        # 作業フォルダはここで作って片づける (フレームは送信後に消える)。
+        with tempfile.TemporaryDirectory(prefix="ai_scan_",
+                                         ignore_cleanup_errors=True) as workdir:
+            found = scene_scanner.scan(
+                input_path, settings, provider, cells=cells, comments=comments,
+                duration_sec=duration, workdir=workdir, cancel_cb=cancel_cb)
+
+        return [moment.as_dict() for moment in found]
+
+    return run
 
 
 # ---- レビューの読み物 (§12.6) -------------------------------------------

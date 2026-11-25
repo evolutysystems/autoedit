@@ -99,6 +99,16 @@ SCORE_MIN = 0
 SCORE_MAX = 100
 RECOMMENDED_USES = ("shorts", "long_hook", "long_body", "long_climax", "skip")
 
+# ---- 採点スイープ (docs/AiEditor/resolve2.md §4 / §5) ------------------
+#
+# S1 の軸は S3 (scene_eval) の 8 軸とは**別物**である。混ぜない。
+#   S1 … フレーム + 数値 + コメントだけで見る。目的は「候補を見つける」(再現率)
+#   S3 … 文字起こしを読んだ上で見る。目的は「候補を選ぶ」(適合率)
+SCAN_SCORE_KEYS = ("hook", "payoff", "emotion_delta", "surprise",
+                   "clarity", "shareability", "drop_risk")
+# 山の 3 点 (起こり → 山 → 落ち)。後段の「自然な編集」が切り位置に使う (§15)。
+SCAN_BEAT_KEYS = ("setup", "hit", "settle")
+
 # EditPlan を保存するときの拡張子 (§9.5)。プロジェクトの隣へ置く。
 PLAN_SUFFIX = ".plan.json"
 # シーン評価の保存先 (§7.2 末尾。再実行で呼び出しを減らす)
@@ -910,11 +920,57 @@ def _array(items):
     return {"type": "array", "items": items}
 
 
+# 構造化出力 (Anthropic の JSON Schema のサブセット) が受け付けないキーワード。
+# 残すと 400 になり、AI の呼び出しが丸ごと落ちる (2026-11-24 の調査):
+#   "output_config.format.schema: For 'integer' type, properties maximum, minimum
+#    are not supported"
+#   "output_config.format.schema: For 'number' type, property 'minimum' is not
+#    supported"
+# enum / const / anyOf / allOf / $ref / 文字列の format は使える。
+_UNSUPPORTED_SCHEMA_KEYS = frozenset({
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minLength", "maxLength", "pattern",
+    "minItems", "maxItems", "uniqueItems",
+})
+
+# 項目名が入る鍵。ここの鍵はキーワードではないため消さない
+# ("maxLength" という名前の項目を消してしまわないように / 入れ子は辿る)。
+_SCHEMA_NAME_MAPS = ("properties", "$defs", "definitions")
+
+
+# 送れる形へ落とした写しを返す (引数の dict は変えない)。送信の直前に通すこと。
+#
+# 上限・下限や文字数は落ちるが、受け取り側の正規化 (_shortened / scores の
+# クランプ / _priority_of) と plan_validator が同じ範囲を守るため結果は変わらない。
+# スキーマを足したときに 400 で全滅しないよう、守りを 1 か所へ寄せてある。
+def sanitize_for_api(schema):
+    if isinstance(schema, list):
+        return [sanitize_for_api(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    cleaned = {}
+    for key, value in schema.items():
+        if key in _UNSUPPORTED_SCHEMA_KEYS:
+            continue
+        if key in _SCHEMA_NAME_MAPS and isinstance(value, dict):
+            cleaned[key] = {name: sanitize_for_api(item)
+                            for name, item in value.items()}
+        else:
+            cleaned[key] = sanitize_for_api(value)
+
+    return cleaned
+
+
 # シーン評価 (§7.2) の期待する応答。
 def scene_eval_schema(candidate_count=0, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
-    index_schema = {"type": "integer", "minimum": 0}
-    if candidate_count:
-        index_schema["maximum"] = int(candidate_count) - 1
+    # integer へ minimum / maximum は付けない。Anthropic の構造化出力が
+    # "For 'integer' type, properties maximum, minimum are not supported" で
+    # 400 を返し、呼び出しが丸ごと落ちる (2026-11-24 の調査)。
+    # 範囲は候補の照合側で守る (context_builder.candidate() が未知の index へ
+    # None を返し、scene_finder が読み飛ばす)。candidate_count は呼び出し側の
+    # 都合で引数に残すが、スキーマへは出さない。
+    index_schema = {"type": "integer"}
     text_schema = {"type": "string", "maxLength": int(max_reason_chars or 0) or 120}
     scores = _obj({key: _num(SCORE_MIN, SCORE_MAX) for key in SCORE_KEYS}, SCORE_KEYS)
 
@@ -934,15 +990,177 @@ def scene_eval_schema(candidate_count=0, max_reason_chars=DEFAULT_MAX_REASON_CHA
     return _obj({"scenes": _array(scene)}, ("scenes",))
 
 
+# 採点スイープ (§4.4) の期待する応答。
+#
+# **スキーマは区間ごとに変えない** (前置きと同じくキャッシュの前方一致に含まれる /
+# resolve1.md §6.4)。チャンクの位置は payload で見せる。
+# integer へ minimum / maximum は付けない (構造化出力が 400 を返す / scene_eval_schema と同じ)。
+def scene_scan_schema(max_title_chars=DEFAULT_MAX_REASON_CHARS,
+                      max_reason_chars=DEFAULT_MAX_REASON_CHARS):
+    title_schema = {"type": "string", "maxLength": int(max_title_chars or 0) or 30}
+    why_schema = {"type": "string", "maxLength": int(max_reason_chars or 0) or 120}
+    scores = _obj({key: _num(SCORE_MIN, SCORE_MAX) for key in SCAN_SCORE_KEYS},
+                  SCAN_SCORE_KEYS)
+    beats = _obj({key: _num(0) for key in SCAN_BEAT_KEYS}, SCAN_BEAT_KEYS)
+    evidence = _obj({"frames": _array(_num(0)), "comments": {"type": "integer"}},
+                    ("frames", "comments"))
+
+    moment = _obj({
+        "start": _num(0),
+        "end": _num(0),
+        "peak": _num(0),
+        "beats": beats,
+        "scores": scores,
+        "title_line": title_schema,
+        "why": why_schema,
+        "evidence": evidence,
+    }, ("start", "end", "peak", "scores", "title_line", "why"))
+
+    return _obj({"moments": _array(moment)}, ("moments",))
+
+
+# 採点スイープの応答を正規化する。返り値は (山の一覧, 記録)。
+#
+# 区間 [chunk_start, chunk_end] の外は捨てる。AI に新しい時刻を作らせないため
+# であり、ここを緩めると「見ていない場面の山」が混ざる。
+# 値の欠けは**丸めて残す** (落とさない)。モデルの出力を信用しきらない。
+def normalize_scan(payload, chunk_start, chunk_end, min_sec=0.0, max_sec=0.0,
+                   max_title_chars=DEFAULT_MAX_REASON_CHARS,
+                   max_reason_chars=DEFAULT_MAX_REASON_CHARS):
+    notes = []
+    raw_moments = (payload or {}).get("moments") if isinstance(payload, dict) else None
+    if not isinstance(raw_moments, list):
+        raise AiPlanError(tr("採点スイープの応答に moments がありません。"))
+
+    low = float(chunk_start)
+    high = float(chunk_end)
+    moments = []
+    for index, raw in enumerate(raw_moments):
+        where = "moments[{0}]".format(index)
+        if not isinstance(raw, dict):
+            notes.append(note("S1", where, ACTION_DROP, "type"))
+            continue
+        start = _number(raw.get("start"))
+        end = _number(raw.get("end"))
+        if start is None or end is None:
+            notes.append(note("S1", where, ACTION_DROP, "start/end"))
+            continue
+        start = max(min(float(start), high), low)
+        end = max(min(float(end), high), low)
+        if end - start <= 0:
+            notes.append(note("S2", where, ACTION_DROP, "range"))
+            continue
+        end = _capped_end(start, end, min_sec, max_sec, notes, where)
+        if end is None:
+            continue
+
+        moments.append({
+            "start": _round_sec(start),
+            "end": _round_sec(end),
+            "peak": _peak_of(raw.get("peak"), start, end),
+            "beats": _beats_of(raw.get("beats"), start, end),
+            "scores": _scan_scores_of(raw.get("scores"), notes, where + ".scores"),
+            "title_line": _shortened(raw.get("title_line"), max_title_chars,
+                                     notes, where + ".title_line"),
+            "why": _shortened(raw.get("why"), max_reason_chars,
+                              notes, where + ".why"),
+            "evidence": _evidence_of(raw.get("evidence")),
+        })
+
+    return moments, notes
+
+
+# 山の長さを min_sec〜max_sec へ収める。短すぎるものは落とす (切り出す意味が無い)。
+def _capped_end(start, end, min_sec, max_sec, notes, where):
+    minimum = float(min_sec or 0.0)
+    maximum = float(max_sec or 0.0)
+    if minimum > 0 and end - start < minimum:
+        notes.append(note("S3", where, ACTION_DROP, "short"))
+
+        return None
+    if maximum > 0 and end - start > maximum:
+        notes.append(note("S3", where, ACTION_CLAMP, "{0:g}".format(maximum)))
+
+        return start + maximum
+
+    return end
+
+
+# 山の位置。範囲外・欠落は中央へ寄せる (後段がフックの位置に使うため必ず入れる)。
+def _peak_of(value, start, end):
+    number = _number(value)
+    if number is None or not (start <= number <= end):
+        return _round_sec((start + end) / 2.0)
+
+    return _round_sec(number)
+
+
+# 起こり → 山 → 落ち。欠けたら区間から組み立てる (後段が必ず読めるようにする)。
+def _beats_of(value, start, end):
+    source = value if isinstance(value, dict) else {}
+    beats = {}
+    for key, fallback in (("setup", start),
+                          ("hit", (start + end) / 2.0),
+                          ("settle", end)):
+        number = _number(source.get(key))
+        if number is None or not (start <= number <= end):
+            number = fallback
+        beats[key] = _round_sec(number)
+    # 順序が崩れていたら並べ直す (setup <= hit <= settle)
+    ordered = sorted(beats.values())
+
+    return dict(zip(SCAN_BEAT_KEYS, ordered))
+
+
+def _scan_scores_of(value, notes, where):
+    source = value if isinstance(value, dict) else {}
+    scores = {}
+    for key in SCAN_SCORE_KEYS:
+        scores[key] = _clamped(source.get(key), SCORE_MIN, SCORE_MAX, 0,
+                               notes, "S4", where + "." + key)
+
+    return scores
+
+
+# 根拠 (どのフレーム・何件のコメントを見たか)。レビュー PDF で人が検算するために残す。
+def _evidence_of(value):
+    source = value if isinstance(value, dict) else {}
+    frames = [_round_sec(item) for item in (source.get("frames") or [])
+              if _number(item) is not None]
+    comments = _number(source.get("comments"))
+
+    return {"frames": frames, "comments": int(comments or 0)}
+
+
+# 重み (ai.scan.weights[用途]) から山の総合点を出す (§5.3)。
+# AI に順位そのものを作らせない (resolve1.md §7.3 と同じ決まり)。
+def scan_score(scores, weights):
+    total = 0.0
+    for key in SCAN_SCORE_KEYS:
+        total += float((scores or {}).get(key, 0.0)) * float((weights or {}).get(key, 0.0))
+
+    return round(max(min(total, float(SCORE_MAX)), 0.0), 3)
+
+
 # 構成案 (§8.1) の期待する応答。
-def video_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
-    chosen = target if target in TARGETS else TARGET_YOUTUBE_LONG
+# **スキーマは出力先ごとに変えない。** スキーマは前置きと同じくキャッシュの
+# 前方一致に含まれる (実測: 前置きが同じでもスキーマが違うと cache_read=0 /
+# 2026-11-24)。出力先ごとに role や target の列挙を絞ると、3 出力先の呼び出しが
+# 別々の entry になりキャッシュへ乗らない。
+#
+# 役割の並びは「指示として渡し、検証では強制しない」もの (SECTION_ROLE_ORDER の
+# 註) なので、planner が payload の section_roles と前置きで伝える。
+# target はここで絞らなくても normalize_video_plan が呼び出し側の指定を正とする。
+#
+# 引数 target は呼び出し側の読みやすさのために残すが、スキーマには出さない
+# (出せばキャッシュが出力先ごとに分かれる)。
+def video_plan_schema(target=None, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
     text_schema = {"type": "string", "maxLength": int(max_reason_chars or 0) or 120}
-    roles = SECTION_ROLE_ORDER.get(chosen, SCENE_ROLES)
+    roles = SCENE_ROLES
 
     section = _obj({
         "role": _enum(roles),
-        "scene_ref": {"type": "integer", "minimum": 0},
+        "scene_ref": {"type": "integer"},
         "start": _num(0),
         "end": _num(0),
         "reason": text_schema,
@@ -950,14 +1168,14 @@ def video_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
 
     direction = _obj({
         "subtitle": _enum(SUBTITLE_MODES),
-        "emphasis_scenes": _array({"type": "integer", "minimum": 0}),
+        "emphasis_scenes": _array({"type": "integer"}),
         "sound_effects": _enum(SE_LEVELS),
         "bgm": _enum(BGM_MODES),
         "vertical_crop": {"type": "boolean"},
     }, ("subtitle", "emphasis_scenes", "sound_effects", "bgm", "vertical_crop"))
 
     return _obj({
-        "target": _enum((chosen,)),
+        "target": _enum(TARGETS),
         "title": text_schema,
         "concept": text_schema,
         "duration_sec": _num(0),
@@ -967,8 +1185,8 @@ def video_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
 
 
 # EditPlan (§9.1) の期待する応答。
-def edit_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
-    chosen = target if target in TARGETS else TARGET_YOUTUBE_LONG
+# こちらも出力先ごとに変えない (video_plan_schema と同じ理由 / §6.4)。
+def edit_plan_schema(target=None, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
     text_schema = {"type": "string", "maxLength": int(max_reason_chars or 0) or 120}
 
     scene = _obj({
@@ -976,7 +1194,7 @@ def edit_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
         "source_start": _num(0),
         "source_end": _num(0),
         "role": _enum(SCENE_ROLES),
-        "order": {"type": "integer", "minimum": 1},
+        "order": {"type": "integer"},
         "reason": text_schema,
         "crop": _obj({"mode": _enum(CROP_MODES),
                       "scale": _num(CROP_SCALE_MIN, CROP_SCALE_MAX)}, ("mode", "scale")),
@@ -1012,7 +1230,7 @@ def edit_plan_schema(target, max_reason_chars=DEFAULT_MAX_REASON_CHARS):
     return _obj({
         "plan_version": _enum_int(PLAN_VERSION),
         "project": _obj({
-            "target": _enum((chosen,)),
+            "target": _enum(TARGETS),
             "source": _obj({"kind": _enum(SOURCE_KINDS),
                             "video_id": {"type": "string"},
                             "path": {"type": "string"}}, ("kind",)),
@@ -1171,10 +1389,10 @@ def review_schema(scene_ids=None, max_detail_chars=DEFAULT_MAX_REASON_CHARS):
             "text": {"type": "string"},
             "animation": _enum(("",) + ANIMATIONS),
             "preset": {"type": "string", "maxLength": 64},
-            "order": _array({"type": "integer", "minimum": 1}),
+            "order": _array({"type": "integer"}),
         }, ("op",)),
         "expected": text_schema,
-        "priority": {"type": "integer", "minimum": 1, "maximum": 9},
+        "priority": {"type": "integer"},
     }, ("id", "at", "scene_id", "kind", "severity", "detail", "reason", "fix",
         "expected", "priority"))
 

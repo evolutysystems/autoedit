@@ -1137,7 +1137,61 @@ class ArchiveTabWidget(QWidget):
         if len(paths) > 1:
             self.status_label.setText(
                 tr("AI の編集を {n} 本作りました。1 本目を開きます", n=len(paths)))
+        # 作ったものを履歴へ積む。開くのは 1 本目だけなので、積まないと
+        # 2 本目以降 (shorts / tiktok) をどこからも開けない
+        # (docs/error/20261125/resolve.md §4 R2)。
+        self._remember_ai_projects(
+            *self._ai_history_targets(getattr(outcome, "runs", [])))
         self._start_resume(paths[0])
+
+    # 履歴へ積むものを出力先ごとに選ぶ。
+    # 縦を作った出力先 (shorts / tiktok) は**縦が仕上がり**なので縦だけを積む。
+    # 横はその縦が参照する素材 (<横>.media) の持ち主として残るが、一覧へ出す
+    # 必要はない。縦を作れなかったときだけ横を積む (どこからも開けない結果を
+    # 作らないため / docs/error/20261125/resolve.md §4 R2)。
+    # 戻り値: (recent_archive へ積む横の一覧, recent へ積む縦の一覧)
+    @staticmethod
+    def _ai_history_targets(runs):
+        runs = list(runs or [])
+        archive_paths = [run.project_path for run in runs
+                         if not getattr(run, "vertical_path", "")]
+        clip_paths = [run.vertical_path for run in runs
+                      if getattr(run, "vertical_path", "")]
+
+        return archive_paths, clip_paths
+
+    # AI が作ったプロジェクトを履歴へ積む。
+    # 手編集は保存時に timeline_editor_dialog._remember_recent が積んでおり、
+    # 「作った側が積む」のが既存の約束である (ver9 resolve14 追補)。経路 D だけが
+    # 積んでおらず、走査フォルダが空の設定では一覧・コンボの元が履歴だけになるため
+    # そのまま「どこからも開けない」になっていた。
+    #
+    # 積み先は 2 つに分かれる (docs/error/20261125/resolve.md §4 R2)。
+    #   archive_paths 横のプロジェクト (source.archive を持つ) → recent_archive
+    #   clip_paths    縦のプロジェクト (shorts / tiktok 用。切り抜きの指定を持つ
+    #                 **クリップ用**プロジェクト) → recent
+    # 縦を recent へ積むのは、縦動画プロジェクト作成画面と同じ判断である
+    # (timeline_editor_dialog: アーカイブ用の画面から作っても、開くのは
+    #  クリップ用タブの「続きから」だから)。
+    # 1 本目が先頭へ来るよう、後ろの出力先から積む。
+    def _remember_ai_projects(self, archive_paths, clip_paths=()):
+        changed = False
+        for paths, kind in ((archive_paths, project_io.KIND_ARCHIVE),
+                            (clip_paths, project_io.KIND_CLIP)):
+            for path in reversed(list(paths or [])):
+                if project_io.remember_recent(self._settings, path, kind):
+                    changed = True
+        if not changed:
+            return
+        try:
+            save_settings(self._settings)
+        except Exception:  # noqa: BLE001 (履歴が残らなくても編集結果は残る)
+            _logger.warning("最近使ったプロジェクトの記録に失敗しました "
+                            "(処理は続行します)")
+            return
+        # 「続きから」のコンボを積んだ内容で作り直す
+        if self.resume_row is not None:
+            self.resume_row.set_settings(self._settings)
 
     # レビューの読み物を PDF へ (§12.6)。PDF 化は Qt が要るためここで行う。
     def _write_ai_reports(self, outcome):

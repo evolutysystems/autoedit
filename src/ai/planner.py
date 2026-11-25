@@ -76,12 +76,13 @@ def _ask_video_plan(bundle, scenes, provider, settings, target, limits, report):
     cfg = ai_config.ai_config(settings)
     max_chars = int(cfg["scene_eval"]["max_reason_chars"])
     roles = plan_schema.SECTION_ROLE_ORDER.get(target, plan_schema.SCENE_ROLES)
-    system = prompts.render(prompts.PLAN, target=target, language=_language(settings),
-                            min_sec=limits["min_sec"], max_sec=limits["max_sec"],
-                            roles=" → ".join(roles), max_chars=max_chars)
+    # 前置きは出力先に依らない (キャッシュを 3 出力先で共有する / §6.4)。
+    # 出力先ごとに変わる値は payload へ入れる。
+    system = prompts.render(prompts.PLAN, language=_language(settings),
+                            max_chars=max_chars)
     request = AiRequest(
         role=ai_config.ROLE_PLAN, system=system,
-        payload=_plan_payload(bundle, scenes, limits, target),
+        payload=_plan_payload(bundle, scenes, limits, target, roles),
         schema=plan_schema.video_plan_schema(target, max_reason_chars=max_chars),
         cache_prefix_id=_CACHE_PLAN, max_output_tokens=cfg["max_output_tokens"])
     try:
@@ -99,13 +100,15 @@ def _ask_video_plan(bundle, scenes, provider, settings, target, limits, report):
     return _fit_sections(video_plan, scenes, limits, report)
 
 
-def _plan_payload(bundle, scenes, limits, target):
+def _plan_payload(bundle, scenes, limits, target, roles=()):
     return {
         "source": {"video_id": str(bundle.source.get("video_id", "") or ""),
                    "title": str(bundle.source.get("title", "") or ""),
                    "game": str(bundle.source.get("game", "") or ""),
                    "duration_sec": bundle.duration_sec},
         "target": target,
+        # 役割の並び。前置きではなくここへ入れる (出力先ごとに変わるため / §6.4)
+        "section_roles": list(roles),
         "limits": limits,
         "profile": bundle.profile,
         "scenes": [_scene_payload(bundle, scene) for scene in scenes],
@@ -231,8 +234,9 @@ def _ask_edit_plan(bundle, scenes, video_plan, provider, settings, target, repor
     max_chars = int(cfg["scene_eval"]["max_reason_chars"])
     presets = sorted((cfg["sounds"].get("presets") or {}).keys()) \
         if cfg["sounds"].get("enabled") else []
+    # 前置きは出力先に依らない (VideoPlan と同じ / §6.4)。target は payload にある。
     system = prompts.render(
-        prompts.EDIT_PLAN, target=target, language=_language(settings),
+        prompts.EDIT_PLAN, language=_language(settings),
         animations=", ".join(plan_schema.ANIMATIONS),
         presets=", ".join(presets) if presets else "(なし)")
     request = AiRequest(

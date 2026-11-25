@@ -30,7 +30,7 @@ _CUT_NAME = "ai_cand{index}.mp4"
 class AnalysisBundle:
 
     def __init__(self, source=None, cells=None, curve=None, candidates=None,
-                 transcript=None, comments=None, profile=None):
+                 transcript=None, comments=None, profile=None, moments=None):
         self.source = dict(source or {})
         self.cells = list(cells or [])
         self.curve = list(curve or [])
@@ -40,6 +40,9 @@ class AnalysisBundle:
         self.comments = list(comments or [])
         # 編集プロファイルの要約 (§13)。無ければ None
         self.profile = profile
+        # AI の採点スイープが見つけた山 (docs/AiEditor/resolve2.md §6.2)。
+        # スイープを行っていなければ空。構成と後段の編集が「どこが山か」に使う。
+        self.moments = list(moments or [])
 
     @property
     def duration_sec(self):
@@ -103,10 +106,11 @@ def build(analysis, settings, source=None, comments=None, transcript=None,
         candidates=candidates,
         transcript=transcript,
         comments=comments,
-        profile=profile)
-    _logger.info("AnalysisBundle: 候補 %d 件 / 窓 %d 件 / 文字起こし %d 件 / コメント %d 件",
+        profile=profile,
+        moments=data.get("moments"))
+    _logger.info("AnalysisBundle: 候補 %d 件 / 窓 %d 件 / 文字起こし %d 件 / コメント %d 件 / AI の山 %d 件",
                  len(bundle.candidates), len(bundle.curve), len(bundle.transcript),
-                 len(bundle.comments))
+                 len(bundle.comments), len(bundle.moments))
 
     return bundle
 

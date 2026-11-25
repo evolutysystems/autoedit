@@ -38,7 +38,9 @@ from .timemap import TimeMap
 
 _logger = get_logger(__name__)
 
-# 極短の区間は Timeline に載せない (既存 build_keep_segments と同じ 0.01 秒)
+# 「ほぼ 0 か」の判定に使う許容誤差 (既存 build_keep_segments と同じ 0.01 秒)。
+# **クリップの下限ではない**。クリップの下限は timeline.min_clip_sec を使う
+# (docs/error/20261124/resolve.md §4 R1)。
 _MIN_SEGMENT_SEC = 0.01
 
 
@@ -924,6 +926,10 @@ def build(input_path, media_path, keep_segments, subtitle_items,
     body_offset = cursor
 
     # ── 本編 (編集点由来のクリップ列)
+    # ここでクリップの下限 (min_clip_sec) を見てはいけない。keep_segments は
+    # _append_subtitles の TimeMap にもそのまま渡っており、片方だけ区間を落とすと
+    # V1 の軸が詰まって字幕がずれる (docs/error/20261124/resolve.md §4 R4)。
+    # 下限は編集点を作る silence_cutter.detect_edit_points で掛ける。
     for index, (start, end) in enumerate(keep_segments or []):
         duration = float(end) - float(start)
         if duration <= _MIN_SEGMENT_SEC:

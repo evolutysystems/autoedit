@@ -9,13 +9,47 @@ from . import comment_source, config, features, marker_source, scoring
 _logger = get_logger(__name__)
 
 
+# AI の山を採点へ混ぜる比率 (ai.scan.ai_weight)。0 なら従来どおり混ぜない。
+# 既定 0.3 の根拠は resolve2.md §14.2 (全長スイープの実測) にある。
+# 設定の読み込みは浅いマージのため、古い設定ファイルには鍵が無い。そのときも
+# 意図した既定で動くよう、欠落・不正値のどちらもこの定数へ落とす。
+_DEFAULT_AI_WEIGHT = 0.3
+
+
+# archive/ は ai/ を import しないため、設定を直接読む (resolve1.md §4)。
+def ai_scan_weight(settings):
+    scan = ((settings or {}).get("ai", {}) or {}).get("scan", {}) or {}
+    try:
+        return max(min(float(scan.get("ai_weight", _DEFAULT_AI_WEIGHT)), 1.0), 0.0)
+    except (TypeError, ValueError):
+        return _DEFAULT_AI_WEIGHT
+
+
+# スイープを回す。失敗しても採点は止めない (機械採点のまま続ける / resolve2.md §9)。
+def _run_scan(scan, input_path, settings, cells, comments, duration):
+    if scan is None:
+        return []
+    try:
+        return list(scan(input_path, settings, cells, comments, duration) or [])
+    except Exception as e:  # noqa: BLE001 (AI が落ちても既存の採点で続ける)
+        _logger.warning("AI の採点スイープに失敗しました (機械採点で続けます): %s", e)
+
+        return []
+
+
 # ローカル動画を採点し TOP5 クリップ候補を返す
 # progress_cb(ratio 0..1, label) で進捗通知。
 # comments: comment_source.normalize_comments 済みの正規化コメント配列 (省略/None ならコメント採点は 0)。
 # markers : ストリームマーカー配列 (省略/None ならマーカー無し / ver3 resolve16)。
 #           採点には混ぜず、前後 N 秒を「必ず残すセクション」として採点結果へ合流させる。
-# 戻り値: {"duration", "curve"(窓スコア列), "clips"(TOP5候補)}
-def analyze(input_path, settings, progress_cb=None, comments=None, markers=None):
+# scan    : AI の採点スイープ (docs/AiEditor/resolve2.md §6.2)。
+#           scan(input_path, settings, cells, comments, duration) -> 山の一覧。
+#           **省略時は今までと完全に同じ挙動**であり、従来の切り抜き (経路 B) は変わらない。
+#           渡すのは AI 編集 (経路 D) だけ。関数で受けることで pipeline が ai/ を
+#           import せずに済む (依存の向き / resolve1.md §4)。
+# 戻り値: {"duration", "curve"(窓スコア列), "clips"(TOP5候補), "moments"(AI の山)}
+def analyze(input_path, settings, progress_cb=None, comments=None, markers=None,
+            scan=None):
     ffmpeg_cfg = settings.get("ffmpeg", {})
     ffmpeg_runner.ensure_available(ffmpeg_cfg)
 
@@ -39,7 +73,7 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
     if not cells:
         _logger.warning("特徴が空のため採点できません")
         return {"duration": duration, "curve": [], "clips": [],
-                "audio_scan": audio_scan}
+                "audio_scan": audio_scan, "moments": []}
 
     # コメントをセルへ集計し、急増ボーナス(平均コメント数/分)を有効化する (R3 / resolve17 §4.4.1)。
     # コメント未取得なら comment_spike=False のまま = 従来どおり音声のみ採点で完走する。
@@ -64,6 +98,14 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
     windows = scoring.build_cell_windows(len(cells), cells_per_window)
     curve = [scoring.score_window(cells, norm, w, loud_thr, cfg) for w in windows]
     curve = [w for w in curve if w]
+
+    # AI の採点スイープ (渡されたときだけ / resolve2.md §6)。
+    # 失敗しても機械採点のまま続ける = AI が使えない日も従来どおり動く。
+    moments = _run_scan(scan, input_path, settings, cells, comments, duration)
+    if moments:
+        weight = ai_scan_weight(settings)
+        curve = scoring.blend_ai_moments(curve, moments, weight)
+        _logger.info("AI の山を採点へ混ぜました: %d 件 / 比率 %.2f", len(moments), weight)
 
     # ストリームマーカーを「必ず残す区間」へ変換する (ver3 resolve16 / 要望 I2)。
     # 採点には混ぜない。採点結果と合流させ、重なりは select_top_events が統合する。
@@ -90,4 +132,6 @@ def analyze(input_path, settings, progress_cb=None, comments=None, markers=None)
         progress_cb(1.0, tr("採点完了"))
     return {"duration": duration, "curve": curve, "clips": clips,
             # 書き出しへ引き継ぐ全長 1 パス解析の結果 (resolve3 R5)
-            "audio_scan": audio_scan}
+            "audio_scan": audio_scan,
+            # AI の山 (スイープを行わなければ空)。構成と後段の編集が使う
+            "moments": moments}

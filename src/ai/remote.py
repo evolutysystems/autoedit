@@ -19,6 +19,7 @@ from ..exceptions import (AiOfflineError, AiPlanError, AiProviderError, ApiError
 from ..i18n import tr
 from ..utils.logger import get_logger
 from . import config as ai_config
+from . import plan_schema
 from .provider import (STOP_END_TURN, STOP_MAX_TOKENS, STOP_REFUSAL, AiCompletion,
                        AiEstimate, AiServerConfig, AiUsage, new_request_id)
 
@@ -27,11 +28,19 @@ _logger = get_logger(__name__)
 # 役割 (クライアント内 → 線の上)。サーバーの列挙は camelCase で、整数も許さない。
 _ROLE_TO_WIRE = {
     "scene_eval": "sceneEval",
+    "scene_scan": "sceneScan",
     "plan": "plan",
     "review": "review",
     "profile": "profile",
     "classify": "classify",
 }
+
+
+# 線の上の役名を返す (サーバーの roles と突き合わせるのに使う)。
+# 知らない役は None。
+def wire_role(role):
+    return _ROLE_TO_WIRE.get(ai_config.role_of(role))
+
 
 # 応答が終わった理由 (線の上 → クライアント内)。
 _STOP_FROM_WIRE = {
@@ -217,7 +226,10 @@ class RemoteAiClient:
             body["projectId"] = str(request.project_id)
 
         if request.schema is not None:
-            body["schema"] = request.schema
+            # 構造化出力が受け付けないキーワードを落としてから送る。
+            # 残すとサーバー経由で Anthropic が 400 を返し、役割ごとの呼び出しが
+            # すべて ai_unavailable へ落ちる (plan_schema.sanitize_for_api 参照)。
+            body["schema"] = plan_schema.sanitize_for_api(request.schema)
 
         if request.cache_prefix_id:
             body["cachePrefixId"] = str(request.cache_prefix_id)

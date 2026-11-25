@@ -446,6 +446,25 @@ def _validate_keep_segments(timeline):
     timeline.edit_points["keep_segments"] = cleaned
 
 
+# クリップが検証で落ちるかを判定する。落ちるなら WARNING 用の (書式, 引数) を返す。
+#
+# 判定の規則を 1 か所に置くための関数である。_validate_clips (実際に落とす側) と
+# invalid_clip_ids (変えずに調べる側) の両方がこれを使う。規則が 2 つに分かれると
+# 「調べたら落ちないのに validate では落ちる」という食い違いが生まれ、
+# docs/error/20261124 の誤判定がまた起きる。
+def _clip_drop_reason(track, clip, limit):
+    if clip.duration < limit - 1e-6:
+        return ("クリップ %s の尺 (%.3fs) が下限 (%.3fs) 未満のため除外します",
+                (clip.id, clip.duration, limit))
+    # SE も素材内の範囲を持つため、映像と同じ条件で検証する
+    if (track.is_video() or track.is_sound()) and \
+            clip.source_out <= clip.source_in + 1e-6:
+        return ("クリップ %s のソース範囲が不正なため除外します (in=%.3f out=%.3f)",
+                (clip.id, clip.source_in, clip.source_out))
+
+    return None
+
+
 # クリップの尺・ソース範囲を確認する
 def _validate_clips(timeline, min_clip_sec):
     limit = float(min_clip_sec or _DEFAULT_MIN_CLIP_SEC)
@@ -454,20 +473,38 @@ def _validate_clips(timeline, min_clip_sec):
             continue
         survivors = []
         for clip in track.clips:
-            if clip.duration < limit - 1e-6:
-                _logger.warning(
-                    "クリップ %s の尺 (%.3fs) が下限 (%.3fs) 未満のため除外します",
-                    clip.id, clip.duration, limit)
-                continue
-            # SE も素材内の範囲を持つため、映像と同じ条件で検証する
-            if (track.is_video() or track.is_sound()) and \
-                    clip.source_out <= clip.source_in + 1e-6:
-                _logger.warning(
-                    "クリップ %s のソース範囲が不正なため除外します (in=%.3f out=%.3f)",
-                    clip.id, clip.source_in, clip.source_out)
+            reason = _clip_drop_reason(track, clip, limit)
+            if reason is not None:
+                _logger.warning(reason[0], *reason[1])
                 continue
             survivors.append(clip)
         track.clips = survivors
+
+
+# validate が落とすクリップの id を、**Timeline を一切変えずに**調べる (20261124)
+#
+# plan 適用の前後で「消えたクリップ」を比べる側 (ai.plan_applier._validate_timeline)
+# が、**適用前から不正だったクリップ**を「plan が壊した」と誤判定しないために要る。
+# 判定は _validate_clips / _validate_audio_links と同一の規則で行う。
+#
+# 戻り値: 落ちるクリップの id の集合 (リンク先が落ちる音声クリップも含む)
+def invalid_clip_ids(timeline, min_clip_sec=_DEFAULT_MIN_CLIP_SEC):
+    limit = float(min_clip_sec or _DEFAULT_MIN_CLIP_SEC)
+    dropped = set()
+    for track in timeline.tracks:
+        if track.is_audio():
+            continue
+        for clip in track.clips:
+            if _clip_drop_reason(track, clip, limit) is not None:
+                dropped.add(clip.id)
+
+    # 映像が落ちれば、そこへリンクした音声も落ちる (_validate_audio_links と同じ)
+    for track in timeline.audio_tracks():
+        for clip in track.clips:
+            if clip.link_clip in dropped or timeline.clip_by_id(clip.link_clip) is None:
+                dropped.add(clip.id)
+
+    return dropped
 
 
 # 音声クリップのリンク先が実在することを確認する (R18 / §6.3.4)
@@ -522,7 +559,14 @@ def ensure_base_audio_track(timeline):
 # 履歴 (kind に応じて recent / recent_archive) + project_dir (無ければ
 # general.output_directory) + library.extra_dirs を走査し、project_suffix で
 # 終わるファイルの絶対パスを重複なく返す。自動保存ファイルは除外する。
-# kind を渡すと「ファイル名による一次判定」で絞り込む (確定は read_summary / 回答 Q3)。
+# kind を渡すと「一次判定」で絞り込む (確定は read_summary / 回答 Q3)。
+# 一次判定は出どころで変える (docs/error/20261125/resolve.md §4 R1)。
+#   ・履歴         どちらの履歴に入っていたかで決める (recent = クリップ用 /
+#                  recent_archive = アーカイブ用)。積んだ側が種別を決めて入れている
+#                  ため、ファイル名より確かである。AI 編集のプロジェクト名
+#                  (.ai_<出力先>) は archive_suffix で終わらないため、ファイル名で
+#                  判定すると一覧から消える。
+#   ・走査フォルダ 従来どおりファイル名 (_name_kind)。積んだ側が居ないため。
 # 戻り値: {"paths": [絶対パス…(更新日時の新しい順)], "truncated": 打ち切った件数}
 def scan_projects(settings, kind=None, timeline_cfg=None):
     cfg = timeline_cfg if timeline_cfg is not None else (settings or {}).get("timeline", {})
@@ -534,8 +578,11 @@ def scan_projects(settings, kind=None, timeline_cfg=None):
     archive_suffix = project_cfg.get("archive_suffix", ".archive") or ".archive"
 
     found = {}          # 絶対パス(小文字) -> 絶対パス
+    # 履歴から拾ったパスの種別 (絶対パス(小文字) -> KIND_*)。
+    # 先に入れたほうを残す (同じパスが両方の履歴に居ても判定を揺らさない)。
+    recent_kinds = {}
 
-    def add(path):
+    def add(path, recent_kind=None):
         if not path:
             return
         full = os.path.abspath(str(path))
@@ -546,11 +593,14 @@ def scan_projects(settings, kind=None, timeline_cfg=None):
         if not os.path.isfile(full):
             return
         found.setdefault(full.lower(), full)
+        if recent_kind:
+            recent_kinds.setdefault(full.lower(), recent_kind)
 
-    # ① 履歴 (明示保存したもの)
+    # ① 履歴 (明示保存したもの)。どちらの履歴かがそのまま種別になる。
     for key in ("recent", "recent_archive"):
+        kind_of_key = KIND_ARCHIVE if key == "recent_archive" else KIND_CLIP
         for path in (project_cfg.get(key) or []):
-            add(path)
+            add(path, recent_kind=kind_of_key)
 
     # ② 保存先フォルダ + ③ 追加フォルダ
     directories = []
@@ -566,8 +616,11 @@ def scan_projects(settings, kind=None, timeline_cfg=None):
 
     paths = list(found.values())
     if kind:
-        # 一次判定はファイル名。規約から外れた名前のものは read_summary が拾い直す。
-        paths = [p for p in paths if _name_kind(p, suffix, archive_suffix) == kind]
+        # 履歴由来はその履歴の種別、走査フォルダ由来はファイル名で一次判定する。
+        # どちらも外れた場合は read_summary (中身) が拾い直す。
+        paths = [p for p in paths
+                 if _primary_kind(p, suffix, archive_suffix,
+                                  recent_kinds.get(p.lower())) == kind]
 
     # 更新日時の新しい順。stat に失敗したものは末尾へ回す
     paths.sort(key=lambda p: _mtime(p), reverse=True)
@@ -600,7 +653,17 @@ def _scan_dir(directory, suffix, recursive):
     return results
 
 
-# ファイル名からの種別の一次判定 (確定は read_summary の kind)
+# 一覧の絞り込みに使う一次判定。履歴から拾ったものは recent_kind (その履歴の種別) を
+# そのまま採り、走査フォルダから拾ったものはファイル名で決める
+# (docs/error/20261125/resolve.md §4 R1)。
+def _primary_kind(path, suffix, archive_suffix, recent_kind=None):
+    if recent_kind:
+        return recent_kind
+
+    return _name_kind(path, suffix, archive_suffix)
+
+
+# ファイル名からの種別の一次判定 (走査フォルダ用。確定は read_summary の kind)
 def _name_kind(path, suffix, archive_suffix):
     name = os.path.basename(path)
     if suffix and name.lower().endswith(suffix.lower()):

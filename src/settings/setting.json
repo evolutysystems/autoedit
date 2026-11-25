@@ -240,6 +240,8 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428_vertical2.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428_vertical.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261105_RelievedResilientDinosaurWutFace-fuIcXHNN5Vr2Fi1k_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261116_CourageousInspiringTaroOneHand-C-6wvX7Ae0y8F1ss_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae.timeline.json",
@@ -248,9 +250,9 @@
             ],
             "archive_suffix": ".archive",
             "recent_archive": [
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2916963434.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276.archive.timeline.json"
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json"
             ],
             "keep_audio": true,
             "sidecar_tolerance_sec": 0.5,
@@ -338,7 +340,7 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAQ5AAAA9gAACTgAAAUlAAAEOQAAARUAAAk4AAAFJQAAAAAAAAAADXAAAAQ5AAABFQAACTgAAAUl",
+                "archive": "AdnQywADAAAAAAYLAAAAJAAADHsAAAVqAAAGCwAAAEMAAAx7AAAFagAAAAAAAAAADXAAAAYLAAAAQwAADHsAAAVq",
                 "clip": "AdnQywADAAAAAATOAAAAAAAACc0AAAVtAAAEzgAAAB8AAAnNAAAFbQAAAAAAAAAADXAAAATOAAAAHwAACc0AAAVt"
             },
             "splitter_state": {
@@ -347,12 +349,12 @@
                     "upper": "AAAA/wAAAAEAAAACAAADBgAAAwUB/////wEAAAABAA=="
                 },
                 "clip": {
-                    "main": "AAAA/wAAAAEAAAACAAABngAAA3IB/////wEAAAACAA==",
+                    "main": "AAAA/wAAAAEAAAACAAADRwAAAckB/////wEAAAACAA==",
                     "upper": "AAAA/wAAAAEAAAACAAACdgAAAm8B/////wEAAAABAA=="
                 }
             },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAvcAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAZbAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAGWwAAAG8A////AAAGWwAABA4AAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28,
             "subtitle_align_button_width_px": 56
         },
@@ -821,7 +823,7 @@
         }
     },
     "ai": {
-        "enabled": false,
+        "enabled": true,
         "direct_mode": false,
         "endpoint": {
             "complete": "/api/ai/complete",
@@ -835,16 +837,18 @@
             "review": "claude-sonnet-5-5",
             "review_critic": "claude-opus-5-5",
             "profile": "claude-sonnet-5-5",
-            "classify": "claude-haiku-5-5"
+            "classify": "claude-haiku-5-5",
+            "scene_scan": "claude-sonnet-5-5"
         },
         "effort": {
             "scene_eval": "medium",
             "plan": "high",
             "review": "medium",
             "profile": "medium",
-            "classify": "low"
+            "classify": "low",
+            "scene_scan": "medium"
         },
-        "max_output_tokens": 8192,
+        "max_output_tokens": 16000,
         "timeout_sec": 180,
         "retry": {
             "max_attempts": 3,
@@ -855,7 +859,7 @@
             "poll_min_ms": 1000
         },
         "consent": {
-            "accepted_version": 0
+            "accepted_version": 1
         },
         "privacy": {
             "include_comment_user": false,
@@ -955,6 +959,40 @@
                 "head"
             ]
         },
+        "scan": {
+            "enabled": true,
+            "frame_interval_sec": 30,
+            "frame_edge_px": 512,
+            "max_frames": 400,
+            "fast_decode": true,
+            "chunk_sec": 480,
+            "images_per_request": 16,
+            "max_calls": 16,
+            "min_moment_sec": 15,
+            "max_moment_sec": 120,
+            "max_title_chars": 30,
+            "ai_weight": 0.3,
+            "weights": {
+                "long": {
+                    "hook": 0.25,
+                    "payoff": 0.25,
+                    "emotion_delta": 0.2,
+                    "surprise": 0.1,
+                    "clarity": 0.1,
+                    "shareability": 0.1,
+                    "drop_risk": -0.2
+                },
+                "shorts": {
+                    "hook": 0.35,
+                    "payoff": 0.2,
+                    "emotion_delta": 0.25,
+                    "surprise": 0.15,
+                    "clarity": 0.05,
+                    "shareability": 0.1,
+                    "drop_risk": -0.25
+                }
+            }
+        },
         "report": {
             "enabled": true,
             "format": "pdf",
@@ -964,7 +1002,7 @@
             "name_suffix": "_review"
         },
         "cost": {
-            "max_calls_per_project": 20,
+            "max_calls_per_project": 40,
             "max_input_tokens_per_project": 300000,
             "confirm_over_points": 0
         },

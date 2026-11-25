@@ -217,7 +217,7 @@ def _schema(max_chars):
                                  "maxLength": int(max_chars or 0) or 120},
                         "confidence": {"type": "string",
                                        "enum": list(CONFIDENCES)},
-                        "evidence": {"type": "integer", "minimum": 0},
+                        "evidence": {"type": "integer"},
                     },
                 },
             },

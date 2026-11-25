@@ -17,6 +17,8 @@ _logger = get_logger(__name__)
 
 # 役割 (サーバーへ送る role の素)。
 ROLE_SCENE_EVAL = "scene_eval"
+# 採点スイープ (docs/AiEditor/resolve2.md §3.1)
+ROLE_SCENE_SCAN = "scene_scan"
 ROLE_PLAN = "plan"
 ROLE_REVIEW = "review"
 ROLE_PROFILE = "profile"
@@ -39,6 +41,7 @@ DEFAULT_AI = {
         "jobs": "/api/ai/jobs",
     },
     "models": {
+        "scene_scan": "claude-sonnet-5-5",
         "scene_eval": "claude-sonnet-5-5",
         "plan": "claude-opus-5-5",
         "review": "claude-sonnet-5-5",
@@ -47,6 +50,7 @@ DEFAULT_AI = {
         "classify": "claude-haiku-5-5",
     },
     "effort": {
+        "scene_scan": "medium",
         "scene_eval": "medium",
         "plan": "high",
         "review": "medium",
@@ -95,6 +99,24 @@ DEFAULT_AI = {
     "vision": {
         "enabled": True, "frames_per_scene": 1, "max_frames": 12,
         "max_edge_px": 768, "points": ["peak", "head"],
+    },
+    # 採点のスイープ (docs/AiEditor/resolve2.md §11)。P1 ではフレーム抽出だけを使う。
+    "scan": {
+        "enabled": True, "frame_interval_sec": 30, "frame_edge_px": 512,
+        "max_frames": 400, "fast_decode": True,
+        "chunk_sec": 480, "images_per_request": 16, "max_calls": 16,
+        "min_moment_sec": 15, "max_moment_sec": 120, "max_title_chars": 30,
+        # 採点へ混ぜる比率。0 なら従来どおり混ぜない。
+        # 0.3 の根拠は docs/AiEditor/resolve2.md §14.2 (全長スイープの実測)
+        "ai_weight": 0.3,
+        "weights": {
+            "long": {"hook": 0.25, "payoff": 0.25, "emotion_delta": 0.20,
+                     "surprise": 0.10, "clarity": 0.10, "shareability": 0.10,
+                     "drop_risk": -0.20},
+            "shorts": {"hook": 0.35, "payoff": 0.20, "emotion_delta": 0.25,
+                       "surprise": 0.15, "clarity": 0.05, "shareability": 0.10,
+                       "drop_risk": -0.25},
+        },
     },
     "report": {
         "enabled": True, "format": "pdf", "auto_open": False,

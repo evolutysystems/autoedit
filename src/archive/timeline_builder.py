@@ -41,7 +41,10 @@ from . import scoring
 
 _logger = get_logger(__name__)
 
-# 極短の区間は Timeline に載せない (builder._MIN_SEGMENT_SEC と同じ)
+# 「ほぼ 0 か」の判定に使う許容誤差 (builder._MIN_SEGMENT_SEC と同じ)。
+# 字幕の打ち切り・区間の差分計算に使う値であり、**クリップの下限ではない**。
+# クリップの下限は timeline.min_clip_sec を使う
+# (docs/error/20261124/resolve.md §4 R1)。
 _MIN_SEGMENT_SEC = 0.01
 
 # クリップ由来を記録する origin のキー。書き出し時の分割にこれを使う (§3-8)
@@ -105,6 +108,11 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None,
         clip_start = cursor
         for seg_index, (start, end) in enumerate(segments):
             duration = float(end) - float(start)
+            # ここで下限 (min_clip_sec) を見てはいけない。segments は下の
+            # append_subtitles の TimeMap にもそのまま渡っており、片方だけ
+            # 区間を落とすと V1 の軸が詰まって字幕がずれる
+            # (docs/error/20261124/resolve.md §4 R4 / 20260812 の再発)。
+            # 下限は編集点を作る silence_cutter.detect_edit_points で掛ける。
             if duration <= _MIN_SEGMENT_SEC:
                 continue
             clip_id = timeline.next_id("c")
@@ -148,7 +156,8 @@ def build_archive_timeline(prepared, clip_settings, source_path="", curve=None,
         })
         media_meta.append({
             "media_id": media.id,
-            "vod_start": float(entry.get("start", 0.0)),
+            # 実測した切り出し原点。無い (古い呼び出し・テスト) なら要求位置へ落とす
+            "vod_start": _media_vod_start(entry),
             "vod_end": float(entry.get("end", 0.0)),
             "media_role": str(entry.get("media_role", "normalized") or "normalized"),
         })
@@ -326,6 +335,9 @@ def _trim_curve(curve):
 
 
 # クリップ内の残す区間を返す。無音カット無効 (keep_segments=None) ならクリップ全長。
+# ここでクリップの下限 (min_clip_sec) は掛けない。戻り値は V1 の積み上げと
+# append_subtitles の TimeMap の両方に使われ、片方だけ落とすと軸がずれる
+# (docs/error/20261124/resolve.md §4 R4)。
 def _segments_of(entry, media):
     segments = entry.get("keep_segments")
     if segments:
@@ -694,6 +706,16 @@ def intro_media_id(timeline, clip_index):
 
 # 素材の復元情報を書き込む (同じ media_id があれば置き換える)。
 # source.archive が無い Timeline では何もしない (アーカイブ用でない)。
+# 素材の先頭に当たる VOD 時刻。clip_writer が実測して入れる (ver13 resolve2 §3.3)。
+# 古い呼び出し・テストのように入っていない場合は、従来どおり要求位置を使う。
+def _media_vod_start(entry):
+    measured = (entry or {}).get("media_vod_start")
+    if measured is None:
+        return float((entry or {}).get("start", 0.0))
+
+    return float(measured)
+
+
 def put_archive_media(timeline, media_id, vod_start, vod_end, media_role="normalized"):
     archive = archive_section(timeline)
     if not archive:
@@ -713,7 +735,10 @@ def put_archive_media(timeline, media_id, vod_start, vod_end, media_role="normal
 
 # その素材が Timeline 上で実際に使っている VOD 区間 (ver5 resolve6 §3.4)
 #   素材内の秒 + 素材の vod_start = VOD の秒
-#   (cut_region は -c copy のため素材の先頭 = 切り出し開始位置と一致する)
+# vod_start は **実測した切り出し原点** である (clip_writer が cut_origin.measure で
+# 測り、entry["media_vod_start"] として渡す / docs/request/ver13/resolve2.md §3)。
+# -c copy の切り出しは要求位置の手前から始まるため、要求位置を原点にすると
+# 最大 1 GOP (Twitch VOD で約 2 秒) ずれる。
 # 復元情報が無い素材 (D&D で足した画像など) は空を返す。
 def media_vod_ranges(timeline, media_id, include_disabled=True):
     entry = archive_media_entry(timeline, media_id)
@@ -971,6 +996,16 @@ def _subtract_covered(start, end, covered):
     return [(s, e) for s, e in out if e - s > _MIN_SEGMENT_SEC]
 
 
+# 区間の一覧から covered のぶんを差し引く (ver13 resolve2 §2.4)。
+# 既存素材から戻せる穴を、取り直す対象から外すのに使う。
+def subtract_ranges(ranges, covered):
+    out = []
+    for start, end in ranges or []:
+        out.extend(_subtract_covered(float(start), float(end), covered or []))
+
+    return out
+
+
 # 追加操作の計画を立てる (副作用なし / resolve13 §3-2・§3-4)
 #
 # 重なり判定は scoring._merge_time_sections と同じ規約にする (接触も統合)。
@@ -1082,6 +1117,181 @@ def apply_prepared_after_add(prepared, plan, new_entries):
     return out
 
 
+# ------------------------------------------------------------------
+# 無音カットで消えた区間を戻す (docs/request/ver13/resolve2.md §2)
+# ------------------------------------------------------------------
+#
+# 無音カットは編集点方式であり、**素材には切った区間がそのまま残っている**。
+# V1 に載っていないだけなので、同じ素材を参照するクリップを足せば戻せる。
+# 取り直し (ダウンロード・ffmpeg) は要らない。
+#
+# 穴の境目は隣のクリップの source_out / source_in をそのまま使う。座標変換を
+# 挟まないため、継ぎ目がずれようがない。
+
+
+# 指定した VOD 区間のうち、既存素材から戻せる穴を返す。
+#
+# timeline   : アーカイブ用 Timeline
+# start/end  : 利用者が指定した VOD 区間 (秒)
+# 戻り値: [{"media_id","clip_index","source_in","source_out",
+#           "vod_start","vod_end","after_clip_id"}] (VOD 順)
+#   after_clip_id : この V1 クリップの直後へ入れる ("" = 素材の先頭側の穴)
+#
+# used_vod_ranges と違い**穴の統合 (used_gap_merge_sec) は行わない**。
+# あれは「取り直す価値のある穴か」を決める値であり、取り直さない本経路では
+# 短い穴も戻せる (ver13 resolve2 §2.2)。
+def plan_gap_fill(timeline, start_sec, end_sec):
+    track = timeline.base_video_track()
+    if track is None:
+        return []
+    want_start = float(start_sec)
+    want_end = float(end_sec)
+    if want_end - want_start <= _MIN_SEGMENT_SEC:
+        return []
+
+    fills = []
+    for media_id, clips in _archive_clips_by_media(timeline).items():
+        entry = archive_media_entry(timeline, media_id)
+        if entry is None:
+            continue            # 復元情報が無い素材は VOD 位置が分からない
+        offset = float(entry.get("vod_start", 0.0))
+        media = timeline.media_by_id(media_id)
+        span = float(getattr(media, "duration_sec", 0.0) or 0.0)
+        if span <= 0:
+            # 素材の尺が分からないときは、載っている範囲の中の穴だけを見る
+            span = max(float(c.source_out) for c in clips)
+        clips = sorted(clips, key=lambda c: float(c.source_in))
+
+        # 素材内の「使っていない区間」= 穴。先頭と末尾も対象にする
+        cursor = 0.0
+        after = ""
+        for clip in clips:
+            fill = _gap_fill_row(media_id, clip, cursor, float(clip.source_in),
+                                 offset, after, want_start, want_end)
+            if fill is not None:
+                fills.append(fill)
+            cursor = max(cursor, float(clip.source_out))
+            after = clip.id
+        if cursor < span - _MIN_SEGMENT_SEC and clips:
+            fill = _gap_fill_row(media_id, clips[-1], cursor, span,
+                                 offset, after, want_start, want_end)
+            if fill is not None:
+                fills.append(fill)
+
+    fills.sort(key=lambda f: f["vod_start"])
+    return fills
+
+
+# 穴 1 件を指定区間で切り取って 1 行にする。範囲外・短すぎるときは None。
+def _gap_fill_row(media_id, neighbour, hole_in, hole_out, offset, after,
+                  want_start, want_end):
+    source_in = max(float(hole_in), want_start - offset)
+    source_out = min(float(hole_out), want_end - offset)
+    if source_out - source_in <= _MIN_SEGMENT_SEC:
+        return None
+
+    return {
+        "media_id": str(media_id),
+        "clip_index": neighbour.origin.get(ORIGIN_ARCHIVE_INDEX),
+        "source_in": source_in,
+        "source_out": source_out,
+        "vod_start": offset + source_in,
+        "vod_end": offset + source_out,
+        # 先頭側の穴 (after が空) は、その素材の最初のクリップの手前へ入れる
+        "after_clip_id": str(after or ""),
+        "before_clip_id": "" if after else str(neighbour.id),
+    }
+
+
+# 素材ごとの V1 クリップ (アーカイブ由来のものだけ)
+def _archive_clips_by_media(timeline):
+    track = timeline.base_video_track()
+    grouped = {}
+    for clip in (track.clips if track is not None else []):
+        if clip.origin.get(ORIGIN_ARCHIVE_INDEX) is None:
+            continue
+        grouped.setdefault(str(clip.media_id), []).append(clip)
+
+    return grouped
+
+
+# 穴を戻すコマンド (ver13 resolve2 §2.5)
+#
+# 履歴はスナップショット方式のため逆操作は書かない (AddArchiveSection と同じ)。
+#
+# テロップは増やさない。音声認識は「残す区間」に対してだけ走っており、
+# 穴の中の発話は認識していないためである (ver13 resolve2 §2.3)。
+class RestoreArchiveGaps(commands.Command):
+
+    label = "無音カットの区間を戻す"
+
+    def __init__(self, fills, min_clip_sec=0.05):
+        self._fills = list(fills or [])
+        self._min_clip_sec = float(min_clip_sec)
+
+    def apply(self, timeline):
+        video = timeline.base_video_track()
+        if video is None or not self._fills:
+            return False
+        audio = timeline.audio_track_for(video.id)
+        added = 0
+        # 後ろから入れる。前から入れると、同じ素材の後続の穴の挿入位置が
+        # 自分の挿入でずれる (Timeline 時刻が動くため)。
+        for fill in sorted(self._fills, key=lambda f: f["vod_start"], reverse=True):
+            if self._insert_one(timeline, fill, video, audio):
+                added += 1
+        if not added:
+            return False
+        _logger.info("無音カットの区間を戻しました: %d 件 / 合計 %.2fs",
+                     added, sum(f["source_out"] - f["source_in"] for f in self._fills))
+
+        return True
+
+    def _insert_one(self, timeline, fill, video, audio):
+        duration = float(fill["source_out"]) - float(fill["source_in"])
+        if duration <= _MIN_SEGMENT_SEC:
+            return False
+        at = self._insert_at(video, fill)
+        if at is None:
+            return False
+        for track in list(timeline.tracks):
+            if track.is_audio():
+                continue
+            commands.make_room_for_range(
+                timeline, track, at, at + duration,
+                min_clip_sec=self._min_clip_sec, shift=duration)
+
+        clip_id = timeline.next_id("c")
+        video.clips.append(Clip(
+            clip_id, fill["media_id"], at, duration,
+            source_in=float(fill["source_in"]), source_out=float(fill["source_out"]),
+            z_order=BASE_Z_ORDER,
+            origin={"type": ORIGIN_SILENCE_CUT,
+                    ORIGIN_ARCHIVE_INDEX: fill.get("clip_index"),
+                    "restored": True},
+        ))
+        media = timeline.media_by_id(fill["media_id"])
+        if audio is not None and getattr(media, "has_audio", True):
+            audio.clips.append(AudioClip(timeline.next_id("a"), clip_id))
+        _logger.info("戻した区間: clip%s %.2f-%.2f (VOD %.1f-%.1f) を %.2fs へ",
+                     fill.get("clip_index"), fill["source_in"], fill["source_out"],
+                     fill["vod_start"], fill["vod_end"], at)
+
+        return True
+
+    # 入れる Timeline 位置。隣のクリップの終わり (先頭側の穴なら手前のクリップの開始)。
+    def _insert_at(self, video, fill):
+        after = str(fill.get("after_clip_id") or "")
+        before = str(fill.get("before_clip_id") or "")
+        for clip in video.clips:
+            if after and clip.id == after:
+                return float(clip.timeline_start) + float(clip.duration)
+            if before and clip.id == before:
+                return float(clip.timeline_start)
+
+        return None
+
+
 # 用意できたセクション素材を Timeline へ挿入するコマンド (resolve13 §5.5)
 #
 # entries       : clip_writer.prepare_one_clip の戻り値の一覧。
@@ -1151,8 +1361,15 @@ class AddArchiveSection(commands.Command):
         if duration_hint > 0:
             media.duration_sec = duration_hint
 
-        segments = [(float(s), float(e)) for s, e in _segments_of(entry, media)
-                    if float(e) - float(s) > _MIN_SEGMENT_SEC]
+        # -c copy の切り出しで付いてくる「要求位置より手前の余り」を落とす
+        # (docs/request/ver13/resolve2.md §3.4)。既存セクションの穴へ入れるとき、
+        # 落とさないと隣のクリップと内容が重なり同じ場面が 2 回流れる。
+        # segments は append_subtitles の TimeMap にも渡るため、
+        # クリップと字幕が同じ区間列を見る (20261124 resolve §4 R4)。
+        head = max(float(entry.get("start", 0.0)) - _media_vod_start(entry), 0.0)
+        segments = [(max(float(s), head), float(e))
+                    for s, e in _segments_of(entry, media)
+                    if float(e) - max(float(s), head) > _MIN_SEGMENT_SEC]
         duration = sum(e - s for s, e in segments)
         if duration <= _MIN_SEGMENT_SEC:
             _logger.warning("追加セクション clip%s は尺が短すぎるため入れません",
@@ -1186,7 +1403,7 @@ class AddArchiveSection(commands.Command):
         # 畳まれたときに「どの VOD 区間から作った素材か」が失われ、
         # 開き直したときに復元できなくなる (ver5 resolve6 §2.2)
         put_archive_media(timeline, media.id,
-                          float(entry.get("start", 0.0)), float(entry.get("end", 0.0)),
+                          _media_vod_start(entry), float(entry.get("end", 0.0)),
                           str(entry.get("media_role", "normalized") or "normalized"))
 
         meta.append({

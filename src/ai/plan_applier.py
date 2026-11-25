@@ -55,7 +55,15 @@ def apply_plan(timeline, plan, stack=None, settings=None, report=None,
     stack = stack if stack is not None else commands.CommandStack()
     scenes = plan.get("scenes") or []
     indexes = _scene_indexes(scenes, scene_indexes)
-    state = {"applied": 0}
+    state = {"applied": 0, "pre_invalid": frozenset()}
+
+    # 適用「前」から validate で落ちるクリップを控えておく (20261124)。
+    # V15 は「消えたクリップがあるか」で plan の成否を判定するため、
+    # 元から下限を割っていたクリップを除いておかないと、plan が触っていない
+    # クリップ 1 本で編集全体が巻き戻る。調べるだけで Timeline は変えない。
+    if validate:
+        state["pre_invalid"] = frozenset(
+            project_io.invalid_clip_ids(timeline, cfg["min_clip_sec"]))
 
     _drop_unused_scenes(timeline, stack, cfg, set(indexes.values()), report, state)
 
@@ -323,10 +331,19 @@ def _apply_sounds(timeline, stack, cfg, plan, indexes, settings, probe, report, 
 # 壊れた形になったということなので、積んだ手を全て戻して失敗にする。
 # (素材のファイルが無いだけなら validate はクリップを無効化するだけであり、
 #  巻き戻しの対象にはならない。書き出しまでに素材が揃えば有効へ戻る。)
+#
+# **ただし「元から不正だったクリップ」は巻き戻しの理由にしない** (20261124)。
+# それは plan の有無にかかわらず初回の validate で消えるものであり、
+# plan が壊した形ではない。apply_plan が適用前に調べた state["pre_invalid"] を
+# 比較の対象から外すことで区別する。
 def _validate_timeline(timeline, stack, cfg, report, state):
-    before = _clip_ids(timeline)
+    pre_invalid = state.get("pre_invalid") or frozenset()
+    before = _clip_ids(timeline) - pre_invalid
     project_io.validate(timeline, cfg["min_clip_sec"])
     lost = before - _clip_ids(timeline)
+    # 元からの不正は致命ではないが、消えたことは記録に残す
+    if pre_invalid:
+        report.add("V15", "timeline.before", schema.ACTION_DROP, str(len(pre_invalid)))
     # include_disabled: 素材のファイルがまだ無い間は validate がクリップを
     # 無効化する (消さない)。それを「全部無くなった」と誤判定しない。
     if not lost and timeline.base_clips(include_disabled=True):

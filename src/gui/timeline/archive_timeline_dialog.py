@@ -8,6 +8,7 @@
 # Timeline には選ばれたクリップが 1 本に並んでおり、クリップ単位への切り分けは
 # 書き出し時に archive.timeline_builder.split_by_clip() が行う (§3-8)。
 import base64
+import copy
 import os
 import shutil
 
@@ -96,6 +97,8 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._section_cfg = archive_config.section_add_config(settings or {})
         self._section_worker = None
         self._section_progress = None
+        # 直前の追加で既存素材から戻した VOD 区間 (ver13 resolve2 §2.4)
+        self._restored_ranges = []
         self._vod_duration = 0.0
         # 区間の取り直しに使う取得元 (ver9 resolve5 §4.3)。
         # 画面構築 (_build_clip_bar) から参照するため super().__init__ より先に決める。
@@ -638,13 +641,28 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
             return                          # 準備中の多重起動を防ぐ
         dialog = SectionAddDialog(
             self._vod_duration_sec(), self._default_add_start(),
-            self._section_cfg, preview_cb=self._preview_add, parent=self)
+            self._section_cfg, preview_cb=self._preview_add, parent=self,
+            # 初期値はこの画面が今使っている値 (ver13 resolve1 §3 R1)
+            silence_cut_default=self._silence_cut_now())
         if dialog.exec() != QDialog.Accepted:
             return
         start, end = dialog.selected_range()
+        silence_cut = dialog.silence_cut_enabled()
+
+        # 無音カットを外したときは、まず**既存素材から**穴を戻す
+        # (取り直さない / docs/request/ver13/resolve2.md §2)。
+        # 編集点方式なので素材には切った区間が残っており、V1 へ足すだけで戻る。
+        restored = 0 if silence_cut else self._restore_gaps(start, end)
 
         plan = self._plan_add(start, end)
-        if plan is None:
+        if plan is not None and restored:
+            # 戻した区間はもう Timeline にあるため、取り直す対象から外す
+            plan = dict(plan)
+            plan["ranges"] = archive_timeline.subtract_ranges(
+                plan["ranges"], self._restored_ranges)
+        if plan is None or not plan.get("ranges"):
+            if restored:
+                return          # 穴を戻しただけで足りた (案内は _restore_gaps が出す)
             QMessageBox.information(
                 self, tr("セクションの追加"),
                 tr("指定した区間は、すべて Timeline で使われています。\n"
@@ -671,9 +689,40 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
                 # 採点はやり直さず、窓スコア列から推定する (§5.4 / 要望 G2)
                 "score": archive_timeline.estimate_section_score(
                     self._curve, range_start, range_end),
+                # この区間だけの無音カットの指定 (ver13 resolve1 §3 R2)
+                "silence_cut": silence_cut,
             })
 
         self._start_section_worker(jobs, plan)
+
+    # 無音カットで消えた区間を既存素材から戻す (ver13 resolve2 §2)。
+    # 戻り値: 戻した件数 (0 = 戻せる穴が無かった)。
+    # 戻した VOD 区間は _restored_ranges に控え、取り直す対象から差し引く。
+    def _restore_gaps(self, start, end):
+        self._restored_ranges = []
+        fills = archive_timeline.plan_gap_fill(self.controller.timeline, start, end)
+        if not fills:
+            return 0
+        command = archive_timeline.RestoreArchiveGaps(
+            fills, min_clip_sec=self.controller.cfg["min_clip_sec"])
+        if not self.controller.execute(command):
+            return 0
+        self._restored_ranges = [(f["vod_start"], f["vod_end"]) for f in fills]
+        total = sum(e - s for s, e in self._restored_ranges)
+        self._update_history_buttons()
+        self.graph.set_data(self._curve, self._clips_meta())
+        self.preview.set_status(
+            tr("無音カットで消えていた {count} 件（合計 {total}）を戻しました",
+               count=len(fills), total=_fmt(total)))
+
+        return len(fills)
+
+    # この画面が今使っている無音カットの値 (追加ダイアログの初期値 / ver13 resolve1 §3 R1)。
+    # 出どころは clip_writer.build_clip_settings が入れた clip_settings である。
+    def _silence_cut_now(self):
+        settings = self._clip_settings or {}
+
+        return bool((settings.get("silence_cut") or {}).get("enabled", True))
 
     # 準備 (切り出し→正規化→音量解析→編集点検出→文字起こし) を別スレッドで回す。
     # 画面はワーカースレッドを止めて動いているため、ここで同期実行すると固まる (§2.5)。
@@ -688,7 +737,9 @@ class ArchiveTimelineDialog(TimelineEditorDialog):
         self._section_progress.setMinimumDuration(0)
         self._section_progress.setValue(0)
         self._section_progress.canceled.connect(self._on_section_cancel)
-        _logger.info("セクション準備開始: %d 区間 / 合計 %.1fs", len(jobs), total)
+        _logger.info("セクション準備開始: %d 区間 / 合計 %.1fs / 無音カット %s",
+                     len(jobs), total,
+                     "ON" if jobs and jobs[0].get("silence_cut", True) else "OFF")
 
         self._section_worker = _SectionPrepareWorker(
             self._source_path, self._settings, self._clip_settings, jobs,
@@ -1004,9 +1055,32 @@ class _SectionPrepareWorker(QThread):
         self._vod_analysis = vod_analysis
         self._ffmpeg_dir = ffmpeg_dir
         self._vod_duration_sec = float(vod_duration_sec or 0.0)
+        # 無音カットの指定ごとの clip_settings の控え (ver13 resolve1 §3 R2)。
+        # 値は 2 通りしか無いため、区間の数だけ deepcopy しない。
+        self._settings_variants = {}
 
     def cancel(self):
         self._cancelled = True
+
+    # job の指定で無音カットの有無だけを差し替えた clip_settings を返す。
+    # 画面が持つ設定は書き換えない (次の追加・保存・プレビューへ漏らさないため)。
+    # 指定が無い (従来の呼び出し) か、画面の値と同じなら元をそのまま返す。
+    def _clip_settings_for(self, job):
+        want = job.get("silence_cut")
+        if want is None:
+            return self._clip_settings
+        want = bool(want)
+        current = bool((self._clip_settings.get("silence_cut") or {})
+                       .get("enabled", True))
+        if want == current:
+            return self._clip_settings
+        cached = self._settings_variants.get(want)
+        if cached is None:
+            cached = copy.deepcopy(self._clip_settings)
+            cached.setdefault("silence_cut", {})["enabled"] = want
+            self._settings_variants[want] = cached
+
+        return cached
 
     # 区間の素材と、その素材の VOD 絶対原点を用意する (ver9 resolve5 §4.7)
     #
@@ -1075,7 +1149,7 @@ class _SectionPrepareWorker(QThread):
 
                 source, origin = self._source_for(job, phase)
                 entry = clip_writer.prepare_one_clip(
-                    source, self._settings, self._clip_settings, job,
+                    source, self._settings, self._clip_settings_for(job), job,
                     ffmpeg_cfg, self._workdir, use_timeline=True, progress_cb=phase,
                     vod_analysis=self._vod_analysis, source_origin_sec=origin)
                 self._keep_intro_source(entry, source, origin, ffmpeg_cfg)

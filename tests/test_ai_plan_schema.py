@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 from src.ai import plan_schema as ps
+from src.ai import profile as ai_profile
 from src.exceptions import AiPlanError
 from src.modules import subtitle_animation
 from src.settings.settings_window import DEFAULT_SETTINGS
@@ -413,7 +414,7 @@ class StructuredOutputSchemaTest(unittest.TestCase):
         item = schema["properties"]["scenes"]["items"]["properties"]
 
         self.assertEqual(set(ps.SCORE_KEYS), set(item["scores"]["properties"]))
-        self.assertEqual(7, item["candidate_index"]["maximum"])
+        self.assertEqual("integer", item["candidate_index"]["type"])
         self.assertFalse(schema["additionalProperties"])
 
     def test_edit_plan_schema_uses_the_enums(self):
@@ -422,21 +423,90 @@ class StructuredOutputSchemaTest(unittest.TestCase):
         subtitle = schema["properties"]["subtitles"]["items"]["properties"]
 
         self.assertEqual(list(ps.SCENE_ROLES), scene["role"]["enum"])
-        self.assertEqual(["youtube_shorts"],
+        # target は出力先ごとに絞らない (スキーマもキャッシュの前方一致に入るため)。
+        # 呼び出し側の指定が正で、normalize_edit_plan がそれを採用する。
+        self.assertEqual(list(ps.TARGETS),
                          schema["properties"]["project"]["properties"]["target"]["enum"])
         self.assertIn("", subtitle["animation"]["enum"])
         self.assertEqual(list(ps.TRACK_ROLES), subtitle["track_role"]["enum"])
 
-    def test_video_plan_schema_limits_the_roles_to_the_target(self):
+    # スキーマは出力先ごとに変えない。スキーマもキャッシュの前方一致に含まれる
+    # ため、出力先ごとに列挙を絞ると 3 出力先の呼び出しが別々の entry になり
+    # プロンプトキャッシュへ乗らない (2026-11-24 実測)。
+    # 役割の並びは planner が payload の section_roles と前置きで伝える
+    # (SECTION_ROLE_ORDER の註どおり「検証では強制しない」)。
+    def test_plan_schemas_do_not_vary_by_target(self):
+        for build in (ps.video_plan_schema, ps.edit_plan_schema):
+            rendered = {json.dumps(build(target), sort_keys=True)
+                        for target in ps.TARGETS}
+
+            self.assertEqual(1, len(rendered), build.__name__)
+
+    def test_video_plan_schema_allows_every_role(self):
         schema = ps.video_plan_schema("youtube_shorts")
         roles = schema["properties"]["sections"]["items"]["properties"]["role"]["enum"]
 
-        self.assertEqual(list(ps.SECTION_ROLE_ORDER["youtube_shorts"]), roles)
+        self.assertEqual(list(ps.SCENE_ROLES), roles)
 
     def test_schemas_are_json(self):
         for schema in (ps.scene_eval_schema(), ps.video_plan_schema("tiktok"),
                        ps.edit_plan_schema("tiktok")):
             json.dumps(schema)
+
+    # 構造化出力が受け付けないキーワードを送ると Anthropic が 400 を返し
+    # ("For 'integer' type, properties maximum, minimum are not supported")、
+    # AI の呼び出しが丸ごと落ちる。送信直前の sanitize で全部落ちることを見る。
+    def test_sanitize_drops_every_unsupported_keyword(self):
+        for name, schema in _every_schema():
+            cleaned = ps.sanitize_for_api(schema)
+            for path, node in _walk(cleaned):
+                for key in ps._UNSUPPORTED_SCHEMA_KEYS:
+                    self.assertNotIn(key, node, name + " " + path)
+
+    # integer へ minimum / maximum を付けない (sanitize の前から付けない約束)。
+    def test_integer_fields_carry_no_bounds(self):
+        for name, schema in _every_schema():
+            for path, node in _walk(schema):
+                if node.get("type") != "integer":
+                    continue
+                for key in ("minimum", "maximum", "exclusiveMinimum",
+                            "exclusiveMaximum"):
+                    self.assertNotIn(key, node, name + " " + path)
+
+    # 項目名がキーワードと同じでも消さない (properties の鍵は項目名)。
+    def test_sanitize_keeps_properties_named_like_keywords(self):
+        cleaned = ps.sanitize_for_api({
+            "type": "object", "additionalProperties": False,
+            "required": ["maxLength"],
+            "properties": {"maxLength": {"type": "integer", "minimum": 0}},
+        })
+
+        self.assertIn("maxLength", cleaned["properties"])
+        self.assertNotIn("minimum", cleaned["properties"]["maxLength"])
+        self.assertEqual(["maxLength"], cleaned["required"])
+
+
+# 送り出すスキーマの一覧 ((名前, スキーマ) を返す)
+def _every_schema():
+    schemas = [("scene_eval", ps.scene_eval_schema(candidate_count=8)),
+               ("review", ps.review_schema()),
+               ("profile", ai_profile._schema(120))]
+    for target in ps.TARGETS:
+        schemas.append(("video_plan/" + target, ps.video_plan_schema(target)))
+        schemas.append(("edit_plan/" + target, ps.edit_plan_schema(target)))
+
+    return schemas
+
+
+# スキーマの入れ子をすべて辿る ((場所, dict) を返す)
+def _walk(node, path="$"):
+    if isinstance(node, dict):
+        yield path, node
+        for key, value in node.items():
+            yield from _walk(value, path + "." + str(key))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _walk(value, path + "[" + str(index) + "]")
 
 
 if __name__ == "__main__":
