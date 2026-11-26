@@ -199,7 +199,11 @@ def transcribe_candidates(input_path, settings, candidates, workdir,
                           "text": text})
 
     items.sort(key=lambda item: item["start"])
-    merged = _merge_transcript(items, float(cfg["budget"]["merge_transcript_gap_sec"]))
+    budget = cfg["budget"]
+    merged = _merge_transcript(
+        items, float(budget["merge_transcript_gap_sec"]),
+        max_sec=float(budget.get("merge_transcript_max_sec", 0.0) or 0.0),
+        max_chars=int(budget.get("merge_transcript_max_chars", 0) or 0))
     _logger.info("候補の文字起こし: 区間 %d 本 → %d 件", len(ranges), len(merged))
 
     return merged
@@ -272,16 +276,27 @@ def merge_ranges(ranges, gap=0.0, low=None, high=None):
     return merged
 
 
-# 連続する短文を結合する (§5.4)。
-def _merge_transcript(items, gap):
+# 連続する短文を結合する (§5.4 / 上限は docs/error/20261125c/resolve.md §2)。
+#
+# 上限が無かったため、連続した発話では**全部が 1 件に潰れていた**
+# (実測: 99 件 → 1 件 / 149.1 秒 / 1,538 文字)。そうなると AI は
+# 「その 149 秒のどこで言ったか」を知れず、テロップの時刻は推測になる。
+#
+# max_sec / max_chars のどちらかを超えるなら結合せず新しい件にする。
+# 0 を渡せば従来どおり無制限 (回帰の逃げ道)。
+def _merge_transcript(items, gap, max_sec=0.0, max_chars=0):
     merged = []
     for item in items:
-        if merged and item["start"] - merged[-1]["end"] <= gap:
-            merged[-1] = {"start": merged[-1]["start"],
-                          "end": max(merged[-1]["end"], item["end"]),
-                          "text": (merged[-1]["text"] + " " + item["text"]).strip()}
-        else:
-            merged.append(dict(item))
+        last = merged[-1] if merged else None
+        if last is not None and item["start"] - last["end"] <= gap:
+            end = max(last["end"], item["end"])
+            text = (last["text"] + " " + item["text"]).strip()
+            over_sec = max_sec > 0 and end - last["start"] > max_sec
+            over_chars = max_chars > 0 and len(text) > max_chars
+            if not (over_sec or over_chars):
+                merged[-1] = {"start": last["start"], "end": end, "text": text}
+                continue
+        merged.append(dict(item))
 
     return merged
 

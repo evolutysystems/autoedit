@@ -96,6 +96,19 @@ def evaluate(bundle, provider, settings, use=USE_LONG, project_path="",
     if not bundle.candidates:
         return [], report
 
+    # ai.scene_eval.enabled = false なら AI を呼ばず、既存の採点だけで順位を付ける。
+    # 既定で切っている理由は docs/error/20261125c/resolve.md §2.6:
+    # 採点スイープ (sceneScan) が映像を見て山を挙げるようになったため、
+    # 文字起こしと数値だけで候補を再採点するこの工程は役割が重なる。
+    #
+    # 保存済みの評価 (<project>.ai.json) も使わない。切ったのに前回の AI の点が
+    # 効くと「何が順位を決めたのか」が読めなくなる。
+    if not cfg["scene_eval"].get("enabled", True):
+        if provider is not None:
+            _logger.info("シーン評価は設定で切られています (既存の採点だけで順位を付けます)")
+        provider = None
+        reuse = False
+
     cached = load_eval(project_path) if (reuse and project_path) else {}
     scenes = {}
     for scene in _from_cache(cached, bundle):

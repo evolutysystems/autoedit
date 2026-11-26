@@ -99,7 +99,8 @@ class AiConfigFillTest(unittest.TestCase):
         self.assertEqual((3, 2.0), ai_config.retry_policy(config))
         self.assertEqual((900.0, 1.0), ai_config.job_policy(config))
         self.assertEqual("/api/ai/complete", ai_config.endpoint_path(config, "complete"))
-        self.assertEqual((20, 300000), ai_config.cost_limits(config))
+        # 負数は既定へ寄る (既定は 60 / docs/error/20261125c/resolve.md §2.6)
+        self.assertEqual((60, 300000), ai_config.cost_limits(config))
 
     # 将来キーを足したときに、古いクライアントが保存で消さない。
     def test_unknown_keys_are_kept(self):

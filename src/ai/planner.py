@@ -235,15 +235,20 @@ def _ask_edit_plan(bundle, scenes, video_plan, provider, settings, target, repor
     presets = sorted((cfg["sounds"].get("presets") or {}).keys()) \
         if cfg["sounds"].get("enabled") else []
     # 前置きは出力先に依らない (VideoPlan と同じ / §6.4)。target は payload にある。
+    # テロップの扱い (ai.plan.subtitle_mode)。前置きが変わるため、
+    # キャッシュの前方一致の鍵にもモードを入れる (混ぜない)。
+    mode = plan_schema.subtitle_mode(cfg["plan"].get("subtitle_mode"))
     system = prompts.render(
         prompts.EDIT_PLAN, language=_language(settings),
         animations=", ".join(plan_schema.ANIMATIONS),
-        presets=", ".join(presets) if presets else "(なし)")
+        presets=", ".join(presets) if presets else "(なし)",
+        subtitle_rule=prompts.subtitle_rule(mode))
     request = AiRequest(
         role=ai_config.ROLE_PLAN, system=system,
         payload=_edit_payload(bundle, scenes, video_plan, target),
         schema=plan_schema.edit_plan_schema(target, max_reason_chars=max_chars),
-        cache_prefix_id=_CACHE_EDIT, max_output_tokens=cfg["max_output_tokens"])
+        cache_prefix_id=_CACHE_EDIT + "-" + mode,
+        max_output_tokens=cfg["max_output_tokens"])
     try:
         completion = provider.complete_json(request)
     except AiError as e:

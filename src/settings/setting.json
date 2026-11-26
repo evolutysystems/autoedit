@@ -905,7 +905,8 @@
                     "standalone": 0.2,
                     "context_dependency": -0.2
                 }
-            }
+            },
+            "enabled": false
         },
         "plan": {
             "targets": [
@@ -928,16 +929,22 @@
                 "max_sec": 60,
                 "max_scenes": 5
             },
-            "subtitle_mode": "full",
+            "subtitle_mode": "key",
             "variants": 1,
-            "allow_reuse_scene": true
+            "allow_reuse_scene": true,
+            "subtitle": {
+                "reuse_min_ratio": 0.6,
+                "piece_gap_tolerance_sec": 0.05,
+                "min_display_sec": 0.4,
+                "max_chars_per_sec": 20
+            }
         },
         "sounds": {
             "enabled": true,
             "presets": {}
         },
         "review": {
-            "enabled": false,
+            "enabled": true,
             "roles": {
                 "director": true,
                 "critic": true,
@@ -1002,7 +1009,7 @@
             "name_suffix": "_review"
         },
         "cost": {
-            "max_calls_per_project": 40,
+            "max_calls_per_project": 60,
             "max_input_tokens_per_project": 300000,
             "confirm_over_points": 0
         },
@@ -1013,7 +1020,9 @@
             "curve_window_span": 2,
             "max_comments_per_cell": 20,
             "merge_transcript_gap_sec": 1.0,
-            "cache_prefix": true
+            "cache_prefix": true,
+            "merge_transcript_max_sec": 6.0,
+            "merge_transcript_max_chars": 40
         },
         "learning": {
             "enabled": true,

@@ -27,6 +27,7 @@ from ..timeline.builder import timeline_config
 from ..timeline.model import SubtitleClip
 from ..timeline.timemap import TimeMap
 from ..utils.logger import get_logger
+from . import config as ai_config
 from . import plan_schema as schema
 from .plan_validator import PlanReport
 
@@ -73,7 +74,9 @@ def apply_plan(timeline, plan, stack=None, settings=None, report=None,
         _apply_scene_audio(timeline, stack, scene, index, report, state)
         _apply_scene_zoom(timeline, stack, scene, index, report, state)
 
-    _apply_subtitles(timeline, stack, cfg, plan, indexes, report, state)
+    _apply_subtitles(timeline, stack, cfg, plan, indexes, report, state,
+                     subtitle_cfg=subtitle_plan_config(settings),
+                     mode=subtitle_mode_of(settings))
     _apply_sounds(timeline, stack, cfg, plan, indexes, settings, probe, report, state)
 
     if validate:
@@ -215,10 +218,32 @@ def _apply_scene_zoom(timeline, stack, scene, index, report, state):
 # 本文は既存の文字起こしが正であり、AI には直すべきものだけを指示させる (§11.1 ⑤ / §19 の 6)。
 # そのため「同じ場所に既存のテロップがあれば直す」「無ければ足す」の 2 通りになる。
 
-def _apply_subtitles(timeline, stack, cfg, plan, indexes, report, state):
+# AI のテロップを置くときの決まり (docs/error/20261125c/resolve.md §1.4)
+def subtitle_plan_config(settings):
+    plan = ai_config.ai_config(settings)["plan"]
+
+    return dict(ai_config.DEFAULT_AI["plan"]["subtitle"],
+                **(plan.get("subtitle") or {}))
+
+
+# テロップをどこまで AI に触らせるか (ai.plan.subtitle_mode)
+def subtitle_mode_of(settings):
+    plan = ai_config.ai_config(settings)["plan"]
+
+    return schema.subtitle_mode(plan.get("subtitle_mode"))
+
+
+def _apply_subtitles(timeline, stack, cfg, plan, indexes, report, state,
+                     subtitle_cfg=None, mode=None):
+    sub_cfg = subtitle_cfg if subtitle_cfg is not None else subtitle_plan_config(None)
+    mode = schema.subtitle_mode(mode)
     scenes = {scene["id"]: scene for scene in plan.get("scenes") or []}
     for position, item in enumerate(plan.get("subtitles") or []):
         where = "subtitles[{0}]".format(position)
+        # none: テロップには触らない。文字起こしは既存の処理のまま
+        if mode == "none":
+            report.add("A5", where, schema.ACTION_DROP, "subtitle_mode none")
+            continue
         if item["scene_id"] not in scenes:
             report.add("A5", where, schema.ACTION_DROP, "no scene")
             continue
@@ -229,13 +254,90 @@ def _apply_subtitles(timeline, stack, cfg, plan, indexes, report, state):
             # 無音カットで消えた区間。置く場所が無い。
             report.add("A5", where, schema.ACTION_DROP, "cut")
             continue
-        start, end = pieces[0]
-        existing = _subtitle_at(timeline, start, end)
-        if existing is None:
-            _add_subtitle(timeline, stack, cfg, item, start, end - start,
-                          report, where, state)
+        # 無音カットで割れた片は Timeline 上では隣接している (間の無音が詰められる
+        # ため)。先頭の片だけを使うと 0.3 秒の破片へ本文が入る (§1.1)。
+        start, end = _span_of(pieces, float(sub_cfg["piece_gap_tolerance_sec"]))
+        reason = _unplaceable(item["text"], end - start, sub_cfg)
+        if reason:
+            report.add("A5", where, schema.ACTION_DROP, reason)
+            continue
+        existing = _subtitle_at(timeline, start, end,
+                                float(sub_cfg["reuse_min_ratio"]))
+        if existing is not None:
+            _edit_subtitle(timeline, stack, cfg, item, existing, report, where,
+                           state, looks_only=mode == "key")
+            continue
+        # key: 本文と時刻は既存の文字起こしのまま。足さない
+        if mode == "key":
+            report.add("A5", where, schema.ACTION_DROP, "subtitle_mode key")
+            continue
+        # 再利用しないなら**空いている所**へ置く。AddSubtitleClip は既存テロップの
+        # 中に始点があると必ず失敗するため、寄せないと AI のテロップが丸ごと
+        # 消える (文字起こしは S1 に詰まっている)。
+        role = schema.model_track_role(item["track_role"])
+        free = _free_span(timeline, role, start, end)
+        if free is None:
+            report.add("A5", where, schema.ACTION_DROP, "no room")
+            continue
+        reason = _unplaceable(item["text"], free[1] - free[0], sub_cfg)
+        if reason:
+            report.add("A5", where, schema.ACTION_DROP, reason)
+            continue
+        _add_subtitle(timeline, stack, cfg, item, free[0], free[1] - free[0],
+                      report, where, state)
+
+
+# 片をまとめた 1 つの枠。隙間が許容差を超えるところで切り、
+# **最も長い一続き**を返す (壊れた写像で全体を 1 本に伸ばさないための保険 / §1.1)。
+def _span_of(pieces, tolerance):
+    runs = []
+    for start, end in pieces:
+        if runs and start - runs[-1][1] <= tolerance + _EPS:
+            runs[-1] = (runs[-1][0], max(runs[-1][1], end))
         else:
-            _edit_subtitle(timeline, stack, cfg, item, existing, report, where, state)
+            runs.append((start, end))
+
+    return max(runs, key=lambda run: run[1] - run[0])
+
+
+# 同じ役割のテロップが埋めていない所のうち**最も長い一続き**。無ければ None。
+#
+# 役割ごとにトラックが決まる (AddSubtitleClip._resolve_track) ため、
+# 同じ役割のテロップだけを障害物として見る。
+def _free_span(timeline, role, start, end):
+    free = [(start, end)]
+    busy = sorted((clip.timeline_start, clip.timeline_end)
+                  for clip in timeline.subtitle_clips(only_used=False)
+                  if clip.role == role
+                  and clip.timeline_end > start + _EPS
+                  and clip.timeline_start < end - _EPS)
+    for busy_start, busy_end in busy:
+        rest = []
+        for span_start, span_end in free:
+            if busy_end <= span_start + _EPS or busy_start >= span_end - _EPS:
+                rest.append((span_start, span_end))
+                continue
+            if span_start < busy_start - _EPS:
+                rest.append((span_start, busy_start))
+            if busy_end < span_end - _EPS:
+                rest.append((busy_end, span_end))
+        free = rest
+    if not free:
+        return None
+
+    return max(free, key=lambda span: span[1] - span[0])
+
+
+# 置けない枠なら理由を返す。置けるなら None (§1.3)。
+def _unplaceable(text, duration, sub_cfg):
+    if duration < float(sub_cfg["min_display_sec"]) - _EPS:
+        return "too short"
+    body = str(text or "").replace(chr(10), "")
+    limit = float(sub_cfg["max_chars_per_sec"])
+    if body and limit > 0 and duration > 0 and len(body) / duration > limit:
+        return "too dense"
+
+    return None
 
 
 def _add_subtitle(timeline, stack, cfg, item, start, duration, report, where, state):
@@ -253,12 +355,19 @@ def _add_subtitle(timeline, stack, cfg, item, start, duration, report, where, st
               commands.EditSubtitle(command.created_clip_id, **_look_of(item)), state)
 
 
-def _edit_subtitle(timeline, stack, cfg, item, clip, report, where, state):
+# looks_only = True なら**見た目だけ**直す (subtitle_mode = key)。
+# 本文は文字起こしのまま。役割も変えない (役割を変えるとトラックが移り、
+# 文字起こしが S1 から出てしまう)。
+def _edit_subtitle(timeline, stack, cfg, item, clip, report, where, state,
+                   looks_only=False):
     fields = _look_of(item)
-    if item["text"] and item["text"] != clip.text:
+    if not looks_only and item["text"] and item["text"] != clip.text:
         fields["text"] = item["text"]
     if _push(timeline, stack, commands.EditSubtitle(clip.id, **fields), state):
-        report.add("A5", where, schema.ACTION_WRAP, "edited")
+        report.add("A5", where, schema.ACTION_WRAP,
+                   "looks" if looks_only else "edited")
+    if looks_only:
+        return
     role = schema.model_track_role(item["track_role"])
     if role != clip.role:
         _push(timeline, stack,
@@ -273,14 +382,28 @@ def _look_of(item):
 
 
 # 指定の Timeline 区間と最も重なる既存テロップ。無ければ None。
-def _subtitle_at(timeline, start, end):
+#
+# 「同じ瞬間を指しているとき」だけ再利用する (§1.2)。重なりが少しでもあれば
+# 拾っていたため、0.30 秒の既存枠が 12 文字の本文を飲んでいた。
+# AI の枠と既存の枠の**両方**について覆っている比を見る。片方だけだと、
+# 長い既存テロップが短い AI テロップを飲む (および逆) を防げない。
+def _subtitle_at(timeline, start, end, reuse_min_ratio=0.0):
     best = None
     best_overlap = 0.0
+    want = max(end - start, 0.0)
     for clip in timeline.subtitle_clips(only_used=False):
         overlap = min(end, clip.timeline_end) - max(start, clip.timeline_start)
-        if overlap > best_overlap + _EPS:
-            best = clip
-            best_overlap = overlap
+        if overlap <= best_overlap + _EPS:
+            continue
+        if reuse_min_ratio > 0:
+            have = max(clip.timeline_end - clip.timeline_start, 0.0)
+            if want <= 0 or have <= 0:
+                continue
+            if (overlap / want < reuse_min_ratio
+                    or overlap / have < reuse_min_ratio):
+                continue
+        best = clip
+        best_overlap = overlap
 
     return best if isinstance(best, SubtitleClip) else None
 

@@ -36,7 +36,15 @@ def _settings(output_dir):
         "subtitle": {"max_line_length": 20, "subtitle_max_lines": 2},
         "ai": {"plan": {"youtube_long": {"min_sec": 0, "max_sec": 0, "max_scenes": 0},
                         "youtube_shorts": {"min_sec": 0, "max_sec": 0,
-                                           "max_scenes": 0}},
+                                           "max_scenes": 0},
+                        # AI に本文も追加も任せる側を記録する。
+                        # key / none は tests/test_error_20261125c_telop.py
+                        "subtitle_mode": "full"},
+               # 既定ではシーン評価が切られ、レビューが有効になっている
+               # (docs/error/20261125c/resolve.md §2.6)。このファイルは
+               # **評価あり・レビューなし**の経路を記録するため明示する。
+               "scene_eval": {"enabled": True},
+               "review": {"enabled": False},
                "sounds": {"enabled": True, "presets": {}}},
     }
 
@@ -412,7 +420,8 @@ class RunAiTest(RunnerBase):
         self.assertEqual(1, len(result.runs))
         self.assertTrue(os.path.exists(result.runs[0].project_path))
         self.assertTrue(os.path.exists(result.runs[0].plan_path))
-        self.assertEqual(["scene_eval-v1", "plan-v1", "edit_plan-v1"],
+        # edit_plan の鍵はテロップの扱い (subtitle_mode) で分かれる
+        self.assertEqual(["scene_eval-v1", "plan-v1", "edit_plan-v1-full"],
                          [request.cache_prefix_id for request in provider.requests])
 
     # 候補の本数は AI 用 (既定 30) へ差し替える。設定ファイルは書き換えない (§7.1)。

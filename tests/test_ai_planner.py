@@ -104,7 +104,9 @@ class BuildTest(unittest.TestCase):
         plan, report = planner.build(_bundle(), _scenes(), provider, {},
                                      "youtube_long")
 
-        self.assertEqual(["plan-v1", "edit_plan-v1"],
+        # EditPlan の前置きはテロップの扱い (subtitle_mode) で変わるため、
+        # キャッシュの前方一致の鍵にもモードが入る (既定は key)。
+        self.assertEqual(["plan-v1", "edit_plan-v1-key"],
                          [call.cache_prefix_id for call in provider.calls])
         self.assertEqual("plan", provider.calls[0].role)
         self.assertEqual(2, len(plan["scenes"]))

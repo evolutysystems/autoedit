@@ -23,6 +23,15 @@ from src.exceptions import AiOfflineError, AiPlanError
 _AXES = ps.SCORE_KEYS
 
 
+# AI のシーン評価は**既定で切られている** (採点スイープと役割が重なるため /
+# docs/error/20261125c/resolve.md §2.6)。このファイルは AI 評価そのものを
+# 記録するので、明示的に有効にして呼ぶ。切った側は DisabledTest が見る。
+def _on(**scene_eval):
+    scene_eval.setdefault("enabled", True)
+
+    return {"ai": {"scene_eval": scene_eval}}
+
+
 def _bundle(count=3, duration=3600.0):
     clips = [{"index": i + 1, "start": 100.0 + i * 400, "end": 130.0 + i * 400,
               "score": 5.0 + i, "emotion": 5.0, "comment": 5.0} for i in range(count)]
@@ -75,7 +84,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(2)
         provider = _Provider(_scene_result([1, 2]))
 
-        scenes, report = sf.evaluate(bundle, provider, {})
+        scenes, report = sf.evaluate(bundle, provider, _on())
 
         self.assertEqual(2, len(scenes))
         self.assertTrue(all(scene.evaluated for scene in scenes))
@@ -87,7 +96,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(1)
         provider = _Provider(_scene_result([1], start=110.0, end=125.0))
 
-        scenes, _ = sf.evaluate(bundle, provider, {})
+        scenes, _ = sf.evaluate(bundle, provider, _on())
 
         self.assertEqual(110.0, scenes[0].start)
         self.assertEqual(125.0, scenes[0].end)
@@ -96,7 +105,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(1)
         provider = _Provider(_scene_result([1], start=10.0, end=3000.0))
 
-        scenes, report = sf.evaluate(bundle, provider, {})
+        scenes, report = sf.evaluate(bundle, provider, _on())
 
         self.assertEqual(100.0, scenes[0].start)
         self.assertEqual(130.0, scenes[0].end)
@@ -107,7 +116,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(5)
         provider = _Provider(_scene_result([1, 2]))
 
-        sf.evaluate(bundle, provider, {"ai": {"scene_eval": {"batch_size": 2}}})
+        sf.evaluate(bundle, provider, _on(batch_size=2))
 
         self.assertEqual(3, len(provider.requests))
         self.assertEqual("scene_eval", provider.requests[0].role)
@@ -118,7 +127,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(4)
         provider = _Provider(_scene_result([1]))
 
-        sf.evaluate(bundle, provider, {"ai": {"scene_eval": {"batch_size": 1}}})
+        sf.evaluate(bundle, provider, _on(batch_size=1))
         prefixes = {request.system for request in provider.requests}
 
         self.assertEqual(1, len(prefixes))
@@ -127,7 +136,7 @@ class EvaluateTest(unittest.TestCase):
         bundle = _bundle(2)
         provider = _Provider(_scene_result([1, 2]))
 
-        sf.evaluate(bundle, provider, {})
+        sf.evaluate(bundle, provider, _on())
         schema = provider.requests[0].schema
 
         self.assertEqual(set(_AXES),
@@ -142,7 +151,7 @@ class DegradeTest(unittest.TestCase):
         bundle = _bundle(2)
         provider = _Provider({}, error=AiOfflineError("接続できません"))
 
-        scenes, report = sf.evaluate(bundle, provider, {})
+        scenes, report = sf.evaluate(bundle, provider, _on())
 
         self.assertEqual(2, len(scenes))
         self.assertFalse(any(scene.evaluated for scene in scenes))
@@ -155,8 +164,7 @@ class DegradeTest(unittest.TestCase):
         provider = _Provider(_scene_result([1]),
                              error=AiPlanError("JSON ではありません"), fail_after=1)
 
-        scenes, _ = sf.evaluate(bundle, provider,
-                                {"ai": {"scene_eval": {"batch_size": 1}}})
+        scenes, _ = sf.evaluate(bundle, provider, _on(batch_size=1))
         by_index = {scene.index: scene for scene in scenes}
 
         self.assertTrue(by_index[1].evaluated)
@@ -165,7 +173,7 @@ class DegradeTest(unittest.TestCase):
     def test_no_provider_still_ranks(self):
         bundle = _bundle(3)
 
-        scenes, report = sf.evaluate(bundle, None, {})
+        scenes, report = sf.evaluate(bundle, None, _on())
 
         self.assertEqual([3, 2, 1], [scene.index for scene in scenes])
         self.assertEqual([], report.notes)
@@ -173,7 +181,7 @@ class DegradeTest(unittest.TestCase):
     def test_no_candidates_returns_nothing(self):
         bundle = cb.build({"duration": 10.0, "curve": [], "clips": []}, {})
 
-        scenes, _ = sf.evaluate(bundle, MockProvider(), {})
+        scenes, _ = sf.evaluate(bundle, MockProvider(), _on())
 
         self.assertEqual([], scenes)
 
@@ -265,36 +273,36 @@ class EvalCacheTest(unittest.TestCase):
         bundle = _bundle(2)
         provider = _Provider(_scene_result([1, 2]))
 
-        sf.evaluate(bundle, provider, {}, project_path=self.project)
+        sf.evaluate(bundle, provider, _on(), project_path=self.project)
 
         self.assertTrue(os.path.exists(ps.eval_path_for(self.project)))
 
         again = _Provider(_scene_result([1, 2]))
-        scenes, _ = sf.evaluate(_bundle(2), again, {}, project_path=self.project)
+        scenes, _ = sf.evaluate(_bundle(2), again, _on(), project_path=self.project)
 
         self.assertEqual([], again.requests, "保存済みの評価を使い、呼び直さない")
         self.assertTrue(all(scene.evaluated for scene in scenes))
 
     def test_reuse_can_be_turned_off(self):
         bundle = _bundle(1)
-        sf.evaluate(bundle, _Provider(_scene_result([1])), {},
+        sf.evaluate(bundle, _Provider(_scene_result([1])), _on(),
                     project_path=self.project)
 
         again = _Provider(_scene_result([1]))
-        sf.evaluate(_bundle(1), again, {}, project_path=self.project, reuse=False)
+        sf.evaluate(_bundle(1), again, _on(), project_path=self.project, reuse=False)
 
         self.assertEqual(1, len(again.requests))
 
     # 候補の作り方が変わった (時刻が大きく動いた) ら古い評価は使わない。
     def test_moved_candidates_are_not_reused(self):
-        sf.evaluate(_bundle(1), _Provider(_scene_result([1])), {},
+        sf.evaluate(_bundle(1), _Provider(_scene_result([1])), _on(),
                     project_path=self.project)
 
         moved = cb.build({"duration": 3600.0, "curve": [],
                           "clips": [{"index": 1, "start": 2000.0, "end": 2030.0,
                                      "score": 5.0}]}, {})
         again = _Provider(_scene_result([1]))
-        sf.evaluate(moved, again, {}, project_path=self.project)
+        sf.evaluate(moved, again, _on(), project_path=self.project)
 
         self.assertEqual(1, len(again.requests))
 
@@ -311,6 +319,54 @@ class EvalCacheTest(unittest.TestCase):
             handle.write("{")
 
         self.assertEqual({}, sf.load_eval(self.project))
+
+
+class DisabledTest(unittest.TestCase):
+    """ai.scene_eval.enabled = false (既定): AI を呼ばず既存の採点だけで順位を付ける
+    (docs/error/20261125c/resolve.md §2.6)"""
+
+    def test_the_default_is_off(self):
+        from src.ai import config as ai_config
+        from src.settings import settings_window
+
+        self.assertFalse(ai_config.DEFAULT_AI["scene_eval"]["enabled"])
+        self.assertFalse(
+            settings_window.DEFAULT_SETTINGS["ai"]["scene_eval"]["enabled"])
+
+    # 既定の設定では 1 回も呼ばない
+    def test_no_call_is_made(self):
+        provider = _Provider(_scene_result([1, 2, 3]))
+
+        scenes, report = sf.evaluate(_bundle(3), provider, {})
+
+        self.assertEqual([], provider.requests, "AI を呼ばない")
+        self.assertEqual(3, len(scenes), "候補は落とさない")
+        self.assertFalse(any(scene.evaluated for scene in scenes))
+        self.assertEqual([], report.notes)
+
+    # 既存の採点だけで順位が付く (全部が中立の軸 = base_score で並ぶ)
+    def test_the_base_score_decides_the_order(self):
+        bundle = _bundle(3)
+        scenes = sf.rank(sf.evaluate(bundle, _Provider(_scene_result([1, 2, 3])), {})[0],
+                         {"ai": {"scene_eval": {"base_score_weight": 1.0}}})
+        totals = [scene.rank_score for scene in scenes]
+
+        self.assertEqual(sorted(totals, reverse=True), totals)
+
+    # 保存済みの評価も使わない (切ったのに前回の AI の点が効くと読めなくなる)
+    def test_the_saved_evaluation_is_ignored(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            project = os.path.join(folder, "p.timeline.json")
+            # まず有効にして評価を保存する
+            sf.evaluate(_bundle(2), _Provider(_scene_result([1, 2])), _on(),
+                        project_path=project)
+            # 切った状態で読み直す
+            scenes, _ = sf.evaluate(_bundle(2), _Provider(_scene_result([1, 2])), {},
+                                    project_path=project)
+
+        self.assertFalse(any(scene.evaluated for scene in scenes))
 
 
 if __name__ == "__main__":

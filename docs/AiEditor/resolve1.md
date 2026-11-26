@@ -1190,7 +1190,9 @@ Claude は画像を受け取れる。**動画そのものは送れない**ため
     "youtube_long":   { "min_sec": 180, "max_sec": 900, "max_scenes": 12 },  # 回答 Q10: 15 分
     "youtube_shorts": { "min_sec": 15,  "max_sec": 60,  "max_scenes": 5 },
     "tiktok":         { "min_sec": 15,  "max_sec": 60,  "max_scenes": 5 },
-    "subtitle_mode": "full",
+    # 2026-11-25 変更: "full" -> "key" (docs/error/20261125c/resolve.md §2.5)
+    # 文字起こしは既存の処理が作る。AI は見た目だけ付ける (足さない / 本文を変えない)
+    "subtitle_mode": "key",
     "variants": 1,                       # 回答 Q11: 1 案
     "allow_reuse_scene": true
   },

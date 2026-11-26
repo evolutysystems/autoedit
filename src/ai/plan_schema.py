@@ -803,7 +803,19 @@ def _shortened(value, max_chars, notes, where):
 # ---- VideoPlan (§8.1) ----------------------------------------------------
 
 # テロップの付け方 (ai.plan.subtitle_mode と同じ語)
+#
+# full : 本文も追加も AI に任せる
+# key  : **本文と時刻は既存の文字起こしのまま**。AI は見た目だけ付ける (既定)
+# none : テロップには触らせない
 SUBTITLE_MODES = ("full", "key", "none")
+DEFAULT_SUBTITLE_MODE = "key"
+
+
+# 設定のテロップの扱いを正規化する。知らない語は既定へ落とす。
+def subtitle_mode(value):
+    mode = str(value or "").strip().lower()
+
+    return mode if mode in SUBTITLE_MODES else DEFAULT_SUBTITLE_MODE
 # SE の量。量だけを決めさせ、どの音かは sounds[].preset で指定させる (§9.4)。
 SE_LEVELS = ("none", "light", "normal")
 # BGM は受け口だけで適用しない (§19 の 4)。PDF の提案にだけ使う。

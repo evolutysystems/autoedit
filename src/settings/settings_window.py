@@ -1692,6 +1692,9 @@ DEFAULT_SETTINGS = {
         # 回答 Q4: 一旦 OFF。実測してから既定を決める (§22 T2)。
         "sweep": {"enabled": False, "chunk_sec": 600},
         "scene_eval": {
+            # 候補の再採点。採点スイープ (sceneScan) と役割が重なるため既定で切る
+            # (docs/error/20261125c/resolve.md §2.6)
+            "enabled": False,
             "batch_size": 8, "max_reason_chars": 120, "base_score_weight": 0.2,
             "weights": {
                 "long": {"funny": 0.30, "surprise": 0.15, "first_time_clarity": 0.15,
@@ -1709,7 +1712,15 @@ DEFAULT_SETTINGS = {
             "youtube_long": {"min_sec": 180, "max_sec": 900, "max_scenes": 12},
             "youtube_shorts": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
             "tiktok": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
-            "subtitle_mode": "full",
+            "subtitle_mode": "key",
+            # AI のテロップを既存の Timeline へ置くときの決まり
+            # (docs/error/20261125c/resolve.md §1.4)
+            "subtitle": {
+                "reuse_min_ratio": 0.6,
+                "piece_gap_tolerance_sec": 0.05,
+                "min_display_sec": 0.4,
+                "max_chars_per_sec": 20,
+            },
             # 回答 Q11: 構成案は 1 案
             "variants": 1,
             "allow_reuse_scene": True,
@@ -1717,8 +1728,8 @@ DEFAULT_SETTINGS = {
         # 回答 Q9: SE プリセットの既定は空 (登録まで適用しない)
         "sounds": {"enabled": True, "presets": {}},
         "review": {
-            # Phase 2 で有効化
-            "enabled": False,
+            # 利用者の要望で有効 (docs/error/20261125c/resolve.md §2.6)
+            "enabled": True,
             "roles": {"director": True, "critic": True, "viewer": True,
                       "platform": True, "qa": False},
             "max_rounds": 2, "max_issues_per_round": 5, "min_severity": "major",
@@ -1753,12 +1764,16 @@ DEFAULT_SETTINGS = {
         },
         # 1 プロジェクトで使う量の上限。0 で無制限。
         # サーバー側も日次・プロジェクト単位で独立に強制する (申告は信用されない)。
-        "cost": {"max_calls_per_project": 20, "max_input_tokens_per_project": 300000,
+        "cost": {"max_calls_per_project": 60, "max_input_tokens_per_project": 300000,
                  "confirm_over_points": 0},
         "budget": {
             "max_input_tokens": 60000, "chars_per_token": 2.0, "cell_pad_sec": 60,
             "curve_window_span": 2, "max_comments_per_cell": 20,
             "merge_transcript_gap_sec": 1.0,
+            # 文字起こしを結合する上限 (docs/error/20261125c/resolve.md §2.2)。
+            # 0 で無制限。既定はテロップ 1 本ぶん (20 文字 x 2 行) の粒度に揃える
+            "merge_transcript_max_sec": 6.0,
+            "merge_transcript_max_chars": 40,
             # 共通前置きをキャッシュへ乗せる (§6.4)
             "cache_prefix": True,
         },

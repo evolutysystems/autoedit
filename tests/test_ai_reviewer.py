@@ -153,10 +153,14 @@ class RolesTest(unittest.TestCase):
         self.assertEqual(4, len(provider.requests))
         self.assertIn("R2", [note["check"] for note in result.report.notes])
 
+    # レビューは既定で有効になったため、切った側は明示して確かめる
+    # (docs/error/20261125c/resolve.md §2.6)
     def test_disabled_review_only_measures(self):
         provider = _Provider()
+        settings = {"ai": {"review": {"enabled": False}}}
 
-        result = reviewer.review(_plan(), None, [], provider, {}, "youtube_shorts")
+        result = reviewer.review(_plan(), None, [], provider, settings,
+                                 "youtube_shorts")
 
         self.assertEqual([], provider.requests)
         self.assertTrue(result.checks or result.checks == [])

@@ -70,6 +70,9 @@ DEFAULT_AI = {
     "transcribe": {"speaker_filter": True, "reuse_existing": True},
     "sweep": {"enabled": False, "chunk_sec": 600},
     "scene_eval": {
+        # 候補の再採点。採点スイープ (sceneScan) と役割が重なるため既定で切る
+        # (docs/error/20261125c/resolve.md §2.6)
+        "enabled": False,
         "batch_size": 8, "max_reason_chars": 120, "base_score_weight": 0.2,
         "weights": {
             "long": {"funny": 0.30, "surprise": 0.15, "first_time_clarity": 0.15,
@@ -85,13 +88,26 @@ DEFAULT_AI = {
         "youtube_long": {"min_sec": 180, "max_sec": 900, "max_scenes": 12},
         "youtube_shorts": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
         "tiktok": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
-        "subtitle_mode": "full",
+        "subtitle_mode": "key",
+        # AI のテロップを既存の Timeline へ置くときの決まり
+        # (docs/error/20261125c/resolve.md §1.4)
+        "subtitle": {
+            # 既存テロップを再利用する最低の重なり比 (AI の枠と既存の枠の両方で見る)
+            "reuse_min_ratio": 0.6,
+            # 無音カットで割れた片を 1 つの枠として繋ぐときの隙間の許容差 (秒)
+            "piece_gap_tolerance_sec": 0.05,
+            # これより短い枠へは置かない (秒)
+            "min_display_sec": 0.4,
+            # 1 秒あたりの文字数の上限。超えたら読めないので置かない
+            "max_chars_per_sec": 20,
+        },
         "variants": 1,
         "allow_reuse_scene": True,
     },
     "sounds": {"enabled": True, "presets": {}},
     "review": {
-        "enabled": False,
+        # レビューは利用者の要望で有効 (docs/error/20261125c/resolve.md §2.6)
+                "enabled": True,
         "roles": {"director": True, "critic": True, "viewer": True,
                   "platform": True, "qa": False},
         "max_rounds": 2, "max_issues_per_round": 5, "min_severity": "major",
@@ -122,12 +138,16 @@ DEFAULT_AI = {
         "enabled": True, "format": "pdf", "auto_open": False,
         "font": "", "include_frames": True, "name_suffix": "_review",
     },
-    "cost": {"max_calls_per_project": 20, "max_input_tokens_per_project": 300000,
+    "cost": {"max_calls_per_project": 60, "max_input_tokens_per_project": 300000,
              "confirm_over_points": 0},
     "budget": {
         "max_input_tokens": 60000, "chars_per_token": 2.0, "cell_pad_sec": 60,
         "curve_window_span": 2, "max_comments_per_cell": 20,
         "merge_transcript_gap_sec": 1.0, "cache_prefix": True,
+        # 文字起こしを結合する上限 (docs/error/20261125c/resolve.md §2.2)。
+        # 0 で無制限。既定はテロップ 1 本ぶん (20 文字 x 2 行) の粒度に揃える
+        "merge_transcript_max_sec": 6.0,
+        "merge_transcript_max_chars": 40,
     },
     "learning": {
         "enabled": True, "upload": False, "operation_log": False,

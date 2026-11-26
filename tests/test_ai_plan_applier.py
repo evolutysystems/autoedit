@@ -31,7 +31,10 @@ _SETTINGS = {
     "timeline": {"min_clip_sec": 0.05,
                  "sound_tracks": {"enabled": True, "initial_tracks": 1,
                                   "max_tracks": 4, "default_gain_db": 0.0}},
-    "ai": {"plan": {"youtube_long": {"min_sec": 0, "max_sec": 0, "max_scenes": 0}},
+    # このファイルは subtitle_mode = "full" (AI に本文も追加も任せる) を記録する。
+    # key / none は tests/test_error_20261125c_telop.py が受け持つ。
+    "ai": {"plan": {"youtube_long": {"min_sec": 0, "max_sec": 0, "max_scenes": 0},
+                    "subtitle_mode": "full"},
            "sounds": {"enabled": True, "presets": {}}},
 }
 
