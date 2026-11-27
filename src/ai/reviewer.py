@@ -81,7 +81,8 @@ def review(plan, bundle, scenes, provider, settings, target, input_path="",
            workdir="", report=None, extract=None, cancel_cb=None):
     cfg = ai_config.ai_config(settings)["review"]
     report = report if report is not None else PlanReport()
-    checks = qa_checks(plan, settings, target)
+    checks = qa_checks(plan, settings, target,
+                       getattr(bundle, "kept_ratio", 1.0))
     current = copy.deepcopy(plan)
 
     if provider is None or not cfg.get("enabled"):
@@ -171,7 +172,8 @@ def _payload(role, plan, bundle, scenes, target, checks, settings):
                       "notes": plan.get("notes", "")},
         "total_sec": round(sum(float(scene["source_end"]) - float(scene["source_start"])
                                for scene in plan.get("scenes") or []), 1),
-        "limits": _target_limits(settings, target),
+        "limits": _target_limits(settings, target,
+                                 getattr(bundle, "kept_ratio", 1.0)),
     }
     if role != ROLE_VIEWER:
         # viewer には予備知識を渡さない (初見で読ませる / §12.1)。
@@ -203,11 +205,13 @@ def _transcript_for(plan, bundle):
     return lines
 
 
-def _target_limits(settings, target):
+# min_sec / max_sec は**出力尺** (無音カット後)。素材尺へ割り戻して使う
+# (resolve3.md §9)。レビューは plan の素材秒を測るため、基準も素材尺に揃える。
+def _target_limits(settings, target, kept_ratio=1.0):
     values = ai_config.ai_config(settings)["plan"].get(target) or {}
 
-    return {"min_sec": float(values.get("min_sec") or 0.0),
-            "max_sec": float(values.get("max_sec") or 0.0),
+    return {"min_sec": ai_config.source_sec(values.get("min_sec"), kept_ratio),
+            "max_sec": ai_config.source_sec(values.get("max_sec"), kept_ratio),
             "max_scenes": int(values.get("max_scenes") or 0)}
 
 
@@ -217,8 +221,8 @@ def _target_limits(settings, target):
 #
 # ここで測るのは時間と本数の話に限る (音量の実測は素材が要るため書き出し時の
 # 既存の検証に任せる / modules/loudness_normalizer)。
-def qa_checks(plan, settings, target):
-    limits = _target_limits(settings, target)
+def qa_checks(plan, settings, target, kept_ratio=1.0):
+    limits = _target_limits(settings, target, kept_ratio)
     scenes = plan.get("scenes") or []
     checks = []
 
@@ -228,9 +232,13 @@ def qa_checks(plan, settings, target):
         checks.append(_check("duration", "major",
                              "合計 {0:.1f} 秒が上限 {1:.0f} 秒を超えている".format(
                                  total, limits["max_sec"])))
+    # 下限未達は **major**。minor にすると ai.review.min_severity=major で
+    # 弾かれて誰も直さず、短い切り抜きがそのまま出る (2026-11-26 の実測:
+    # 素材 192 秒 → 出力 102 秒 / resolve3.md §9)。
     if limits["min_sec"] and total < limits["min_sec"]:
-        checks.append(_check("duration", "minor",
-                             "合計 {0:.1f} 秒が目安 {1:.0f} 秒に届いていない".format(
+        checks.append(_check("duration", "major",
+                             "合計 {0:.1f} 秒が下限 {1:.0f} 秒に届いていない"
+                             "。シーンを増やすか区間を広げること".format(
                                  total, limits["min_sec"])))
 
     by_scene = {}

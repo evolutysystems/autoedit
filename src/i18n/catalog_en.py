@@ -1182,6 +1182,7 @@ CATALOG = {
     'コメントの本文と投稿者名': 'Comment text and the poster names',
     'コメントの本文 (投稿者名は送りません)': 'Comment text (poster names are not sent)',
     'レビュー時の静止画 (長辺 {edge}px まで縮小。音声は送りません)': 'Still frames for the review (scaled to {edge}px on the long edge; no audio is sent)',
+    '採点のために配信全体から抜いた静止画 ({interval} 秒ごと・長辺 {edge}px まで縮小。音声は送りません)': 'Still frames taken across the whole stream for scoring (one every {interval} seconds, scaled to {edge}px on the long edge; no audio is sent)',
     'AI へ送った量と費用の記録 (トークン数・モデル名)': 'A record of what was sent and what it cost (token counts, model names)',
     'AI の編集と利用者の修正の差分 ({days} 日で消えます)': 'The difference between the AI edit and your corrections (removed after {days} days)',
     'AI による編集を使うと、次のものが Stretheus のサーバー経由で AI (Anthropic Claude) へ送られます。': 'If you use AI editing, the following is sent to the AI (Anthropic Claude) through the Stretheus server.',

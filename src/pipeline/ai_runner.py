@@ -92,7 +92,7 @@ def run_plan(input_path, settings, plan, target=None, project_path="",
              duration_sec=0.0, progress_cb=None, cancel_cb=None,
              vod_source=None, vod_scan=None, stack=None, media_dir="",
              prepare=None, vertical=True, rebase_plan=None, vertical_build=None,
-             report=None, curve=None):
+             report=None, curve=None, kept_ratio=1.0):
     stage_timer.reset()
     started_at = time.monotonic()
     if not input_path or not os.path.exists(input_path):
@@ -112,7 +112,9 @@ def run_plan(input_path, settings, plan, target=None, project_path="",
         duration = float(ffmpeg_runner.probe_duration(input_path, ffmpeg_cfg) or 0.0)
     with stage_timer.timed("ai_validate"):
         validated, checked = plan_validator.validate(
-            plan, duration_sec=duration, settings=settings, target=chosen)
+            plan, duration_sec=duration, settings=settings, target=chosen,
+            # max_sec は出力尺なので素材尺へ割り戻して測る (resolve3.md §9)
+            kept_ratio=kept_ratio)
     # 呼び出し側が記録を持っているなら (run_ai) そこへ足す。件数を分けて数えない。
     if report is None:
         report = checked
@@ -457,7 +459,8 @@ def run_ai(input_path, settings, provider=None, targets=None, analysis=None,
                 progress_cb, base + ratio * (0.25 / max(len(chosen), 1)), label),
             cancel_cb=cancel_cb, vod_source=vod_source, prepare=prepare,
             vertical=vertical, report=report,
-            curve=analysis.get("curve") or [])
+            curve=analysis.get("curve") or [],
+            kept_ratio=bundle.kept_ratio)
         run.review = checked
         _write_report(run, plan, bundle, ranked, checked, settings)
         runs.append(run)
@@ -490,6 +493,15 @@ def _scan_runner(settings, provider, cancel_cb=None):
         return [moment.as_dict() for moment in found]
 
     return run
+
+
+# 採点スイープを**画面の採点から**渡すための公開口 (docs/AiEditor/resolve3.md §3.4)。
+#
+# 中身は run_ai が使うものと同一である。GUI は採点を自分で先に済ませてから
+# run_ai へ渡すため、run_ai の中の `analysis is None` 分岐には入らない。
+# そのため画面側が `pipeline.analyze(scan=...)` へ直接渡せる口を用意する。
+def scan_runner(settings, provider, cancel_cb=None):
+    return _scan_runner(settings, provider, cancel_cb)
 
 
 # ---- レビューの読み物 (§12.6) -------------------------------------------

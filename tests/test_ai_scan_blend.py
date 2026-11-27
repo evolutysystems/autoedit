@@ -98,13 +98,14 @@ class AiScanWeightTest(unittest.TestCase):
         settings = {"ai": {"scan": {"ai_weight": 0.7}}}
         self.assertEqual(archive_pipeline.ai_scan_weight(settings), 0.7)
 
-    # 既定は 0.3 (resolve2.md §14.2)。設定の読み込みは浅いマージのため、
+    # 既定は 0.5 (利用者の指示 2026-11-26 / resolve3.md §4。
+    # 0.3 を実測で決めた経緯は resolve2.md §14.2)。設定の読み込みは浅いマージのため、
     # 古い設定ファイルには鍵が無い。そのときも意図した既定で動く必要がある
     def test_defaults_to_the_shipped_weight(self):
-        self.assertEqual(archive_pipeline.ai_scan_weight({}), 0.3)
-        self.assertEqual(archive_pipeline.ai_scan_weight(None), 0.3)
-        self.assertEqual(archive_pipeline.ai_scan_weight({"ai": {}}), 0.3)
-        self.assertEqual(archive_pipeline.ai_scan_weight({"ai": {"scan": {}}}), 0.3)
+        self.assertEqual(archive_pipeline.ai_scan_weight({}), 0.5)
+        self.assertEqual(archive_pipeline.ai_scan_weight(None), 0.5)
+        self.assertEqual(archive_pipeline.ai_scan_weight({"ai": {}}), 0.5)
+        self.assertEqual(archive_pipeline.ai_scan_weight({"ai": {"scan": {}}}), 0.5)
 
     # 0 を**明示**したときは混ぜない (欠落と区別する)
     def test_explicit_zero_is_honored(self):
@@ -115,7 +116,7 @@ class AiScanWeightTest(unittest.TestCase):
         self.assertEqual(
             archive_pipeline.ai_scan_weight({"ai": {"scan": {"ai_weight": 9}}}), 1.0)
         self.assertEqual(
-            archive_pipeline.ai_scan_weight({"ai": {"scan": {"ai_weight": "x"}}}), 0.3)
+            archive_pipeline.ai_scan_weight({"ai": {"scan": {"ai_weight": "x"}}}), 0.5)
 
 
 class ShippedDefaultTest(unittest.TestCase):
@@ -128,15 +129,15 @@ class ShippedDefaultTest(unittest.TestCase):
         from src.ai import config as ai_config
         from src.settings import settings_window
 
-        self.assertEqual(ai_config.DEFAULT_AI["scan"]["ai_weight"], 0.3)
+        self.assertEqual(ai_config.DEFAULT_AI["scan"]["ai_weight"], 0.5)
         self.assertEqual(
-            settings_window.DEFAULT_SETTINGS["ai"]["scan"]["ai_weight"], 0.3)
+            settings_window.DEFAULT_SETTINGS["ai"]["scan"]["ai_weight"], 0.5)
 
         path = os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "src", "settings", "setting.json")
         with open(path, encoding="utf-8") as handle:
             saved = json.load(handle)
-        self.assertEqual(saved["ai"]["scan"]["ai_weight"], 0.3)
+        self.assertEqual(saved["ai"]["scan"]["ai_weight"], 0.5)
 
     # archive/pipeline の落としどころも同じ値であること
     def test_the_fallback_agrees(self):

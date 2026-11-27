@@ -70,9 +70,12 @@ DEFAULT_AI = {
     "transcribe": {"speaker_filter": True, "reuse_existing": True},
     "sweep": {"enabled": False, "chunk_sec": 600},
     "scene_eval": {
-        # 候補の再採点。採点スイープ (sceneScan) と役割が重なるため既定で切る
-        # (docs/error/20261125c/resolve.md §2.6)
-        "enabled": False,
+        # 候補の再採点 (②')。2026-11-26 に利用者の指示で流れへ戻した
+        # (docs/AiEditor/resolve3.md §0-4)。文字起こしを読んで候補を選ぶ工程であり、
+        # 候補セクションが決まったあとに走る。
+        # 一度切った経緯 (sceneScan と役割が重なる) は
+        # docs/error/20261125c/resolve.md §2.6 にある。
+        "enabled": True,
         "batch_size": 8, "max_reason_chars": 120, "base_score_weight": 0.2,
         "weights": {
             "long": {"funny": 0.30, "surprise": 0.15, "first_time_clarity": 0.15,
@@ -85,7 +88,10 @@ DEFAULT_AI = {
     },
     "plan": {
         "targets": ["youtube_long", "youtube_shorts", "tiktok"],
-        "youtube_long": {"min_sec": 180, "max_sec": 900, "max_scenes": 12},
+        # min_sec / max_sec は**出力尺** (無音カット後の完成尺) である
+        # (docs/AiEditor/resolve3.md §9)。素材尺への換算は source_sec が行う。
+        # youtube_long の 840 = 14 分は利用者の指示 (2026-11-26)。
+        "youtube_long": {"min_sec": 840, "max_sec": 1200, "max_scenes": 12},
         "youtube_shorts": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
         "tiktok": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
         "subtitle_mode": "key",
@@ -122,9 +128,16 @@ DEFAULT_AI = {
         "max_frames": 400, "fast_decode": True,
         "chunk_sec": 480, "images_per_request": 16, "max_calls": 16,
         "min_moment_sec": 15, "max_moment_sec": 120, "max_title_chars": 30,
-        # 採点へ混ぜる比率。0 なら従来どおり混ぜない。
-        # 0.3 の根拠は docs/AiEditor/resolve2.md §14.2 (全長スイープの実測)
-        "ai_weight": 0.3,
+        # 採点モード (docs/AiEditor/resolve3.md §3.5)。
+        #   ai_only … 窓の total を AI の点だけで置き換える (利用者の指示 2026-11-26)
+        #   blend   … 方式 A と AI の点を ai_weight で混ぜる (resolve2.md §6.1)
+        #   machine … 方式 A のまま (従来の挙動)
+        # **どのモードでも方式 A の採点は走る。** 設定で呼び分けるだけで消さない。
+        "scoring_mode": "ai_only",
+        # blend のときに採点へ混ぜる比率。0 なら従来どおり混ぜない。
+        # 0.5 は利用者の指示 (2026-11-26 / resolve3.md §4)。
+        # 0.3 を実測で決めた経緯は docs/AiEditor/resolve2.md §14.2
+        "ai_weight": 0.5,
         "weights": {
             "long": {"hook": 0.25, "payoff": 0.25, "emotion_delta": 0.20,
                      "surprise": 0.10, "clarity": 0.10, "shareability": 0.10,
@@ -172,6 +185,34 @@ def ai_config(settings):
 # AI 機能が有効か。これが false のとき呼び出し側は ai/ の他のモジュールへ触らない。
 def is_enabled(settings):
     return bool(ai_config(settings)["enabled"])
+
+
+# 無音を除いたあとに残る割合の下限 (0 除算と極端な換算を防ぐ / resolve3.md §9)
+MIN_KEPT_RATIO = 0.2
+
+
+# 出力尺 (無音カット後) の目標を**素材尺**へ換算する (resolve3.md §9)。
+#
+# `ai.plan.<target>.min_sec` / `max_sec` は**出力尺**である。
+# 無音カットで素材は半分前後まで縮むため、AI へ渡す前・検証する前に割り戻す。
+# これをしないと「素材 192 秒で min_sec 180 秒を満たした」と判断され、
+# 出力は 102 秒になる (2026-11-26 の実測)。
+#
+# kept_ratio は解析から見積もった残存率 (archive/pipeline.kept_ratio)。
+# 1.0 を渡せば換算しない = 従来どおり素材尺として扱う。
+def source_sec(output_sec, kept_ratio=1.0):
+    try:
+        value = float(output_sec or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= 0:
+        return 0.0
+    try:
+        kept = float(kept_ratio or 1.0)
+    except (TypeError, ValueError):
+        kept = 1.0
+
+    return value / max(min(kept, 1.0), MIN_KEPT_RATIO)
 
 
 # 開発用の直接呼び出しか (§6.5)。配布では false。

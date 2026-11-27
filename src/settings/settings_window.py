@@ -1312,6 +1312,10 @@ DEFAULT_SETTINGS = {
             "window_sec": 180,          # 方式A: 3分窓
             "slide_sec": 45,            # 方式A: 45秒スライド (= セル幅)
             "clip_pad_sec": 0,          # 採用区間の前後パディング
+            # 候補を集めるときの余裕 (docs/AiEditor/resolve3.md §9)。
+            # 目標素材尺 = ai.plan の最長 min_sec ÷ 残存率 × これ。
+            # 構成 (③') が「選ぶ」余地を残すため 1.0 より大きくする。
+            "target_headroom": 2.0,
             "loud_percentile": 0.8,     # 大声セル判定 (max_db の上位分位)
             "silence_ratio_threshold": 0.6,  # 無音セル判定 (無音率がこれ以上)
             # 特徴抽出の方式 (resolve3 R5)
@@ -1692,9 +1696,10 @@ DEFAULT_SETTINGS = {
         # 回答 Q4: 一旦 OFF。実測してから既定を決める (§22 T2)。
         "sweep": {"enabled": False, "chunk_sec": 600},
         "scene_eval": {
-            # 候補の再採点。採点スイープ (sceneScan) と役割が重なるため既定で切る
-            # (docs/error/20261125c/resolve.md §2.6)
-            "enabled": False,
+            # 候補の再採点 (②')。2026-11-26 に利用者の指示で流れへ戻した
+            # (docs/AiEditor/resolve3.md §0-4)。一度切った経緯は
+            # docs/error/20261125c/resolve.md §2.6 にある。
+            "enabled": True,
             "batch_size": 8, "max_reason_chars": 120, "base_score_weight": 0.2,
             "weights": {
                 "long": {"funny": 0.30, "surprise": 0.15, "first_time_clarity": 0.15,
@@ -1708,8 +1713,9 @@ DEFAULT_SETTINGS = {
         "plan": {
             # 回答 Q6: TikTok を有効にする
             "targets": ["youtube_long", "youtube_shorts", "tiktok"],
-            # 回答 Q10: 長尺は一旦 15 分
-            "youtube_long": {"min_sec": 180, "max_sec": 900, "max_scenes": 12},
+            # min_sec / max_sec は**出力尺** (無音カット後の完成尺)
+            # (docs/AiEditor/resolve3.md §9)。840 = 14 分は利用者の指示 (2026-11-26)。
+            "youtube_long": {"min_sec": 840, "max_sec": 1200, "max_scenes": 12},
             "youtube_shorts": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
             "tiktok": {"min_sec": 15, "max_sec": 60, "max_scenes": 5},
             "subtitle_mode": "key",
@@ -1745,9 +1751,14 @@ DEFAULT_SETTINGS = {
             "max_frames": 400, "fast_decode": True,
             "chunk_sec": 480, "images_per_request": 16, "max_calls": 16,
             "min_moment_sec": 15, "max_moment_sec": 120, "max_title_chars": 30,
-            # 採点へ混ぜる比率。0 なら従来どおり混ぜない。
-            # 0.3 の根拠は docs/AiEditor/resolve2.md §14.2 (全長スイープの実測)
-            "ai_weight": 0.3,
+            # 採点モード (docs/AiEditor/resolve3.md §3.5)。
+            #   ai_only … 窓の total を AI の点だけで置き換える
+            #   blend   … 方式 A と AI の点を ai_weight で混ぜる
+            #   machine … 方式 A のまま (従来の挙動)
+            "scoring_mode": "ai_only",
+            # blend のときに採点へ混ぜる比率。0 なら従来どおり混ぜない。
+            # 0.5 は利用者の指示 (2026-11-26 / docs/AiEditor/resolve3.md §4)
+            "ai_weight": 0.5,
             "weights": {
                 "long": {"hook": 0.25, "payoff": 0.25, "emotion_delta": 0.20,
                          "surprise": 0.10, "clarity": 0.10, "shareability": 0.10,

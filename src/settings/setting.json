@@ -165,7 +165,7 @@
         "asr_audio_prefetch": true
     },
     "silence_cut": {
-        "enabled": true,
+        "enabled": false,
         "mode": "edit_points",
         "noise_threshold_db": -27,
         "min_silence_duration_sec": 0.6,
@@ -185,7 +185,7 @@
         "percentile": 10,
         "metric_migrated": true,
         "cut_min_silence_sec": 0.6,
-        "last_cut_db": -18
+        "last_cut_db": -29
     },
     "loudness": {
         "enabled": true,
@@ -240,17 +240,20 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
+                "C:\\Users\\evolu\\Downloads\\20261127_PhilanthropicGoldenWombatYee-fryk6D-M6jdvxpq2_portrait.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428_vertical2.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428_vertical.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938816056.ai_youtube_shorts.timeline_vertical.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938816056.ai_tiktok.timeline_vertical.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2939293108.ai_youtube_shorts.timeline_vertical.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2939293108.ai_tiktok.timeline_vertical.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261105_RelievedResilientDinosaurWutFace-fuIcXHNN5Vr2Fi1k_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261116_CourageousInspiringTaroOneHand-C-6wvX7Ae0y8F1ss_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae.timeline.json",
-                "C:\\Users\\evolu\\Downloads\\tokuniomae_vertical.timeline.json",
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2912229276_vertical.timeline.json"
+                "C:\\Users\\evolu\\Downloads\\tokuniomae_vertical.timeline.json"
             ],
             "archive_suffix": ".archive",
             "recent_archive": [
-                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938439428.archive.timeline.json",
+                "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2938816056.ai_youtube_long.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2916963434.archive.timeline.json",
                 "C:\\Users\\evolu\\AppData\\Local\\Stretheus\\archive_work\\vod_2910070011.archive.timeline.json"
             ],
@@ -340,8 +343,8 @@
             "archive_graph_dock_redock_when_hidden": true,
             "remember_window_geometry": true,
             "window_geometry": {
-                "archive": "AdnQywADAAAAAAYLAAAAJAAADHsAAAVqAAAGCwAAAEMAAAx7AAAFagAAAAAAAAAADXAAAAYLAAAAQwAADHsAAAVq",
-                "clip": "AdnQywADAAAAAATOAAAAAAAACc0AAAVtAAAEzgAAAB8AAAnNAAAFbQAAAAAAAAAADXAAAATOAAAAHwAACc0AAAVt"
+                "archive": "AdnQywADAAAAAAbHAAABBwAAC8YAAAVNAAAGxwAAASYAAAvGAAAFTQAAAAAAAAAADXAAAAbHAAABJgAAC8YAAAVN",
+                "clip": "AdnQywADAAAAAAWkAAAAuAAACqMAAAUeAAAFpAAAANcAAAqjAAAFHgAAAAAAAAAADXAAAAWkAAAA1wAACqMAAAUe"
             },
             "splitter_state": {
                 "archive": {
@@ -349,12 +352,12 @@
                     "upper": "AAAA/wAAAAEAAAACAAADBgAAAwUB/////wEAAAABAA=="
                 },
                 "clip": {
-                    "main": "AAAA/wAAAAEAAAACAAADRwAAAckB/////wEAAAACAA==",
+                    "main": "AAAA/wAAAAEAAAACAAAC3gAAASsB/////wEAAAACAA==",
                     "upper": "AAAA/wAAAAEAAAACAAACdgAAAm8B/////wEAAAABAA=="
                 }
             },
             "window_min_visible_px": 120,
-            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAAZbAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAGWwAAAG8A////AAAGWwAABA4AAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+            "archive_dock_state": "AAAA/wAAAAD9AAAAAQAAAAIAAATqAAAA3PwBAAAAAfsAAAAiAGEAcgBjAGgAaQB2AGUAUwBjAG8AcgBlAEcAcgBhAHAAaAEAAAAAAAAE6gAAAG8A////AAAE6gAAAw4AAAAEAAAABAAAAAgAAAAI/AAAAAA=",
             "subtitle_color_swatch_width_px": 28,
             "subtitle_align_button_width_px": 56
         },
@@ -616,6 +619,7 @@
         "scoring": {
             "method": "A",
             "top_n": 10,
+            "target_headroom": 2.0,
             "window_sec": 180,
             "slide_sec": 45,
             "clip_pad_sec": 0,
@@ -859,7 +863,7 @@
             "poll_min_ms": 1000
         },
         "consent": {
-            "accepted_version": 1
+            "accepted_version": 2
         },
         "privacy": {
             "include_comment_user": false,
@@ -906,7 +910,7 @@
                     "context_dependency": -0.2
                 }
             },
-            "enabled": false
+            "enabled": true
         },
         "plan": {
             "targets": [
@@ -915,8 +919,8 @@
                 "tiktok"
             ],
             "youtube_long": {
-                "min_sec": 180,
-                "max_sec": 900,
+                "min_sec": 840,
+                "max_sec": 1200,
                 "max_scenes": 12
             },
             "youtube_shorts": {
@@ -978,7 +982,8 @@
             "min_moment_sec": 15,
             "max_moment_sec": 120,
             "max_title_chars": 30,
-            "ai_weight": 0.3,
+            "scoring_mode": "ai_only",
+            "ai_weight": 0.5,
             "weights": {
                 "long": {
                     "hook": 0.25,

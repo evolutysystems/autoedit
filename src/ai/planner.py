@@ -42,7 +42,8 @@ def use_of(target):
 # provider が None なら AI を呼ばず、評価の順位だけで組む (縮退)。
 def build(bundle, scenes, provider, settings, target, report=None, model=""):
     report = report if report is not None else PlanReport()
-    limits = _limits(settings, target)
+    # 尺の目標は**出力尺**なので、素材尺へ割り戻して AI へ渡す (resolve3.md §9)
+    limits = _limits(settings, target, getattr(bundle, "kept_ratio", 1.0))
     usable = [scene for scene in scenes if scene.duration_sec > 0]
     if not usable:
         return None, report
@@ -52,7 +53,8 @@ def build(bundle, scenes, provider, settings, target, report=None, model=""):
         video_plan = _ask_video_plan(bundle, usable, provider, settings, target,
                                      limits, report)
     if video_plan is None:
-        video_plan = fallback_video_plan(usable, settings, target)
+        # 換算済みの limits をそのまま渡す (縮退でも尺の基準を揃える / §9)
+        video_plan = fallback_video_plan(usable, settings, target, limits=limits)
         report.add("P4", "video_plan", plan_schema.ACTION_DEFAULT, "local")
 
     edit_plan = None
@@ -337,12 +339,15 @@ def fallback_edit_plan(bundle, scenes, video_plan, settings, target):
 
 # ---- 小物 ----------------------------------------------------------------
 
-def _limits(settings, target):
+# 尺の目標を読む。min_sec / max_sec は**出力尺** (無音カット後) であり、
+# kept_ratio で素材尺へ割り戻してから使う (resolve3.md §9)。
+# AI は素材の時刻で区間を決めるため、渡す数字も素材尺でなければ噛み合わない。
+def _limits(settings, target, kept_ratio=1.0):
     cfg = ai_config.ai_config(settings)["plan"]
     values = cfg.get(target) or {}
 
-    return {"min_sec": float(values.get("min_sec") or 0.0),
-            "max_sec": float(values.get("max_sec") or 0.0),
+    return {"min_sec": ai_config.source_sec(values.get("min_sec"), kept_ratio),
+            "max_sec": ai_config.source_sec(values.get("max_sec"), kept_ratio),
             "max_scenes": int(values.get("max_scenes") or 0)}
 
 

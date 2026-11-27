@@ -167,10 +167,48 @@ def blend_ai_moments(curve, moments, ai_weight):
         machine = float(row.get("total", 0.0))
         row["ai_score"] = round(best, 1)
         row["moment_index"] = index
+        # 方式 A の点を控える (同点の解きと縮退に使う / resolve3 §3.2)
+        row["machine_total"] = round(machine, 1)
         row["total"] = round(weight * best + (1.0 - weight) * machine, 1)
         blended.append(row)
 
     return blended
+
+
+# 窓スコアの total を **AI の点だけ**で置き換えた新しい列を返す (resolve3 §3.1 / §3.2)。
+#
+# curve   : score_window の戻り値の一覧
+# moments : [{"start","end","scan_score"}] (ai/scene_scanner.Moment.as_dict())
+#
+# blend_ai_moments を ai_weight=1.0 で呼ぶと「山に重なる窓が全て同点」になり
+# 順位が付かない (resolve2 §14.2 の実測)。そこで**重なりの深さ**で差を付ける。
+#
+#   重なり率 = 重なり秒 / min(窓長, 山長)   (0..1 へ丸める)
+#   total    = 山の scan_score × 重なり率
+#
+# 山を丸ごと含む窓は満点、端をかすめる窓は比例して低い。山に重ならない窓は 0.0。
+# emotion / comment は**機械の値のまま**残し、方式 A の点は machine_total へ控える
+# (ai_only では 0 点の窓が大量に出るため、同点は machine_total で解く / select_top_events)。
+# 山が空なら curve をそのまま返す (= 方式 A のまま / 縮退 / §3.5)。
+def score_by_ai_moments(curve, moments):
+    rows = list(curve or [])
+    items = [m for m in (moments or []) if isinstance(m, dict)]
+    if not items or not rows:
+        return rows
+
+    scored = []
+    for window in rows:
+        row = dict(window)
+        start = float(row.get("start", 0.0))
+        end = float(row.get("end", 0.0))
+        best, index, ratio = _best_moment_ratio(items, start, end)
+        row["machine_total"] = round(float(row.get("total", 0.0)), 1)
+        row["ai_score"] = round(best, 1)
+        row["moment_index"] = index
+        row["total"] = round(best * ratio, 1)
+        scored.append(row)
+
+    return scored
 
 
 # 窓に最も強く効く山 (重なるもののうち scan_score が最大) を返す。
@@ -188,6 +226,33 @@ def _best_moment(moments, start, end):
             index = position
 
     return max(best, 0.0), index
+
+
+# 窓に最も強く効く山と、その**重なりの深さ**を返す (resolve3 §3.2)。
+# 戻り値: (点, 山の番号, 重なり率 0..1)。重なりが無ければ (0.0, None, 0.0)。
+#
+# 山の選び方は _best_moment と同じ規則 (重なるもののうち scan_score が最大) であり、
+# 重なり率は**選ばれた山**について測る。
+def _best_moment_ratio(moments, start, end):
+    best = 0.0
+    index = None
+    ratio = 0.0
+    window_len = max(float(end) - float(start), 0.0)
+    for position, moment in enumerate(moments):
+        m_start = float(moment.get("start", 0.0))
+        m_end = float(moment.get("end", 0.0))
+        if not _overlaps(start, end, m_start, m_end):
+            continue
+        score = float(moment.get("scan_score", 0.0))
+        if score > best or index is None:
+            overlap = min(float(end), m_end) - max(float(start), m_start)
+            # 窓より短い山は「丸ごと入っていれば満点」とする (山長で割る)
+            span = min(window_len, max(m_end - m_start, 0.0))
+            best = score
+            index = position
+            ratio = _clamp(overlap / span, 0.0, 1.0) if span > 0 else 0.0
+
+    return max(best, 0.0), index, ratio
 
 
 # 2区間が時間的に重なるか
@@ -265,15 +330,34 @@ def _merge_time_sections(clips):
 #   区間と合流させてから同じマージ規約に通す (resolve16 §3-3・§3-4)。スコアは採点し
 #   直さず、重なる窓の最大値を代表として採る (best_window_for_range)。
 #   None/空なら結果は従来と同一 (marker/marker_labels が付くだけ)。
-def select_top_events(scored, top_n, clip_pad_sec, duration, forced=None):
-    ordered = sorted((w for w in scored if w), key=lambda w: w["total"], reverse=True)
+# target_total_sec : 集める素材尺の目標 (resolve3.md §9 / 利用者の指示 2026-11-26)。
+#   0 以下 … 従来どおり top_n 件で打ち切る (経路 B はこちら)
+#   0 超   … **点の高い順に積み、素材尺が目標に達したら終了する**。
+#            top_n は使わない (件数ではなく尺で決める)。
+#            素材が尽きれば目標未満で終わる (無い物は選べない)。
+def select_top_events(scored, top_n, clip_pad_sec, duration, forced=None,
+                      target_total_sec=0.0):
+    # 同点は方式 A の点 (machine_total) で解く (resolve3 §3.2)。
+    # ai_only では山に重ならない窓が**全て 0 点**になるため、ここが無いと
+    # 残りの枠が時間順 (配信の冒頭から) で埋まってしまう。
+    # machine_total を持たない従来の呼び出しでは 0.0 となり、並びは変わらない。
+    ordered = sorted((w for w in scored if w),
+                     key=lambda w: (float(w["total"]),
+                                    float(w.get("machine_total", 0.0) or 0.0)),
+                     reverse=True)
+    target = max(float(target_total_sec or 0.0), 0.0)
     chosen = []
+    picked_sec = 0.0
     for w in ordered:
-        if len(chosen) >= top_n:
+        if target > 0.0:
+            if picked_sec >= target:
+                break
+        elif len(chosen) >= top_n:
             break
         if any(_overlaps(w["start"], w["end"], c["start"], c["end"]) for c in chosen):
             continue
         chosen.append(w)
+        picked_sec += max(float(w["end"]) - float(w["start"]), 0.0)
 
     # 時系列順に並べ、パディングを付与
     chosen.sort(key=lambda w: w["start"])

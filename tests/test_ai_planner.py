@@ -159,8 +159,24 @@ class BuildTest(unittest.TestCase):
         self.assertEqual([1, 2, 3], [row["scene_ref"] for row in payload["scenes"]])
         self.assertEqual([{"start": 105.0, "end": 108.0, "text": "やばい"}],
                          payload["scenes"][0]["transcript"])
-        self.assertEqual({"min_sec": 180.0, "max_sec": 900.0, "max_scenes": 12},
+        # 同梱の既定 (出力尺)。残存率を渡していないので換算は 1.0 倍
+        self.assertEqual({"min_sec": 840.0, "max_sec": 1200.0, "max_scenes": 12},
                          payload["limits"])
+
+    # min_sec / max_sec は**出力尺**。残存率で素材尺へ割り戻して渡す
+    # (docs/AiEditor/resolve3.md §9)。これが無いと「素材 192 秒で
+    # min_sec 180 秒を満たした」と判断され、出力は 102 秒になる。
+    def test_limits_are_converted_to_source_seconds(self):
+        provider = _Provider()
+        bundle = _bundle()
+        bundle.kept_ratio = 0.5
+
+        planner.build(bundle, _scenes(), provider, {}, "youtube_long")
+        limits = provider.calls[0].payload["limits"]
+
+        self.assertEqual(1680.0, limits["min_sec"])
+        self.assertEqual(2400.0, limits["max_sec"])
+        self.assertEqual(12, limits["max_scenes"], "本数は換算しない")
 
 
 class SectionFitTest(unittest.TestCase):

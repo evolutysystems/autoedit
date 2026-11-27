@@ -18,7 +18,8 @@ from . import config as ai_config
 _logger = get_logger(__name__)
 
 # 文面の版。**文面を変えたら必ず上げる** (上げると再確認になる / §5.5)。
-CURRENT_VERSION = 1
+# 2 … 採点スイープ (配信全体の静止画) の行を足した (resolve2.md §10 / resolve3.md §0-5)
+CURRENT_VERSION = 2
 
 
 # まだ同意を取っていない (または文面が新しくなった) か。
@@ -71,6 +72,14 @@ def text(settings):
     if cfg["vision"].get("enabled", True):
         sends.append(tr("レビュー時の静止画 (長辺 {edge}px まで縮小。音声は送りません)")
                      .format(edge=int(cfg["vision"].get("max_edge_px") or 768)))
+    # 採点スイープ (①') は**配信全体**から静止画を抜いて送る (resolve3.md §0-5)。
+    # レビュー時の数枚とは量が違うため、別の行として明示する。
+    if cfg["scan"].get("enabled", True):
+        sends.append(
+            tr("採点のために配信全体から抜いた静止画 "
+               "({interval} 秒ごと・長辺 {edge}px まで縮小。音声は送りません)")
+            .format(interval=int(cfg["scan"].get("frame_interval_sec") or 30),
+                    edge=int(cfg["scan"].get("frame_edge_px") or 512)))
 
     keeps = [tr("AI へ送った量と費用の記録 (トークン数・モデル名)")]
     if cfg["learning"].get("enabled"):

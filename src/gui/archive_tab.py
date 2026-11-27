@@ -138,18 +138,26 @@ class ArchiveAnalyzeWorker(QThread):
     finished_ok = Signal(object)   # {"result": analyze結果, "input_path": ローカル実体パス}
     failed = Signal(str)
 
-    def __init__(self, job, settings, auth=None, parent=None):
+    # use_ai_scan: AI の採点スイープ (①' / resolve3.md §3.4) を回すか。
+    #   False なら scan を渡さず、**従来と完全に同じ**採点になる。
+    #   同意の確認は呼び出し側 (GUI スレッド) が済ませてから True を渡す。
+    def __init__(self, job, settings, auth=None, use_ai_scan=False, parent=None):
         super().__init__(parent)
         self._job = job
         self._settings = settings
         self._auth = auth
+        self._use_ai_scan = bool(use_ai_scan)
+        # 利用量の記録はスイープを回すときだけ持つ (§17.2 と同じ作法)
+        self._tracker = (ai_usage_log.UsageTracker(settings)
+                         if self._use_ai_scan else None)
 
     def run(self):
         try:
             input_path, comments, markers, vod_source = self._prepare_source()
             result = pipeline.analyze(input_path, self._settings,
                                       progress_cb=self._emit,
-                                      comments=comments, markers=markers)
+                                      comments=comments, markers=markers,
+                                      scan=self._scan())
             # vod_source は「元 VOD を手放したあとに区間だけ取り直す」ための控え
             # (ver9 resolve5 §4.3)。ローカル動画経路では None になる。
             self.finished_ok.emit({"result": result, "input_path": input_path,
@@ -160,6 +168,30 @@ class ArchiveAnalyzeWorker(QThread):
         except Exception as e:  # noqa: BLE001 (GUI へ集約通知)
             _logger.exception("アーカイブ採点に失敗")
             self.failed.emit(format_failure_message(e))
+        finally:
+            # 失敗でも残す (そこまでに使った分は実費として出ている)。
+            if self._tracker is not None:
+                try:
+                    self._tracker.log_summary()
+                except Exception as e:  # noqa: BLE001 - 記録で本処理を壊さない
+                    _logger.debug("AI の利用量の記録に失敗しました: %s", e)
+
+    # AI の採点スイープを pipeline へ渡す形で返す (resolve3.md §3.4)。
+    #
+    # 使わないとき・AI が使えないときは None。**None なら従来と完全に同じ**であり、
+    # 経路 B (AI 無効) では課金も通信も発生しない。
+    def _scan(self):
+        if not self._use_ai_scan:
+            return None
+        provider = ai_provider.create_provider(
+            self._settings, services_config.shared_auth(self._settings),
+            self._tracker)
+        if provider is None:
+            _logger.info("AI を使えないため採点スイープを行いません (機械採点で続けます)")
+
+            return None
+
+        return ai_runner.scan_runner(self._settings, provider)
 
     # モードに応じて
     # (ローカル動画パス, 正規化コメント or None, マーカー or None, 取得元の控え or None)
@@ -997,7 +1029,16 @@ class ArchiveTabWidget(QWidget):
             self._pending_input = input_path
             self._spinner_message = tr("採点準備中…")
 
-        self._analyze_worker = ArchiveAnalyzeWorker(job, self._settings, auth=self._auth, parent=self)
+        # AI の採点スイープ (①') を回すか決める (resolve3.md §3.4)。
+        # ダイアログは **GUI スレッドのここで**出す (ワーカーからは出さない)。
+        # 同意しなければスイープを使わず、方式 A のまま採点を続ける (止めない)。
+        use_ai_scan = False
+        if ai_config.is_enabled(self._settings) and self._ai_scan_enabled():
+            use_ai_scan = self._ensure_ai_consent()
+
+        self._analyze_worker = ArchiveAnalyzeWorker(
+            job, self._settings, auth=self._auth, use_ai_scan=use_ai_scan,
+            parent=self)
         self._analyze_worker.progress.connect(self._on_progress)
         self._analyze_worker.finished_ok.connect(self._on_analyze_done)
         self._analyze_worker.failed.connect(self._on_failed)
@@ -1101,6 +1142,13 @@ class ArchiveTabWidget(QWidget):
             _logger.warning("同意を保存できませんでした (次回また尋ねます): %s", e)
 
         return True
+
+    # 採点スイープ (①') が設定で有効か (ai.scan.enabled / resolve3.md §3.4)。
+    # 鍵が無い古い設定では ai/config.py の既定と同じく有効として扱う。
+    def _ai_scan_enabled(self):
+        scan = ai_config.ai_config(self._settings)["scan"]
+
+        return bool(scan.get("enabled", True))
 
     # ===== 経路 D (AI 編集 / §18.1) =====
 

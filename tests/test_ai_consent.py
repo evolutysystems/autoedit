@@ -96,10 +96,22 @@ class TextTest(unittest.TestCase):
 
         self.assertNotIn("差分", body)
 
+    # 静止画を送る工程は 2 つある (レビューの vision と採点スイープの scan)。
+    # **両方切ったとき**に静止画の行が消えること (docs/AiEditor/resolve3.md §0-5)。
     def test_vision_off_is_not_listed(self):
-        body = consent.text({"ai": {"vision": {"enabled": False}}})
+        body = consent.text({"ai": {"vision": {"enabled": False},
+                                    "scan": {"enabled": False}}})
 
         self.assertNotIn("静止画", body)
+
+    # vision を切っても採点スイープが有効なら静止画は送られる = 文面に残す
+    # (挙動と文面を食い違わせない)
+    def test_scan_still_lists_frames_when_vision_is_off(self):
+        body = consent.text({"ai": {"vision": {"enabled": False},
+                                    "scan": {"enabled": True}}})
+
+        self.assertIn("静止画", body)
+        self.assertIn("配信全体", body)
 
     def test_declining_is_explained(self):
         self.assertIn("同意しない場合", consent.text({}))

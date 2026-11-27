@@ -108,6 +108,7 @@
 |---|---|
 | `AiEditor/request1.md` + `resolve1.md` + `resolve1-API.md` | **AI Clip Studio (AI 動画制作機能)** の要望と設計。経路 D (EditPlan → プロジェクト)・解析データの集約・Stretheus API 経由の AI 呼び出し・面白シーン抽出・構成・EditPlan スキーマ・検証・適用・レビュー・学習。`resolve1-API.md` はサーバー側の契約 (エンドポイント・役割ごとのモデル・上限) |
 | `AiEditor/request2.md` + `resolve2.md` | **採点そのものを AI に行わせる** (ドーパミン採点) の要望と設計 (2026-11-25)。全長を区切って静止画とコメントを AI に見せて山を列挙させ、YouTube 指標 7 軸で測って既存の窓スコアへ混ぜる。機械測定は床・縮退として残す |
+| `AiEditor/resolve3.md` | **採点を AI の点で行う** 設計 (2026-11-26)。`resolve2.md` の配線が画面から呼ばれていなかった原因と、採点モード (`ai.scan.scoring_mode` = `ai_only` / `blend` / `machine`) の追加。方式 A は消さず `total` だけを差し替える |
 | `quality/qua1.md` + `resolve1.md` | 根幹機能 (自動カット・文字起こし・音量) の品質改善設計 (2026-10-23) |
 | `quality/qua2.md` + `resolve2.md` / `resolve3.md` | 書き出し速度の調査と工程計測の導入 |
 | `quality/resolve1.html` / `resolve1.css` | 上記の視覚版 |

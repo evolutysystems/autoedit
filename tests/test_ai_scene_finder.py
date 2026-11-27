@@ -32,6 +32,14 @@ def _on(**scene_eval):
     return {"ai": {"scene_eval": scene_eval}}
 
 
+# シーン評価を**明示的に切った**設定 (docs/AiEditor/resolve3.md §0-4 で既定が有効へ
+# 戻ったため、「切ったときの振る舞い」は設定を明示して確かめる)。
+def _off(**scene_eval):
+    scene_eval["enabled"] = False
+
+    return {"ai": {"scene_eval": scene_eval}}
+
+
 def _bundle(count=3, duration=3600.0):
     clips = [{"index": i + 1, "start": 100.0 + i * 400, "end": 130.0 + i * 400,
               "score": 5.0 + i, "emotion": 5.0, "comment": 5.0} for i in range(count)]
@@ -322,22 +330,26 @@ class EvalCacheTest(unittest.TestCase):
 
 
 class DisabledTest(unittest.TestCase):
-    """ai.scene_eval.enabled = false (既定): AI を呼ばず既存の採点だけで順位を付ける
-    (docs/error/20261125c/resolve.md §2.6)"""
+    """ai.scene_eval.enabled = false: AI を呼ばず既存の採点だけで順位を付ける
+    (docs/error/20261125c/resolve.md §2.6)
 
-    def test_the_default_is_off(self):
+    **既定は 2026-11-26 に有効へ戻した** (利用者の指示 / docs/AiEditor/resolve3.md §0-4)。
+    そのため「切ったときの振る舞い」は設定を明示して確かめる。"""
+
+    # 既定は有効 (②' を流れへ戻した / resolve3.md §0-4)
+    def test_the_default_is_on(self):
         from src.ai import config as ai_config
         from src.settings import settings_window
 
-        self.assertFalse(ai_config.DEFAULT_AI["scene_eval"]["enabled"])
-        self.assertFalse(
+        self.assertTrue(ai_config.DEFAULT_AI["scene_eval"]["enabled"])
+        self.assertTrue(
             settings_window.DEFAULT_SETTINGS["ai"]["scene_eval"]["enabled"])
 
-    # 既定の設定では 1 回も呼ばない
+    # 切った設定では 1 回も呼ばない
     def test_no_call_is_made(self):
         provider = _Provider(_scene_result([1, 2, 3]))
 
-        scenes, report = sf.evaluate(_bundle(3), provider, {})
+        scenes, report = sf.evaluate(_bundle(3), provider, _off())
 
         self.assertEqual([], provider.requests, "AI を呼ばない")
         self.assertEqual(3, len(scenes), "候補は落とさない")
@@ -347,8 +359,9 @@ class DisabledTest(unittest.TestCase):
     # 既存の採点だけで順位が付く (全部が中立の軸 = base_score で並ぶ)
     def test_the_base_score_decides_the_order(self):
         bundle = _bundle(3)
-        scenes = sf.rank(sf.evaluate(bundle, _Provider(_scene_result([1, 2, 3])), {})[0],
-                         {"ai": {"scene_eval": {"base_score_weight": 1.0}}})
+        scenes = sf.rank(
+            sf.evaluate(bundle, _Provider(_scene_result([1, 2, 3])), _off())[0],
+            _off(base_score_weight=1.0))
         totals = [scene.rank_score for scene in scenes]
 
         self.assertEqual(sorted(totals, reverse=True), totals)
@@ -363,8 +376,8 @@ class DisabledTest(unittest.TestCase):
             sf.evaluate(_bundle(2), _Provider(_scene_result([1, 2])), _on(),
                         project_path=project)
             # 切った状態で読み直す
-            scenes, _ = sf.evaluate(_bundle(2), _Provider(_scene_result([1, 2])), {},
-                                    project_path=project)
+            scenes, _ = sf.evaluate(_bundle(2), _Provider(_scene_result([1, 2])),
+                                    _off(), project_path=project)
 
         self.assertFalse(any(scene.evaluated for scene in scenes))
 

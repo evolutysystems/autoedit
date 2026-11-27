@@ -30,7 +30,8 @@ _CUT_NAME = "ai_cand{index}.mp4"
 class AnalysisBundle:
 
     def __init__(self, source=None, cells=None, curve=None, candidates=None,
-                 transcript=None, comments=None, profile=None, moments=None):
+                 transcript=None, comments=None, profile=None, moments=None,
+                 kept_ratio=1.0):
         self.source = dict(source or {})
         self.cells = list(cells or [])
         self.curve = list(curve or [])
@@ -43,6 +44,14 @@ class AnalysisBundle:
         # AI の採点スイープが見つけた山 (docs/AiEditor/resolve2.md §6.2)。
         # スイープを行っていなければ空。構成と後段の編集が「どこが山か」に使う。
         self.moments = list(moments or [])
+        # 無音を除いて残る割合の見積り (docs/AiEditor/resolve3.md §9)。
+        # 尺の目標 (min_sec / max_sec) は**出力尺**なので、素材尺へ割り戻すのに使う。
+        # 1.0 = 換算しない (従来どおり素材尺として扱う)。
+        try:
+            self.kept_ratio = max(min(float(kept_ratio or 1.0), 1.0),
+                                  ai_config.MIN_KEPT_RATIO)
+        except (TypeError, ValueError):
+            self.kept_ratio = 1.0
 
     @property
     def duration_sec(self):
@@ -107,10 +116,11 @@ def build(analysis, settings, source=None, comments=None, transcript=None,
         transcript=transcript,
         comments=comments,
         profile=profile,
-        moments=data.get("moments"))
-    _logger.info("AnalysisBundle: 候補 %d 件 / 窓 %d 件 / 文字起こし %d 件 / コメント %d 件 / AI の山 %d 件",
+        moments=data.get("moments"),
+        kept_ratio=data.get("kept_ratio", 1.0))
+    _logger.info("AnalysisBundle: 候補 %d 件 / 窓 %d 件 / 文字起こし %d 件 / コメント %d 件 / AI の山 %d 件 / 残存率 %.2f",
                  len(bundle.candidates), len(bundle.curve), len(bundle.transcript),
-                 len(bundle.comments), len(bundle.moments))
+                 len(bundle.comments), len(bundle.moments), bundle.kept_ratio)
 
     return bundle
 

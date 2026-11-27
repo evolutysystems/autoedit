@@ -121,9 +121,9 @@ class Materials:
 # duration_sec は元 VOD の尺。0 のときは plan の値を使い、どちらも無ければ V7 を飛ばす。
 # materials を渡すと素材の有無を見る (V8)。exists はファイルの実在確認 (テストで差し替える)。
 def validate(plan, duration_sec=0.0, settings=None, target=None, materials=None,
-             exists=None):
+             exists=None, kept_ratio=1.0):
     cfg = ai_config.ai_config(settings)
-    limits = _limits(settings, cfg, plan, target)
+    limits = _limits(settings, cfg, plan, target, kept_ratio=kept_ratio)
     normalized, notes = schema.normalize(plan, target=target,
                                          gain_limits=limits["gain"])
     report = PlanReport(notes)
@@ -380,7 +380,9 @@ def _check_sounds(sounds, by_id, limits, report, is_file):
 
 # ---- 設定の読み出し ------------------------------------------------------
 
-def _limits(settings, cfg, plan, target):
+# kept_ratio: 無音を除いて残る割合 (resolve3.md §9)。
+# plan の max_sec は**出力尺**なので、素材尺で測る V10 のために割り戻す。
+def _limits(settings, cfg, plan, target, kept_ratio=1.0):
     values = settings if isinstance(settings, dict) else {}
     timeline = values.get("timeline", {}) if isinstance(values.get("timeline"), dict) else {}
     sound = timeline.get("sound_tracks", {}) if isinstance(timeline.get("sound_tracks"), dict) else {}
@@ -400,7 +402,9 @@ def _limits(settings, cfg, plan, target):
                                         _DEFAULT_MAX_MIX_INPUTS)),
         "gain": (_number(sound.get("gain_min_db"), schema.GAIN_MIN_DB),
                  _number(sound.get("gain_max_db"), schema.GAIN_MAX_DB)),
-        "max_sec": _number(plan_cfg.get("max_sec"), 0.0),
+        # 出力尺 → 素材尺へ換算 (resolve3.md §9)
+        "max_sec": ai_config.source_sec(_number(plan_cfg.get("max_sec"), 0.0),
+                                        kept_ratio),
         "max_scenes": int(_number(plan_cfg.get("max_scenes"), 0.0)),
         # SE が無効なら登録済みでも適用しない (§16)。
         "presets": sounds_cfg.get("presets", {}) if sounds_cfg.get("enabled") else {},
