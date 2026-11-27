@@ -165,7 +165,7 @@
         "asr_audio_prefetch": true
     },
     "silence_cut": {
-        "enabled": true,
+        "enabled": false,
         "mode": "edit_points",
         "noise_threshold_db": -27,
         "min_silence_duration_sec": 0.6,
@@ -240,6 +240,7 @@
             "autosave_suffix": ".autosave.json",
             "recent_limit": 10,
             "recent": [
+                "C:\\Users\\evolu\\Downloads\\20261127_PhilanthropicGoldenWombatYee-fryk6D-M6jdvxpq2_portrait (1).timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261105_RelievedResilientDinosaurWutFace-fuIcXHNN5Vr2Fi1k_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\20261116_CourageousInspiringTaroOneHand-C-6wvX7Ae0y8F1ss_source.timeline.json",
                 "C:\\Users\\evolu\\Downloads\\tokuniomae.timeline.json",
@@ -653,7 +654,8 @@
                 },
                 "normalize_weights": true
             },
-            "feature_mode": "single_pass"
+            "feature_mode": "single_pass",
+            "target_headroom": 2.0
         },
         "markers": {
             "enabled": true,
